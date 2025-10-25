@@ -7,14 +7,15 @@ import re
 from datetime import datetime, timezone
 from hashlib import sha256
 from pathlib import Path
-from typing import Any, Iterable, List, Optional
+from typing import Any, Dict, Iterable, List, Optional
 
 import typer
 import yaml
-from hashlib import sha256
 
 
 app = typer.Typer(help="Local-first personal journal utilities.")
+profile_app = typer.Typer(help="Profile utilities.")
+app.add_typer(profile_app, name="profile")
 
 
 @app.callback()
@@ -437,3 +438,123 @@ def facts(
     facts_path = _derived_microfacts_path(root, date)
     _write_yaml_if_changed(facts_path, facts_data)
     typer.echo(str(facts_path))
+
+
+def _parse_datetime(value: str) -> Optional[datetime]:
+    try:
+        candidate = value.replace("Z", "+00:00") if value.endswith("Z") else value
+        dt = datetime.fromisoformat(candidate)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt
+    except ValueError:
+        return None
+
+
+def _days_between(now: datetime, past: Optional[str]) -> Optional[float]:
+    if not past:
+        return None
+    dt = _parse_datetime(past)
+    if not dt:
+        return None
+    delta = now - dt
+    return delta.total_seconds() / 86400.0
+
+
+def _flatten_facets(node: Any, prefix: str = "") -> List[tuple[str, Dict[str, Any]]]:
+    items: List[tuple[str, Dict[str, Any]]] = []
+    if isinstance(node, dict):
+        if "review_after_days" in node and "last_updated" in node:
+            items.append((prefix or "root", node))
+        for key, value in node.items():
+            child_prefix = f"{prefix}.{key}" if prefix else str(key)
+            items.extend(_flatten_facets(value, child_prefix))
+    elif isinstance(node, list):
+        for idx, value in enumerate(node):
+            child_prefix = f"{prefix}[{idx}]"
+            items.extend(_flatten_facets(value, child_prefix))
+    return items
+
+
+def _load_profile_components(root: Path) -> tuple[dict[str, Any], List[dict[str, Any]]]:
+    profile_path = root / "profile" / "self_profile.yaml"
+    claims_path = root / "profile" / "claims.yaml"
+
+    profile = _load_yaml(profile_path) if profile_path.exists() else {}
+    claims_data = _load_yaml(claims_path).get("claims", []) if claims_path.exists() else []
+    return profile, claims_data
+
+
+def _impact_for(path: str, weights: Dict[str, float]) -> float:
+    key = path.split(".", 1)[0]
+    return float(weights.get(key, 1.0))
+
+
+def _compute_rankings(
+    profile: dict[str, Any],
+    claims: List[dict[str, Any]],
+    weights: Dict[str, float],
+    now: datetime,
+) -> List[tuple[str, float]]:
+    ranked: List[tuple[str, float]] = []
+
+    for path, facet in _flatten_facets(profile):
+        days = _days_between(now, str(facet.get("last_updated", "")))
+        review = facet.get("review_after_days") or 90
+        if days is None:
+            continue
+        staleness = days / float(review)
+        ranked.append((path, staleness * _impact_for(path, weights)))
+
+    for claim in claims:
+        path = claim.get("id", "claim")
+        days = _days_between(now, str(claim.get("last_updated", "")))
+        review = claim.get("review_after_days") or 90
+        if days is None:
+            continue
+        staleness = days / float(review)
+        ranked.append((f"claim:{path}", staleness * float(weights.get("claims", 1.0))))
+
+    ranked.sort(key=lambda item: (-item[1], item[0]))
+    return ranked
+
+
+def _print_rankings(ranked: List[tuple[str, float]]) -> None:
+    if not ranked:
+        typer.echo("No profile data")
+        return
+    typer.echo("Profile review priority:")
+    for idx, (path, score) in enumerate(ranked, start=1):
+        typer.echo(f"{idx}. {path} (score {score:.2f})")
+
+
+def _profile_status_impl() -> None:
+    root = Path.cwd()
+    profile, claims = _load_profile_components(root)
+    config_path = root / "config" / "config.yaml"
+    config = _load_yaml(config_path) if config_path.exists() else {}
+    weights = config.get("impact_weights", {})
+
+    if not profile and not claims:
+        typer.echo("No profile data")
+        raise typer.Exit(0)
+
+    rankings = _compute_rankings(profile, claims, weights, _now())
+    if not rankings:
+        typer.echo("No profile data")
+        raise typer.Exit(0)
+    _print_rankings(rankings)
+
+
+@profile_app.command("status")
+def profile_status() -> None:
+    """Show ranked facets/claims needing review."""
+
+    _profile_status_impl()
+
+
+@app.command("profile-status")
+def profile_status_alias() -> None:
+    """Alias command for profile status (for backwards compatibility)."""
+
+    _profile_status_impl()
