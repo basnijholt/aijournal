@@ -12,7 +12,7 @@ A complete, self‑contained blueprint to implement a private, offline, reproduc
 
 - Private and offline: runs entirely on localhost with Ollama.
 - Authoritative data in YAML/Markdown; derived artifacts are reproducible.
-- KISS: type-hinted Python with dataclasses; small, composable commands.
+- KISS: type-hinted Python with Pydantic models; small, composable commands.
 - Primary outcome: a living personality sketch that captures motivations, values, goals,
   likes/dislikes, character traits, and behavioral anti-goals so downstream copilots
   can reason about “you” with minimal prompting.
@@ -26,7 +26,7 @@ A complete, self‑contained blueprint to implement a private, offline, reproduc
 
 - Keep the stack brutally simple: one ingestion path, one characterization pipeline, one
   review/apply flow. Prefer pure functions + YAML I/O over deep abstraction layers.
-- Every new feature must ship with tests (Pytest + fake LLM fixtures) and schema validation;
+- Every new feature must ship with tests (Pytest + fake LLM fixtures) and model validation;
   no hidden magic.
 - Derived data must be inspectable and reproducible—if we cannot diff it, we don’t ship it.
 - Optimize for a clean end-to-end path to “LLM understands my personality” before adding
@@ -68,7 +68,7 @@ aijournal/
   src/aijournal/                # Python package
     __init__.py
     cli.py
-    models/                     # dataclasses + (de)serialization helpers
+    models/                     # Pydantic schemas + serialization helpers
     services/                   # ollama client, derivation, ranking, advisor
     io/                         # YAML/MD I/O, path mappers
     prompts/                    # prompt loaders, hashing
@@ -76,14 +76,6 @@ aijournal/
     fixtures/
   config/
     config.yaml                 # model, paths, temps
-    schemas/                    # JSON Schemas for validation
-      journal_entry.json
-      normalized_entry.json
-      summary.json
-      microfacts.json
-      claims.json
-      self_profile.json
-      profile_suggestions.json
     interviews.json
     advice.json
     models.lock.yaml            # optional model digests for reproducibility
@@ -121,7 +113,7 @@ normalized entries + manifest + profile ──▶ aijournal characterize ──�
 ```
 
 - **Manifest**: YAML list of `{hash, path, source_type, ingested_at, tags}`, stored under `data/manifest/`. Hashes (SHA‑256) gate ingestion so files are consumed once.
-- **Normalization adapters**: pluggable readers (Markdown, HTML, chat export) feed the shared schema (`schemas/normalized_entry.json`).
+- **Normalization adapters**: pluggable readers (Markdown, HTML, chat export) target the shared `NormalizedEntry` Pydantic model.
 - **Characterize**: uses the agno-driven model interface to infer traits/motivations/claims from aggregated entries, writing proposed edits with `evidence_hashes`, `method`, `confidence`, and `review_after_days` adjustments.
 - **Review**: staged updates land in `derived/pending/profile_updates/<timestamp>.yaml`; `aijournal review-updates --apply` merges them into `profile/self_profile.yaml` and `profile/claims.yaml` once approved.
 
@@ -141,8 +133,8 @@ Use uv for all Python project management: initialization, dependency resolution,
     - `[project] name = "aijournal"`
     - `requires-python = ">=3.11,<3.13"`
     - `[project.scripts] aijournal = "aijournal.cli:app"` (added when CLI exists)
-  - Add runtime deps:
-    - `uv add typer pyyaml httpx cattrs python-dateutil`
+- Add runtime deps:
+    - `uv add typer pyyaml httpx pydantic python-dateutil`
   - Add dev/test deps:
     - `uv add -D pytest pytest-cov mypy ruff hypothesis types-PyYAML types-python-dateutil`
   - Lock and verify:
@@ -547,18 +539,18 @@ To make evidence robust yet simple:
 ## 13. Testing Strategy
 
 Unit:
-- Dataclass (de)serialization for JournalEntry, NormalizedEntry, Fact, Claim, SelfProfile facets.
+- Pydantic (de)serialization for JournalEntry, NormalizedEntry, Fact, Claim, SelfProfile facets.
 - Path mappers and slug/ID generators are deterministic.
 - Staleness ranking and impact weights.
 
 Functional (CLI):
 - `init/new/normalize` produces expected files and paths.
-- `summarize/facts` under fake mode write valid derived YAML; validate against schemas; snapshot key sections.
+- `summarize/facts` under fake mode write valid derived YAML; validate against Pydantic models; snapshot key sections.
 - `advise` under fake mode returns a valid Advice Card and respects tone/boundaries.
 
-Schema:
-- JSON Schemas for each artifact under `config/schemas/` including `advice.json`.
-- `pytest` validates real files against schemas.
+Validation:
+- Pydantic models cover each artifact (`DailySummary`, `MicroFactsFile`, `AdviceCard`, etc.).
+- `pytest` loads written YAML and validates via those models.
 
 LLM Contracts:
 - Golden fixtures in `tests/fixtures/ollama/`.
@@ -621,11 +613,11 @@ Coverage:
 
 Language/Runtime:
 - Python 3.11+
-- Dependencies (runtime): `typer`, `PyYAML`, `httpx`, `cattrs`, `python-dateutil`
+- Dependencies (runtime): `typer`, `PyYAML`, `httpx`, `pydantic`, `python-dateutil`
 - Dev: `pytest`, `pytest-cov`, `mypy`, `ruff` (optional), `hypothesis` (optional)
 
 Conventions:
-- Dataclasses for models; `cattrs` for structure/unstructure.
+- Pydantic models handle structure/validation while YAML stays human-friendly.
 - Stable YAML dump (sorted keys); keep nulls out unless required.
 - Small pure functions; avoid global state; pass config explicitly.
 
@@ -657,7 +649,7 @@ ci:          just fake_on test mypy
 1) chore(init): uv bootstrap + skeleton
 - Initialize project with uv: `uv init --package aijournal`.
 - Edit `pyproject.toml` to set project metadata and `requires-python`.
-- Add `.gitignore`, `README.md`, `PLAN.md`, `justfile`, `config/config.yaml`, empty `config/schemas/`.
+- Add `.gitignore`, `README.md`, `PLAN.md`, `justfile`, `config/config.yaml`.
 - Add empty `profile/claims.yaml` and seed `profile/self_profile.yaml` with the provided YAML.
 - Commit `pyproject.toml` and `uv.lock`.
 - Tests folder scaffold.
@@ -666,10 +658,10 @@ ci:          just fake_on test mypy
 - Implement idempotent directory creation with clear output.
 - Tests: initializing twice is no‑op and returns success.
 
-3) feat(core): models + schemas
-- Dataclasses for journal, normalized, summary, micro‑facts, claim, self profile facets, suggestions, interviews, advice.
-- JSON Schemas for each artifact; validation helpers.
-- Tests: (de)serialization + schema validation round‑trips.
+3) feat(core): models + validation
+- Pydantic models for journal, normalized, summary, micro-facts, claim, self profile facets, suggestions, interviews, advice.
+- Validation helpers wrapping those models.
+- Tests: (de)serialization + Pydantic validation round-trips.
 
 4) feat(cli): new
 - Create MD with frontmatter; deterministic slug/id.
@@ -686,11 +678,11 @@ ci:          just fake_on test mypy
 
 7) feat(derive): summarize
 - Prompt call → `derived/summaries/DATE.yaml` with meta.
-- Tests: schema validation + snapshot of bullets.
+- Tests: Pydantic validation + snapshot of bullets.
 
 8) feat(derive): facts
 - Prompt call → `derived/microfacts/DATE.yaml` with evidence locators.
-- Tests: schema validation + evidence linking to normalized entry id.
+- Tests: Pydantic validation + evidence linking to normalized entry id.
 
 9) feat(profile): ranking + status
 - Implement staleness and impact ranks.
@@ -698,8 +690,8 @@ ci:          just fake_on test mypy
 - Tests: deterministic ranking.
 
 10) feat(profile): suggest
-- Aggregate micro‑facts and diff `self_profile.yaml` + `claims.yaml` → suggestions YAML.
-- Tests: default `user_verified=false`, `method` present, schema valid.
+- Aggregate micro-facts and diff `self_profile.yaml` + `claims.yaml` → suggestions YAML.
+- Tests: default `user_verified=false`, `method` present, model validation passes.
 
 11) feat(cli): apply suggestions
 - Interactive accept/reject; write authoritative files; update timestamps/freshness.
@@ -727,7 +719,7 @@ ci:          just fake_on test mypy
 - Can propose and apply profile/claim updates with provenance and re‑validation cadence.
 - Interviewer outputs targeted questions prioritizing stale/high‑impact facets.
 - Advisor Mode produces personalized, constraint‑aware Advice Cards and concise terminal summaries.
-- All artifacts are human‑readable with JSON Schema validation.
+- All artifacts are human-readable and validated via shared Pydantic models.
 - Fake LLM mode enables offline, deterministic tests.
 - Context pack L3 comfortably ≤ 1800 tokens.
 

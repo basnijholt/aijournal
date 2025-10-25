@@ -1,4 +1,4 @@
-"""Tests for dataclasses and YAML helpers (PLAN §3)."""
+"""Tests for Pydantic models and YAML helpers (PLAN §3)."""
 
 from __future__ import annotations
 

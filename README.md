@@ -1,6 +1,6 @@
 # aijournal
 
-Local-first, YAML-centric personal self-modeling agent. All authoritative data lives in human-readable files; derived artifacts are reproducible via local Ollama. See `PLAN.md` for end-to-end specs, schemas, flows, and commit roadmap.
+Local-first, YAML-centric personal self-modeling agent. All authoritative data lives in human-readable files; derived artifacts are reproducible via local Ollama. See `PLAN.md` for end-to-end specs, validation details, flows, and commit roadmap.
 
 ## Getting Started
 
@@ -10,7 +10,7 @@ uv run pytest -q
 ```
 
 - `config/config.yaml` stores runtime defaults (model, temperature, advisor settings).
-- `config/schemas/*.json` defines the JSON Schemas the CLI enforces on every write.
+- `src/aijournal/models/` defines the Pydantic schemas the CLI enforces on every write.
 - `prompts/*.md` contains the Ollama prompt templates for summarize/facts/profile/advise.
 - `profile/` seeds an initial self-profile plus an empty claims list so commands have context.
 
@@ -138,8 +138,8 @@ aijournal profile suggest --date 2025-02-03
 ```
 
 Runs `prompts/profile_suggest.md` with the current profile + claims and stores
-`derived/profile_suggestions/<DATE>.yaml`. Outputs are validated against
-`config/schemas/profile_suggestions.json` before being written. Enable fake mode for deterministic fixtures.
+`derived/profile_suggestions/<DATE>.yaml`. Outputs are validated against the
+`ProfileSuggestions` Pydantic model before being written. Enable fake mode for deterministic fixtures.
 
 ### Apply profile suggestions
 
@@ -172,11 +172,11 @@ aijournal pack --level L4 --date 2025-02-03 --history-days 1 --format json > /tm
 
 Trimming now prioritizes raw journal content first; when a pack exceeds `--max-tokens`, entries are zeroed in deterministic role order and `meta.trimmed` captures a list of `{role, path}` objects so you can inspect exactly what was removed. Dry-run output still lists every planned file with its token estimate, and both YAML/JSON payloads remain deterministic for caching or scripting.
 
-## Prompts & Schemas
+## Prompts & Validation
 
 - Prompt templates live under `prompts/` and are hashed into every derived artifact's `meta.prompt_hash`.
-- JSON Schemas under `config/schemas/` are enforced on every write; violating payloads abort the command with actionable errors.
-- The combination of typed dataclasses + schemas makes derived artifacts reproducible—delete and regenerate any `derived/` subtree with confidence.
+- Pydantic models under `src/aijournal/models/` are enforced on every write; violating payloads abort the command with actionable errors.
+- The combination of typed Pydantic models + deterministic YAML makes derived artifacts reproducible—delete and regenerate any `derived/` subtree with confidence.
 
 ## Pre-commit Hooks
 

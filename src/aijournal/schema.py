@@ -1,13 +1,22 @@
-"""JSON Schema validation helpers for derived artifacts."""
+"""Pydantic-backed validation helpers for aijournal payloads."""
 
 from __future__ import annotations
 
-import json
-from functools import lru_cache
-from pathlib import Path
-from typing import Any, Iterable, List
+from typing import Any, Dict, Iterable, List, Type
 
-from jsonschema import Draft202012Validator
+from pydantic import BaseModel, ValidationError
+
+from aijournal.models import (
+    AdviceCard,
+    ClaimsFile,
+    DailySummary,
+    InterviewSet,
+    JournalEntry,
+    MicroFactsFile,
+    NormalizedEntry,
+    ProfileSuggestions,
+    SelfProfile,
+)
 
 
 class SchemaValidationError(ValueError):
@@ -20,34 +29,40 @@ class SchemaValidationError(ValueError):
         super().__init__(message)
 
 
-def _schema_dir() -> Path:
-    return Path(__file__).resolve().parents[2] / "config" / "schemas"
+_MODEL_REGISTRY: Dict[str, Type[BaseModel]] = {
+    "advice": AdviceCard,
+    "claims": ClaimsFile,
+    "interviews": InterviewSet,
+    "journal_entry": JournalEntry,
+    "microfacts": MicroFactsFile,
+    "normalized_entry": NormalizedEntry,
+    "profile_suggestions": ProfileSuggestions,
+    "self_profile": SelfProfile,
+    "summary": DailySummary,
+}
 
 
-@lru_cache(maxsize=None)
-def _load_schema(schema_name: str) -> dict[str, Any]:
-    path = _schema_dir() / f"{schema_name}.json"
-    if not path.exists():
-        raise FileNotFoundError(f"Schema file not found: {path}")
-    return json.loads(path.read_text(encoding="utf-8"))
-
-
-@lru_cache(maxsize=None)
-def _get_validator(schema_name: str) -> Draft202012Validator:
-    schema = _load_schema(schema_name)
-    return Draft202012Validator(schema)
+def _resolve_model(schema_name: str) -> Type[BaseModel]:
+    try:
+        return _MODEL_REGISTRY[schema_name]
+    except KeyError as exc:  # pragma: no cover - defensive guard
+        raise ValueError(f"Unknown schema requested: {schema_name}") from exc
 
 
 def validate_schema(schema_name: str, payload: Any) -> None:
     """Validate payload against the named schema or raise SchemaValidationError."""
 
-    validator = _get_validator(schema_name)
+    model = _resolve_model(schema_name)
     errors: List[str] = []
-    for error in validator.iter_errors(payload):
-        location = ".".join(str(part) for part in error.path) or "<root>"
-        errors.append(f"{location}: {error.message}")
+    try:
+        model.model_validate(payload)
+    except ValidationError as exc:
+        for err in exc.errors():
+            location = ".".join(str(part) for part in err.get("loc", ())) or "<root>"
+            errors.append(f"{location}: {err.get('msg', 'invalid value')}")
     if errors:
         raise SchemaValidationError(schema_name, errors)
 
 
 __all__ = ["SchemaValidationError", "validate_schema"]
+
