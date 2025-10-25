@@ -626,8 +626,9 @@ Coverage:
 
 ## 14. Fake Data Generation
 
-- `aijournal new --fake N` generates N entries with plausible frontmatter and content (no LLM).
-- A deterministic seed yields stable outputs for tests.
+- `aijournal new --fake N` generates N entries with plausible frontmatter + body text (no LLM).
+- Include `--seed <int>` for deterministic fixtures (CI/tests) or omit to anchor on "now".
+- Optional `--tags` overrides the auto-tagged values so demos can highlight specific themes.
 
 ---
 

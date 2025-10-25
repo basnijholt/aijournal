@@ -52,6 +52,14 @@ aijournal new "Morning sync" --tags focus planning
 
 Emits `data/journal/YYYY/MM/DD/<slug>.md` with YAML frontmatter and refuses to overwrite an existing slug.
 
+### Generate fake entries (fixtures / demos)
+
+```sh
+aijournal new --fake 3 --seed 7 --tags focus planning
+```
+
+Produces three Markdown files with full frontmatter (`id`, `created_at`, `title`, `tags`, `projects`, `mood`) plus short body paragraphs. The command never calls Ollama and is safe to run offline; existing slugs are skipped. Provide `--seed` for deterministic fixtures (great for tests/CI) and optionally layer `--tags` to override the auto-generated tag sets.
+
 ### Ingest existing Markdown (blogs, notes)
 
 Use the ingestion agent to normalize entire directories of Markdown or Hugo posts. By default it

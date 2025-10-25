@@ -45,6 +45,13 @@ def _read_frontmatter(path: Path) -> dict[str, object]:
     return yaml.safe_load(frontmatter)
 
 
+def _read_body(path: Path) -> str:
+    text = path.read_text(encoding="utf-8")
+    parts = text.split("---\n", 2)
+    assert len(parts) == 3, "Missing body"
+    return parts[2].strip()
+
+
 def test_new_creates_journal_entry(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.chdir(tmp_path)
 
@@ -103,3 +110,60 @@ def test_new_prints_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Non
 
     entry_path = tmp_path / EXPECTED_DATE_PATH / f"{EXPECTED_SLUG}.md"
     assert str(entry_path) in result.stdout
+
+
+def test_new_requires_title_without_fake(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.chdir(tmp_path)
+
+    result = runner.invoke(app, ["new"])
+
+    assert result.exit_code != 0
+    assert "Title is required" in result.stderr
+
+
+def test_new_seed_requires_fake(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.chdir(tmp_path)
+
+    result = runner.invoke(app, ["new", "Kickoff", "--seed", "7"])
+
+    assert result.exit_code != 0
+    assert "only valid" in result.stderr
+
+
+def test_new_fake_generates_entries(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.chdir(tmp_path)
+
+    result = runner.invoke(app, ["new", "--fake", "2", "--seed", "7"])
+
+    assert result.exit_code == 0, result.stderr
+
+    first = tmp_path / "data/journal/2025/01/01/2025-01-01-planning-checkpoint-aijournal.md"
+    second = tmp_path / "data/journal/2025/01/02/2025-01-02-energy-reset-writing-pipeline.md"
+
+    assert first.exists()
+    assert second.exists()
+
+    first_meta = _read_frontmatter(first)
+    second_meta = _read_frontmatter(second)
+
+    assert first_meta["title"] == "Morning focus: Planning Checkpoint (aijournal)"
+    assert first_meta["projects"] == ["aijournal"]
+    assert first_meta["tags"] == ["aijournal", "family", "planning", "reflection"]
+
+    assert second_meta["title"] == "Afternoon systems: Energy Reset (writing pipeline)"
+    assert second_meta["projects"] == ["writing pipeline"]
+    assert second_meta["tags"] == ["energy", "habits", "health", "writing"]
+
+    body = _read_body(second)
+    assert "Afternoon systems block stayed" in body
+    assert "Next: Block next session" in body
+    assert "Generated 2 fake entries" in result.stdout
+
+
+def test_new_fake_disallows_title(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.chdir(tmp_path)
+
+    result = runner.invoke(app, ["new", "Kickoff", "--fake", "1"])
+
+    assert result.exit_code != 0
+    assert "Provide either a title" in result.stderr

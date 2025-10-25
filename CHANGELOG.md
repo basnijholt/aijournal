@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Added `aijournal new --fake N` (with `--seed`) to synthesize deterministic Markdown entries for fixtures, demos, and CI without hitting Ollama.
+
 ## v0.2.0 — 2025-10-25
 
 - Added `aijournal pack` levels **L3/L4**, including history windows, prompt/config inclusion, and smarter trimming with `meta.trimmed` details.
