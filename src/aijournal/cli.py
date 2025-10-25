@@ -5,10 +5,10 @@ from __future__ import annotations
 import json
 import os
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from hashlib import sha256
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 import typer
 import yaml
@@ -53,6 +53,32 @@ SEED_FILES = {
     "profile/self_profile.yaml": """traits:\n  big_five:\n    openness: {score: 0.74, method: self_report, user_verified: true}\n    conscientiousness: {score: 0.68, method: inferred}\n    extraversion: {score: 0.42, method: self_report}\n    agreeableness: {score: 0.61, method: inferred}\n    neuroticism: {score: 0.33, method: self_report}\n  regulatory_focus: {promotion: 0.7, prevention: 0.3}\n  risk_tolerance: {domain: \"career\", level: \"medium-high\"}\n  time_horizon: {preferred: \"long\", evidence: [\"2024_l2_...\"]}\n  review_after_days: 180\n\nvalues_motivations:\n  schwartz_top5: [\"Self-Direction\", \"Achievement\", \"Universalism\", \"Benevolence\", \"Security\"]\n  sdt: {autonomy: 0.8, competence: 0.7, relatedness: 0.6}\n  drivers:\n    - value: \"Mastery over tools & systems\"\n      method: inferred\n      confidence: 0.8\n  review_after_days: 120\n\ngoals:\n  short_term:\n    - value: \"Ship personal agent MVP\"\n      why: \"reduce friction\"\n      krs: [\"CLI usable\", \"context pack <1800t\"]\n      review_after_days: 30\n  long_term:\n    - value: \"Work-life consistency with twins\"\n      krs: [\"2 evenings/week protected\"]\n      review_after_days: 90\n  anti_goals:\n    - value: \"No late-night production firefighting as a norm\"\n      reason: \"family/health\"\n\ndecision_style:\n  default: {speed_vs_quality: \"quality\", satisficer_vs_maximizer: \"bounded_maximizer\"}\n  implementation_intentions:\n    - if: \"Feeling anxious before presentations\"\n      then: \"Run checklist + 10-min rehearsal\"\n      evidence: [\"2021-04-12_l1\"]\n\naffect_energy:\n  energy_map: {morning: \"high\", afternoon: \"medium\", evening: \"low\"}\n  stressors: [\"ambiguous deadlines\", \"noisy environment\"]\n  coping_strategies: [\"walks\", \"time-boxing\", \"no email after 18:00\"]\n\nsocial:\n  relationships:\n    - person: \"Jess\"\n      role: \"coworker\"\n      notes: \"great feedback partner\"\n      boundary: \"no pings after 18:00\"\n\nboundaries_ethics:\n  red_lines: [\"No sharing private family data\", \"No health advice beyond guidelines\"]\n\ncoaching_prefs:\n  tone: \"direct, warm\"\n  depth: \"concrete first, theory second\"\n  probing: {max_questions: 2, prefer: \"yes/no + one short open follow-up\"}\n""",
     "profile/claims.yaml": """claims: []\n""",
 }
+
+ROLE_ORDER = [
+    "profile",
+    "claims",
+    "config",
+    "prompt",
+    "normalized",
+    "summaries",
+    "microfacts",
+    "advice",
+    "profile_suggestions",
+    "journal_raw",
+]
+
+TRIM_PRIORITY = [
+    "journal_raw",
+    "prompt",
+    "config",
+    "advice",
+    "profile_suggestions",
+    "microfacts",
+    "summaries",
+    "normalized",
+    "claims",
+    "profile",
+]
 
 
 def _now() -> datetime:
@@ -811,8 +837,12 @@ def _pack_token_count(text: str) -> int:
     return len(text.split())
 
 
-def _pack_trim_entries(entries: List[dict[str, Any]], budget: int, trimmed: List[str]) -> None:
-    priority_roles = ["microfacts", "summaries", "normalized", "claims", "profile"]
+def _pack_trim_entries(
+    entries: List[dict[str, Any]],
+    budget: int,
+    trimmed: List[dict[str, str]],
+) -> None:
+    priority_roles = TRIM_PRIORITY
 
     def total_tokens() -> int:
         return sum(entry["tokens"] for entry in entries)
@@ -823,47 +853,107 @@ def _pack_trim_entries(entries: List[dict[str, Any]], budget: int, trimmed: List
     for role in priority_roles:
         for entry in entries:
             if entry["role"] == role and entry["tokens"] > 0:
-                trimmed.append(entry["path"])
+                trimmed.append({"role": role, "path": entry["path"]})
                 entry["content"] = "(trimmed due to token budget)"
                 entry["tokens"] = 0
                 if total_tokens() <= budget:
                     return
 
 
-def _collect_pack_entries(root: Path, level: str, date: str) -> List[tuple[str, Path]]:
-    specs = {
-        "L1": [
-            ("profile", root / "profile" / "self_profile.yaml", True),
-            ("claims", root / "profile" / "claims.yaml", True),
-        ],
-        "L2": [
-            ("profile", root / "profile" / "self_profile.yaml", True),
-            ("claims", root / "profile" / "claims.yaml", True),
-            ("normalized", root / "data" / "normalized" / date, True),
-            ("summaries", root / "derived" / "summaries" / f"{date}.yaml", False),
-            ("microfacts", root / "derived" / "microfacts" / f"{date}.yaml", False),
-        ],
-    }
+def _collect_pack_entries(
+    root: Path,
+    level: str,
+    date: str,
+    history_days: int,
+) -> List[tuple[str, Path]]:
+    level = level.upper()
+    entries: List[tuple[str, Path, int]] = []
 
-    if level not in specs:
-        raise typer.Exit(f"Unsupported level {level}")
-
-    gathered: List[tuple[str, Path]] = []
-    for role, path, required in specs[level]:
-        if path.is_dir():
-            files = sorted(p for p in path.glob("*") if p.is_file())
-            if not files and required:
-                raise typer.Exit(f"Missing required files under {path}")
-            for file in files:
-                gathered.append((role, file))
-        elif path.exists():
-            gathered.append((role, path))
+    def add_path(
+        role: str,
+        path: Path,
+        *,
+        required: bool = False,
+        day_index: int = 0,
+    ) -> None:
+        if path.is_file():
+            entries.append((role, path, day_index))
         elif required:
             raise typer.Exit(f"Missing required file {path}")
 
-    role_order = {"profile": 0, "claims": 1, "normalized": 2, "summaries": 3, "microfacts": 4}
-    gathered.sort(key=lambda item: (role_order.get(item[0], 99), str(item[1])))
-    return gathered
+    def add_dir(
+        role: str,
+        directory: Path,
+        *,
+        required: bool = False,
+        pattern: Optional[str] = None,
+        recursive: bool = False,
+        day_index: int = 0,
+    ) -> None:
+        if not directory.exists():
+            if required:
+                raise typer.Exit(f"Missing required files under {directory}")
+            return
+        if recursive:
+            files = sorted(p for p in directory.rglob("*") if p.is_file())
+        elif pattern:
+            files = sorted(directory.glob(pattern))
+        else:
+            files = sorted(p for p in directory.iterdir() if p.is_file())
+        if not files and required:
+            raise typer.Exit(f"Missing required files under {directory}")
+        for file in files:
+            entries.append((role, file, day_index))
+
+    def add_day_artifacts(day: str, day_index: int, *, include_raw: bool, required_core: bool) -> None:
+        normalized_dir = root / "data" / "normalized" / day
+        add_dir("normalized", normalized_dir, required=required_core, pattern="*.yaml", day_index=day_index)
+        summary_path = root / "derived" / "summaries" / f"{day}.yaml"
+        add_path("summaries", summary_path, day_index=day_index)
+        microfacts_path = root / "derived" / "microfacts" / f"{day}.yaml"
+        add_path("microfacts", microfacts_path, day_index=day_index)
+        if include_raw:
+            year, month, day_part = day.split("-")
+            journal_dir = root / "data" / "journal" / year / month / day_part
+            add_dir("journal_raw", journal_dir, pattern="*.md", day_index=day_index)
+
+    if level not in {"L1", "L2", "L3", "L4"}:
+        raise typer.Exit(f"Unsupported level {level}")
+
+    add_path("profile", root / "profile" / "self_profile.yaml", required=True)
+    add_path("claims", root / "profile" / "claims.yaml", required=True)
+
+    include_history = level == "L4"
+    if level in {"L2", "L3", "L4"}:
+        day_offsets: List[Tuple[str, int]] = [(date, 0)]
+        if include_history and history_days > 0:
+            anchor = datetime.fromisoformat(date)
+            for offset in range(1, history_days + 1):
+                prior = (anchor - timedelta(days=offset)).strftime("%Y-%m-%d")
+                day_offsets.append((prior, offset))
+
+        for day_value, idx in day_offsets:
+            add_day_artifacts(
+                day_value,
+                idx,
+                include_raw=include_history,
+                required_core=idx == 0,
+            )
+
+    if level in {"L3", "L4"}:
+        advice_dir = root / "derived" / "advice" / date
+        add_dir("advice", advice_dir, pattern="*.yaml")
+        profile_suggestions = root / "derived" / "profile_suggestions" / f"{date}.yaml"
+        add_path("profile_suggestions", profile_suggestions)
+
+    if level == "L4":
+        prompts_dir = root / "prompts"
+        add_dir("prompt", prompts_dir, pattern="*.md", recursive=True)
+        add_path("config", root / "config" / "config.yaml")
+
+    role_rank = {role: idx for idx, role in enumerate(ROLE_ORDER)}
+    entries.sort(key=lambda item: (role_rank.get(item[0], len(ROLE_ORDER)), item[2], str(item[1])))
+    return [(role, path) for role, path, _ in entries]
 
 
 def _latest_normalized_day(root: Path) -> Optional[str]:
@@ -890,7 +980,7 @@ def _build_pack_payload(
     entries: List[dict[str, Any]],
     level: str,
     date: str,
-    trimmed: List[str],
+    trimmed: List[dict[str, str]],
     total_tokens: int,
     max_tokens: int,
 ) -> dict[str, Any]:
@@ -917,6 +1007,11 @@ def pack(
     output: Optional[Path] = typer.Option(None, "--output", "-o"),
     max_tokens: Optional[int] = typer.Option(None, "--max-tokens"),
     fmt: str = typer.Option("yaml", "--format", help="Output format: yaml or json."),
+    history_days: int = typer.Option(
+        0,
+        "--history-days",
+        help="Number of previous days to include (L4 packs only).",
+    ),
     dry_run: bool = typer.Option(False, "--dry-run", help="Show plan without emitting payload."),
 ) -> None:
     """Assemble a context bundle for prompting."""
@@ -927,12 +1022,19 @@ def pack(
         typer.secho(f"Unsupported format: {fmt}", fg=typer.colors.RED, err=True)
         raise typer.Exit(1)
     fmt = fmt_value
-    default_budget = {"L1": 1200, "L2": 2000}
+    if history_days < 0:
+        typer.secho("--history-days must be zero or positive.", fg=typer.colors.RED, err=True)
+        raise typer.Exit(1)
+    if level != "L4" and history_days:
+        typer.secho("--history-days is only supported for L4 packs.", fg=typer.colors.RED, err=True)
+        raise typer.Exit(1)
+
+    default_budget = {"L1": 1200, "L2": 2000, "L3": 2600, "L4": 3200}
     budget = max_tokens or default_budget.get(level, 2000)
 
     root = Path.cwd()
     resolved_date = _resolve_pack_date(level, date, root)
-    entries_info = _collect_pack_entries(root, level, resolved_date)
+    entries_info = _collect_pack_entries(root, level, resolved_date, history_days if level == "L4" else 0)
 
     entries_payload: List[dict[str, Any]] = []
     for role, path in entries_info:
@@ -948,7 +1050,7 @@ def pack(
         )
 
     total_tokens = sum(entry["tokens"] for entry in entries_payload)
-    trimmed: List[str] = []
+    trimmed: List[dict[str, str]] = []
     if total_tokens > budget:
         _pack_trim_entries(entries_payload, budget, trimmed)
         total_tokens = sum(entry["tokens"] for entry in entries_payload)
