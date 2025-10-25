@@ -211,6 +211,10 @@ def _derived_summary_path(root: Path, day: str) -> Path:
     return root / "derived" / "summaries" / f"{day}.yaml"
 
 
+def _derived_microfacts_path(root: Path, day: str) -> Path:
+    return root / "derived" / "microfacts" / f"{day}.yaml"
+
+
 def _hash_prompt(prompt_path: str) -> str:
     return sha256(prompt_path.encode("utf-8")).hexdigest()
 
@@ -235,6 +239,31 @@ def _fake_summarize(entries: List[dict[str, Any]]) -> List[str]:
         else:
             bullets.append(f"{title}: no sections")
     return bullets or ["No content available"]
+
+
+def _fake_microfacts(entries: List[dict[str, Any]]) -> List[dict[str, Any]]:
+    facts: List[dict[str, Any]] = []
+    for entry in entries:
+        entry_id = entry.get("id", "entry")
+        title = entry.get("title", entry_id)
+        sections = entry.get("sections") or []
+        statement = f"{title} covers {len(sections)} sections"
+        facts.append(
+            {
+                "id": f"fact-{entry_id}",
+                "statement": statement,
+                "confidence": 0.8,
+                "evidence": {"entry_id": entry_id},
+            }
+        )
+    return facts or [
+        {
+            "id": "fact-empty",
+            "statement": "No normalized entries available",
+            "confidence": 0.0,
+            "evidence": {},
+        }
+    ]
 
 
 @app.command()
@@ -378,3 +407,33 @@ def summarize(
     summary_path = _derived_summary_path(root, date)
     _write_yaml_if_changed(summary_path, summary_data)
     typer.echo(str(summary_path))
+
+
+@app.command()
+def facts(
+    date: str = typer.Option(..., "--date", "-d", help="Date (YYYY-MM-DD) to analyze."),
+) -> None:
+    """Generate micro-facts from normalized entries (fake LLM mode)."""
+
+    root = Path.cwd()
+    entries = _load_normalized_entries(root, date)
+    if not entries:
+        typer.secho(f"No normalized entries for {date}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(1)
+
+    if os.getenv("AIJOURNAL_FAKE_OLLAMA") != "1":
+        typer.secho(
+            "Only fake Ollama mode is implemented for facts.",
+            fg=typer.colors.RED,
+            err=True,
+        )
+        raise typer.Exit(1)
+
+    facts_data = {
+        "facts": _fake_microfacts(entries),
+        "meta": _build_meta("prompts/extract_facts.md"),
+    }
+
+    facts_path = _derived_microfacts_path(root, date)
+    _write_yaml_if_changed(facts_path, facts_data)
+    typer.echo(str(facts_path))
