@@ -95,7 +95,7 @@ aijournal profile apply --date 2025-02-03 --yes
 
 Applies the derived suggestions into `profile/self_profile.yaml` and `profile/claims.yaml`, updating `last_updated` stamps only when something changes.
 
-### Pack context bundles (L1/L2)
+### Pack context bundles (L1–L4)
 
 ```sh
 # Inspect planned files without writing anything
@@ -104,11 +104,19 @@ aijournal pack --level L2 --dry-run
 # Persist a reusable bundle (rewrites only when content changes)
 aijournal pack --level L1 --output derived/packs/l1.yaml
 
-# Emit JSON to stdout with explicit date + budget
-aijournal pack --level L2 --date 2025-02-03 --max-tokens 1800 --format json > /tmp/context.json
+# Include advice + profile suggestions (optional) in an L3 pack
+AIJOURNAL_FAKE_OLLAMA=1 aijournal pack --level L3 --date 2025-02-03 --max-tokens 2800
+
+# L4 with 2 days of history, prompts, config, and raw journals
+aijournal pack --level L4 --date 2025-02-03 --history-days 2 --dry-run
+
+# Emit an L4 pack as JSON for piping into another tool
+aijournal pack --level L4 --date 2025-02-03 --history-days 1 --format json > /tmp/context-l4.json
 ```
 
-`pack` always includes profile + claims (L1) and, for L2, the selected day's normalized entries plus any derived summaries/microfacts it finds. Dry-run output documents token counts, and specifying `--output` keeps the command idempotent for automation.
+`pack` always includes profile + claims (L1). L2 adds the selected day's normalized entries plus `derived/summaries` and `derived/microfacts` when present. L3 layers on `derived/advice/<date>/*.yaml` and `derived/profile_suggestions/<date>.yaml`—they're optional, so missing files simply drop out. L4 adds every prompt under `prompts/`, the current `config/config.yaml`, and raw `data/journal/YYYY/MM/DD/*.md` files for the base day and any additional days supplied via `--history-days` (history defaults to zero).
+
+Trimming now prioritizes raw journal content first; when a pack exceeds `--max-tokens`, entries are zeroed in deterministic role order and `meta.trimmed` captures a list of `{role, path}` objects so you can inspect exactly what was removed. Dry-run output still lists every planned file with its token estimate, and both YAML/JSON payloads remain deterministic for caching or scripting.
 
 ## Pre-commit Hooks
 
