@@ -693,6 +693,169 @@ def _normalize_tags(raw: Iterable[Any]) -> list[str]:
     return tags
 
 
+def _clamp01(value: Any) -> float:
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        numeric = 0.0
+    return max(0.0, min(1.0, numeric))
+
+
+def _coerce_timestamp(value: Any) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        dt = value.astimezone(UTC)
+        return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+    text = str(value)
+    return text if text else None
+
+
+def _ensure_scope_dict(raw: Any) -> dict[str, Any]:
+    scope = raw if isinstance(raw, dict) else {}
+    domain = scope.get("domain")
+    scope_dict: dict[str, Any] = {"domain": str(domain) if domain else None}
+    context_raw = scope.get("context") if isinstance(scope, dict) else None
+    context = context_raw if isinstance(context_raw, list) else []
+    scope_dict["context"] = [str(item).strip() for item in context if str(item).strip()]
+    conditions_raw = scope.get("conditions") if isinstance(scope, dict) else None
+    conditions = conditions_raw if isinstance(conditions_raw, list) else []
+    scope_dict["conditions"] = [str(item).strip() for item in conditions if str(item).strip()]
+    return scope_dict
+
+
+def _ensure_provenance_dict(
+    raw: Any,
+    timestamp: str,
+    default_sources: list[dict[str, Any]] | None,
+) -> dict[str, Any]:
+    provenance = raw if isinstance(raw, dict) else {}
+    sources_raw = provenance.get("sources") if isinstance(provenance, dict) else None
+    normalized_sources: list[dict[str, Any]] = []
+    if isinstance(sources_raw, list):
+        for source in sources_raw:
+            if not isinstance(source, dict):
+                continue
+            entry_id = source.get("entry_id")
+            if not entry_id:
+                continue
+            spans = source.get("spans") if isinstance(source.get("spans"), list) else []
+            normalized_sources.append(
+                {
+                    "entry_id": str(entry_id),
+                    "spans": spans,
+                },
+            )
+    if not normalized_sources and default_sources:
+        normalized_sources = [dict(src) for src in default_sources]
+    provenance = dict(provenance)
+    provenance["sources"] = normalized_sources
+    first_seen_raw = provenance.get("first_seen")
+    first_seen = _coerce_timestamp(first_seen_raw)
+    if first_seen:
+        provenance["first_seen"] = _created_date(first_seen)
+    else:
+        provenance["first_seen"] = _created_date(timestamp)
+    last_updated = _coerce_timestamp(provenance.get("last_updated")) or timestamp
+    provenance["last_updated"] = last_updated
+    return provenance
+
+
+def _ensure_claim_atom_dict(
+    data: dict[str, Any],
+    *,
+    timestamp: str,
+    default_sources: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    atom = dict(data)
+    statement = str(atom.get("statement") or "").strip()
+    if not statement:
+        msg = "Claim statement is required"
+        raise ValueError(msg)
+    atom["statement"] = statement
+
+    claim_type = str(atom.get("type") or "preference").strip() or "preference"
+    atom["type"] = claim_type
+
+    subject = atom.get("subject") or atom.get("id") or _slugify_title(statement) or "observation"
+    atom["subject"] = str(subject)
+
+    predicate = str(atom.get("predicate") or "statement")
+    atom["predicate"] = predicate
+
+    value_text = atom.get("value")
+    if value_text is None or not str(value_text).strip():
+        value_text = statement
+    atom["value"] = str(value_text)
+
+    claim_id = atom.get("id")
+    if not claim_id:
+        subject_slug = _slugify_title(str(subject)) or "subject"
+        predicate_slug = _slugify_title(predicate) or "predicate"
+        claim_id = f"{claim_type}.{subject_slug}.{predicate_slug}"
+    atom["id"] = str(claim_id)[:96]
+
+    atom["scope"] = _ensure_scope_dict(atom.get("scope"))
+
+    strength_value = atom.get("strength")
+    if strength_value is None:
+        strength_value = atom.get("confidence")
+    base_strength = _coerce_float(strength_value)
+    atom["strength"] = _clamp01(base_strength if base_strength is not None else 0.6)
+
+    atom["status"] = str(atom.get("status") or "tentative")
+    atom["method"] = str(atom.get("method") or "inferred")
+    atom["user_verified"] = bool(atom.get("user_verified", False))
+    atom["review_after_days"] = _coerce_int(atom.get("review_after_days")) or 120
+
+    atom["provenance"] = _ensure_provenance_dict(
+        atom.get("provenance"),
+        timestamp,
+        default_sources,
+    )
+    return atom
+
+
+def _build_claim_atom_from_entry(
+    entry: dict[str, Any],
+    *,
+    claim_id: str,
+    statement: str,
+    strength: float,
+    status: str,
+) -> dict[str, Any]:
+    timestamp = _format_timestamp(_now())
+    default_sources = [
+        {
+            "entry_id": str(entry.get("id") or claim_id),
+            "spans": [],
+        },
+    ]
+    raw = {
+        "id": claim_id,
+        "type": "preference",
+        "subject": entry.get("title") or claim_id,
+        "predicate": "insight",
+        "value": statement,
+        "statement": statement,
+        "scope": {
+            "domain": None,
+            "context": entry.get("tags", [])[:2],
+            "conditions": [],
+        },
+        "strength": strength,
+        "status": status,
+        "method": "inferred",
+        "user_verified": False,
+        "review_after_days": 120,
+        "provenance": {
+            "sources": default_sources,
+            "first_seen": entry.get("created_at") or timestamp,
+        },
+    }
+    return _ensure_claim_atom_dict(raw, timestamp=timestamp, default_sources=default_sources)
+
+
 def _clean_summary(text: str | None, fallback: str | None = None) -> str | None:
     candidate = (text or "").strip()
     if candidate:
@@ -1049,15 +1212,19 @@ def _fake_profile_suggestions(
     updates = []
 
     for entry in entries[:1]:
+        statement = entry.get("title", "New observation")
+        claim_id = f"auto_{entry.get('id', 'entry')}"
         upserts.append(
             {
                 "target": "claims",
                 "operation": "upsert",
-                "value": {
-                    "id": f"auto_{entry.get('id', 'entry')}",
-                    "statement": entry.get("title", "New observation"),
-                    "confidence": 0.6,
-                },
+                "value": _build_claim_atom_from_entry(
+                    entry,
+                    claim_id=claim_id,
+                    statement=statement,
+                    strength=0.6,
+                    status="tentative",
+                ),
             },
         )
 
@@ -1091,15 +1258,13 @@ def _fake_characterize(
     theme = heading or title
     tag = (seed.get("tags") or [theme])[0]
     claim_id = f"{_slugify_title(theme) or 'entry'}-{date.replace('-', '')}-claim"
-    claim = {
-        "id": claim_id[:48],
-        "statement": f"{theme} remains top-of-mind on {date}.",
-        "status": "tentative",
-        "confidence": 0.64,
-        "method": "inferred",
-        "user_verified": False,
-        "review_after_days": 120,
-    }
+    claim = _build_claim_atom_from_entry(
+        seed,
+        claim_id=claim_id[:64],
+        statement=f"{theme} remains top-of-mind on {date}.",
+        strength=0.64,
+        status="tentative",
+    )
 
     facet = {
         "path": "values_motivations.recurring_theme",
@@ -1246,9 +1411,27 @@ def _profile_suggestions_payload(
         fallback,
     )
 
-    upserts = payload.get("upserts") if isinstance(payload.get("upserts"), list) else []
-    updates = payload.get("updates") if isinstance(payload.get("updates"), list) else []
-    return {"upserts": upserts, "updates": updates}
+    upserts_obj = payload.get("upserts")
+    updates_obj = payload.get("updates")
+    raw_upserts = upserts_obj if isinstance(upserts_obj, list) else []
+    updates = updates_obj if isinstance(updates_obj, list) else []
+    timestamp = _format_timestamp(_now())
+    normalized_upserts: list[dict[str, Any]] = []
+    for upsert in raw_upserts:
+        if not isinstance(upsert, dict):
+            continue
+        value = upsert.get("value")
+        if not isinstance(value, dict):
+            continue
+        try:
+            normalized_value = _ensure_claim_atom_dict(value, timestamp=timestamp)
+        except ValueError:
+            continue
+        entry = dict(upsert)
+        entry["value"] = normalized_value
+        normalized_upserts.append(entry)
+
+    return {"upserts": normalized_upserts, "updates": updates}
 
 
 def _characterization_context(
@@ -1287,50 +1470,22 @@ def _normalize_claim_proposals(
     evidence_hashes: list[str],
     manifest_hashes: list[str],
     default_sources: list[dict[str, Any]],
+    timestamp: str,
 ) -> list[dict[str, Any]]:
     proposals: list[dict[str, Any]] = []
-    for idx, raw in enumerate(raw_claims):
+    for raw in raw_claims:
         if not isinstance(raw, dict):
             continue
         raw_claim = raw.get("claim")
-        if isinstance(raw_claim, dict):
-            claim = dict(raw_claim)
-        else:
-            claim = dict(raw)
-        statement = str(claim.get("statement") or "").strip()
-        if not statement:
-            continue
-        claim_id = str(claim.get("id") or _slugify_title(statement) or f"claim-{idx + 1}")
-        claim["id"] = claim_id[:64]
-        claim.setdefault("status", "tentative")
-        confidence = _coerce_float(claim.get("confidence"))
-        claim["confidence"] = confidence if confidence is not None else 0.6
-        claim.setdefault("method", "inferred")
-        claim["user_verified"] = bool(claim.get("user_verified", False))
-        review = _coerce_int(claim.get("review_after_days"))
-        claim["review_after_days"] = review if review else 120
-
-        raw_sources = claim.get("sources")
-        sources: list[Any]
-        if isinstance(raw_sources, list):
-            sources = raw_sources
-        else:
-            sources = []
-        normalized_sources: list[dict[str, Any]] = []
-        for source in sources:
-            if not isinstance(source, dict):
-                continue
-            entry_id = source.get("entry_id")
-            if not entry_id:
-                continue
-            spans = source.get("spans")
-            normalized_sources.append(
-                {
-                    "entry_id": str(entry_id),
-                    "spans": spans if isinstance(spans, list) else [],
-                },
+        candidate = raw_claim if isinstance(raw_claim, dict) else raw
+        try:
+            claim = _ensure_claim_atom_dict(
+                candidate,
+                timestamp=timestamp,
+                default_sources=default_sources,
             )
-        claim["sources"] = normalized_sources or [dict(src) for src in default_sources]
+        except ValueError:
+            continue
 
         proposals.append(
             {
@@ -1381,6 +1536,7 @@ def _characterize_payload(
     manifest_index: dict[str, dict[str, Any]],
     config: dict[str, Any],
 ) -> dict[str, Any]:
+    claim_timestamp = _format_timestamp(_now())
     (
         normalized_ids,
         evidence_hashes,
@@ -1408,7 +1564,7 @@ def _characterize_payload(
             raw = _safe_llm_json(
                 "prompts/characterize.md",
                 {
-                    "date": _created_date(_format_timestamp(_now())),
+                    "date": _created_date(claim_timestamp),
                     "entries_json": _json_block(entries),
                     "profile_json": _json_block(profile),
                     "claims_json": _json_block({"claims": claims}),
@@ -1429,6 +1585,7 @@ def _characterize_payload(
         evidence_hashes=evidence_hashes,
         manifest_hashes=manifest_hashes,
         default_sources=default_sources,
+        timestamp=claim_timestamp,
     )
     facets_payload = _normalize_facet_proposals(
         raw_facets,
@@ -2196,7 +2353,7 @@ def _compute_rankings(
 
     for claim in claims:
         path = claim.get("id", "claim")
-        days = _days_between(now, str(claim.get("last_updated", "")))
+        days = _days_between(now, _claim_last_updated(claim))
         review = claim.get("review_after_days") or 90
         if days is None:
             continue
@@ -2243,15 +2400,29 @@ def _apply_claim_upsert(
     value: dict[str, Any],
     timestamp: str,
 ) -> bool:
-    new_value = dict(value)
-    new_value["last_updated"] = timestamp
+    try:
+        normalized = _ensure_claim_atom_dict(
+            value,
+            timestamp=timestamp,
+            default_sources=None,
+        )
+    except ValueError:
+        return False
+
     for idx, claim in enumerate(claims):
-        if claim.get("id") == new_value.get("id"):
-            if claim == new_value:
+        if claim.get("id") == normalized.get("id"):
+            provenance = normalized.get("provenance", {})
+            prev_provenance = claim.get("provenance", {})
+            if prev_provenance.get("first_seen"):
+                provenance["first_seen"] = prev_provenance["first_seen"]
+            if not provenance.get("sources") and prev_provenance.get("sources"):
+                provenance["sources"] = prev_provenance["sources"]
+            normalized["provenance"] = provenance
+            if claim == normalized:
                 return False
-            claims[idx] = new_value
+            claims[idx] = normalized
             return True
-    claims.append(new_value)
+    claims.append(normalized)
     return True
 
 
@@ -2267,6 +2438,13 @@ def _apply_profile_update(profile: dict[str, Any], target: str, value: Any, time
     current[key] = value
     current["last_updated"] = timestamp
     return True
+
+
+def _claim_last_updated(claim: dict[str, Any]) -> str | None:
+    provenance = claim.get("provenance")
+    if isinstance(provenance, dict):
+        return _coerce_timestamp(provenance.get("last_updated"))
+    return _coerce_timestamp(claim.get("last_updated"))
 
 
 def _profile_status_impl() -> None:

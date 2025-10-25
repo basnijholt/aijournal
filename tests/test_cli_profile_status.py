@@ -62,12 +62,26 @@ values_motivations:
     claims = f"""
 claims:
   - id: pref_mornings
+    type: preference
+    subject: deep_work
+    predicate: best_window
+    value: "morning"
     statement: "Prefers morning deep work"
+    scope:
+      domain: work
+      context: []
+      conditions: []
+    strength: 0.8
     status: accepted
-    confidence: 0.8
-    freshness: 0.5
-    last_updated: {stale}
+    method: inferred
+    user_verified: false
     review_after_days: 120
+    provenance:
+      sources:
+        - entry_id: seed-entry
+          spans: []
+      first_seen: 2024-10-01
+      last_updated: {stale}
 """
 
     _write_yaml(tmp_path / "profile" / "self_profile.yaml", self_profile)

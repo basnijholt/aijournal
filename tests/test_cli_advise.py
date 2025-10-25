@@ -10,6 +10,7 @@ import yaml
 from typer.testing import CliRunner
 
 from aijournal.cli import app
+from tests.helpers import make_claim_atom
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -51,13 +52,20 @@ boundaries_ethics:
   red_lines:
     - "No health advice"
 """
-    claims = """
-claims:
-  - id: pref_focus
-    statement: "Focus best before lunch"
-    status: accepted
-    confidence: 0.8
-"""
+    claims = yaml.safe_dump(
+        {
+            "claims": [
+                make_claim_atom(
+                    "pref_focus",
+                    "Focus best before lunch",
+                    strength=0.8,
+                    status="accepted",
+                    last_updated=f"{DATE}T08:00:00Z",
+                ),
+            ],
+        },
+        sort_keys=False,
+    )
     _write_yaml(tmp_path / "profile" / "self_profile.yaml", self_profile)
     _write_yaml(tmp_path / "profile" / "claims.yaml", claims)
 

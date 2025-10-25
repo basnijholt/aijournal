@@ -4,17 +4,22 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import Field
 
+from .base import AijournalModel
+from .claim_atoms import (
+    ClaimAtom,
+    ClaimAtomsFile,
+    ClaimMethod,
+    ClaimSource,
+    ClaimSourceSpan,
+    ClaimStatus,
+    ClaimType,
+    Provenance,
+    Scope,
+)
 
-class AijournalModel(BaseModel):
-    """Base model with sensible defaults for YAML serialization."""
-
-    model_config = ConfigDict(
-        extra="forbid",
-        populate_by_name=True,
-        arbitrary_types_allowed=True,
-    )
+Claim = ClaimAtom
 
 
 class JournalEntry(AijournalModel):
@@ -105,34 +110,8 @@ class MicroFactsFile(AijournalModel):
     meta: SummaryMeta = Field(default_factory=SummaryMeta)
 
 
-class ClaimSourceSpan(AijournalModel):
-    type: str
-    index: int | None = None
-    start: int | None = None
-    end: int | None = None
-
-
-class ClaimSource(AijournalModel):
-    entry_id: str
-    spans: list[ClaimSourceSpan] = Field(default_factory=list)
-
-
-class Claim(AijournalModel):
-    id: str
-    statement: str
-    status: str
-    confidence: float
-    freshness: float | None = None
-    sources: list[ClaimSource] = Field(default_factory=list)
-    method: str | None = None
-    user_verified: bool = False
-    review_after_days: int | None = None
-    last_updated: str | None = None
-    evidence: list[str] | None = None
-
-
 class ClaimsFile(AijournalModel):
-    claims: list[Claim] = Field(default_factory=list)
+    claims: list[ClaimAtom] = Field(default_factory=list)
 
 
 class SelfProfile(AijournalModel):
@@ -220,7 +199,7 @@ class ProfileUpdateInput(AijournalModel):
 class ClaimProposal(AijournalModel):
     """Pending claim update enriched with provenance."""
 
-    claim: Claim
+    claim: ClaimAtom
     normalized_ids: list[str] = Field(default_factory=list)
     evidence_hashes: list[str] = Field(default_factory=list)
     manifest_hashes: list[str] = Field(default_factory=list)
@@ -261,12 +240,18 @@ class ProfileUpdateBatch(AijournalModel):
 
 
 __all__ = [
+    "AijournalModel",
     "AdviceCard",
     "AdviceRecommendation",
     "AdviceReference",
+    "ClaimAtom",
+    "ClaimAtomsFile",
     "Claim",
+    "ClaimMethod",
     "ClaimSource",
     "ClaimSourceSpan",
+    "ClaimStatus",
+    "ClaimType",
     "ClaimsFile",
     "DailySummary",
     "FactEvidence",
@@ -285,6 +270,8 @@ __all__ = [
     "ProfileUpdateBatch",
     "ProfileUpdateInput",
     "ProfileUpdateProposals",
+    "Provenance",
     "SelfProfile",
+    "Scope",
     "SummaryMeta",
 ]

@@ -9,6 +9,7 @@ import yaml
 from typer.testing import CliRunner
 
 from aijournal.cli import app
+from tests.helpers import make_claim_atom
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -59,14 +60,13 @@ def _seed_profile(tmp_path: Path) -> None:
     }
     claims = {
         "claims": [
-            {
-                "id": "pref_focus",
-                "statement": "Focus best before lunch",
-                "status": "accepted",
-                "confidence": 0.8,
-                "last_updated": f"{DATE}T08:00:00Z",
-                "review_after_days": 45,
-            },
+            make_claim_atom(
+                "pref_focus",
+                "Focus best before lunch",
+                strength=0.8,
+                status="accepted",
+                last_updated=f"{DATE}T08:00:00Z",
+            ),
         ],
     }
     _write_yaml(tmp_path / "profile" / "self_profile.yaml", self_profile)

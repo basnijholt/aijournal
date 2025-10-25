@@ -28,6 +28,7 @@ from aijournal.models import (
     ProfileSuggestions,
     ProfileSuggestionUpdate,
     ProfileSuggestionUpsert,
+    Scope,
     SelfProfile,
     SummaryMeta,
 )
@@ -72,21 +73,28 @@ def test_daily_summary_roundtrip(tmp_path: Path) -> None:
 def test_claim_file_roundtrip(tmp_path: Path) -> None:
     path = _fixture_path(tmp_path, "claims")
     claim = Claim(
-        id="pref_deep_work_morning",
-        statement="Best deep work between 09:00–12:00.",
+        id="pref.deep_work.window",
+        type="preference",
+        subject="deep_work",
+        predicate="best_window",
+        value="09:00-12:00",
+        statement="Best deep work between 09:00–12:00 on weekdays.",
+        scope=Scope(domain="work", context=["weekday"], conditions=[]),
+        strength=0.78,
         status="accepted",
-        confidence=0.78,
-        freshness=0.92,
-        sources=[
-            ClaimSource(
-                entry_id="2025-10-25_x9t3",
-                spans=[ClaimSourceSpan(type="para", index=0)],
-            ),
-        ],
         method="inferred",
         user_verified=True,
         review_after_days=120,
-        last_updated="2025-10-25T10:10:00Z",
+        provenance={
+            "sources": [
+                ClaimSource(
+                    entry_id="2025-10-25_x9t3",
+                    spans=[ClaimSourceSpan(type="para", index=0)],
+                ),
+            ],
+            "first_seen": "2024-11-02",
+            "last_updated": "2025-10-25T10:10:00Z",
+        },
     )
     file = ClaimsFile(claims=[claim])
     write_yaml_model(path, file)

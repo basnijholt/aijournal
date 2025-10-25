@@ -10,6 +10,7 @@ import yaml
 from typer.testing import CliRunner
 
 from aijournal.cli import app
+from tests.helpers import make_claim_atom
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -46,13 +47,20 @@ traits:
     openness: {score: 0.7}
 """,
     )
+    claims_payload = {
+        "claims": [
+            make_claim_atom(
+                "pref_focus",
+                "Focus best before lunch",
+                strength=0.78,
+                status="accepted",
+                last_updated=f"{DATE}T08:00:00Z",
+            ),
+        ],
+    }
     _write(
         tmp_path / "profile" / "claims.yaml",
-        """
-claims:
-  - id: pref_focus
-    statement: "Focus best before lunch"
-""",
+        yaml.safe_dump(claims_payload, sort_keys=False),
     )
 
 
@@ -111,11 +119,13 @@ def _seed_profile_suggestions(tmp_path: Path, day: str = DATE) -> Path:
             {
                 "target": "claims",
                 "operation": "upsert",
-                "value": {
-                    "id": "pref_afternoon_break",
-                    "statement": "Energy dips shortly after 15:00",
-                    "confidence": 0.68,
-                },
+                "value": make_claim_atom(
+                    "pref_afternoon_break",
+                    "Energy dips shortly after 15:00",
+                    strength=0.68,
+                    status="tentative",
+                    last_updated=f"{day}T11:00:00Z",
+                ),
             },
         ],
         "updates": [],

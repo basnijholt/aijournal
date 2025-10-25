@@ -10,6 +10,7 @@ import yaml
 from typer.testing import CliRunner
 
 from aijournal.cli import app
+from tests.helpers import make_claim_atom
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -53,13 +54,13 @@ def _seed_authoritative(tmp_path: Path) -> None:
     }
     claims = {
         "claims": [
-            {
-                "id": "pref_focus",
-                "statement": "Focus best before lunch",
-                "status": "accepted",
-                "confidence": 0.8,
-                "evidence": ["entry_a"],
-            },
+            make_claim_atom(
+                "pref_focus",
+                "Focus best before lunch",
+                strength=0.82,
+                status="accepted",
+                last_updated=f"{DATE}T09:00:00Z",
+            ),
         ],
     }
     _write_yaml(tmp_path / "profile" / "self_profile.yaml", self_profile)
@@ -72,13 +73,14 @@ def _seed_suggestions(tmp_path: Path) -> Path:
             {
                 "target": "claims",
                 "operation": "upsert",
-                "value": {
-                    "id": "pref_evening",
-                    "statement": "Prefers evening walks",
-                    "status": "tentative",
-                    "confidence": 0.6,
-                    "evidence": ["entry_b"],
-                },
+                "value": make_claim_atom(
+                    "pref_evening",
+                    "Prefers evening walks",
+                    strength=0.6,
+                    status="tentative",
+                    method="inferred",
+                    last_updated=f"{DATE}T10:00:00Z",
+                ),
             },
         ],
         "updates": [
