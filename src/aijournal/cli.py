@@ -216,6 +216,15 @@ def _derived_microfacts_path(root: Path, day: str) -> Path:
     return root / "derived" / "microfacts" / f"{day}.yaml"
 
 
+def _derived_advice_path(root: Path, day: str, question: str) -> Path:
+    slug = _slugify_title(question)
+    return root / "derived" / "advice" / day / f"{slug}.yaml"
+
+
+def _derived_profile_suggestions_path(root: Path, day: str) -> Path:
+    return root / "derived" / "profile_suggestions" / f"{day}.yaml"
+
+
 def _hash_prompt(prompt_path: str) -> str:
     return sha256(prompt_path.encode("utf-8")).hexdigest()
 
@@ -265,6 +274,63 @@ def _fake_microfacts(entries: List[dict[str, Any]]) -> List[dict[str, Any]]:
             "evidence": {},
         }
     ]
+
+
+def _fake_advise(question: str, profile: dict[str, Any], claims: List[dict[str, Any]]) -> dict[str, Any]:
+    claim = claims[0] if claims else {}
+    boundaries = profile.get("boundaries_ethics", {}).get("red_lines", [])
+    values = profile.get("values_motivations", {}).get("schwartz_top5", [])
+
+    recommendations = [
+        {
+            "title": claim.get("statement", "Reflect on priorities"),
+            "actions": [
+                "Review morning deep-work blocks",
+                f"Question posed: {question}",
+            ],
+            "respecting": boundaries,
+        }
+    ]
+
+    alignment = {
+        "claims": [claim.get("id")] if claim.get("id") else [],
+        "values": values,
+    }
+
+    return {"recommendations": recommendations, "alignment": alignment}
+
+
+def _fake_profile_suggestions(
+    entries: List[dict[str, Any]],
+    profile: dict[str, Any],
+    claims: List[dict[str, Any]],
+) -> dict[str, Any]:
+    upserts = []
+    updates = []
+
+    for entry in entries[:1]:
+        upserts.append(
+            {
+                "target": "claims",
+                "operation": "upsert",
+                "value": {
+                    "id": f"auto_{entry.get('id', 'entry')}",
+                    "statement": entry.get("title", "New observation"),
+                    "confidence": 0.6,
+                },
+            }
+        )
+
+    if profile:
+        updates.append(
+            {
+                "target": "values_motivations.schwartz_top5",
+                "operation": "update",
+                "value": profile.get("values_motivations", {}).get("schwartz_top5", []),
+            }
+        )
+
+    return {"upserts": upserts, "updates": updates}
 
 
 @app.command()
@@ -438,6 +504,69 @@ def facts(
     facts_path = _derived_microfacts_path(root, date)
     _write_yaml_if_changed(facts_path, facts_data)
     typer.echo(str(facts_path))
+
+
+@profile_app.command("suggest")
+def profile_suggest(
+    date: str = typer.Option(..., "--date", "-d", help="Date (YYYY-MM-DD) to analyze."),
+) -> None:
+    """Suggest profile updates based on normalized entries (fake LLM)."""
+
+    if os.getenv("AIJOURNAL_FAKE_OLLAMA") != "1":
+        typer.secho(
+            "Only fake Ollama mode is implemented for profile suggest.",
+            fg=typer.colors.RED,
+            err=True,
+        )
+        raise typer.Exit(1)
+
+    root = Path.cwd()
+    entries = _load_normalized_entries(root, date)
+    if not entries:
+        typer.secho(f"No normalized entries for {date}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(1)
+
+    profile, claims = _load_profile_components(root)
+    if not profile and not claims:
+        typer.secho("No profile data", fg=typer.colors.RED, err=True)
+        raise typer.Exit(1)
+
+    suggestions = _fake_profile_suggestions(entries, profile, claims)
+    suggestions["meta"] = _build_meta("prompts/profile_suggest.md")
+
+    path = _derived_profile_suggestions_path(root, date)
+    _write_yaml_if_changed(path, suggestions)
+    typer.echo(str(path))
+
+
+@app.command()
+def advise(
+    question: str = typer.Argument(..., help="Question for the advisor to answer."),
+) -> None:
+    """Generate advice from the current profile (fake LLM mode)."""
+
+    if os.getenv("AIJOURNAL_FAKE_OLLAMA") != "1":
+        typer.secho(
+            "Only fake Ollama mode is implemented for advise.",
+            fg=typer.colors.RED,
+            err=True,
+        )
+        raise typer.Exit(1)
+
+    root = Path.cwd()
+    profile, claims = _load_profile_components(root)
+    if not profile and not claims:
+        typer.secho("No profile data", fg=typer.colors.RED, err=True)
+        raise typer.Exit(1)
+
+    advice_content = _fake_advise(question, profile, claims)
+    advice_content["question"] = question
+    advice_content["meta"] = _build_meta("prompts/advise.md")
+
+    day = _created_date(_format_timestamp(_now()))
+    advice_path = _derived_advice_path(root, day, question)
+    _write_yaml_if_changed(advice_path, advice_content)
+    typer.echo(str(advice_path))
 
 
 def _parse_datetime(value: str) -> Optional[datetime]:
