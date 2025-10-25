@@ -1,0 +1,61 @@
+traits:
+  big_five:
+    openness: {score: 0.74, method: self_report, user_verified: true}
+    conscientiousness: {score: 0.68, method: inferred}
+    extraversion: {score: 0.42, method: self_report}
+    agreeableness: {score: 0.61, method: inferred}
+    neuroticism: {score: 0.33, method: self_report}
+  regulatory_focus: {promotion: 0.7, prevention: 0.3}
+  risk_tolerance: {domain: "career", level: "medium-high"}
+  time_horizon: {preferred: "long", evidence: ["2024_l2_..."]}
+  review_after_days: 180
+
+values_motivations:
+  schwartz_top5: ["Self-Direction", "Achievement", "Universalism", "Benevolence", "Security"]
+  sdt: {autonomy: 0.8, competence: 0.7, relatedness: 0.6}
+  drivers:
+    - value: "Mastery over tools & systems"
+      method: inferred
+      confidence: 0.8
+  review_after_days: 120
+
+goals:
+  short_term:
+    - value: "Ship personal agent MVP"
+      why: "reduce friction"
+      krs: ["CLI usable", "context pack <1800t"]
+      review_after_days: 30
+  long_term:
+    - value: "Work-life consistency with twins"
+      krs: ["2 evenings/week protected"]
+      review_after_days: 90
+  anti_goals:
+    - value: "No late-night production firefighting as a norm"
+      reason: "family/health"
+
+decision_style:
+  default: {speed_vs_quality: "quality", satisficer_vs_maximizer: "bounded_maximizer"}
+  implementation_intentions:
+    - if: "Feeling anxious before presentations"
+      then: "Run checklist + 10-min rehearsal"
+      evidence: ["2021-04-12_l1"]
+
+affect_energy:
+  energy_map: {morning: "high", afternoon: "medium", evening: "low"}
+  stressors: ["ambiguous deadlines", "noisy environment"]
+  coping_strategies: ["walks", "time-boxing", "no email after 18:00"]
+
+social:
+  relationships:
+    - person: "Jess"
+      role: "coworker"
+      notes: "great feedback partner"
+      boundary: "no pings after 18:00"
+
+boundaries_ethics:
+  red_lines: ["No sharing private family data", "No health advice beyond guidelines"]
+
+coaching_prefs:
+  tone: "direct, warm"
+  depth: "concrete first, theory second"
+  probing: {max_questions: 2, prefer: "yes/no + one short open follow-up"}

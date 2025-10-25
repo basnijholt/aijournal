@@ -1,0 +1,18 @@
+# Python/uv
+.venv/
+__pycache__/
+*.py[cod]
+.ruff_cache/
+.mypy_cache/
+.pytest_cache/
+
+# Local tooling
+.code/
+
+# Data directories (optional to track; ignored by default for privacy)
+data/
+derived/
+
+# OS noise
+.DS_Store
+Thumbs.db

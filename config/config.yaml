@@ -1,0 +1,17 @@
+model: "llama3.1:8b-instruct"
+temperature: 0.2
+seed: 42
+paths:
+  data: "data"
+  profile: "profile"
+  derived: "derived"
+  prompts: "prompts"
+impact_weights:
+  values_goals: 1.5
+  decision_style: 1.3
+  affect_energy: 1.2
+  traits: 1.0
+  social: 0.9
+advisor:
+  max_recos: 3
+  include_risks: true
