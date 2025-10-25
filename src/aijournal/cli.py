@@ -16,7 +16,9 @@ import yaml
 
 app = typer.Typer(help="Local-first personal journal utilities.")
 profile_app = typer.Typer(help="Profile utilities.")
+ollama_app = typer.Typer(help="Ollama helpers (fake mode only).")
 app.add_typer(profile_app, name="profile")
+app.add_typer(ollama_app, name="ollama")
 
 
 @app.callback()
@@ -611,6 +613,30 @@ def advise(
     advice_path = _derived_advice_path(root, day, question)
     _write_yaml_if_changed(advice_path, advice_content)
     typer.echo(str(advice_path))
+
+
+@ollama_app.command("health")
+def ollama_health() -> None:
+    """Show fake Ollama model availability in offline mode."""
+
+    if os.getenv("AIJOURNAL_FAKE_OLLAMA") != "1":
+        typer.secho(
+            "Set AIJOURNAL_FAKE_OLLAMA=1 to use the offline health probe.",
+            fg=typer.colors.RED,
+            err=True,
+        )
+        raise typer.Exit(1)
+
+    models = [
+        {"name": "llama3.1:8b-instruct", "size": "8B", "quant": "Q4_K_M"},
+        {"name": "llama3.1:70b-instruct", "size": "70B", "quant": "Q4_K_M"},
+    ]
+    payload = {
+        "endpoint": "fake://ollama",
+        "default": models[0]["name"],
+        "models": models,
+    }
+    typer.echo(yaml.safe_dump(payload, sort_keys=False).rstrip())
 
 
 def _parse_datetime(value: str) -> Optional[datetime]:
