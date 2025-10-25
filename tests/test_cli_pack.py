@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 import yaml
@@ -11,6 +11,8 @@ from typer.testing import CliRunner
 
 from aijournal.cli import app
 
+if TYPE_CHECKING:
+    from pathlib import Path
 
 runner = CliRunner()
 DATE = "2025-02-03"
@@ -88,7 +90,7 @@ def _seed_advice(tmp_path: Path, day: str = DATE, question: str = ADVICE_QUESTIO
                     "Push non-urgent syncs to the afternoon",
                 ],
                 "respecting": ["No sharing private family data"],
-            }
+            },
         ],
         "alignment": {"claims": ["pref_focus"], "values": ["Self-Direction"]},
         "meta": {
@@ -114,7 +116,7 @@ def _seed_profile_suggestions(tmp_path: Path, day: str = DATE) -> Path:
                     "statement": "Energy dips shortly after 15:00",
                     "confidence": 0.68,
                 },
-            }
+            },
         ],
         "updates": [],
     }
@@ -158,17 +160,19 @@ def _seed_journal_entry(
     journal_path = tmp_path / "data" / "journal" / year / month / day_part / f"{slug}.md"
     text = (
         "---\n"
-        + f"id: {slug}\n"
-        + f"created_at: {day}T06:00:00Z\n"
-        + f"title: {slug.replace('-', ' ').title()}\n"
-        + "---\n\n"
-        + (body or f"Daily reflections for {day}.")
+        f"id: {slug}\n"
+        f"created_at: {day}T06:00:00Z\n"
+        f"title: {slug.replace('-', ' ').title()}\n"
+        "---\n\n" + (body or f"Daily reflections for {day}.")
     )
     _write(journal_path, text)
     return journal_path
 
 
-def test_pack_l1_includes_profile_and_claims(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_pack_l1_includes_profile_and_claims(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.chdir(tmp_path)
     _seed_profile(tmp_path)
 
@@ -259,7 +263,8 @@ def test_pack_json_format(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> No
 
 
 def test_pack_l3_includes_advice_and_profile_suggestions(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.chdir(tmp_path)
     _seed_profile(tmp_path)
@@ -276,7 +281,8 @@ def test_pack_l3_includes_advice_and_profile_suggestions(
 
 
 def test_pack_l4_history_days_includes_prior_context(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.chdir(tmp_path)
     _seed_profile(tmp_path)
@@ -302,7 +308,8 @@ def test_pack_l4_history_days_includes_prior_context(
 
 
 def test_pack_l4_trimming_prioritizes_raw_journal_entries(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.chdir(tmp_path)
     _seed_profile(tmp_path)
@@ -342,7 +349,8 @@ def test_pack_l4_trimming_prioritizes_raw_journal_entries(
 
 
 def test_pack_l4_handles_missing_optional_artifacts(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.chdir(tmp_path)
     _seed_profile(tmp_path)
@@ -358,9 +366,7 @@ def test_pack_l4_handles_missing_optional_artifacts(
     assert all("profile_suggestions" not in path for path in paths)
 
 
-def test_pack_l4_supports_json_output(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_pack_l4_supports_json_output(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.chdir(tmp_path)
     normalized_entry = _seed_daily_artifacts(tmp_path)
     _seed_profile(tmp_path)
@@ -390,7 +396,8 @@ def test_pack_l4_supports_json_output(
 
 
 def test_pack_l4_dry_run_lists_expected_files(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.chdir(tmp_path)
     _seed_profile(tmp_path)

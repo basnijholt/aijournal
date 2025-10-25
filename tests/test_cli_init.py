@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Iterable
+from typing import TYPE_CHECKING
 
-import pytest
 from typer.testing import CliRunner
 
 from aijournal.cli import app
 
+if TYPE_CHECKING:
+    from collections.abc import Iterable
+    from pathlib import Path
+
+    import pytest
 
 runner = CliRunner()
 
@@ -53,7 +56,6 @@ def _collect_relative(base: Path, *, files: bool) -> set[str]:
 
 def test_init_creates_expected_structure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """First run should create every required directory and seed file."""
-
     monkeypatch.chdir(tmp_path)
     result = runner.invoke(app, ["init"])
 
@@ -65,13 +67,12 @@ def test_init_creates_expected_structure(tmp_path: Path, monkeypatch: pytest.Mon
     created_dirs = _collect_relative(tmp_path, files=False)
     created_files = _collect_relative(tmp_path, files=True)
 
-    assert AUTHORITATIVE_DIRS | DERIVED_DIRS <= created_dirs
-    assert SEED_FILES <= created_files
+    assert created_dirs >= AUTHORITATIVE_DIRS | DERIVED_DIRS
+    assert created_files >= SEED_FILES
 
 
 def test_init_is_idempotent(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Running the command twice should not overwrite files."""
-
     monkeypatch.chdir(tmp_path)
 
     first = runner.invoke(app, ["init"])
@@ -88,7 +89,6 @@ def test_init_is_idempotent(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
 
 def test_init_respects_path_argument(tmp_path: Path) -> None:
     """`--path` should bootstrap a custom directory instead of cwd."""
-
     target = tmp_path / "custom"
     result = runner.invoke(app, ["init", "--path", str(target)])
 
@@ -99,13 +99,14 @@ def test_init_respects_path_argument(tmp_path: Path) -> None:
 
 def test_init_prints_summary(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Command output should summarize created vs existing paths."""
-
     monkeypatch.chdir(tmp_path)
 
     first = runner.invoke(app, ["init"])
     assert first.exit_code == 0
     summary = first.stdout.lower()
-    assert "created" in summary and "directories" in summary and "files" in summary
+    assert "created" in summary
+    assert "directories" in summary
+    assert "files" in summary
 
     second = runner.invoke(app, ["init"])
     assert second.exit_code == 0

@@ -5,7 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
 from agno.agent import Agent
 from agno.models.ollama import Ollama
@@ -39,18 +38,18 @@ class IngestSection(BaseModel):
 
     heading: str = Field(..., max_length=200)
     level: int = Field(default=2, ge=1, le=6)
-    summary: Optional[str] = Field(default=None, max_length=320)
+    summary: str | None = Field(default=None, max_length=320)
 
 
 class IngestResult(BaseModel):
     """Structured output returned by the ingestion agent."""
 
-    entry_id: Optional[str] = Field(default=None, description="Slug or identifier for this entry")
+    entry_id: str | None = Field(default=None, description="Slug or identifier for this entry")
     created_at: datetime
     title: str = Field(..., max_length=280)
     tags: list[str] = Field(default_factory=list)
     sections: list[IngestSection] = Field(default_factory=list)
-    summary: Optional[str] = Field(default=None, max_length=500)
+    summary: str | None = Field(default=None, max_length=500)
 
 
 @dataclass(frozen=True)
@@ -58,14 +57,13 @@ class AgentSettings:
     """Runtime settings for the ingestion agent."""
 
     model: str
-    host: Optional[str]
-    temperature: Optional[float]
-    seed: Optional[int]
+    host: str | None
+    temperature: float | None
+    seed: int | None
 
 
 def build_ingest_agent(settings: AgentSettings) -> Agent:
     """Construct an agno Agent backed by Ollama with structured outputs."""
-
     options: dict[str, float | int] = {}
     if settings.temperature is not None:
         options["temperature"] = float(settings.temperature)
@@ -88,7 +86,6 @@ def build_ingest_agent(settings: AgentSettings) -> Agent:
 
 def ingest_with_agent(agent: Agent, *, source_path: Path, markdown: str) -> IngestResult:
     """Run the ingestion agent and return the structured output."""
-
     prompt = (
         "You will be given a Markdown document with optional front matter. "
         "Read it carefully and respond with JSON only.\n"
@@ -101,7 +98,8 @@ def ingest_with_agent(agent: Agent, *, source_path: Path, markdown: str) -> Inge
     content = run.content
     if isinstance(content, IngestResult):
         return content
-    raise ValueError("Agent did not return the expected structured payload")
+    msg = "Agent did not return the expected structured payload"
+    raise ValueError(msg)
 
 
 __all__ = [

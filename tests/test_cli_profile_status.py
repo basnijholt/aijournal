@@ -2,18 +2,19 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
-from pathlib import Path
-from typing import Callable
+from datetime import UTC, datetime, timedelta
+from typing import TYPE_CHECKING
 
 import pytest
 from typer.testing import CliRunner
 
 from aijournal.cli import app
 
+if TYPE_CHECKING:
+    from pathlib import Path
 
 runner = CliRunner()
-FIXED_NOW = datetime(2025, 2, 1, tzinfo=timezone.utc)
+FIXED_NOW = datetime(2025, 2, 1, tzinfo=UTC)
 
 
 def _has_profile_status() -> bool:
@@ -104,7 +105,10 @@ def test_profile_status_ranks_items(tmp_path: Path, monkeypatch: pytest.MonkeyPa
     assert output.index("values_motivations") < output.index("pref_mornings")
 
 
-def test_profile_status_handles_missing_files(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_profile_status_handles_missing_files(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.chdir(tmp_path)
 
     result = runner.invoke(app, ["profile", "status"])

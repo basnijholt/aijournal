@@ -149,6 +149,26 @@ aijournal profile apply --date 2025-02-03 --yes
 
 Applies the derived suggestions into `profile/self_profile.yaml` and `profile/claims.yaml`, updating `last_updated` stamps only when something changes.
 
+### Characterize normalized entries
+
+```sh
+aijournal characterize --date 2025-02-03
+```
+
+Runs the characterization agent (or deterministic fake mode) and emits a batch
+under `derived/pending/profile_updates/<DATE>-<TIMESTAMP>.yaml`. Each batch
+captures claim/facet proposals plus the manifest hashes that justify them.
+
+### Review pending updates
+
+```sh
+aijournal review-updates --apply
+```
+
+Lists the latest batch (or the one specified via `--file`) and merges accepted
+changes into `profile/` when `--apply` is provided. Use it as a manual approval
+step before updating the authoritative self-model.
+
 ### Pack context bundles (L1–L4)
 
 ```sh

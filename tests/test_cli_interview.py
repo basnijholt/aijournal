@@ -8,7 +8,6 @@ from typer.testing import CliRunner
 
 from aijournal.cli import app
 
-
 runner = CliRunner()
 DATE = "2025-02-03"
 
@@ -33,14 +32,14 @@ def _write(path, text: str) -> None:
     path.write_text(text.strip() + "\n", encoding="utf-8")
 
 
-def _seed_profile(tmp_path):
+def _seed_profile(tmp_path) -> None:
     profile = {
         "traits": {
             "big_five": {
                 "openness": {"score": 0.7, "last_updated": "2024-01-01"},
                 "conscientiousness": {"score": 0.4, "last_updated": "2022-01-01"},
-            }
-        }
+            },
+        },
     }
     _write(tmp_path / "profile" / "self_profile.yaml", yaml.safe_dump(profile))
     claims = {
@@ -49,13 +48,13 @@ def _seed_profile(tmp_path):
                 "id": "claim_a",
                 "statement": "Needs morning focus",
                 "last_updated": "2023-01-01",
-            }
-        ]
+            },
+        ],
     }
     _write(tmp_path / "profile" / "claims.yaml", yaml.safe_dump(claims))
 
 
-def _seed_normalized(tmp_path):
+def _seed_normalized(tmp_path) -> None:
     entry = {
         "id": "entry",
         "created_at": f"{DATE}T09:00:00Z",
@@ -68,7 +67,7 @@ def _seed_normalized(tmp_path):
     )
 
 
-def test_interview_emits_ranked_probes(tmp_path, monkeypatch):
+def test_interview_emits_ranked_probes(tmp_path, monkeypatch) -> None:
     monkeypatch.chdir(tmp_path)
     _seed_profile(tmp_path)
     _seed_normalized(tmp_path)
@@ -82,7 +81,7 @@ def test_interview_emits_ranked_probes(tmp_path, monkeypatch):
     assert any("claim_a" in line for line in probes)
 
 
-def test_interview_fallback_when_no_stale(tmp_path, monkeypatch):
+def test_interview_fallback_when_no_stale(tmp_path, monkeypatch) -> None:
     monkeypatch.chdir(tmp_path)
     fresh_profile = {"traits": {"big_five": {"openness": {"last_updated": DATE}}}}
     _write(tmp_path / "profile" / "self_profile.yaml", yaml.safe_dump(fresh_profile))
@@ -95,7 +94,7 @@ def test_interview_fallback_when_no_stale(tmp_path, monkeypatch):
     assert len(probes) == 8
 
 
-def test_interview_missing_profile(tmp_path, monkeypatch):
+def test_interview_missing_profile(tmp_path, monkeypatch) -> None:
     monkeypatch.chdir(tmp_path)
     _seed_normalized(tmp_path)
 
@@ -104,7 +103,7 @@ def test_interview_missing_profile(tmp_path, monkeypatch):
     assert "No profile data" in result.output
 
 
-def test_interview_missing_entries(tmp_path, monkeypatch):
+def test_interview_missing_entries(tmp_path, monkeypatch) -> None:
     monkeypatch.chdir(tmp_path)
     _seed_profile(tmp_path)
 

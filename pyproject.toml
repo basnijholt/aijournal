@@ -28,6 +28,7 @@ build-backend = "uv_build"
 dev = [
     "hypothesis>=6.142.3",
     "mypy>=1.18.2",
+    "pre-commit>=4.3.0",
     "pytest>=8.4.2",
     "pytest-cov>=7.0.0",
     "ruff>=0.14.2",
@@ -42,7 +43,9 @@ src = ["src", "tests"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP"]
-ignore = []
+ignore = [
+    "E501", # Line too long
+]
 
 [tool.mypy]
 python_version = "3.12"

@@ -3,15 +3,17 @@
 from __future__ import annotations
 
 from hashlib import sha256
-from pathlib import Path
-from typing import Dict, List
+from typing import TYPE_CHECKING
 
-import pytest
 import yaml
 from typer.testing import CliRunner
 
 from aijournal.cli import app
 
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    import pytest
 
 runner = CliRunner()
 
@@ -40,12 +42,13 @@ More context.
     return post
 
 
-def _read_yaml(path: Path) -> Dict[str, object]:
+def _read_yaml(path: Path) -> dict[str, object]:
     return yaml.safe_load(path.read_text(encoding="utf-8"))
 
 
 def test_ingest_creates_normalized_and_manifest(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.chdir(tmp_path)
     runner.invoke(app, ["init"])  # ensure config/profile scaffolding
@@ -87,5 +90,5 @@ def test_ingest_skips_duplicate_hash(tmp_path: Path, monkeypatch: pytest.MonkeyP
     assert "already ingested" in second.stdout
 
     manifest_path = tmp_path / "data" / "manifest" / "ingested.yaml"
-    manifest: List[dict[str, object]] = _read_yaml(manifest_path)
+    manifest: list[dict[str, object]] = _read_yaml(manifest_path)
     assert len(manifest) == 1

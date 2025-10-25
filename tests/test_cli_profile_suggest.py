@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 import yaml
@@ -10,6 +10,8 @@ from typer.testing import CliRunner
 
 from aijournal.cli import app
 
+if TYPE_CHECKING:
+    from pathlib import Path
 
 runner = CliRunner()
 DATE = "2025-02-03"
@@ -53,7 +55,7 @@ def _seed_profile(tmp_path: Path) -> None:
             "schwartz_top5": ["Universalism"],
             "last_updated": f"{DATE}T07:00:00Z",
             "review_after_days": 30,
-        }
+        },
     }
     claims = {
         "claims": [
@@ -64,8 +66,8 @@ def _seed_profile(tmp_path: Path) -> None:
                 "confidence": 0.8,
                 "last_updated": f"{DATE}T08:00:00Z",
                 "review_after_days": 45,
-            }
-        ]
+            },
+        ],
     }
     _write_yaml(tmp_path / "profile" / "self_profile.yaml", self_profile)
     _write_yaml(tmp_path / "profile" / "claims.yaml", claims)
@@ -83,7 +85,10 @@ def _invoke(tmp_path: Path) -> tuple[str, Path, int]:
     return result.output, path, count
 
 
-def test_profile_suggest_writes_suggestions(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_profile_suggest_writes_suggestions(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.chdir(tmp_path)
     _seed_normalized(tmp_path)
     _seed_profile(tmp_path)

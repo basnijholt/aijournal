@@ -17,6 +17,6 @@ repos:
         types: [python]
       - id: mypy
         name: mypy
-        entry: uvx mypy src
+        entry: uv run mypy src
         language: system
         pass_filenames: false

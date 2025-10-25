@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import yaml
 
@@ -12,9 +12,9 @@ from aijournal.models import (
     AdviceRecommendation,
     AdviceReference,
     Claim,
+    ClaimsFile,
     ClaimSource,
     ClaimSourceSpan,
-    ClaimsFile,
     DailySummary,
     FactEvidence,
     FactEvidenceSpan,
@@ -25,13 +25,16 @@ from aijournal.models import (
     MicroFact,
     MicroFactsFile,
     NormalizedEntry,
+    ProfileSuggestions,
     ProfileSuggestionUpdate,
     ProfileSuggestionUpsert,
-    ProfileSuggestions,
     SelfProfile,
     SummaryMeta,
 )
 from aijournal.schema import validate_schema
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def _fixture_path(tmp_path: Path, name: str) -> Path:
@@ -78,7 +81,7 @@ def test_claim_file_roundtrip(tmp_path: Path) -> None:
             ClaimSource(
                 entry_id="2025-10-25_x9t3",
                 spans=[ClaimSourceSpan(type="para", index=0)],
-            )
+            ),
         ],
         method="inferred",
         user_verified=True,
@@ -170,7 +173,7 @@ def test_microfacts_file_roundtrip(tmp_path: Path) -> None:
                 ),
                 first_seen="2025-10-25",
                 last_seen="2025-10-25",
-            )
+            ),
         ],
         meta=meta,
     )
@@ -211,7 +214,7 @@ def test_interview_set_roundtrip(tmp_path: Path) -> None:
                 text="Top 3 values you refuse to trade off—rank them.",
                 target_facet="values_motivations.schwartz_top5",
                 priority="high",
-            )
+            ),
         ],
         meta=meta,
     )
@@ -253,7 +256,7 @@ def test_profile_suggestions_schema(tmp_path: Path) -> None:
                 operation="upsert",
                 value={"id": "pref_focus", "statement": "Focus best before lunch"},
                 rationale="Repeated pattern",
-            )
+            ),
         ],
         updates=[
             ProfileSuggestionUpdate(
@@ -261,7 +264,7 @@ def test_profile_suggestions_schema(tmp_path: Path) -> None:
                 operation="set",
                 value=["Self-Direction", "Security"],
                 method="inferred",
-            )
+            ),
         ],
         meta=meta,
     )
@@ -272,11 +275,7 @@ def test_profile_suggestions_schema(tmp_path: Path) -> None:
 def test_self_profile_schema(tmp_path: Path) -> None:
     path = _fixture_path(tmp_path, "self_profile")
     profile = SelfProfile(
-        traits={
-            "big_five": {
-                "openness": {"score": 0.74, "method": "self_report"}
-            }
-        },
+        traits={"big_five": {"openness": {"score": 0.74, "method": "self_report"}}},
         coaching_prefs={"tone": "direct", "depth": "concrete first"},
         boundaries_ethics={"red_lines": ["No health advice"]},
     )

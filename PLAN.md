@@ -97,6 +97,7 @@ aijournal/
     profile_suggestions/YYYY-MM-DD.yaml
     interviews/YYYY-MM-DD.yaml
     advice/YYYY-MM-DD/<id>.yaml
+    pending/profile_updates/<timestamp>.yaml
     index/                      # optional embeddings later
 ```
 
@@ -423,6 +424,57 @@ meta:
     filtered_topics: []
 ```
 
+### 4.6 Profile Update Batch (pending review)
+- Path: `derived/pending/profile_updates/<timestamp>.yaml`
+- Captures claim/facet proposals plus manifest hashes before human approval.
+
+```yaml
+batch_id: "2025-02-03-2025-02-03T12:00:00Z"
+created_at: "2025-02-03T12:00:00Z"
+date: "2025-02-03"
+inputs:
+  - id: "2025-02-03-focus-notes"
+    normalized_path: "data/normalized/2025-02-03/2025-02-03-focus-notes.yaml"
+    source_hash: "abc123"
+    manifest_hash: "abc123"
+    tags: ["focus", "planning"]
+proposals:
+  claims:
+    - claim:
+        id: "focus-theme-claim"
+        statement: "Focus planning remains a recurring priority."
+        status: "tentative"
+        confidence: 0.62
+        method: "inferred"
+        review_after_days: 120
+        user_verified: false
+        sources:
+          - entry_id: "2025-02-03-focus-notes"
+            spans: []
+      normalized_ids: ["2025-02-03-focus-notes"]
+      evidence_hashes: ["abc123"]
+      manifest_hashes: ["abc123"]
+      rationale: "Daily notes emphasize focus blocks."
+  facets:
+    - path: "values_motivations.recurring_theme"
+      operation: "set"
+      value:
+        label: "Morning focus"
+        tag_hint: "focus"
+      method: "inferred"
+      confidence: 0.55
+      review_after_days: 90
+      user_verified: false
+      normalized_ids: ["2025-02-03-focus-notes"]
+      evidence_hashes: ["abc123"]
+      rationale: "Morning session repeated twice."
+meta:
+  llm_model: "llama3.1:8b-instruct"
+  prompt_path: "prompts/characterize.md"
+  prompt_hash: "sha256:..."
+  created_at: "2025-02-03T12:00:00Z"
+```
+
 ---
 
 ## 5. IDs, Slugs, and Time
@@ -500,6 +552,8 @@ Health check:
 - `aijournal profile status` — list stale/high‑impact facets/claims with ranks.
 - `aijournal profile suggest [--since YYYY-MM-DD]` — write suggestions YAML (facets+claims).
 - `aijournal profile apply [--file derived/profile_suggestions/...]` — interactive accept/merge.
+- `aijournal characterize --date YYYY-MM-DD` — emit manifest-linked claim/facet proposals under `derived/pending/profile_updates/`.
+- `aijournal review-updates [--file ...] [--apply]` — inspect pending batches and optionally merge them into `profile/`.
 - `aijournal interview --max 4` — prioritized probes; uses 8 high‑impact questions when gaps exist.
 - `aijournal advise "question" [--level L1|L2|L3] [--max 3]` — Advisor Mode; generates `derived/advice/...yaml` and prints a concise summary to stdout.
 - `aijournal pack --level L1|L2|L3|L4 --out path` — assemble context pack for prompts.

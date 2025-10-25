@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from pathlib import Path
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 import pytest
 import yaml
@@ -11,6 +11,8 @@ from typer.testing import CliRunner
 
 from aijournal.cli import app
 
+if TYPE_CHECKING:
+    from pathlib import Path
 
 runner = CliRunner()
 DATE = "2025-02-03"
@@ -30,7 +32,7 @@ def skip_if_missing() -> None:
 def freeze_now(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         "aijournal.cli._now",
-        lambda: datetime(2025, 2, 3, 10, 0, tzinfo=timezone.utc),
+        lambda: datetime(2025, 2, 3, 10, 0, tzinfo=UTC),
         raising=False,
     )
 
@@ -74,7 +76,7 @@ def test_advise_generates_advice(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     monkeypatch.chdir(tmp_path)
     _seed_profile(tmp_path)
 
-    output, advice_file, count = _invoke(tmp_path)
+    output, advice_file, _count = _invoke(tmp_path)
     assert str(advice_file) in output
 
     data = yaml.safe_load(advice_file.read_text(encoding="utf-8"))

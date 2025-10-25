@@ -5,13 +5,13 @@ from __future__ import annotations
 import json
 import os
 import re
-from string import Template
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Tuple, Callable
+from string import Template
+from textwrap import dedent
+from typing import TYPE_CHECKING, Any
 
-from agno.agent import Agent
 import typer
 import yaml
 
@@ -22,9 +22,13 @@ from aijournal.ingest_agent import (
     build_ingest_agent,
     ingest_with_agent,
 )
-from aijournal.services import LLMResponseError, OllamaConfig, OllamaTaskRunner
 from aijournal.schema import SchemaValidationError, validate_schema
+from aijournal.services import LLMResponseError, OllamaConfig, OllamaTaskRunner
 
+if TYPE_CHECKING:
+    from collections.abc import Callable, Iterable
+
+    from agno.agent import Agent
 
 app = typer.Typer(help="Local-first personal journal utilities.")
 profile_app = typer.Typer(help="Profile utilities.")
@@ -35,10 +39,9 @@ app.add_typer(ollama_app, name="ollama")
 
 @app.callback()
 def main() -> None:
-    """aijournal command-line interface."""
-
+    """Aijournal command-line interface."""
     # Intentionally empty; commands provide functionality.
-    return None
+    return
 
 
 AUTHORITATIVE_DIRS = (
@@ -60,12 +63,105 @@ DERIVED_DIRS = (
     "derived/interviews",
     "derived/advice",
     "derived/index",
+    "derived/pending",
+    "derived/pending/profile_updates",
 )
 
 SEED_FILES = {
-    "config/config.yaml": """model: \"llama3.1:8b-instruct\"\ntemperature: 0.2\nseed: 42\npaths:\n  data: \"data\"\n  profile: \"profile\"\n  derived: \"derived\"\n  prompts: \"prompts\"\nimpact_weights:\n  values_goals: 1.5\n  decision_style: 1.3\n  affect_energy: 1.2\n  traits: 1.0\n  social: 0.9\nadvisor:\n  max_recos: 3\n  include_risks: true\n""",
-    "profile/self_profile.yaml": """traits:\n  big_five:\n    openness: {score: 0.74, method: self_report, user_verified: true}\n    conscientiousness: {score: 0.68, method: inferred}\n    extraversion: {score: 0.42, method: self_report}\n    agreeableness: {score: 0.61, method: inferred}\n    neuroticism: {score: 0.33, method: self_report}\n  regulatory_focus: {promotion: 0.7, prevention: 0.3}\n  risk_tolerance: {domain: \"career\", level: \"medium-high\"}\n  time_horizon: {preferred: \"long\", evidence: [\"2024_l2_...\"]}\n  review_after_days: 180\n\nvalues_motivations:\n  schwartz_top5: [\"Self-Direction\", \"Achievement\", \"Universalism\", \"Benevolence\", \"Security\"]\n  sdt: {autonomy: 0.8, competence: 0.7, relatedness: 0.6}\n  drivers:\n    - value: \"Mastery over tools & systems\"\n      method: inferred\n      confidence: 0.8\n  review_after_days: 120\n\ngoals:\n  short_term:\n    - value: \"Ship personal agent MVP\"\n      why: \"reduce friction\"\n      krs: [\"CLI usable\", \"context pack <1800t\"]\n      review_after_days: 30\n  long_term:\n    - value: \"Work-life consistency with twins\"\n      krs: [\"2 evenings/week protected\"]\n      review_after_days: 90\n  anti_goals:\n    - value: \"No late-night production firefighting as a norm\"\n      reason: \"family/health\"\n\ndecision_style:\n  default: {speed_vs_quality: \"quality\", satisficer_vs_maximizer: \"bounded_maximizer\"}\n  implementation_intentions:\n    - if: \"Feeling anxious before presentations\"\n      then: \"Run checklist + 10-min rehearsal\"\n      evidence: [\"2021-04-12_l1\"]\n\naffect_energy:\n  energy_map: {morning: \"high\", afternoon: \"medium\", evening: \"low\"}\n  stressors: [\"ambiguous deadlines\", \"noisy environment\"]\n  coping_strategies: [\"walks\", \"time-boxing\", \"no email after 18:00\"]\n\nsocial:\n  relationships:\n    - person: \"Jess\"\n      role: \"coworker\"\n      notes: \"great feedback partner\"\n      boundary: \"no pings after 18:00\"\n\nboundaries_ethics:\n  red_lines: [\"No sharing private family data\", \"No health advice beyond guidelines\"]\n\ncoaching_prefs:\n  tone: \"direct, warm\"\n  depth: \"concrete first, theory second\"\n  probing: {max_questions: 2, prefer: \"yes/no + one short open follow-up\"}\n""",
-    "profile/claims.yaml": """claims: []\n""",
+    "config/config.yaml": dedent(
+        """
+        model: "llama3.1:8b-instruct"
+        temperature: 0.2
+        seed: 42
+        paths:
+          data: "data"
+          profile: "profile"
+          derived: "derived"
+          prompts: "prompts"
+        impact_weights:
+          values_goals: 1.5
+          decision_style: 1.3
+          affect_energy: 1.2
+          traits: 1.0
+          social: 0.9
+        advisor:
+          max_recos: 3
+          include_risks: true
+        """
+    ).strip()
+    + "\n",
+    "profile/self_profile.yaml": dedent(
+        """
+        traits:
+          big_five:
+            openness: {score: 0.74, method: self_report, user_verified: true}
+            conscientiousness: {score: 0.68, method: inferred}
+            extraversion: {score: 0.42, method: self_report}
+            agreeableness: {score: 0.61, method: inferred}
+            neuroticism: {score: 0.33, method: self_report}
+          regulatory_focus: {promotion: 0.7, prevention: 0.3}
+          risk_tolerance: {domain: "career", level: "medium-high"}
+          time_horizon: {preferred: "long", evidence: ["2024_l2_..."]}
+          review_after_days: 180
+
+        values_motivations:
+          schwartz_top5:
+            - "Self-Direction"
+            - "Achievement"
+            - "Universalism"
+            - "Benevolence"
+            - "Security"
+          sdt: {autonomy: 0.8, competence: 0.7, relatedness: 0.6}
+          drivers:
+            - value: "Mastery over tools & systems"
+              method: inferred
+              confidence: 0.8
+          review_after_days: 120
+
+        goals:
+          short_term:
+            - value: "Ship personal agent MVP"
+              why: "reduce friction"
+              krs: ["CLI usable", "context pack <1800t"]
+              review_after_days: 30
+          long_term:
+            - value: "Work-life consistency with twins"
+              krs: ["2 evenings/week protected"]
+              review_after_days: 90
+          anti_goals:
+            - value: "No late-night production firefighting as a norm"
+              reason: "family/health"
+
+        decision_style:
+          default: {speed_vs_quality: "quality", satisficer_vs_maximizer: "bounded_maximizer"}
+          implementation_intentions:
+            - if: "Feeling anxious before presentations"
+              then: "Run checklist + 10-min rehearsal"
+              evidence: ["2021-04-12_l1"]
+
+        affect_energy:
+          energy_map: {morning: "high", afternoon: "medium", evening: "low"}
+          stressors: ["ambiguous deadlines", "noisy environment"]
+          coping_strategies: ["walks", "time-boxing", "no email after 18:00"]
+
+        social:
+          relationships:
+            - person: "Jess"
+              role: "coworker"
+              notes: "great feedback partner"
+              boundary: "no pings after 18:00"
+
+        boundaries_ethics:
+          red_lines: ["No sharing private family data", "No health advice beyond guidelines"]
+
+        coaching_prefs:
+          tone: "direct, warm"
+          depth: "concrete first, theory second"
+          probing: {max_questions: 2, prefer: "yes/no + one short open follow-up"}
+        """
+    ).strip()
+    + "\n",
+    "profile/claims.yaml": "claims: []\n",
 }
 
 ROLE_ORDER = [
@@ -108,19 +204,25 @@ HIGH_IMPACT_PROBES = [
 MARKDOWN_SUFFIXES = {".md", ".markdown"}
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
+PENDING_UPDATES_SUBDIR = "derived/pending/profile_updates"
 
 DEFAULT_PROMPTS = {
-    "summarize_day.md": "You are a journaling summarizer. Return JSON with day, bullets, highlights, todo_candidates.",
-    "extract_facts.md": "Extract atomic facts as JSON {\"facts\":[...]}.",
-    "profile_suggest.md": "Propose JSON with upserts and updates grounded in the entries and profile.",
+    "summarize_day.md": (
+        "You are a journaling summarizer. Return JSON with day, bullets, highlights, "
+        "todo_candidates."
+    ),
+    "extract_facts.md": 'Extract atomic facts as JSON {"facts":[...]}.',
+    "profile_suggest.md": (
+        "Propose JSON with upserts and updates grounded in the entries and profile."
+    ),
     "advise.md": "Return an advice card JSON with recommendations citing facets and claims.",
+    "characterize.md": ("Return JSON with claims and facets describing pending profile updates."),
 }
 
 
 def _now() -> datetime:
     """Return the current UTC time; separated for easy monkeypatching in tests."""
-
-    return datetime.now(tz=timezone.utc)
+    return datetime.now(tz=UTC)
 
 
 def _slugify_title(title: str) -> str:
@@ -139,8 +241,7 @@ def _resolve_prompt_path(prompt_path: str) -> Path:
     cwd_candidate = Path.cwd() / prompt_path
     if cwd_candidate.exists():
         return cwd_candidate
-    repo_candidate = PROJECT_ROOT / prompt_path
-    return repo_candidate
+    return PROJECT_ROOT / prompt_path
 
 
 def _load_prompt_template(prompt_path: str) -> str:
@@ -151,7 +252,7 @@ def _load_prompt_template(prompt_path: str) -> str:
     return DEFAULT_PROMPTS.get(prompt_path) or DEFAULT_PROMPTS.get(key, "")
 
 
-def _render_prompt(prompt_path: str, variables: Dict[str, str]) -> str:
+def _render_prompt(prompt_path: str, variables: dict[str, str]) -> str:
     template = Template(_load_prompt_template(prompt_path))
     return template.safe_substitute(**variables)
 
@@ -172,14 +273,17 @@ def _build_ollama_runner(config: dict[str, Any]) -> OllamaTaskRunner:
 
 def _safe_llm_json(
     prompt_path: str,
-    variables: Dict[str, str],
+    variables: dict[str, str],
     runner: OllamaTaskRunner,
-    fallback: "Callable[[], Dict[str, Any]]",
-) -> Dict[str, Any]:
+    fallback: Callable[[], dict[str, Any]],
+) -> dict[str, Any]:
     prompt = _render_prompt(prompt_path, variables)
     try:
         return runner.generate_json(prompt)
-    except (LLMResponseError, Exception) as exc:  # pragma: no cover - network errors hard to simulate
+    except (
+        LLMResponseError,
+        Exception,
+    ) as exc:  # pragma: no cover - network errors hard to simulate
         typer.secho(
             f"Falling back to offline heuristics for {prompt_path}: {exc}",
             fg=typer.colors.YELLOW,
@@ -243,19 +347,21 @@ def _split_frontmatter(text: str) -> tuple[str, str]:
     elif text.startswith("+++"):
         delimiter = "+++"
     if delimiter is None:
-        raise ValueError("Markdown entry missing YAML/TOML frontmatter delimiter")
+        msg = "Markdown entry missing YAML/TOML frontmatter delimiter"
+        raise ValueError(msg)
 
     parts = text.split(delimiter, 2)
     if len(parts) < 3:
-        raise ValueError("Incomplete YAML/TOML frontmatter block")
+        msg = "Incomplete YAML/TOML frontmatter block"
+        raise ValueError(msg)
 
     frontmatter_raw = parts[1].strip()
     body = parts[2]
     return frontmatter_raw, body
 
 
-def _scan_headings(text: str) -> List[dict[str, Any]]:
-    sections: List[dict[str, Any]] = []
+def _scan_headings(text: str) -> list[dict[str, Any]]:
+    sections: list[dict[str, Any]] = []
     for line in text.splitlines():
         heading_match = re.match(r"^(#{1,6})\s+(.*)$", line.strip())
         if heading_match:
@@ -263,12 +369,12 @@ def _scan_headings(text: str) -> List[dict[str, Any]]:
                 {
                     "heading": heading_match.group(2).strip(),
                     "level": len(heading_match.group(1)),
-                }
+                },
             )
     return sections
 
 
-def _parse_entry(entry_path: Path) -> tuple[dict[str, Any], List[dict[str, Any]]]:
+def _parse_entry(entry_path: Path) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     text = entry_path.read_text(encoding="utf-8")
     frontmatter_raw, body = _split_frontmatter(text)
     data = yaml.safe_load(frontmatter_raw) or {}
@@ -283,7 +389,7 @@ def _relative_source_path(entry_path: Path, root: Path) -> str:
         return str(entry_path)
 
 
-def _load_existing_yaml(path: Path) -> Optional[dict[str, Any]]:
+def _load_existing_yaml(path: Path) -> dict[str, Any] | None:
     if not path.exists():
         return None
     return yaml.safe_load(path.read_text(encoding="utf-8"))
@@ -293,7 +399,7 @@ def _write_yaml_if_changed(
     path: Path,
     data: dict[str, Any],
     *,
-    schema: Optional[str] = None,
+    schema: str | None = None,
 ) -> bool:
     if schema:
         try:
@@ -313,7 +419,7 @@ def _write_yaml_if_changed(
 
 def _normalize_created_at(value: Any) -> str:
     if isinstance(value, datetime):
-        dt = value.astimezone(timezone.utc)
+        dt = value.astimezone(UTC)
         return _format_timestamp(dt)
 
     if isinstance(value, str):
@@ -321,7 +427,7 @@ def _normalize_created_at(value: Any) -> str:
         try:
             dt = datetime.fromisoformat(candidate)
             if dt.tzinfo is None:
-                dt = dt.replace(tzinfo=timezone.utc)
+                dt = dt.replace(tzinfo=UTC)
             return _format_timestamp(dt)
         except ValueError:
             return value
@@ -354,7 +460,7 @@ def _resolve_model_name(config: dict[str, Any]) -> str:
     return os.getenv("AIJOURNAL_MODEL") or str(config.get("model") or "llama3.1:8b-instruct")
 
 
-def _coerce_float(value: Any) -> Optional[float]:
+def _coerce_float(value: Any) -> float | None:
     if value is None:
         return None
     try:
@@ -363,7 +469,7 @@ def _coerce_float(value: Any) -> Optional[float]:
         return None
 
 
-def _coerce_int(value: Any) -> Optional[int]:
+def _coerce_int(value: Any) -> int | None:
     if value is None:
         return None
     try:
@@ -376,7 +482,7 @@ def _manifest_path(root: Path) -> Path:
     return root / "data" / "manifest" / "ingested.yaml"
 
 
-def _load_manifest(path: Path) -> List[dict[str, Any]]:
+def _load_manifest(path: Path) -> list[dict[str, Any]]:
     if not path.exists():
         return []
     data = yaml.safe_load(path.read_text(encoding="utf-8")) or []
@@ -385,13 +491,23 @@ def _load_manifest(path: Path) -> List[dict[str, Any]]:
     return []
 
 
-def _write_manifest(path: Path, entries: List[dict[str, Any]]) -> None:
+def _write_manifest(path: Path, entries: list[dict[str, Any]]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(yaml.safe_dump(entries, sort_keys=False), encoding="utf-8")
 
 
-def _discover_markdown_files(inputs: Iterable[Path]) -> List[Path]:
-    files: List[Path] = []
+def _manifest_by_id(entries: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    index: dict[str, dict[str, Any]] = {}
+    for entry in entries:
+        entry_id = entry.get("id")
+        if not entry_id:
+            continue
+        index[str(entry_id)] = entry
+    return index
+
+
+def _discover_markdown_files(inputs: Iterable[Path]) -> list[Path]:
+    files: list[Path] = []
     for source in inputs:
         resolved = source.expanduser().resolve()
         if resolved.is_dir():
@@ -401,7 +517,7 @@ def _discover_markdown_files(inputs: Iterable[Path]) -> List[Path]:
         elif resolved.is_file():
             files.append(resolved)
 
-    unique: List[Path] = []
+    unique: list[Path] = []
     seen: set[Path] = set()
     for file in files:
         if file not in seen:
@@ -410,8 +526,8 @@ def _discover_markdown_files(inputs: Iterable[Path]) -> List[Path]:
     return unique
 
 
-def _normalize_tags(raw: Iterable[Any]) -> List[str]:
-    tags: List[str] = []
+def _normalize_tags(raw: Iterable[Any]) -> list[str]:
+    tags: list[str] = []
     seen: set[str] = set()
     for value in raw:
         if value is None:
@@ -426,7 +542,7 @@ def _normalize_tags(raw: Iterable[Any]) -> List[str]:
     return tags
 
 
-def _clean_summary(text: Optional[str], fallback: Optional[str] = None) -> Optional[str]:
+def _clean_summary(text: str | None, fallback: str | None = None) -> str | None:
     candidate = (text or "").strip()
     if candidate:
         for marker in (',"entry_id"', ',"tags"', ',"sections"'):
@@ -434,13 +550,10 @@ def _clean_summary(text: Optional[str], fallback: Optional[str] = None) -> Optio
             if idx != -1:
                 candidate = candidate[:idx]
                 break
-        candidate = candidate.replace("\n", " ").strip().strip('\"')
+        candidate = candidate.replace("\n", " ").strip().strip('"')
         sentences = re.split(r"(?<=[.!?])\s+", candidate)
         sentences = [sentence.strip() for sentence in sentences if sentence.strip()]
-        if sentences:
-            candidate = " ".join(sentences[:2])
-        else:
-            candidate = ""
+        candidate = " ".join(sentences[:2]) if sentences else ""
 
     if not candidate and fallback:
         candidate = fallback.strip()
@@ -454,11 +567,11 @@ def _merge_sections(
     *,
     title: str,
     limit: int = 6,
-) -> List[dict[str, Any]]:
-    entries: List[dict[str, Any]] = []
+) -> list[dict[str, Any]]:
+    entries: list[dict[str, Any]] = []
     seen: set[str] = set()
 
-    def add_section(heading: str, level: int, summary: Optional[str] = None) -> None:
+    def add_section(heading: str, level: int, summary: str | None = None) -> None:
         heading = heading.strip()
         if not heading:
             return
@@ -474,13 +587,15 @@ def _merge_sections(
             entry["summary"] = summary.strip()
         entries.append(entry)
 
-    for section in primary:
-        add_section(section.heading, section.level, section.summary)
+    for primary_section in primary:
+        add_section(primary_section.heading, primary_section.level, primary_section.summary)
         if len(entries) >= limit:
             return entries
 
-    for section in fallback:
-        add_section(str(section.get("heading") or title), int(section.get("level", 2)))
+    for fallback_section in fallback:
+        heading = str(fallback_section.get("heading") or title)
+        level = int(fallback_section.get("level", 2))
+        add_section(heading, level)
         if len(entries) >= limit:
             return entries
 
@@ -489,7 +604,7 @@ def _merge_sections(
     return entries
 
 
-def _sanitize_entry_id(candidate: Optional[str], title: str, date_str: str, digest: str) -> str:
+def _sanitize_entry_id(candidate: str | None, title: str, date_str: str, digest: str) -> str:
     slug = ""
     if candidate and candidate.strip():
         slug = _slugify_title(candidate)
@@ -505,8 +620,8 @@ def _sanitize_entry_id(candidate: Optional[str], title: str, date_str: str, dige
     return slug[:96]
 
 
-def _extract_frontmatter_tags(frontmatter: dict[str, Any]) -> List[str]:
-    values: List[str] = []
+def _extract_frontmatter_tags(frontmatter: dict[str, Any]) -> list[str]:
+    values: list[str] = []
     for key in ("tags", "categories", "keywords", "topics", "projects"):
         raw = frontmatter.get(key)
         if raw is None:
@@ -565,13 +680,13 @@ def _normalized_from_structured(
     root: Path,
     digest: str,
     source_type: str,
-    fallback_sections: Optional[List[dict[str, Any]]] = None,
-    fallback_tags: Optional[List[str]] = None,
-    fallback_summary: Optional[str] = None,
+    fallback_sections: list[dict[str, Any]] | None = None,
+    fallback_tags: list[str] | None = None,
+    fallback_summary: str | None = None,
 ) -> tuple[dict[str, Any], str]:
     created_at = structured.created_at
     if isinstance(created_at, datetime):
-        created_str = _format_timestamp(created_at.astimezone(timezone.utc))
+        created_str = _format_timestamp(created_at.astimezone(UTC))
     else:
         created_str = _normalize_created_at(created_at)
 
@@ -602,13 +717,23 @@ def _normalized_from_structured(
     return normalized, date_str
 
 
-def _load_normalized_entries(root: Path, day: str) -> List[dict[str, Any]]:
+def _load_normalized_entries(root: Path, day: str) -> list[dict[str, Any]]:
     folder = root / "data" / "normalized" / day
     if not folder.exists():
         return []
-    entries: List[dict[str, Any]] = []
+    entries: list[dict[str, Any]] = []
     for file in sorted(folder.glob("*.yaml")):
         entries.append(_load_yaml(file))
+    return entries
+
+
+def _load_normalized_entries_with_paths(root: Path, day: str) -> list[tuple[dict[str, Any], Path]]:
+    folder = root / "data" / "normalized" / day
+    if not folder.exists():
+        return []
+    entries: list[tuple[dict[str, Any], Path]] = []
+    for file in sorted(folder.glob("*.yaml")):
+        entries.append((_load_yaml(file), file))
     return entries
 
 
@@ -629,7 +754,24 @@ def _derived_profile_suggestions_path(root: Path, day: str) -> Path:
     return root / "derived" / "profile_suggestions" / f"{day}.yaml"
 
 
-def _hash_prompt(prompt_path: str) -> Optional[str]:
+def _pending_updates_dir(root: Path) -> Path:
+    return root / PENDING_UPDATES_SUBDIR
+
+
+def _pending_updates_path(root: Path, batch_id: str) -> Path:
+    safe_id = batch_id.replace(":", "-")
+    return _pending_updates_dir(root) / f"{safe_id}.yaml"
+
+
+def _latest_pending_batch(root: Path) -> Path | None:
+    directory = _pending_updates_dir(root)
+    if not directory.exists():
+        return None
+    files = sorted(p for p in directory.glob("*.yaml") if p.is_file())
+    return files[-1] if files else None
+
+
+def _hash_prompt(prompt_path: str) -> str | None:
     path = _resolve_prompt_path(prompt_path)
     try:
         data = path.read_bytes()
@@ -647,8 +789,8 @@ def _build_meta(prompt_path: str, model: str = "fake-ollama") -> dict[str, Any]:
     }
 
 
-def _fake_summarize(entries: List[dict[str, Any]]) -> List[str]:
-    bullets: List[str] = []
+def _fake_summarize(entries: list[dict[str, Any]]) -> list[str]:
+    bullets: list[str] = []
     for entry in entries:
         title = entry.get("title", entry.get("id", "entry"))
         sections = entry.get("sections") or []
@@ -660,8 +802,8 @@ def _fake_summarize(entries: List[dict[str, Any]]) -> List[str]:
     return bullets or ["No content available"]
 
 
-def _fake_microfacts(entries: List[dict[str, Any]]) -> List[dict[str, Any]]:
-    facts: List[dict[str, Any]] = []
+def _fake_microfacts(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    facts: list[dict[str, Any]] = []
     for entry in entries:
         entry_id = entry.get("id", "entry")
         title = entry.get("title", entry_id)
@@ -673,7 +815,7 @@ def _fake_microfacts(entries: List[dict[str, Any]]) -> List[dict[str, Any]]:
                 "statement": statement,
                 "confidence": 0.8,
                 "evidence": {"entry_id": entry_id},
-            }
+            },
         )
     return facts or [
         {
@@ -681,17 +823,21 @@ def _fake_microfacts(entries: List[dict[str, Any]]) -> List[dict[str, Any]]:
             "statement": "No normalized entries available",
             "confidence": 0.0,
             "evidence": {"entry_id": "unknown"},
-        }
+        },
     ]
 
 
-def _fake_advise(question: str, profile: dict[str, Any], claims: List[dict[str, Any]]) -> dict[str, Any]:
+def _fake_advise(
+    question: str,
+    profile: dict[str, Any],
+    claims: list[dict[str, Any]],
+) -> dict[str, Any]:
     claim = claims[0] if claims else {}
     advice_id = _advice_identifier(question)
     claim_statement = claim.get("statement") or "Reflect on priorities"
     claim_id = claim.get("id")
 
-    facets: List[str] = []
+    facets: list[str] = []
     if profile.get("affect_energy"):
         facets.append("affect_energy.energy_map")
     if profile.get("goals"):
@@ -705,9 +851,7 @@ def _fake_advise(question: str, profile: dict[str, Any], claims: List[dict[str, 
     }
 
     assumption = (
-        f"Reference claim: {claim_statement}"
-        if claim_statement
-        else "No verified claims available"
+        f"Reference claim: {claim_statement}" if claim_statement else "No verified claims available"
     )
 
     recommendation = {
@@ -746,9 +890,9 @@ def _fake_advise(question: str, profile: dict[str, Any], claims: List[dict[str, 
 
 
 def _fake_profile_suggestions(
-    entries: List[dict[str, Any]],
+    entries: list[dict[str, Any]],
     profile: dict[str, Any],
-    claims: List[dict[str, Any]],
+    claims: list[dict[str, Any]],
 ) -> dict[str, Any]:
     upserts = []
     updates = []
@@ -763,7 +907,7 @@ def _fake_profile_suggestions(
                     "statement": entry.get("title", "New observation"),
                     "confidence": 0.6,
                 },
-            }
+            },
         )
 
     if profile:
@@ -772,13 +916,58 @@ def _fake_profile_suggestions(
                 "target": "values_motivations.schwartz_top5",
                 "operation": "update",
                 "value": profile.get("values_motivations", {}).get("schwartz_top5", []),
-            }
+            },
         )
 
     return {"upserts": upserts, "updates": updates}
 
 
-def _coerce_str_list(value: Any) -> List[str]:
+def _fake_characterize(
+    entries: list[dict[str, Any]],
+    profile: dict[str, Any],
+    claims: list[dict[str, Any]],
+) -> dict[str, Any]:
+    if not entries:
+        return {"claims": [], "facets": []}
+
+    seed = entries[0]
+    date = _created_date(str(seed.get("created_at") or _format_timestamp(_now())))
+    heading = ""
+    sections = seed.get("sections") or []
+    if sections:
+        heading = sections[0].get("heading") or ""
+    title = seed.get("title") or seed.get("id") or "entry"
+    theme = heading or title
+    tag = (seed.get("tags") or [theme])[0]
+    claim_id = f"{_slugify_title(theme) or 'entry'}-{date.replace('-', '')}-claim"
+    claim = {
+        "id": claim_id[:48],
+        "statement": f"{theme} remains top-of-mind on {date}.",
+        "status": "tentative",
+        "confidence": 0.64,
+        "method": "inferred",
+        "user_verified": False,
+        "review_after_days": 120,
+    }
+
+    facet = {
+        "path": "values_motivations.recurring_theme",
+        "operation": "set",
+        "value": {
+            "label": theme,
+            "tag_hint": tag,
+            "last_seen": date,
+        },
+        "method": "inferred",
+        "confidence": 0.55,
+        "review_after_days": 90,
+        "user_verified": False,
+    }
+
+    return {"claims": [claim], "facets": [facet]}
+
+
+def _coerce_str_list(value: Any) -> list[str]:
     if isinstance(value, list):
         return [str(item).strip() for item in value if str(item).strip()]
     if isinstance(value, str):
@@ -787,8 +976,8 @@ def _coerce_str_list(value: Any) -> List[str]:
     return []
 
 
-def _todo_from_entries(entries: List[dict[str, Any]]) -> List[str]:
-    todos: List[str] = []
+def _todo_from_entries(entries: list[dict[str, Any]]) -> list[str]:
+    todos: list[str] = []
     for entry in entries[:3]:
         title = entry.get("title") or entry.get("id") or "entry"
         todos.append(f"Review follow-ups from {title}")
@@ -796,7 +985,7 @@ def _todo_from_entries(entries: List[dict[str, Any]]) -> List[str]:
 
 
 def _summarize_day_payload(
-    entries: List[dict[str, Any]],
+    entries: list[dict[str, Any]],
     date: str,
     config: dict[str, Any],
 ) -> dict[str, Any]:
@@ -831,13 +1020,15 @@ def _summarize_day_payload(
     return {
         "day": str(payload.get("day") or date),
         "bullets": _coerce_str_list(payload.get("bullets")),
-        "highlights": _coerce_str_list(payload.get("highlights")) or _coerce_str_list(payload.get("bullets"))[:3],
-        "todo_candidates": _coerce_str_list(payload.get("todo_candidates")) or _todo_from_entries(entries),
+        "highlights": _coerce_str_list(payload.get("highlights"))
+        or _coerce_str_list(payload.get("bullets"))[:3],
+        "todo_candidates": _coerce_str_list(payload.get("todo_candidates"))
+        or _todo_from_entries(entries),
     }
 
 
 def _microfacts_payload(
-    entries: List[dict[str, Any]],
+    entries: list[dict[str, Any]],
     date: str,
     config: dict[str, Any],
 ) -> dict[str, Any]:
@@ -870,9 +1061,9 @@ def _microfacts_payload(
 
 
 def _profile_suggestions_payload(
-    entries: List[dict[str, Any]],
+    entries: list[dict[str, Any]],
     profile: dict[str, Any],
-    claims: List[dict[str, Any]],
+    claims: list[dict[str, Any]],
     date: str,
     config: dict[str, Any],
 ) -> dict[str, Any]:
@@ -909,6 +1100,193 @@ def _profile_suggestions_payload(
     return {"upserts": upserts, "updates": updates}
 
 
+def _characterization_context(
+    entries: list[dict[str, Any]],
+    manifest_index: dict[str, dict[str, Any]],
+) -> tuple[list[str], list[str], list[str], list[dict[str, Any]]]:
+    normalized_ids: list[str] = []
+    source_hashes: set[str] = set()
+    manifest_hashes: set[str] = set()
+    default_sources: list[dict[str, Any]] = []
+
+    for idx, entry in enumerate(entries):
+        entry_id = str(entry.get("id") or f"entry-{idx + 1}")
+        normalized_ids.append(entry_id)
+        source_hash = entry.get("source_hash")
+        if isinstance(source_hash, str) and source_hash:
+            source_hashes.add(source_hash)
+        manifest_entry = manifest_index.get(entry_id)
+        manifest_hash = manifest_entry.get("hash") if isinstance(manifest_entry, dict) else None
+        if manifest_hash:
+            manifest_hashes.add(str(manifest_hash))
+        default_sources.append({"entry_id": entry_id, "spans": []})
+
+    return (
+        normalized_ids,
+        sorted(source_hashes),
+        sorted(manifest_hashes),
+        default_sources,
+    )
+
+
+def _normalize_claim_proposals(
+    raw_claims: Iterable[dict[str, Any]],
+    *,
+    normalized_ids: list[str],
+    evidence_hashes: list[str],
+    manifest_hashes: list[str],
+    default_sources: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    proposals: list[dict[str, Any]] = []
+    for idx, raw in enumerate(raw_claims):
+        if not isinstance(raw, dict):
+            continue
+        raw_claim = raw.get("claim")
+        if isinstance(raw_claim, dict):
+            claim = dict(raw_claim)
+        else:
+            claim = dict(raw)
+        statement = str(claim.get("statement") or "").strip()
+        if not statement:
+            continue
+        claim_id = str(claim.get("id") or _slugify_title(statement) or f"claim-{idx + 1}")
+        claim["id"] = claim_id[:64]
+        claim.setdefault("status", "tentative")
+        confidence = _coerce_float(claim.get("confidence"))
+        claim["confidence"] = confidence if confidence is not None else 0.6
+        claim.setdefault("method", "inferred")
+        claim["user_verified"] = bool(claim.get("user_verified", False))
+        review = _coerce_int(claim.get("review_after_days"))
+        claim["review_after_days"] = review if review else 120
+
+        raw_sources = claim.get("sources")
+        sources: list[Any]
+        if isinstance(raw_sources, list):
+            sources = raw_sources
+        else:
+            sources = []
+        normalized_sources: list[dict[str, Any]] = []
+        for source in sources:
+            if not isinstance(source, dict):
+                continue
+            entry_id = source.get("entry_id")
+            if not entry_id:
+                continue
+            spans = source.get("spans")
+            normalized_sources.append(
+                {
+                    "entry_id": str(entry_id),
+                    "spans": spans if isinstance(spans, list) else [],
+                },
+            )
+        claim["sources"] = normalized_sources or [dict(src) for src in default_sources]
+
+        proposals.append(
+            {
+                "claim": claim,
+                "normalized_ids": list(normalized_ids),
+                "evidence_hashes": list(evidence_hashes),
+                "manifest_hashes": list(manifest_hashes),
+                "rationale": raw.get("rationale") or raw.get("reason"),
+            },
+        )
+    return proposals
+
+
+def _normalize_facet_proposals(
+    raw_facets: Iterable[dict[str, Any]],
+    *,
+    normalized_ids: list[str],
+    evidence_hashes: list[str],
+) -> list[dict[str, Any]]:
+    proposals: list[dict[str, Any]] = []
+    for raw in raw_facets:
+        if not isinstance(raw, dict):
+            continue
+        path = raw.get("path") or raw.get("target")
+        if not path:
+            continue
+        value = raw.get("value")
+        proposal = {
+            "path": str(path),
+            "value": value,
+            "operation": raw.get("operation") or "set",
+            "method": raw.get("method") or "inferred",
+            "confidence": _coerce_float(raw.get("confidence")) or 0.55,
+            "review_after_days": _coerce_int(raw.get("review_after_days")) or 90,
+            "user_verified": bool(raw.get("user_verified", False)),
+            "normalized_ids": list(normalized_ids),
+            "evidence_hashes": list(evidence_hashes),
+            "rationale": raw.get("rationale") or raw.get("reason"),
+        }
+        proposals.append(proposal)
+    return proposals
+
+
+def _characterize_payload(
+    entries: list[dict[str, Any]],
+    profile: dict[str, Any],
+    claims: list[dict[str, Any]],
+    manifest_index: dict[str, dict[str, Any]],
+    config: dict[str, Any],
+) -> dict[str, Any]:
+    (
+        normalized_ids,
+        evidence_hashes,
+        manifest_hashes,
+        default_sources,
+    ) = _characterization_context(entries, manifest_index)
+
+    def fallback() -> dict[str, Any]:
+        return _fake_characterize(entries, profile, claims)
+
+    if _use_fake_llm():
+        raw = fallback()
+    else:
+        try:
+            runner = _build_ollama_runner(config)
+        except Exception as exc:  # pragma: no cover
+            typer.secho(
+                f"Unable to initialize Ollama for characterize: {exc}",
+                fg=typer.colors.YELLOW,
+                err=True,
+            )
+            raw = fallback()
+        else:
+            manifest_payload = _json_block(manifest_index)
+            raw = _safe_llm_json(
+                "prompts/characterize.md",
+                {
+                    "date": _created_date(_format_timestamp(_now())),
+                    "entries_json": _json_block(entries),
+                    "profile_json": _json_block(profile),
+                    "claims_json": _json_block({"claims": claims}),
+                    "manifest_json": manifest_payload,
+                },
+                runner,
+                fallback,
+            )
+
+    raw_claim_candidates = raw.get("claims")
+    raw_claims = raw_claim_candidates if isinstance(raw_claim_candidates, list) else []
+    raw_facet_candidates = raw.get("facets")
+    raw_facets = raw_facet_candidates if isinstance(raw_facet_candidates, list) else []
+
+    claims_payload = _normalize_claim_proposals(
+        raw_claims,
+        normalized_ids=normalized_ids,
+        evidence_hashes=evidence_hashes,
+        manifest_hashes=manifest_hashes,
+        default_sources=default_sources,
+    )
+    facets_payload = _normalize_facet_proposals(
+        raw_facets,
+        normalized_ids=normalized_ids,
+        evidence_hashes=evidence_hashes,
+    )
+    return {"claims": claims_payload, "facets": facets_payload}
+
+
 def _advice_identifier(question: str) -> str:
     day = _created_date(_format_timestamp(_now()))
     digest = sha256(question.encode("utf-8")).hexdigest()[:8]
@@ -918,7 +1296,7 @@ def _advice_identifier(question: str) -> str:
 def _advice_payload(
     question: str,
     profile: dict[str, Any],
-    claims: List[dict[str, Any]],
+    claims: list[dict[str, Any]],
     config: dict[str, Any],
 ) -> dict[str, Any]:
     def fallback() -> dict[str, Any]:
@@ -965,7 +1343,7 @@ def _advice_payload(
 
 @app.command()
 def init(
-    path: Optional[Path] = typer.Option(
+    path: Path | None = typer.Option(
         None,
         "--path",
         "-p",
@@ -973,7 +1351,6 @@ def init(
     ),
 ) -> None:
     """Initialize the local aijournal layout."""
-
     base = path or Path.cwd()
     base.mkdir(parents=True, exist_ok=True)
 
@@ -1000,7 +1377,7 @@ def init(
 @app.command()
 def new(
     title: str = typer.Argument(..., help="Title for the journal entry."),
-    tags: Optional[List[str]] = typer.Option(
+    tags: list[str] | None = typer.Option(
         None,
         "--tags",
         "-t",
@@ -1008,7 +1385,6 @@ def new(
     ),
 ) -> None:
     """Create a new journal entry with YAML frontmatter."""
-
     now = _now()
     slug = f"{now.strftime('%Y-%m-%d')}-{_slugify_title(title)}"
     entry_path = _journal_path(Path.cwd(), now, slug)
@@ -1035,7 +1411,7 @@ def new(
 
 @app.command()
 def ingest(
-    sources: List[Path] = typer.Argument(
+    sources: list[Path] = typer.Argument(
         ...,
         exists=True,
         dir_okay=True,
@@ -1049,7 +1425,7 @@ def ingest(
         "--source-type",
         help="Label recorded in the manifest for these sources.",
     ),
-    limit: Optional[int] = typer.Option(
+    limit: int | None = typer.Option(
         None,
         "--limit",
         help="Maximum number of files to ingest.",
@@ -1061,7 +1437,6 @@ def ingest(
     ),
 ) -> None:
     """Ingest Markdown posts into normalized YAML via Ollama."""
-
     if limit is not None and limit <= 0:
         typer.secho("--limit must be positive when provided.", fg=typer.colors.RED, err=True)
         raise typer.Exit(1)
@@ -1069,7 +1444,11 @@ def ingest(
     root = Path.cwd()
     files = _discover_markdown_files(sources)
     if not files:
-        typer.secho("No Markdown files found in the provided sources.", fg=typer.colors.RED, err=True)
+        typer.secho(
+            "No Markdown files found in the provided sources.",
+            fg=typer.colors.RED,
+            err=True,
+        )
         raise typer.Exit(1)
     if limit is not None:
         files = files[:limit]
@@ -1077,7 +1456,7 @@ def ingest(
     config = _load_config(root)
     model_name = _resolve_model_name(config)
     is_fake = _use_fake_llm()
-    agent: Optional[Agent] = None
+    agent: Agent | None = None
     if not is_fake:
         settings = AgentSettings(
             model=model_name,
@@ -1194,10 +1573,14 @@ def ingest(
 
 @app.command()
 def normalize(
-    entry: Path = typer.Argument(..., exists=True, readable=True, help="Path to journal Markdown entry."),
+    entry: Path = typer.Argument(
+        ...,
+        exists=True,
+        readable=True,
+        help="Path to journal Markdown entry.",
+    ),
 ) -> None:
     """Normalize a Markdown journal entry into structured YAML."""
-
     entry = entry.resolve()
     try:
         frontmatter, sections = _parse_entry(entry)
@@ -1211,7 +1594,11 @@ def normalize(
     tags = frontmatter.get("tags", []) or []
 
     if not all([entry_id_value, created_value, title_value]):
-        typer.secho("Frontmatter must include id, created_at, title.", fg=typer.colors.RED, err=True)
+        typer.secho(
+            "Frontmatter must include id, created_at, title.",
+            fg=typer.colors.RED,
+            err=True,
+        )
         raise typer.Exit(1)
 
     entry_id = str(entry_id_value)
@@ -1242,7 +1629,6 @@ def summarize(
     date: str = typer.Option(..., "--date", "-d", help="Date (YYYY-MM-DD) to summarize."),
 ) -> None:
     """Generate a daily summary from normalized entries."""
-
     root = Path.cwd()
     entries = _load_normalized_entries(root, date)
     if not entries:
@@ -1263,7 +1649,6 @@ def facts(
     date: str = typer.Option(..., "--date", "-d", help="Date (YYYY-MM-DD) to analyze."),
 ) -> None:
     """Generate micro-facts from normalized entries."""
-
     root = Path.cwd()
     entries = _load_normalized_entries(root, date)
     if not entries:
@@ -1284,7 +1669,6 @@ def profile_suggest(
     date: str = typer.Option(..., "--date", "-d", help="Date (YYYY-MM-DD) to analyze."),
 ) -> None:
     """Suggest profile updates based on normalized entries."""
-
     root = Path.cwd()
     entries = _load_normalized_entries(root, date)
     if not entries:
@@ -1308,18 +1692,19 @@ def profile_suggest(
 @profile_app.command("apply")
 def profile_apply(
     date: str = typer.Option(..., "--date", "-d", help="Date (YYYY-MM-DD) to apply."),
-    file: Optional[Path] = typer.Option(None, "--file", help="Path to suggestions YAML."),
+    file: Path | None = typer.Option(None, "--file", help="Path to suggestions YAML."),
     yes: bool = typer.Option(False, "--yes", help="Apply without prompting."),
 ) -> None:
     """Apply profile suggestions to authoritative files (offline)."""
-
     root = Path.cwd()
-    suggestions_path = file or (
-        root / "derived" / "profile_suggestions" / f"{date}.yaml"
-    )
+    suggestions_path = file or (root / "derived" / "profile_suggestions" / f"{date}.yaml")
 
     if not suggestions_path.exists():
-        typer.secho(f"Suggestions file not found: {suggestions_path}", fg=typer.colors.RED, err=True)
+        typer.secho(
+            f"Suggestions file not found: {suggestions_path}",
+            fg=typer.colors.RED,
+            err=True,
+        )
         raise typer.Exit(1)
 
     suggestions = _load_yaml(suggestions_path)
@@ -1357,11 +1742,151 @@ def profile_apply(
 
 
 @app.command()
+def characterize(
+    date: str = typer.Option(..., "--date", "-d", help="Date (YYYY-MM-DD) to analyze."),
+) -> None:
+    """Derive pending profile updates from normalized entries."""
+    root = Path.cwd()
+    entries_with_paths = _load_normalized_entries_with_paths(root, date)
+    if not entries_with_paths:
+        typer.secho(f"No normalized entries for {date}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(1)
+
+    manifest_entries = _load_manifest(_manifest_path(root))
+    manifest_index = _manifest_by_id(manifest_entries)
+    profile, claims = _load_profile_components(root)
+    config = _load_config(root)
+
+    entries = [entry for entry, _ in entries_with_paths]
+    proposals = _characterize_payload(entries, profile, claims, manifest_index, config)
+
+    timestamp = _format_timestamp(_now())
+    batch_id = f"{date}-{timestamp}"
+
+    inputs: list[dict[str, Any]] = []
+    for data, path in entries_with_paths:
+        entry_id = str(data.get("id") or path.stem)
+        manifest_entry = manifest_index.get(entry_id, {})
+        inputs.append(
+            {
+                "id": entry_id,
+                "normalized_path": _relative_source_path(path, root),
+                "source_hash": data.get("source_hash") or manifest_entry.get("hash"),
+                "manifest_hash": manifest_entry.get("hash"),
+                "tags": data.get("tags", []),
+            },
+        )
+
+    batch = {
+        "batch_id": batch_id,
+        "created_at": timestamp,
+        "date": date,
+        "inputs": inputs,
+        "proposals": proposals,
+        "meta": _build_meta("prompts/characterize.md"),
+    }
+
+    pending_dir = _pending_updates_dir(root)
+    pending_dir.mkdir(parents=True, exist_ok=True)
+    batch_path = _pending_updates_path(root, batch_id)
+    _write_yaml_if_changed(batch_path, batch, schema="profile_updates")
+    typer.echo(str(batch_path))
+
+
+@app.command("review-updates")
+def review_updates(
+    file: Path | None = typer.Option(
+        None,
+        "--file",
+        help="Specific pending batch to review (defaults to latest).",
+    ),
+    apply: bool = typer.Option(False, "--apply", help="Apply the proposed updates."),
+) -> None:
+    """Review or apply pending profile update batches."""
+    root = Path.cwd()
+    batch_path = file or _latest_pending_batch(root)
+    if batch_path is None:
+        typer.secho("No pending profile update batches found.", fg=typer.colors.RED, err=True)
+        raise typer.Exit(1)
+    if not batch_path.exists():
+        typer.secho(f"Batch file not found: {batch_path}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(1)
+
+    batch = _load_yaml(batch_path)
+    try:
+        validate_schema("profile_updates", batch)
+    except SchemaValidationError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        raise typer.Exit(1)
+
+    proposals = batch.get("proposals", {})
+    claim_proposals = proposals.get("claims", []) or []
+    facet_proposals = proposals.get("facets", []) or []
+
+    batch_id = batch.get("batch_id") or batch_path.stem
+    typer.echo(
+        f"Batch {batch_id}: {len(claim_proposals)} claim(s), {len(facet_proposals)} facet(s)",
+    )
+
+    for proposal in claim_proposals:
+        claim = proposal.get("claim") if isinstance(proposal, dict) else None
+        if not isinstance(claim, dict):
+            continue
+        typer.echo(f"- claim {claim.get('id')}: {claim.get('statement')}")
+
+    for proposal in facet_proposals:
+        if not isinstance(proposal, dict):
+            continue
+        path = proposal.get("path")
+        if not path:
+            continue
+        typer.echo(f"- facet {path}: {proposal.get('value')}")
+
+    if not apply:
+        return
+
+    profile, claims_data = _load_profile_components(root)
+    timestamp = _format_timestamp(_now())
+    applied = 0
+
+    for proposal in claim_proposals:
+        claim = proposal.get("claim") if isinstance(proposal, dict) else None
+        if not isinstance(claim, dict):
+            continue
+        if _apply_claim_upsert(claims_data, claim, timestamp):
+            applied += 1
+
+    for proposal in facet_proposals:
+        if not isinstance(proposal, dict):
+            continue
+        path = proposal.get("path") or proposal.get("target")
+        if not path:
+            continue
+        if _apply_profile_update(profile, str(path), proposal.get("value"), timestamp):
+            applied += 1
+
+    if not applied:
+        typer.echo("No changes applied")
+        return
+
+    _atomic_write(
+        root / "profile" / "self_profile.yaml",
+        profile,
+        schema="self_profile",
+    )
+    _atomic_write(
+        root / "profile" / "claims.yaml",
+        {"claims": claims_data},
+        schema="claims",
+    )
+    typer.echo(f"Applied {applied} updates from {batch_path}")
+
+
+@app.command()
 def advise(
     question: str = typer.Argument(..., help="Question for the advisor to answer."),
 ) -> None:
     """Generate advice from the current profile."""
-
     root = Path.cwd()
     profile, claims = _load_profile_components(root)
     if not profile and not claims:
@@ -1381,7 +1906,6 @@ def advise(
 @ollama_app.command("health")
 def ollama_health() -> None:
     """Show fake Ollama model availability in offline mode."""
-
     if os.getenv("AIJOURNAL_FAKE_OLLAMA") != "1":
         typer.secho(
             "Set AIJOURNAL_FAKE_OLLAMA=1 to use the offline health probe.",
@@ -1402,18 +1926,18 @@ def ollama_health() -> None:
     typer.echo(yaml.safe_dump(payload, sort_keys=False).rstrip())
 
 
-def _parse_datetime(value: str) -> Optional[datetime]:
+def _parse_datetime(value: str) -> datetime | None:
     try:
         candidate = value.replace("Z", "+00:00") if value.endswith("Z") else value
         dt = datetime.fromisoformat(candidate)
         if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
+            dt = dt.replace(tzinfo=UTC)
         return dt
     except ValueError:
         return None
 
 
-def _days_between(now: datetime, past: Optional[str]) -> Optional[float]:
+def _days_between(now: datetime, past: str | None) -> float | None:
     if not past:
         return None
     dt = _parse_datetime(past)
@@ -1423,8 +1947,8 @@ def _days_between(now: datetime, past: Optional[str]) -> Optional[float]:
     return delta.total_seconds() / 86400.0
 
 
-def _flatten_facets(node: Any, prefix: str = "") -> List[tuple[str, Dict[str, Any]]]:
-    items: List[tuple[str, Dict[str, Any]]] = []
+def _flatten_facets(node: Any, prefix: str = "") -> list[tuple[str, dict[str, Any]]]:
+    items: list[tuple[str, dict[str, Any]]] = []
     if isinstance(node, dict):
         if "last_updated" in node:
             items.append((prefix or "root", node))
@@ -1438,7 +1962,7 @@ def _flatten_facets(node: Any, prefix: str = "") -> List[tuple[str, Dict[str, An
     return items
 
 
-def _load_profile_components(root: Path) -> tuple[dict[str, Any], List[dict[str, Any]]]:
+def _load_profile_components(root: Path) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     profile_path = root / "profile" / "self_profile.yaml"
     claims_path = root / "profile" / "claims.yaml"
 
@@ -1451,7 +1975,7 @@ def _atomic_write(
     path: Path,
     payload: dict[str, Any],
     *,
-    schema: Optional[str] = None,
+    schema: str | None = None,
 ) -> None:
     if schema:
         try:
@@ -1464,18 +1988,18 @@ def _atomic_write(
     tmp.replace(path)
 
 
-def _impact_for(path: str, weights: Dict[str, float]) -> float:
+def _impact_for(path: str, weights: dict[str, float]) -> float:
     key = path.split(".", 1)[0]
     return float(weights.get(key, 1.0))
 
 
 def _compute_rankings(
     profile: dict[str, Any],
-    claims: List[dict[str, Any]],
-    weights: Dict[str, float],
+    claims: list[dict[str, Any]],
+    weights: dict[str, float],
     now: datetime,
-) -> List[tuple[str, float]]:
-    ranked: List[tuple[str, float]] = []
+) -> list[tuple[str, float]]:
+    ranked: list[tuple[str, float]] = []
 
     for path, facet in _flatten_facets(profile):
         days = _days_between(now, str(facet.get("last_updated", "")))
@@ -1499,16 +2023,19 @@ def _compute_rankings(
 
 
 def _build_targeted_probes(
-    rankings: List[tuple[str, float]],
-    entries: List[dict[str, Any]],
+    rankings: list[tuple[str, float]],
+    entries: list[dict[str, Any]],
     *,
     max_items: int = 4,
-) -> List[str]:
+) -> list[str]:
     title = entries[0].get("title", "recent notes") if entries else "recent notes"
-    probes: List[str] = []
+    probes: list[str] = []
     for path, score in rankings:
         probes.append(
-            f"- {path}: What new observations from {title} should update this area? (score {score:.2f})"
+            (
+                f"- {path}: What new observations from {title} should update this area? "
+                f"(score {score:.2f})"
+            ),
         )
         if len(probes) >= max_items:
             break
@@ -1517,7 +2044,7 @@ def _build_targeted_probes(
     return probes
 
 
-def _print_rankings(ranked: List[tuple[str, float]]) -> None:
+def _print_rankings(ranked: list[tuple[str, float]]) -> None:
     if not ranked:
         typer.echo("No profile data")
         return
@@ -1526,7 +2053,11 @@ def _print_rankings(ranked: List[tuple[str, float]]) -> None:
         typer.echo(f"{idx}. {path} (score {score:.2f})")
 
 
-def _apply_claim_upsert(claims: List[dict[str, Any]], value: dict[str, Any], timestamp: str) -> bool:
+def _apply_claim_upsert(
+    claims: list[dict[str, Any]],
+    value: dict[str, Any],
+    timestamp: str,
+) -> bool:
     new_value = dict(value)
     new_value["last_updated"] = timestamp
     for idx, claim in enumerate(claims):
@@ -1574,14 +2105,12 @@ def _profile_status_impl() -> None:
 @profile_app.command("status")
 def profile_status() -> None:
     """Show ranked facets/claims needing review."""
-
     _profile_status_impl()
 
 
 @app.command("profile-status")
 def profile_status_alias() -> None:
     """Alias command for profile status (for backwards compatibility)."""
-
     _profile_status_impl()
 
 
@@ -1590,7 +2119,6 @@ def interview(
     date: str = typer.Option(..., "--date", "-d", help="Date (YYYY-MM-DD) to review."),
 ) -> None:
     """Surface targeted interview probes based on stale facets (fake LLM)."""
-
     if os.getenv("AIJOURNAL_FAKE_OLLAMA") != "1":
         typer.secho(
             "Only fake Ollama mode is implemented for interview.",
@@ -1644,9 +2172,9 @@ def _pack_token_count(text: str) -> int:
 
 
 def _pack_trim_entries(
-    entries: List[dict[str, Any]],
+    entries: list[dict[str, Any]],
     budget: int,
-    trimmed: List[dict[str, str]],
+    trimmed: list[dict[str, str]],
 ) -> None:
     priority_roles = TRIM_PRIORITY
 
@@ -1671,9 +2199,9 @@ def _collect_pack_entries(
     level: str,
     date: str,
     history_days: int,
-) -> List[tuple[str, Path]]:
+) -> list[tuple[str, Path]]:
     level = level.upper()
-    entries: List[tuple[str, Path, int]] = []
+    entries: list[tuple[str, Path, int]] = []
 
     def add_path(
         role: str,
@@ -1685,20 +2213,24 @@ def _collect_pack_entries(
         if path.is_file():
             entries.append((role, path, day_index))
         elif required:
-            raise typer.Exit(f"Missing required file {path}")
+            msg = f"Missing required file {path}"
+            typer.secho(msg, fg=typer.colors.RED, err=True)
+            raise typer.Exit(1)
 
     def add_dir(
         role: str,
         directory: Path,
         *,
         required: bool = False,
-        pattern: Optional[str] = None,
+        pattern: str | None = None,
         recursive: bool = False,
         day_index: int = 0,
     ) -> None:
         if not directory.exists():
             if required:
-                raise typer.Exit(f"Missing required files under {directory}")
+                msg = f"Missing required files under {directory}"
+                typer.secho(msg, fg=typer.colors.RED, err=True)
+                raise typer.Exit(1)
             return
         if recursive:
             files = sorted(p for p in directory.rglob("*") if p.is_file())
@@ -1707,13 +2239,27 @@ def _collect_pack_entries(
         else:
             files = sorted(p for p in directory.iterdir() if p.is_file())
         if not files and required:
-            raise typer.Exit(f"Missing required files under {directory}")
+            msg = f"Missing required files under {directory}"
+            typer.secho(msg, fg=typer.colors.RED, err=True)
+            raise typer.Exit(1)
         for file in files:
             entries.append((role, file, day_index))
 
-    def add_day_artifacts(day: str, day_index: int, *, include_raw: bool, required_core: bool) -> None:
+    def add_day_artifacts(
+        day: str,
+        day_index: int,
+        *,
+        include_raw: bool,
+        required_core: bool,
+    ) -> None:
         normalized_dir = root / "data" / "normalized" / day
-        add_dir("normalized", normalized_dir, required=required_core, pattern="*.yaml", day_index=day_index)
+        add_dir(
+            "normalized",
+            normalized_dir,
+            required=required_core,
+            pattern="*.yaml",
+            day_index=day_index,
+        )
         summary_path = root / "derived" / "summaries" / f"{day}.yaml"
         add_path("summaries", summary_path, day_index=day_index)
         microfacts_path = root / "derived" / "microfacts" / f"{day}.yaml"
@@ -1724,14 +2270,16 @@ def _collect_pack_entries(
             add_dir("journal_raw", journal_dir, pattern="*.md", day_index=day_index)
 
     if level not in {"L1", "L2", "L3", "L4"}:
-        raise typer.Exit(f"Unsupported level {level}")
+        msg = f"Unsupported level {level}"
+        typer.secho(msg, fg=typer.colors.RED, err=True)
+        raise typer.Exit(1)
 
     add_path("profile", root / "profile" / "self_profile.yaml", required=True)
     add_path("claims", root / "profile" / "claims.yaml", required=True)
 
     include_history = level == "L4"
     if level in {"L2", "L3", "L4"}:
-        day_offsets: List[Tuple[str, int]] = [(date, 0)]
+        day_offsets: list[tuple[str, int]] = [(date, 0)]
         if include_history and history_days > 0:
             anchor = datetime.fromisoformat(date)
             for offset in range(1, history_days + 1):
@@ -1762,7 +2310,7 @@ def _collect_pack_entries(
     return [(role, path) for role, path, _ in entries]
 
 
-def _latest_normalized_day(root: Path) -> Optional[str]:
+def _latest_normalized_day(root: Path) -> str | None:
     base = root / "data" / "normalized"
     if not base.exists():
         return None
@@ -1770,7 +2318,7 @@ def _latest_normalized_day(root: Path) -> Optional[str]:
     return candidates[-1] if candidates else None
 
 
-def _resolve_pack_date(level: str, requested: Optional[str], root: Path) -> str:
+def _resolve_pack_date(level: str, requested: str | None, root: Path) -> str:
     if requested:
         return requested
     if level == "L1":
@@ -1783,10 +2331,10 @@ def _resolve_pack_date(level: str, requested: Optional[str], root: Path) -> str:
 
 
 def _build_pack_payload(
-    entries: List[dict[str, Any]],
+    entries: list[dict[str, Any]],
     level: str,
     date: str,
-    trimmed: List[dict[str, str]],
+    trimmed: list[dict[str, str]],
     total_tokens: int,
     max_tokens: int,
 ) -> dict[str, Any]:
@@ -1801,17 +2349,19 @@ def _build_pack_payload(
             "generated_at": _format_timestamp(_now()),
         },
     }
+
+
 @app.command("pack")
 def pack(
     level: str = typer.Option("L2", "--level", "-l", help="Context depth (L1 or L2)."),
-    date: Optional[str] = typer.Option(
+    date: str | None = typer.Option(
         None,
         "--date",
         "-d",
         help="Date (YYYY-MM-DD); auto-detected for L2 when omitted.",
     ),
-    output: Optional[Path] = typer.Option(None, "--output", "-o"),
-    max_tokens: Optional[int] = typer.Option(None, "--max-tokens"),
+    output: Path | None = typer.Option(None, "--output", "-o"),
+    max_tokens: int | None = typer.Option(None, "--max-tokens"),
     fmt: str = typer.Option("yaml", "--format", help="Output format: yaml or json."),
     history_days: int = typer.Option(
         0,
@@ -1821,7 +2371,6 @@ def pack(
     dry_run: bool = typer.Option(False, "--dry-run", help="Show plan without emitting payload."),
 ) -> None:
     """Assemble a context bundle for prompting."""
-
     level = level.upper()
     fmt_value = fmt.lower()
     if fmt_value not in {"yaml", "json"}:
@@ -1840,9 +2389,14 @@ def pack(
 
     root = Path.cwd()
     resolved_date = _resolve_pack_date(level, date, root)
-    entries_info = _collect_pack_entries(root, level, resolved_date, history_days if level == "L4" else 0)
+    entries_info = _collect_pack_entries(
+        root,
+        level,
+        resolved_date,
+        history_days if level == "L4" else 0,
+    )
 
-    entries_payload: List[dict[str, Any]] = []
+    entries_payload: list[dict[str, Any]] = []
     for role, path in entries_info:
         text = path.read_text(encoding="utf-8")
         rel = _relative_source_path(path, root)
@@ -1852,23 +2406,31 @@ def pack(
                 "path": rel,
                 "tokens": _pack_token_count(text),
                 "content": text,
-            }
+            },
         )
 
     total_tokens = sum(entry["tokens"] for entry in entries_payload)
-    trimmed: List[dict[str, str]] = []
+    trimmed: list[dict[str, str]] = []
     if total_tokens > budget:
         _pack_trim_entries(entries_payload, budget, trimmed)
         total_tokens = sum(entry["tokens"] for entry in entries_payload)
 
-    payload = _build_pack_payload(entries_payload, level, resolved_date, trimmed, total_tokens, budget)
+    payload = _build_pack_payload(
+        entries_payload,
+        level,
+        resolved_date,
+        trimmed,
+        total_tokens,
+        budget,
+    )
 
     if dry_run:
         typer.echo("Planned files:")
         for entry in entries_payload:
             typer.echo(f"- {entry['path']} ({entry['tokens']} tokens)")
         if trimmed:
-            typer.echo("trimmed: " + ", ".join(trimmed))
+            trimmed_display = ", ".join(f"{item['role']}:{item['path']}" for item in trimmed)
+            typer.echo(f"trimmed: {trimmed_display}")
         return
 
     if output:

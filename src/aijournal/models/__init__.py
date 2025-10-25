@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -23,10 +23,10 @@ class JournalEntry(AijournalModel):
     id: str
     created_at: str
     title: str
-    tags: List[str] = Field(default_factory=list)
-    mood: Optional[str] = None
-    projects: List[str] = Field(default_factory=list)
-    summary: Optional[str] = None
+    tags: list[str] = Field(default_factory=list)
+    mood: str | None = None
+    projects: list[str] = Field(default_factory=list)
+    summary: str | None = None
 
 
 class JournalSection(AijournalModel):
@@ -34,8 +34,8 @@ class JournalSection(AijournalModel):
 
     heading: str
     level: int = 1
-    summary: Optional[str] = None
-    para_index: Optional[int] = None
+    summary: str | None = None
+    para_index: int | None = None
 
 
 class NormalizedEntity(AijournalModel):
@@ -43,7 +43,7 @@ class NormalizedEntity(AijournalModel):
 
     type: str
     value: str
-    extra: Dict[str, Any] = Field(default_factory=dict)
+    extra: dict[str, Any] = Field(default_factory=dict)
 
 
 class NormalizedEntry(AijournalModel):
@@ -53,18 +53,18 @@ class NormalizedEntry(AijournalModel):
     created_at: str
     source_path: str
     title: str
-    tags: List[str] = Field(default_factory=list)
-    sections: List[JournalSection] = Field(default_factory=list)
-    entities: List[NormalizedEntity] = Field(default_factory=list)
-    summary: Optional[str] = None
-    source_hash: Optional[str] = None
-    source_type: Optional[str] = None
+    tags: list[str] = Field(default_factory=list)
+    sections: list[JournalSection] = Field(default_factory=list)
+    entities: list[NormalizedEntity] = Field(default_factory=list)
+    summary: str | None = None
+    source_hash: str | None = None
+    source_type: str | None = None
 
 
 class SummaryMeta(AijournalModel):
     llm_model: str = "unknown"
     prompt_path: str = ""
-    prompt_hash: Optional[str] = None
+    prompt_hash: str | None = None
     created_at: str = ""
 
 
@@ -72,23 +72,23 @@ class DailySummary(AijournalModel):
     """Derived day summary (PLAN §4.1)."""
 
     day: str
-    bullets: List[str] = Field(default_factory=list)
-    highlights: List[str] = Field(default_factory=list)
-    todo_candidates: List[str] = Field(default_factory=list)
+    bullets: list[str] = Field(default_factory=list)
+    highlights: list[str] = Field(default_factory=list)
+    todo_candidates: list[str] = Field(default_factory=list)
     meta: SummaryMeta = Field(default_factory=SummaryMeta)
 
 
 class FactEvidenceSpan(AijournalModel):
     type: str
-    index: Optional[int] = None
-    start: Optional[int] = None
-    end: Optional[int] = None
-    text: Optional[str] = None
+    index: int | None = None
+    start: int | None = None
+    end: int | None = None
+    text: str | None = None
 
 
 class FactEvidence(AijournalModel):
     entry_id: str
-    spans: List[FactEvidenceSpan] = Field(default_factory=list)
+    spans: list[FactEvidenceSpan] = Field(default_factory=list)
 
 
 class MicroFact(AijournalModel):
@@ -96,25 +96,25 @@ class MicroFact(AijournalModel):
     statement: str
     confidence: float
     evidence: FactEvidence
-    first_seen: Optional[str] = None
-    last_seen: Optional[str] = None
+    first_seen: str | None = None
+    last_seen: str | None = None
 
 
 class MicroFactsFile(AijournalModel):
-    facts: List[MicroFact] = Field(default_factory=list)
+    facts: list[MicroFact] = Field(default_factory=list)
     meta: SummaryMeta = Field(default_factory=SummaryMeta)
 
 
 class ClaimSourceSpan(AijournalModel):
     type: str
-    index: Optional[int] = None
-    start: Optional[int] = None
-    end: Optional[int] = None
+    index: int | None = None
+    start: int | None = None
+    end: int | None = None
 
 
 class ClaimSource(AijournalModel):
     entry_id: str
-    spans: List[ClaimSourceSpan] = Field(default_factory=list)
+    spans: list[ClaimSourceSpan] = Field(default_factory=list)
 
 
 class Claim(AijournalModel):
@@ -122,88 +122,141 @@ class Claim(AijournalModel):
     statement: str
     status: str
     confidence: float
-    freshness: Optional[float] = None
-    sources: List[ClaimSource] = Field(default_factory=list)
-    method: Optional[str] = None
+    freshness: float | None = None
+    sources: list[ClaimSource] = Field(default_factory=list)
+    method: str | None = None
     user_verified: bool = False
-    review_after_days: Optional[int] = None
-    last_updated: Optional[str] = None
-    evidence: Optional[List[str]] = None
+    review_after_days: int | None = None
+    last_updated: str | None = None
+    evidence: list[str] | None = None
 
 
 class ClaimsFile(AijournalModel):
-    claims: List[Claim] = Field(default_factory=list)
+    claims: list[Claim] = Field(default_factory=list)
 
 
 class SelfProfile(AijournalModel):
-    traits: Dict[str, Any] = Field(default_factory=dict)
-    values_motivations: Dict[str, Any] = Field(default_factory=dict)
-    goals: Dict[str, Any] = Field(default_factory=dict)
-    decision_style: Dict[str, Any] = Field(default_factory=dict)
-    affect_energy: Dict[str, Any] = Field(default_factory=dict)
-    social: Dict[str, Any] = Field(default_factory=dict)
-    boundaries_ethics: Dict[str, Any] = Field(default_factory=dict)
-    coaching_prefs: Dict[str, Any] = Field(default_factory=dict)
+    traits: dict[str, Any] = Field(default_factory=dict)
+    values_motivations: dict[str, Any] = Field(default_factory=dict)
+    goals: dict[str, Any] = Field(default_factory=dict)
+    decision_style: dict[str, Any] = Field(default_factory=dict)
+    affect_energy: dict[str, Any] = Field(default_factory=dict)
+    social: dict[str, Any] = Field(default_factory=dict)
+    boundaries_ethics: dict[str, Any] = Field(default_factory=dict)
+    coaching_prefs: dict[str, Any] = Field(default_factory=dict)
 
 
 class ProfileSuggestionUpsert(AijournalModel):
     target: str
     operation: str
-    value: Dict[str, Any]
-    rationale: Optional[str] = None
+    value: dict[str, Any]
+    rationale: str | None = None
 
 
 class ProfileSuggestionUpdate(AijournalModel):
     target: str
     operation: str
     value: Any
-    method: Optional[str] = None
-    user_verified: Optional[bool] = None
-    evidence: Optional[List[str]] = None
-    rationale: Optional[str] = None
+    method: str | None = None
+    user_verified: bool | None = None
+    evidence: list[str] | None = None
+    rationale: str | None = None
 
 
 class ProfileSuggestions(AijournalModel):
-    upserts: List[ProfileSuggestionUpsert] = Field(default_factory=list)
-    updates: List[ProfileSuggestionUpdate] = Field(default_factory=list)
-    meta: Optional[SummaryMeta] = None
+    upserts: list[ProfileSuggestionUpsert] = Field(default_factory=list)
+    updates: list[ProfileSuggestionUpdate] = Field(default_factory=list)
+    meta: SummaryMeta | None = None
 
 
 class InterviewQuestion(AijournalModel):
     id: str
     text: str
-    target_facet: Optional[str] = None
-    priority: Optional[str] = None
+    target_facet: str | None = None
+    priority: str | None = None
 
 
 class InterviewSet(AijournalModel):
-    questions: List[InterviewQuestion] = Field(default_factory=list)
-    meta: Optional[SummaryMeta] = None
+    questions: list[InterviewQuestion] = Field(default_factory=list)
+    meta: SummaryMeta | None = None
 
 
 class AdviceReference(AijournalModel):
-    facets: List[str] = Field(default_factory=list)
-    claims: List[str] = Field(default_factory=list)
+    facets: list[str] = Field(default_factory=list)
+    claims: list[str] = Field(default_factory=list)
 
 
 class AdviceRecommendation(AijournalModel):
     title: str
     why_this_fits_you: AdviceReference = Field(default_factory=AdviceReference)
-    steps: List[str] = Field(default_factory=list)
-    risks: List[str] = Field(default_factory=list)
-    mitigations: List[str] = Field(default_factory=list)
+    steps: list[str] = Field(default_factory=list)
+    risks: list[str] = Field(default_factory=list)
+    mitigations: list[str] = Field(default_factory=list)
 
 
 class AdviceCard(AijournalModel):
     id: str
     query: str
-    assumptions: List[str] = Field(default_factory=list)
-    recommendations: List[AdviceRecommendation] = Field(default_factory=list)
-    tradeoffs: List[str] = Field(default_factory=list)
-    next_actions: List[str] = Field(default_factory=list)
-    confidence: Optional[float] = None
+    assumptions: list[str] = Field(default_factory=list)
+    recommendations: list[AdviceRecommendation] = Field(default_factory=list)
+    tradeoffs: list[str] = Field(default_factory=list)
+    next_actions: list[str] = Field(default_factory=list)
+    confidence: float | None = None
     alignment: AdviceReference = Field(default_factory=AdviceReference)
-    style: Dict[str, Any] = Field(default_factory=dict)
+    style: dict[str, Any] = Field(default_factory=dict)
+    meta: SummaryMeta = Field(default_factory=SummaryMeta)
+
+
+class ProfileUpdateInput(AijournalModel):
+    """Normalized entry metadata captured in a characterization batch."""
+
+    id: str
+    normalized_path: str
+    source_hash: str | None = None
+    manifest_hash: str | None = None
+    tags: list[str] = Field(default_factory=list)
+
+
+class ClaimProposal(AijournalModel):
+    """Pending claim update enriched with provenance."""
+
+    claim: Claim
+    normalized_ids: list[str] = Field(default_factory=list)
+    evidence_hashes: list[str] = Field(default_factory=list)
+    manifest_hashes: list[str] = Field(default_factory=list)
+    rationale: str | None = None
+
+
+class FacetProposal(AijournalModel):
+    """Pending facet update referencing profile paths."""
+
+    path: str
+    value: Any
+    operation: str = "set"
+    method: str | None = None
+    confidence: float | None = None
+    review_after_days: int | None = None
+    user_verified: bool | None = None
+    normalized_ids: list[str] = Field(default_factory=list)
+    evidence_hashes: list[str] = Field(default_factory=list)
+    rationale: str | None = None
+
+
+class ProfileUpdateProposals(AijournalModel):
+    """Aggregation of claim and facet proposals."""
+
+    claims: list[ClaimProposal] = Field(default_factory=list)
+    facets: list[FacetProposal] = Field(default_factory=list)
+
+
+class ProfileUpdateBatch(AijournalModel):
+    """Pending profile update batch emitted by `aijournal characterize`."""
+
+    batch_id: str
+    created_at: str
+    date: str
+    inputs: list[ProfileUpdateInput] = Field(default_factory=list)
+    proposals: ProfileUpdateProposals = Field(default_factory=ProfileUpdateProposals)
     meta: SummaryMeta = Field(default_factory=SummaryMeta)
 
 
@@ -229,6 +282,9 @@ __all__ = [
     "ProfileSuggestionUpdate",
     "ProfileSuggestionUpsert",
     "ProfileSuggestions",
+    "ProfileUpdateBatch",
+    "ProfileUpdateInput",
+    "ProfileUpdateProposals",
     "SelfProfile",
     "SummaryMeta",
 ]

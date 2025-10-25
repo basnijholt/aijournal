@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Dict
+from typing import TYPE_CHECKING
 
 import pytest
 import yaml
@@ -11,6 +10,8 @@ from typer.testing import CliRunner
 
 from aijournal.cli import app
 
+if TYPE_CHECKING:
+    from pathlib import Path
 
 runner = CliRunner()
 DATE = "2025-02-03"
@@ -50,7 +51,7 @@ def _write_normalized(tmp_path: Path) -> Path:
     return normalized
 
 
-def _read_yaml(path: Path) -> Dict[str, object]:
+def _read_yaml(path: Path) -> dict[str, object]:
     return yaml.safe_load(path.read_text(encoding="utf-8"))
 
 

@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from pathlib import Path
-from typing import Dict
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 import pytest
 import yaml
@@ -12,10 +11,12 @@ from typer.testing import CliRunner
 
 from aijournal.cli import app
 
+if TYPE_CHECKING:
+    from pathlib import Path
 
 runner = CliRunner()
 
-FROZEN_NOW = datetime(2025, 2, 3, 14, 5, 0, tzinfo=timezone.utc)
+FROZEN_NOW = datetime(2025, 2, 3, 14, 5, 0, tzinfo=UTC)
 EXPECTED_DATE = "2025-02-03"
 EXPECTED_SLUG = "2025-02-03-sync-notes"
 
@@ -30,7 +31,7 @@ def freeze_now(monkeypatch: pytest.MonkeyPatch) -> None:
 def _write_markdown(path: Path, *, created_at: str = "2025-02-03T14:05:00Z") -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
-        """---
+        f"""---
 id: 2025-02-03-sync-notes
 created_at: {created_at}
 title: Sync Notes
@@ -42,12 +43,12 @@ Discussed roadmap and blockers.
 
 ## Decisions
 Ship MVP this week.
-""".format(created_at=created_at),
+""",
         encoding="utf-8",
     )
 
 
-def _read_yaml(path: Path) -> Dict[str, object]:
+def _read_yaml(path: Path) -> dict[str, object]:
     return yaml.safe_load(path.read_text(encoding="utf-8"))
 
 
@@ -60,9 +61,7 @@ def test_normalize_creates_yaml(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
 
     assert result.exit_code == 0, result.output
 
-    normalized_path = (
-        tmp_path / "data" / "normalized" / EXPECTED_DATE / f"{EXPECTED_SLUG}.yaml"
-    )
+    normalized_path = tmp_path / "data" / "normalized" / EXPECTED_DATE / f"{EXPECTED_SLUG}.yaml"
     assert normalized_path.exists()
 
     data = _read_yaml(normalized_path)
@@ -86,9 +85,7 @@ def test_normalize_is_idempotent(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     first = runner.invoke(app, ["normalize", str(entry_path)])
     assert first.exit_code == 0
 
-    normalized_path = (
-        tmp_path / "data" / "normalized" / EXPECTED_DATE / f"{EXPECTED_SLUG}.yaml"
-    )
+    normalized_path = tmp_path / "data" / "normalized" / EXPECTED_DATE / f"{EXPECTED_SLUG}.yaml"
     before_mtime = normalized_path.stat().st_mtime
 
     second = runner.invoke(app, ["normalize", str(entry_path)])
@@ -99,20 +96,17 @@ def test_normalize_is_idempotent(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 
 
 def test_normalize_converts_timezones_to_utc(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.chdir(tmp_path)
-    entry_path = (
-        tmp_path / "data" / "journal" / "2025" / "02" / "03" / f"{EXPECTED_SLUG}.md"
-    )
+    entry_path = tmp_path / "data" / "journal" / "2025" / "02" / "03" / f"{EXPECTED_SLUG}.md"
     _write_markdown(entry_path, created_at="2025-02-03T09:00:00-05:00")
 
     result = runner.invoke(app, ["normalize", str(entry_path)])
 
     assert result.exit_code == 0, result.output
 
-    normalized_path = (
-        tmp_path / "data" / "normalized" / EXPECTED_DATE / f"{EXPECTED_SLUG}.yaml"
-    )
+    normalized_path = tmp_path / "data" / "normalized" / EXPECTED_DATE / f"{EXPECTED_SLUG}.yaml"
     data = _read_yaml(normalized_path)
     assert data["created_at"] == "2025-02-03T14:00:00Z"

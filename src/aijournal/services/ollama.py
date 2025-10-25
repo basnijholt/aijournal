@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
-from typing import Any, Dict, Optional
+from typing import Any
 
 from ollama import Client
 
@@ -19,10 +19,10 @@ class OllamaConfig:
     """Runtime configuration for Ollama task runners."""
 
     model: str
-    host: Optional[str] = None
-    temperature: Optional[float] = None
-    seed: Optional[int] = None
-    max_tokens: Optional[int] = None
+    host: str | None = None
+    temperature: float | None = None
+    seed: int | None = None
+    max_tokens: int | None = None
 
 
 class OllamaTaskRunner:
@@ -32,8 +32,8 @@ class OllamaTaskRunner:
         self._config = config
         self._client = Client(host=config.host) if config.host else Client()
 
-    def generate_json(self, prompt: str) -> Dict[str, Any]:
-        options: Dict[str, Any] = {}
+    def generate_json(self, prompt: str) -> dict[str, Any]:
+        options: dict[str, Any] = {}
         if self._config.temperature is not None:
             options["temperature"] = float(self._config.temperature)
         if self._config.seed is not None:
@@ -48,26 +48,29 @@ class OllamaTaskRunner:
         )
         text = response.get("response") if isinstance(response, dict) else str(response)
         if not text:
-            raise LLMResponseError("Empty response from Ollama")
+            msg = "Empty response from Ollama"
+            raise LLMResponseError(msg)
         return _parse_json_block(text)
 
 
 JSON_BLOCK = re.compile(r"\{.*\}", re.DOTALL)
 
 
-def _parse_json_block(text: str) -> Dict[str, Any]:
+def _parse_json_block(text: str) -> dict[str, Any]:
     candidate = text.strip()
     try:
         return json.loads(candidate)
     except json.JSONDecodeError:
         match = JSON_BLOCK.search(candidate)
         if not match:
-            raise LLMResponseError("Response did not contain JSON payload") from None
+            msg = "Response did not contain JSON payload"
+            raise LLMResponseError(msg) from None
         snippet = match.group(0)
         try:
             return json.loads(snippet)
         except json.JSONDecodeError as exc:  # pragma: no cover - unexpected format
-            raise LLMResponseError(f"Unable to parse JSON payload: {exc}") from exc
+            msg = f"Unable to parse JSON payload: {exc}"
+            raise LLMResponseError(msg) from exc
 
 
 __all__ = ["LLMResponseError", "OllamaConfig", "OllamaTaskRunner"]

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, Iterable, List, Type
+from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, ValidationError
 
@@ -15,21 +15,25 @@ from aijournal.models import (
     MicroFactsFile,
     NormalizedEntry,
     ProfileSuggestions,
+    ProfileUpdateBatch,
     SelfProfile,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
 
 
 class SchemaValidationError(ValueError):
     """Raised when a payload does not conform to a named schema."""
 
-    def __init__(self, schema: str, errors: Iterable[str]):
+    def __init__(self, schema: str, errors: Iterable[str]) -> None:
         self.schema = schema
         self.errors = list(errors)
         message = f"Schema '{schema}' validation failed: {'; '.join(self.errors)}"
         super().__init__(message)
 
 
-_MODEL_REGISTRY: Dict[str, Type[BaseModel]] = {
+_MODEL_REGISTRY: dict[str, type[BaseModel]] = {
     "advice": AdviceCard,
     "claims": ClaimsFile,
     "interviews": InterviewSet,
@@ -37,23 +41,24 @@ _MODEL_REGISTRY: Dict[str, Type[BaseModel]] = {
     "microfacts": MicroFactsFile,
     "normalized_entry": NormalizedEntry,
     "profile_suggestions": ProfileSuggestions,
+    "profile_updates": ProfileUpdateBatch,
     "self_profile": SelfProfile,
     "summary": DailySummary,
 }
 
 
-def _resolve_model(schema_name: str) -> Type[BaseModel]:
+def _resolve_model(schema_name: str) -> type[BaseModel]:
     try:
         return _MODEL_REGISTRY[schema_name]
     except KeyError as exc:  # pragma: no cover - defensive guard
-        raise ValueError(f"Unknown schema requested: {schema_name}") from exc
+        msg = f"Unknown schema requested: {schema_name}"
+        raise ValueError(msg) from exc
 
 
 def validate_schema(schema_name: str, payload: Any) -> None:
     """Validate payload against the named schema or raise SchemaValidationError."""
-
     model = _resolve_model(schema_name)
-    errors: List[str] = []
+    errors: list[str] = []
     try:
         model.model_validate(payload)
     except ValidationError as exc:
@@ -65,4 +70,3 @@ def validate_schema(schema_name: str, payload: Any) -> None:
 
 
 __all__ = ["SchemaValidationError", "validate_schema"]
-

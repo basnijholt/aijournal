@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from pathlib import Path
-from typing import Dict, List
 
 import pytest
 import yaml
@@ -12,10 +11,9 @@ from typer.testing import CliRunner
 
 from aijournal.cli import app
 
-
 runner = CliRunner()
 
-FROZEN_NOW = datetime(2025, 1, 2, 9, 30, 15, tzinfo=timezone.utc)
+FROZEN_NOW = datetime(2025, 1, 2, 9, 30, 15, tzinfo=UTC)
 EXPECTED_DATE_PATH = Path("data/journal/2025/01/02")
 EXPECTED_SLUG = "2025-01-02-kickoff-notes"
 
@@ -39,7 +37,7 @@ def freeze_datetime(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(cli_module, "_now", lambda: FROZEN_NOW, raising=False)
 
 
-def _read_frontmatter(path: Path) -> Dict[str, object]:
+def _read_frontmatter(path: Path) -> dict[str, object]:
     text = path.read_text(encoding="utf-8")
     parts = text.split("---\n")
     assert len(parts) >= 3, "Missing YAML frontmatter"
@@ -83,7 +81,7 @@ def test_new_accepts_tags(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> No
     assert result.exit_code == 0
 
     entry_path = tmp_path / EXPECTED_DATE_PATH / "2025-01-02-weekly-review.md"
-    tags: List[str] = _read_frontmatter(entry_path)["tags"]
+    tags: list[str] = _read_frontmatter(entry_path)["tags"]
     assert tags == ["reflection", "family"]
 
 

@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Dict, List
+from typing import TYPE_CHECKING
 
 import pytest
 import yaml
@@ -11,6 +10,8 @@ from typer.testing import CliRunner
 
 from aijournal.cli import app
 
+if TYPE_CHECKING:
+    from pathlib import Path
 
 runner = CliRunner()
 DATE = "2025-02-03"
@@ -50,7 +51,7 @@ def _write_normalized(tmp_path: Path) -> Path:
     return normalized
 
 
-def _read_yaml(path: Path) -> Dict[str, object]:
+def _read_yaml(path: Path) -> dict[str, object]:
     return yaml.safe_load(path.read_text(encoding="utf-8"))
 
 
@@ -71,7 +72,8 @@ def test_facts_generates_microfacts(tmp_path: Path, monkeypatch: pytest.MonkeyPa
     assert isinstance(facts, list)
     if facts:
         first = facts[0]
-        assert first.get("id") and first.get("statement")
+        assert first.get("id")
+        assert first.get("statement")
     meta = data.get("meta", {})
     for key in ("llm_model", "prompt_path", "prompt_hash", "created_at"):
         assert meta.get(key), f"Missing {key}"

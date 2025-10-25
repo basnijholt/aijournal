@@ -2,22 +2,16 @@
 
 from __future__ import annotations
 
-import os
-
 import pytest
 from typer.testing import CliRunner
 
 from aijournal.cli import app
 
-
 runner = CliRunner()
 
 
 def _has_ollama_health_command() -> bool:
-    for cmd in app.registered_commands:
-        if cmd.name == "ollama":
-            return True
-    return False
+    return any(cmd.name == "ollama" for cmd in app.registered_commands)
 
 
 @pytest.fixture(autouse=True)
