@@ -5,10 +5,11 @@ from __future__ import annotations
 import json
 import os
 import re
+from string import Template
 from datetime import datetime, timedelta, timezone
 from hashlib import sha256
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Tuple, Callable
 
 from agno.agent import Agent
 import typer
@@ -21,6 +22,8 @@ from aijournal.ingest_agent import (
     build_ingest_agent,
     ingest_with_agent,
 )
+from aijournal.services import LLMResponseError, OllamaConfig, OllamaTaskRunner
+from aijournal.schema import SchemaValidationError, validate_schema
 
 
 app = typer.Typer(help="Local-first personal journal utilities.")
@@ -104,6 +107,15 @@ HIGH_IMPACT_PROBES = [
 
 MARKDOWN_SUFFIXES = {".md", ".markdown"}
 
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
+DEFAULT_PROMPTS = {
+    "summarize_day.md": "You are a journaling summarizer. Return JSON with day, bullets, highlights, todo_candidates.",
+    "extract_facts.md": "Extract atomic facts as JSON {\"facts\":[...]}.",
+    "profile_suggest.md": "Propose JSON with upserts and updates grounded in the entries and profile.",
+    "advise.md": "Return an advice card JSON with recommendations citing facets and claims.",
+}
+
 
 def _now() -> datetime:
     """Return the current UTC time; separated for easy monkeypatching in tests."""
@@ -118,6 +130,62 @@ def _slugify_title(title: str) -> str:
 
 def _format_timestamp(dt: datetime) -> str:
     return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _resolve_prompt_path(prompt_path: str) -> Path:
+    candidate = Path(prompt_path)
+    if candidate.is_absolute():
+        return candidate
+    cwd_candidate = Path.cwd() / prompt_path
+    if cwd_candidate.exists():
+        return cwd_candidate
+    repo_candidate = PROJECT_ROOT / prompt_path
+    return repo_candidate
+
+
+def _load_prompt_template(prompt_path: str) -> str:
+    path = _resolve_prompt_path(prompt_path)
+    if path.exists():
+        return path.read_text(encoding="utf-8")
+    key = Path(prompt_path).name
+    return DEFAULT_PROMPTS.get(prompt_path) or DEFAULT_PROMPTS.get(key, "")
+
+
+def _render_prompt(prompt_path: str, variables: Dict[str, str]) -> str:
+    template = Template(_load_prompt_template(prompt_path))
+    return template.safe_substitute(**variables)
+
+
+def _json_block(data: Any) -> str:
+    return json.dumps(data, indent=2, ensure_ascii=False)
+
+
+def _build_ollama_runner(config: dict[str, Any]) -> OllamaTaskRunner:
+    runner_config = OllamaConfig(
+        model=_resolve_model_name(config),
+        host=os.getenv("AIJOURNAL_OLLAMA_HOST"),
+        temperature=_coerce_float(config.get("temperature")),
+        seed=_coerce_int(config.get("seed")),
+    )
+    return OllamaTaskRunner(runner_config)
+
+
+def _safe_llm_json(
+    prompt_path: str,
+    variables: Dict[str, str],
+    runner: OllamaTaskRunner,
+    fallback: "Callable[[], Dict[str, Any]]",
+) -> Dict[str, Any]:
+    prompt = _render_prompt(prompt_path, variables)
+    try:
+        return runner.generate_json(prompt)
+    except (LLMResponseError, Exception) as exc:  # pragma: no cover - network errors hard to simulate
+        typer.secho(
+            f"Falling back to offline heuristics for {prompt_path}: {exc}",
+            fg=typer.colors.YELLOW,
+            err=True,
+        )
+        return fallback()
 
 
 def _journal_path(base: Path, dt: datetime, slug: str) -> Path:
@@ -221,7 +289,19 @@ def _load_existing_yaml(path: Path) -> Optional[dict[str, Any]]:
     return yaml.safe_load(path.read_text(encoding="utf-8"))
 
 
-def _write_yaml_if_changed(path: Path, data: dict[str, Any]) -> bool:
+def _write_yaml_if_changed(
+    path: Path,
+    data: dict[str, Any],
+    *,
+    schema: Optional[str] = None,
+) -> bool:
+    if schema:
+        try:
+            validate_schema(schema, data)
+        except SchemaValidationError as exc:
+            typer.secho(str(exc), fg=typer.colors.RED, err=True)
+            raise typer.Exit(1)
+
     existing = _load_existing_yaml(path)
     if existing == data:
         return False
@@ -550,7 +630,7 @@ def _derived_profile_suggestions_path(root: Path, day: str) -> Path:
 
 
 def _hash_prompt(prompt_path: str) -> Optional[str]:
-    path = Path(prompt_path)
+    path = _resolve_prompt_path(prompt_path)
     try:
         data = path.read_bytes()
     except FileNotFoundError:
@@ -600,33 +680,69 @@ def _fake_microfacts(entries: List[dict[str, Any]]) -> List[dict[str, Any]]:
             "id": "fact-empty",
             "statement": "No normalized entries available",
             "confidence": 0.0,
-            "evidence": {},
+            "evidence": {"entry_id": "unknown"},
         }
     ]
 
 
 def _fake_advise(question: str, profile: dict[str, Any], claims: List[dict[str, Any]]) -> dict[str, Any]:
     claim = claims[0] if claims else {}
-    boundaries = profile.get("boundaries_ethics", {}).get("red_lines", [])
-    values = profile.get("values_motivations", {}).get("schwartz_top5", [])
+    advice_id = _advice_identifier(question)
+    claim_statement = claim.get("statement") or "Reflect on priorities"
+    claim_id = claim.get("id")
 
-    recommendations = [
-        {
-            "title": claim.get("statement", "Reflect on priorities"),
-            "actions": [
-                "Review morning deep-work blocks",
-                f"Question posed: {question}",
-            ],
-            "respecting": boundaries,
-        }
-    ]
+    facets: List[str] = []
+    if profile.get("affect_energy"):
+        facets.append("affect_energy.energy_map")
+    if profile.get("goals"):
+        facets.append("goals.short_term")
+    if profile.get("values_motivations"):
+        facets.append("values_motivations.schwartz_top5")
 
-    alignment = {
-        "claims": [claim.get("id")] if claim.get("id") else [],
-        "values": values,
+    reference = {
+        "facets": facets,
+        "claims": [claim_id] if claim_id else [],
     }
 
-    return {"recommendations": recommendations, "alignment": alignment}
+    assumption = (
+        f"Reference claim: {claim_statement}"
+        if claim_statement
+        else "No verified claims available"
+    )
+
+    recommendation = {
+        "title": claim_statement,
+        "why_this_fits_you": {
+            "facets": list(reference["facets"]),
+            "claims": list(reference["claims"]),
+        },
+        "steps": [
+            "Protect two deep-work mornings for focused execution.",
+            f"Question under review: {question}",
+        ],
+        "risks": ["Schedule collisions", "Unclear stakeholder updates"],
+        "mitigations": [
+            "Share the plan with collaborators early.",
+            "Add end-of-day shutdown reminders to honor boundaries.",
+        ],
+    }
+
+    style = profile.get("coaching_prefs") or {"tone": "direct", "depth": "concrete-first"}
+
+    return {
+        "id": advice_id,
+        "query": question,
+        "assumptions": [assumption],
+        "recommendations": [recommendation],
+        "tradeoffs": ["Shipping speed may dip slightly while routines stabilize."],
+        "next_actions": [
+            "Block two 3-hour focus windows next week.",
+            "Schedule a 10-minute Friday review with yourself.",
+        ],
+        "confidence": 0.5,
+        "alignment": reference,
+        "style": style,
+    }
 
 
 def _fake_profile_suggestions(
@@ -660,6 +776,191 @@ def _fake_profile_suggestions(
         )
 
     return {"upserts": upserts, "updates": updates}
+
+
+def _coerce_str_list(value: Any) -> List[str]:
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if str(item).strip()]
+    if isinstance(value, str):
+        candidate = value.strip()
+        return [candidate] if candidate else []
+    return []
+
+
+def _todo_from_entries(entries: List[dict[str, Any]]) -> List[str]:
+    todos: List[str] = []
+    for entry in entries[:3]:
+        title = entry.get("title") or entry.get("id") or "entry"
+        todos.append(f"Review follow-ups from {title}")
+    return todos or ["Capture explicit next actions in tomorrow's entry."]
+
+
+def _summarize_day_payload(
+    entries: List[dict[str, Any]],
+    date: str,
+    config: dict[str, Any],
+) -> dict[str, Any]:
+    def fallback() -> dict[str, Any]:
+        bullets = _fake_summarize(entries)
+        return {
+            "day": date,
+            "bullets": bullets,
+            "highlights": bullets[:3],
+            "todo_candidates": _todo_from_entries(entries),
+        }
+
+    if _use_fake_llm():
+        return fallback()
+
+    try:
+        runner = _build_ollama_runner(config)
+    except Exception as exc:  # pragma: no cover - dependent on runtime env
+        typer.secho(
+            f"Unable to initialize Ollama for summarize: {exc}",
+            fg=typer.colors.YELLOW,
+            err=True,
+        )
+        return fallback()
+
+    payload = _safe_llm_json(
+        "prompts/summarize_day.md",
+        {"date": date, "entries_json": _json_block(entries)},
+        runner,
+        fallback,
+    )
+    return {
+        "day": str(payload.get("day") or date),
+        "bullets": _coerce_str_list(payload.get("bullets")),
+        "highlights": _coerce_str_list(payload.get("highlights")) or _coerce_str_list(payload.get("bullets"))[:3],
+        "todo_candidates": _coerce_str_list(payload.get("todo_candidates")) or _todo_from_entries(entries),
+    }
+
+
+def _microfacts_payload(
+    entries: List[dict[str, Any]],
+    date: str,
+    config: dict[str, Any],
+) -> dict[str, Any]:
+    def fallback() -> dict[str, Any]:
+        return {"facts": _fake_microfacts(entries)}
+
+    if _use_fake_llm():
+        return fallback()
+
+    try:
+        runner = _build_ollama_runner(config)
+    except Exception as exc:  # pragma: no cover
+        typer.secho(
+            f"Unable to initialize Ollama for facts: {exc}",
+            fg=typer.colors.YELLOW,
+            err=True,
+        )
+        return fallback()
+
+    payload = _safe_llm_json(
+        "prompts/extract_facts.md",
+        {"date": date, "entries_json": _json_block(entries)},
+        runner,
+        fallback,
+    )
+    facts = payload.get("facts")
+    if not isinstance(facts, list):
+        return fallback()
+    return {"facts": facts}
+
+
+def _profile_suggestions_payload(
+    entries: List[dict[str, Any]],
+    profile: dict[str, Any],
+    claims: List[dict[str, Any]],
+    date: str,
+    config: dict[str, Any],
+) -> dict[str, Any]:
+    def fallback() -> dict[str, Any]:
+        return _fake_profile_suggestions(entries, profile, claims)
+
+    if _use_fake_llm():
+        return fallback()
+
+    try:
+        runner = _build_ollama_runner(config)
+    except Exception as exc:  # pragma: no cover
+        typer.secho(
+            f"Unable to initialize Ollama for profile suggestions: {exc}",
+            fg=typer.colors.YELLOW,
+            err=True,
+        )
+        return fallback()
+
+    payload = _safe_llm_json(
+        "prompts/profile_suggest.md",
+        {
+            "date": date,
+            "entries_json": _json_block(entries),
+            "profile_json": _json_block(profile),
+            "claims_json": _json_block({"claims": claims}),
+        },
+        runner,
+        fallback,
+    )
+
+    upserts = payload.get("upserts") if isinstance(payload.get("upserts"), list) else []
+    updates = payload.get("updates") if isinstance(payload.get("updates"), list) else []
+    return {"upserts": upserts, "updates": updates}
+
+
+def _advice_identifier(question: str) -> str:
+    day = _created_date(_format_timestamp(_now()))
+    digest = sha256(question.encode("utf-8")).hexdigest()[:8]
+    return f"adv_{day}_{digest}"
+
+
+def _advice_payload(
+    question: str,
+    profile: dict[str, Any],
+    claims: List[dict[str, Any]],
+    config: dict[str, Any],
+) -> dict[str, Any]:
+    def fallback() -> dict[str, Any]:
+        return _fake_advise(question, profile, claims)
+
+    if _use_fake_llm():
+        return fallback()
+
+    try:
+        runner = _build_ollama_runner(config)
+    except Exception as exc:  # pragma: no cover
+        typer.secho(
+            f"Unable to initialize Ollama for advise: {exc}",
+            fg=typer.colors.YELLOW,
+            err=True,
+        )
+        return fallback()
+
+    payload = _safe_llm_json(
+        "prompts/advise.md",
+        {
+            "date": _created_date(_format_timestamp(_now())),
+            "question": question,
+            "profile_json": _json_block(profile),
+            "claims_json": _json_block({"claims": claims}),
+        },
+        runner,
+        fallback,
+    )
+
+    fallback_defaults = fallback()
+    advice = dict(payload)
+    advice.setdefault("id", _advice_identifier(question))
+    advice.setdefault("query", question)
+    advice.setdefault("assumptions", ["Grounded in supplied profile data"])
+    advice.setdefault("recommendations", fallback_defaults.get("recommendations", []))
+    advice.setdefault("tradeoffs", [])
+    advice.setdefault("next_actions", [])
+    advice.setdefault("confidence", 0.6)
+    advice.setdefault("alignment", {"facets": [], "claims": []})
+    advice.setdefault("style", profile.get("coaching_prefs", {}))
+    return advice
 
 
 @app.command()
@@ -856,7 +1157,11 @@ def ingest(
             continue
 
         normalized_path = _normalized_path(root, date_str, normalized["id"])
-        _write_yaml_if_changed(normalized_path, normalized)
+        _write_yaml_if_changed(
+            normalized_path,
+            normalized,
+            schema="normalized_entry",
+        )
 
         if snapshot:
             raw_dir.mkdir(parents=True, exist_ok=True)
@@ -924,7 +1229,11 @@ def normalize(
     }
 
     output_path = _normalized_path(root, date_str, entry_id)
-    _write_yaml_if_changed(output_path, normalized_data)
+    _write_yaml_if_changed(
+        output_path,
+        normalized_data,
+        schema="normalized_entry",
+    )
     typer.echo(str(output_path))
 
 
@@ -932,7 +1241,7 @@ def normalize(
 def summarize(
     date: str = typer.Option(..., "--date", "-d", help="Date (YYYY-MM-DD) to summarize."),
 ) -> None:
-    """Generate a daily summary from normalized entries (fake LLM mode)."""
+    """Generate a daily summary from normalized entries."""
 
     root = Path.cwd()
     entries = _load_normalized_entries(root, date)
@@ -940,23 +1249,12 @@ def summarize(
         typer.secho(f"No normalized entries for {date}", fg=typer.colors.RED, err=True)
         raise typer.Exit(1)
 
-    if os.getenv("AIJOURNAL_FAKE_OLLAMA") != "1":
-        typer.secho(
-            "Only fake Ollama mode is implemented for summarize.",
-            fg=typer.colors.RED,
-            err=True,
-        )
-        raise typer.Exit(1)
-
-    bullets = _fake_summarize(entries)
-    summary_data = {
-        "day": date,
-        "bullets": bullets,
-        "meta": _build_meta("prompts/summarize_day.md"),
-    }
+    config = _load_config(root)
+    summary_data = _summarize_day_payload(entries, date, config)
+    summary_data["meta"] = _build_meta("prompts/summarize_day.md")
 
     summary_path = _derived_summary_path(root, date)
-    _write_yaml_if_changed(summary_path, summary_data)
+    _write_yaml_if_changed(summary_path, summary_data, schema="summary")
     typer.echo(str(summary_path))
 
 
@@ -964,7 +1262,7 @@ def summarize(
 def facts(
     date: str = typer.Option(..., "--date", "-d", help="Date (YYYY-MM-DD) to analyze."),
 ) -> None:
-    """Generate micro-facts from normalized entries (fake LLM mode)."""
+    """Generate micro-facts from normalized entries."""
 
     root = Path.cwd()
     entries = _load_normalized_entries(root, date)
@@ -972,21 +1270,12 @@ def facts(
         typer.secho(f"No normalized entries for {date}", fg=typer.colors.RED, err=True)
         raise typer.Exit(1)
 
-    if os.getenv("AIJOURNAL_FAKE_OLLAMA") != "1":
-        typer.secho(
-            "Only fake Ollama mode is implemented for facts.",
-            fg=typer.colors.RED,
-            err=True,
-        )
-        raise typer.Exit(1)
-
-    facts_data = {
-        "facts": _fake_microfacts(entries),
-        "meta": _build_meta("prompts/extract_facts.md"),
-    }
+    config = _load_config(root)
+    facts_data = _microfacts_payload(entries, date, config)
+    facts_data["meta"] = _build_meta("prompts/extract_facts.md")
 
     facts_path = _derived_microfacts_path(root, date)
-    _write_yaml_if_changed(facts_path, facts_data)
+    _write_yaml_if_changed(facts_path, facts_data, schema="microfacts")
     typer.echo(str(facts_path))
 
 
@@ -994,15 +1283,7 @@ def facts(
 def profile_suggest(
     date: str = typer.Option(..., "--date", "-d", help="Date (YYYY-MM-DD) to analyze."),
 ) -> None:
-    """Suggest profile updates based on normalized entries (fake LLM)."""
-
-    if os.getenv("AIJOURNAL_FAKE_OLLAMA") != "1":
-        typer.secho(
-            "Only fake Ollama mode is implemented for profile suggest.",
-            fg=typer.colors.RED,
-            err=True,
-        )
-        raise typer.Exit(1)
+    """Suggest profile updates based on normalized entries."""
 
     root = Path.cwd()
     entries = _load_normalized_entries(root, date)
@@ -1015,11 +1296,12 @@ def profile_suggest(
         typer.secho("No profile data", fg=typer.colors.RED, err=True)
         raise typer.Exit(1)
 
-    suggestions = _fake_profile_suggestions(entries, profile, claims)
+    config = _load_config(root)
+    suggestions = _profile_suggestions_payload(entries, profile, claims, date, config)
     suggestions["meta"] = _build_meta("prompts/profile_suggest.md")
 
     path = _derived_profile_suggestions_path(root, date)
-    _write_yaml_if_changed(path, suggestions)
+    _write_yaml_if_changed(path, suggestions, schema="profile_suggestions")
     typer.echo(str(path))
 
 
@@ -1061,8 +1343,16 @@ def profile_apply(
         typer.echo("No changes to apply")
         raise typer.Exit(0)
 
-    _atomic_write(root / "profile" / "self_profile.yaml", profile)
-    _atomic_write(root / "profile" / "claims.yaml", {"claims": claims})
+    _atomic_write(
+        root / "profile" / "self_profile.yaml",
+        profile,
+        schema="self_profile",
+    )
+    _atomic_write(
+        root / "profile" / "claims.yaml",
+        {"claims": claims},
+        schema="claims",
+    )
     typer.echo("Applied 1 suggestions file")
 
 
@@ -1070,15 +1360,7 @@ def profile_apply(
 def advise(
     question: str = typer.Argument(..., help="Question for the advisor to answer."),
 ) -> None:
-    """Generate advice from the current profile (fake LLM mode)."""
-
-    if os.getenv("AIJOURNAL_FAKE_OLLAMA") != "1":
-        typer.secho(
-            "Only fake Ollama mode is implemented for advise.",
-            fg=typer.colors.RED,
-            err=True,
-        )
-        raise typer.Exit(1)
+    """Generate advice from the current profile."""
 
     root = Path.cwd()
     profile, claims = _load_profile_components(root)
@@ -1086,13 +1368,13 @@ def advise(
         typer.secho("No profile data", fg=typer.colors.RED, err=True)
         raise typer.Exit(1)
 
-    advice_content = _fake_advise(question, profile, claims)
-    advice_content["question"] = question
+    config = _load_config(root)
+    advice_content = _advice_payload(question, profile, claims, config)
     advice_content["meta"] = _build_meta("prompts/advise.md")
 
     day = _created_date(_format_timestamp(_now()))
     advice_path = _derived_advice_path(root, day, question)
-    _write_yaml_if_changed(advice_path, advice_content)
+    _write_yaml_if_changed(advice_path, advice_content, schema="advice")
     typer.echo(str(advice_path))
 
 
@@ -1165,7 +1447,18 @@ def _load_profile_components(root: Path) -> tuple[dict[str, Any], List[dict[str,
     return profile, claims_data
 
 
-def _atomic_write(path: Path, payload: dict[str, Any]) -> None:
+def _atomic_write(
+    path: Path,
+    payload: dict[str, Any],
+    *,
+    schema: Optional[str] = None,
+) -> None:
+    if schema:
+        try:
+            validate_schema(schema, payload)
+        except SchemaValidationError as exc:
+            typer.secho(str(exc), fg=typer.colors.RED, err=True)
+            raise typer.Exit(1)
     tmp = path.with_suffix(path.suffix + ".tmp")
     tmp.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
     tmp.replace(path)

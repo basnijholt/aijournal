@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DailySummary",
+  "type": "object",
+  "required": ["day", "bullets", "meta"],
+  "properties": {
+    "day": {"type": "string"},
+    "bullets": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "highlights": {
+      "type": "array",
+      "items": {"type": "string"},
+      "default": []
+    },
+    "todo_candidates": {
+      "type": "array",
+      "items": {"type": "string"},
+      "default": []
+    },
+    "meta": {
+      "type": "object",
+      "required": ["llm_model", "prompt_path", "created_at"],
+      "properties": {
+        "llm_model": {"type": "string"},
+        "prompt_path": {"type": "string"},
+        "prompt_hash": {"type": ["string", "null"]},
+        "created_at": {"type": "string", "format": "date-time"}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

@@ -68,6 +68,8 @@ def test_summarize_generates_summary(tmp_path: Path, monkeypatch: pytest.MonkeyP
 
     data = _read_yaml(summary_path)
     assert data.get("day") == DATE
+    assert isinstance(data.get("highlights"), list)
+    assert isinstance(data.get("todo_candidates"), list)
     meta = data.get("meta", {})
     for key in ("llm_model", "prompt_path", "prompt_hash", "created_at"):
         assert meta.get(key), f"Missing {key}"
