@@ -62,6 +62,25 @@ AIJOURNAL_FAKE_OLLAMA=1 aijournal facts --date 2025-02-03
 
 Creates `derived/microfacts/2025-02-03.yaml` with placeholder facts. Idempotent writes prevent churn.
 
+### Ollama health check (fake mode)
+
+```sh
+export AIJOURNAL_FAKE_OLLAMA=1
+aijournal ollama health
+```
+
+Prints the fixture's advertised `models` array and its `default_model`, for example:
+
+```
+models:
+  - llama3.1:70b-instruct
+  - llama3.1:8b-instruct
+default_model: llama3.1:8b-instruct
+status: ok (fake)
+```
+
+The fake health probe never touches the network, so it is safe to call repeatedly in automation to confirm Ollama wiring without mutating any files.
+
 ### Profile status quick-look
 
 ```sh
