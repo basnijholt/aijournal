@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Iterable, List, Optional
+from typing import Any, Iterable, List, Optional
 
 import typer
 import yaml
@@ -75,6 +75,17 @@ def _journal_path(base: Path, dt: datetime, slug: str) -> Path:
     )
 
 
+def _find_data_root(entry: Path) -> Path:
+    for parent in entry.parents:
+        if parent.name == "data":
+            return parent.parent
+    return Path.cwd()
+
+
+def _normalized_path(root: Path, date_str: str, entry_id: str) -> Path:
+    return root / "data" / "normalized" / date_str / f"{entry_id}.yaml"
+
+
 def _ensure_dirs(base: Path, rel_paths: Iterable[str]) -> tuple[int, int]:
     paths = tuple(rel_paths)
     created = 0
@@ -98,6 +109,85 @@ def _ensure_files(base: Path) -> tuple[int, int]:
         target.write_text(content.rstrip() + "\n", encoding="utf-8")
         created += 1
     return created, len(SEED_FILES)
+
+
+def _split_frontmatter(text: str) -> tuple[str, str]:
+    if not text.startswith("---"):
+        raise ValueError("Markdown entry missing YAML frontmatter delimiter")
+
+    parts = text.split("---", 2)
+    if len(parts) < 3:
+        raise ValueError("Incomplete YAML frontmatter block")
+
+    frontmatter_raw = parts[1].strip()
+    body = parts[2]
+    return frontmatter_raw, body
+
+
+def _parse_entry(entry_path: Path) -> tuple[dict[str, Any], List[dict[str, Any]]]:
+    text = entry_path.read_text(encoding="utf-8")
+    frontmatter_raw, body = _split_frontmatter(text)
+    data = yaml.safe_load(frontmatter_raw) or {}
+
+    sections: List[dict[str, Any]] = []
+    for line in body.splitlines():
+        heading_match = re.match(r"^(#{1,6})\s+(.*)$", line.strip())
+        if heading_match:
+            sections.append(
+                {
+                    "heading": heading_match.group(2).strip(),
+                    "level": len(heading_match.group(1)),
+                }
+            )
+
+    return data, sections
+
+
+def _relative_source_path(entry_path: Path, root: Path) -> str:
+    try:
+        return str(entry_path.relative_to(root))
+    except ValueError:
+        return str(entry_path)
+
+
+def _load_existing_yaml(path: Path) -> Optional[dict[str, Any]]:
+    if not path.exists():
+        return None
+    return yaml.safe_load(path.read_text(encoding="utf-8"))
+
+
+def _write_yaml_if_changed(path: Path, data: dict[str, Any]) -> bool:
+    existing = _load_existing_yaml(path)
+    if existing == data:
+        return False
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+    return True
+
+
+def _normalize_created_at(value: Any) -> str:
+    if isinstance(value, datetime):
+        dt = value.astimezone(timezone.utc)
+        return _format_timestamp(dt)
+
+    if isinstance(value, str):
+        candidate = value.replace("Z", "+00:00") if value.endswith("Z") else value
+        try:
+            dt = datetime.fromisoformat(candidate)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return _format_timestamp(dt)
+        except ValueError:
+            return value
+
+    return str(value)
+
+
+def _created_date(created_at: str) -> str:
+    if "T" in created_at:
+        return created_at.split("T", 1)[0]
+    return created_at
 
 
 @app.command()
@@ -168,3 +258,44 @@ def new(
     entry_path.write_text(body, encoding="utf-8")
 
     typer.echo(str(entry_path))
+
+
+@app.command()
+def normalize(
+    entry: Path = typer.Argument(..., exists=True, readable=True, help="Path to journal Markdown entry."),
+) -> None:
+    """Normalize a Markdown journal entry into structured YAML."""
+
+    entry = entry.resolve()
+    try:
+        frontmatter, sections = _parse_entry(entry)
+    except ValueError as err:
+        typer.secho(str(err), fg=typer.colors.RED, err=True)
+        raise typer.Exit(1)
+
+    entry_id_value = frontmatter.get("id")
+    created_value = frontmatter.get("created_at")
+    title_value = frontmatter.get("title")
+    tags = frontmatter.get("tags", []) or []
+
+    if not all([entry_id_value, created_value, title_value]):
+        typer.secho("Frontmatter must include id, created_at, title.", fg=typer.colors.RED, err=True)
+        raise typer.Exit(1)
+
+    entry_id = str(entry_id_value)
+    title = str(title_value)
+    created_str = _normalize_created_at(created_value)
+    date_str = _created_date(created_str)
+    root = _find_data_root(entry)
+    normalized_data = {
+        "id": entry_id,
+        "created_at": created_str,
+        "source_path": _relative_source_path(entry, root),
+        "title": title,
+        "tags": tags,
+        "sections": sections,
+    }
+
+    output_path = _normalized_path(root, date_str, entry_id)
+    _write_yaml_if_changed(output_path, normalized_data)
+    typer.echo(str(output_path))
