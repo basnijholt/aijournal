@@ -80,6 +80,17 @@ TRIM_PRIORITY = [
     "profile",
 ]
 
+HIGH_IMPACT_PROBES = [
+    "- Top 3 values you refuse to trade off—rank them.",
+    "- One long-term goal that matters most this year—and why now?",
+    "- When speed and quality conflict, what do you choose by default?",
+    "- List 2 anti-goals (things you want to avoid) and the reasons.",
+    "- Your risk posture in career moves: low / medium / high—why?",
+    "- Energy map: when are you best for deep work vs admin?",
+    "- Feedback style you prefer when you’re wrong?",
+    "- Three coping strategies that reliably help under stress.",
+]
+
 
 def _now() -> datetime:
     """Return the current UTC time; separated for easy monkeypatching in tests."""
@@ -694,7 +705,7 @@ def _days_between(now: datetime, past: Optional[str]) -> Optional[float]:
 def _flatten_facets(node: Any, prefix: str = "") -> List[tuple[str, Dict[str, Any]]]:
     items: List[tuple[str, Dict[str, Any]]] = []
     if isinstance(node, dict):
-        if "review_after_days" in node and "last_updated" in node:
+        if "last_updated" in node:
             items.append((prefix or "root", node))
         for key, value in node.items():
             child_prefix = f"{prefix}.{key}" if prefix else str(key)
@@ -753,6 +764,25 @@ def _compute_rankings(
 
     ranked.sort(key=lambda item: (-item[1], item[0]))
     return ranked
+
+
+def _build_targeted_probes(
+    rankings: List[tuple[str, float]],
+    entries: List[dict[str, Any]],
+    *,
+    max_items: int = 4,
+) -> List[str]:
+    title = entries[0].get("title", "recent notes") if entries else "recent notes"
+    probes: List[str] = []
+    for path, score in rankings:
+        probes.append(
+            f"- {path}: What new observations from {title} should update this area? (score {score:.2f})"
+        )
+        if len(probes) >= max_items:
+            break
+    if len(probes) < 2:
+        return []
+    return probes
 
 
 def _print_rankings(ranked: List[tuple[str, float]]) -> None:
@@ -821,6 +851,45 @@ def profile_status_alias() -> None:
     """Alias command for profile status (for backwards compatibility)."""
 
     _profile_status_impl()
+
+
+@app.command("interview")
+def interview(
+    date: str = typer.Option(..., "--date", "-d", help="Date (YYYY-MM-DD) to review."),
+) -> None:
+    """Surface targeted interview probes based on stale facets (fake LLM)."""
+
+    if os.getenv("AIJOURNAL_FAKE_OLLAMA") != "1":
+        typer.secho(
+            "Only fake Ollama mode is implemented for interview.",
+            fg=typer.colors.RED,
+            err=True,
+        )
+        raise typer.Exit(1)
+
+    root = Path.cwd()
+    profile, claims = _load_profile_components(root)
+    if not profile and not claims:
+        typer.secho("No profile data", fg=typer.colors.RED, err=True)
+        raise typer.Exit(1)
+
+    entries = _load_normalized_entries(root, date)
+    if not entries:
+        typer.secho(f"No normalized entries for {date}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(1)
+
+    config_path = root / "config" / "config.yaml"
+    config = _load_yaml(config_path) if config_path.exists() else {}
+    weights = config.get("impact_weights", {})
+
+    rankings = _compute_rankings(profile, claims, weights, _now())
+    probes = _build_targeted_probes(rankings, entries)
+    if not probes:
+        probes = HIGH_IMPACT_PROBES
+
+    typer.echo("Interview probes:")
+    for probe in probes:
+        typer.echo(probe)
 
 
 def _write_json_if_changed(path: Path, payload: dict[str, Any]) -> bool:
