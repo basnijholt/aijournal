@@ -16,17 +16,17 @@ Key directories will be created by `aijournal init` in future commits. For now, 
 Install [pre-commit](https://pre-commit.com/) once, then enable the hooks locally:
 
 ```sh
-pipx run pre-commit install
+uvx pre-commit install
 ```
 
 To dry-run the hooks across the repo without touching staged files:
 
 ```sh
-just precommit_dry
+uvx pre-commit run --all-files --show-diff-on-failure
 ```
 
 To run the full hook suite before pushing:
 
 ```sh
-just precommit
+uvx pre-commit run --all-files
 ```

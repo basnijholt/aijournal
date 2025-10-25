@@ -28,7 +28,7 @@ ci:
     AIJOURNAL_FAKE_OLLAMA=1 uv run pytest -q && uv run mypy src
 
 precommit_dry:
-    pre-commit run --all-files --config .pre-commit-config.yaml
+    uvx pre-commit run --all-files --show-diff-on-failure
 
 precommit:
-    pre-commit run --all-files --config .pre-commit-config.yaml
+    uvx pre-commit run --all-files
