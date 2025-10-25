@@ -26,3 +26,9 @@ fake_on:
 
 ci:
     AIJOURNAL_FAKE_OLLAMA=1 uv run pytest -q && uv run mypy src
+
+precommit_dry:
+    pre-commit run --all-files --config .pre-commit-config.yaml
+
+precommit:
+    pre-commit run --all-files --config .pre-commit-config.yaml

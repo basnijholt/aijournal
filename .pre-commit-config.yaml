@@ -1,0 +1,14 @@
+repos:
+  - repo: local
+    hooks:
+      - id: ruff
+        name: ruff
+        entry: uvx ruff check
+        language: system
+        pass_filenames: true
+        types: [python]
+      - id: mypy
+        name: mypy
+        entry: uvx mypy src
+        language: system
+        pass_filenames: false
