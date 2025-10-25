@@ -539,6 +539,49 @@ def profile_suggest(
     typer.echo(str(path))
 
 
+@profile_app.command("apply")
+def profile_apply(
+    date: str = typer.Option(..., "--date", "-d", help="Date (YYYY-MM-DD) to apply."),
+    file: Optional[Path] = typer.Option(None, "--file", help="Path to suggestions YAML."),
+    yes: bool = typer.Option(False, "--yes", help="Apply without prompting."),
+) -> None:
+    """Apply profile suggestions to authoritative files (offline)."""
+
+    root = Path.cwd()
+    suggestions_path = file or (
+        root / "derived" / "profile_suggestions" / f"{date}.yaml"
+    )
+
+    if not suggestions_path.exists():
+        typer.secho(f"Suggestions file not found: {suggestions_path}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(1)
+
+    suggestions = _load_yaml(suggestions_path)
+    profile, claims = _load_profile_components(root)
+    timestamp = _format_timestamp(_now())
+    changed = False
+
+    for upsert in suggestions.get("upserts", []):
+        if upsert.get("target") == "claims":
+            if _apply_claim_upsert(claims, upsert.get("value", {}), timestamp):
+                changed = True
+
+    for update in suggestions.get("updates", []):
+        target = update.get("target")
+        if not target:
+            continue
+        if _apply_profile_update(profile, target, update.get("value"), timestamp):
+            changed = True
+
+    if not changed:
+        typer.echo("No changes to apply")
+        raise typer.Exit(0)
+
+    _atomic_write(root / "profile" / "self_profile.yaml", profile)
+    _atomic_write(root / "profile" / "claims.yaml", {"claims": claims})
+    typer.echo("Applied 1 suggestions file")
+
+
 @app.command()
 def advise(
     question: str = typer.Argument(..., help="Question for the advisor to answer."),
@@ -614,6 +657,12 @@ def _load_profile_components(root: Path) -> tuple[dict[str, Any], List[dict[str,
     return profile, claims_data
 
 
+def _atomic_write(path: Path, payload: dict[str, Any]) -> None:
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
+    tmp.replace(path)
+
+
 def _impact_for(path: str, weights: Dict[str, float]) -> float:
     key = path.split(".", 1)[0]
     return float(weights.get(key, 1.0))
@@ -655,6 +704,33 @@ def _print_rankings(ranked: List[tuple[str, float]]) -> None:
     typer.echo("Profile review priority:")
     for idx, (path, score) in enumerate(ranked, start=1):
         typer.echo(f"{idx}. {path} (score {score:.2f})")
+
+
+def _apply_claim_upsert(claims: List[dict[str, Any]], value: dict[str, Any], timestamp: str) -> bool:
+    new_value = dict(value)
+    new_value["last_updated"] = timestamp
+    for idx, claim in enumerate(claims):
+        if claim.get("id") == new_value.get("id"):
+            if claim == new_value:
+                return False
+            claims[idx] = new_value
+            return True
+    claims.append(new_value)
+    return True
+
+
+def _apply_profile_update(profile: dict[str, Any], target: str, value: Any, timestamp: str) -> bool:
+    parts = target.split(".")
+    current = profile
+    for part in parts[:-1]:
+        current = current.setdefault(part, {})
+    key = parts[-1]
+    previous = current.get(key)
+    if previous == value:
+        return False
+    current[key] = value
+    current["last_updated"] = timestamp
+    return True
 
 
 def _profile_status_impl() -> None:
