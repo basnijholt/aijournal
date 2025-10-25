@@ -19,7 +19,7 @@ Fake LLM-powered commands run in fixture mode when `AIJOURNAL_FAKE_OLLAMA=1`:
 export AIJOURNAL_FAKE_OLLAMA=1
 ```
 
-Every command below is safe to re-run. When nothing changes, the CLI skips overwriting files and reports what was "already" present.
+Most commands below are safe to re-run: they detect unchanged inputs and either skip writes or report what was "already" present. The lone exception is `aijournal new`, which refuses to overwrite an existing slug and exits non-zero if you try to create the same entry twice.
 
 ### Initialize the workspace
 
