@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import os
 import re
 from datetime import datetime, timezone
+from hashlib import sha256
 from pathlib import Path
 from typing import Any, Iterable, List, Optional
 
 import typer
 import yaml
+from hashlib import sha256
 
 
 app = typer.Typer(help="Local-first personal journal utilities.")
@@ -190,6 +193,50 @@ def _created_date(created_at: str) -> str:
     return created_at
 
 
+def _load_yaml(path: Path) -> dict[str, Any]:
+    return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+
+
+def _load_normalized_entries(root: Path, day: str) -> List[dict[str, Any]]:
+    folder = root / "data" / "normalized" / day
+    if not folder.exists():
+        return []
+    entries: List[dict[str, Any]] = []
+    for file in sorted(folder.glob("*.yaml")):
+        entries.append(_load_yaml(file))
+    return entries
+
+
+def _derived_summary_path(root: Path, day: str) -> Path:
+    return root / "derived" / "summaries" / f"{day}.yaml"
+
+
+def _hash_prompt(prompt_path: str) -> str:
+    return sha256(prompt_path.encode("utf-8")).hexdigest()
+
+
+def _build_meta(prompt_path: str, model: str = "fake-ollama") -> dict[str, Any]:
+    return {
+        "llm_model": model,
+        "prompt_path": prompt_path,
+        "prompt_hash": _hash_prompt(prompt_path),
+        "created_at": _format_timestamp(_now()),
+    }
+
+
+def _fake_summarize(entries: List[dict[str, Any]]) -> List[str]:
+    bullets: List[str] = []
+    for entry in entries:
+        title = entry.get("title", entry.get("id", "entry"))
+        sections = entry.get("sections") or []
+        section_titles = ", ".join(sec.get("heading", "") for sec in sections[:2] if sec)
+        if section_titles:
+            bullets.append(f"{title}: {section_titles}")
+        else:
+            bullets.append(f"{title}: no sections")
+    return bullets or ["No content available"]
+
+
 @app.command()
 def init(
     path: Optional[Path] = typer.Option(
@@ -299,3 +346,35 @@ def normalize(
     output_path = _normalized_path(root, date_str, entry_id)
     _write_yaml_if_changed(output_path, normalized_data)
     typer.echo(str(output_path))
+
+
+@app.command()
+def summarize(
+    date: str = typer.Option(..., "--date", "-d", help="Date (YYYY-MM-DD) to summarize."),
+) -> None:
+    """Generate a daily summary from normalized entries (fake LLM mode)."""
+
+    root = Path.cwd()
+    entries = _load_normalized_entries(root, date)
+    if not entries:
+        typer.secho(f"No normalized entries for {date}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(1)
+
+    if os.getenv("AIJOURNAL_FAKE_OLLAMA") != "1":
+        typer.secho(
+            "Only fake Ollama mode is implemented for summarize.",
+            fg=typer.colors.RED,
+            err=True,
+        )
+        raise typer.Exit(1)
+
+    bullets = _fake_summarize(entries)
+    summary_data = {
+        "day": date,
+        "bullets": bullets,
+        "meta": _build_meta("prompts/summarize_day.md"),
+    }
+
+    summary_path = _derived_summary_path(root, date)
+    _write_yaml_if_changed(summary_path, summary_data)
+    typer.echo(str(summary_path))
