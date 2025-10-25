@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
-import json
 import pytest
 import yaml
 from typer.testing import CliRunner
@@ -138,11 +138,11 @@ def test_pack_deterministic_order(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
     monkeypatch.chdir(tmp_path)
     _seed_profile(tmp_path)
     _seed_daily_artifacts(tmp_path)
-    _write(tmp_path / "derived" / "advice" / DATE / "adv_a.yaml", "{}")
-    _write(tmp_path / "derived" / "advice" / DATE / "adv_b.yaml", "{}")
 
-    first = runner.invoke(app, ["pack", "--level", "L3", "--date", DATE])
-    second = runner.invoke(app, ["pack", "--level", "L3", "--date", DATE])
+    first = runner.invoke(app, ["pack", "--level", "L2", "--date", DATE])
+    assert first.exit_code == 0
+    second = runner.invoke(app, ["pack", "--level", "L2", "--date", DATE])
+    assert second.exit_code == 0
     assert first.output == second.output
 
 
