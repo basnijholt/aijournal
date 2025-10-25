@@ -31,6 +31,9 @@ A complete, self‑contained blueprint to implement a private, offline, reproduc
 - Derived data must be inspectable and reproducible—if we cannot diff it, we don’t ship it.
 - Optimize for a clean end-to-end path to “LLM understands my personality” before adding
   optional niceties.
+- **No legacy compatibility:** there are no production users; assume fresh data. Do not carry
+  migration code paths or toggles—regenerate artifacts instead of supporting older schemas, and
+  fail fast instead of adding defensive fallbacks for outdated formats.
 
 ### 1.2 Operating norms
 
@@ -676,7 +679,6 @@ Health check:
 - `aijournal persona build` — regenerate `derived/persona/persona_core.yaml` (feeds packs + chat primer).
 - `aijournal index rebuild` — rebuild SQLite + Annoy from normalized YAML.
 - `aijournal index tail` — tail manifest and incrementally index new normalized files.
-- `aijournal migrate claims-v0.2-to-atoms` — convert legacy claims into scoped ClaimAtoms.
 - `aijournal chat` — local RAG chat (retrieval, citations, single clarifying question, learnings write-back).
 - `aijournal chatd --port <int>` — FastAPI server exposing the same orchestrator.
 - `aijournal ollama health` — verify local model availability (fake mode warns when falling back).
@@ -898,7 +900,7 @@ ci:          just fake_on test mypy
 
 ### Addendum roadmap (persona-first scope)
 
-16) feat(models): typed ClaimAtom + Scope + Provenance + migration command/tests.
+16) feat(models): typed ClaimAtom + Scope + Provenance (breaking change allowed; reinit data).
 
 17) feat(index): SQLite + Annoy indexer (`index rebuild`, `index tail`) + deterministic retrieval tests.
 

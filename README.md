@@ -31,8 +31,8 @@ Run `aijournal init` inside a fresh directory to materialize `data/`, `derived/`
 ### Claim atoms & persona core
 
 - Claims now live as typed, scoped atoms inside `profile/claims.yaml` with `{type, subject, predicate, value, scope, strength, provenance}` fields.
-- Run `aijournal migrate claims-v0.2-to-atoms` once to convert legacy free-form claims; uncertain parses are marked `status: tentative` for manual review.
 - `aijournal persona build` regenerates `derived/persona/persona_core.yaml` (≤ ~1200 tokens) by selecting top claim atoms + key profile facets. Packs/chat always include this file as L1 context.
+- There is intentionally **no** legacy format support—if schema changes, re-run `aijournal init` and regenerate data rather than carrying migration code.
 
 ## Usage
 
