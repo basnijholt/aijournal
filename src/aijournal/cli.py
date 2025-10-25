@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import re
 from datetime import datetime, timezone
@@ -763,3 +764,193 @@ def profile_status_alias() -> None:
     """Alias command for profile status (for backwards compatibility)."""
 
     _profile_status_impl()
+
+
+def _write_json_if_changed(path: Path, payload: dict[str, Any]) -> bool:
+    existing = None
+    if path.exists():
+        try:
+            existing = json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            existing = None
+    if existing == payload:
+        return False
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    tmp.replace(path)
+    return True
+
+
+def _pack_token_count(text: str) -> int:
+    return len(text.split())
+
+
+def _pack_trim_entries(entries: List[dict[str, Any]], budget: int, trimmed: List[str]) -> None:
+    priority_roles = ["microfacts", "summaries", "normalized", "claims", "profile"]
+
+    def total_tokens() -> int:
+        return sum(entry["tokens"] for entry in entries)
+
+    if total_tokens() <= budget:
+        return
+
+    for role in priority_roles:
+        for entry in entries:
+            if entry["role"] == role and entry["tokens"] > 0:
+                trimmed.append(entry["path"])
+                entry["content"] = "(trimmed due to token budget)"
+                entry["tokens"] = 0
+                if total_tokens() <= budget:
+                    return
+
+
+def _collect_pack_entries(root: Path, level: str, date: str) -> List[tuple[str, Path]]:
+    specs = {
+        "L1": [
+            ("profile", root / "profile" / "self_profile.yaml", True),
+            ("claims", root / "profile" / "claims.yaml", True),
+        ],
+        "L2": [
+            ("profile", root / "profile" / "self_profile.yaml", True),
+            ("claims", root / "profile" / "claims.yaml", True),
+            ("normalized", root / "data" / "normalized" / date, True),
+            ("summaries", root / "derived" / "summaries" / f"{date}.yaml", False),
+            ("microfacts", root / "derived" / "microfacts" / f"{date}.yaml", False),
+        ],
+    }
+
+    if level not in specs:
+        raise typer.Exit(f"Unsupported level {level}")
+
+    gathered: List[tuple[str, Path]] = []
+    for role, path, required in specs[level]:
+        if path.is_dir():
+            files = sorted(p for p in path.glob("*") if p.is_file())
+            if not files and required:
+                raise typer.Exit(f"Missing required files under {path}")
+            for file in files:
+                gathered.append((role, file))
+        elif path.exists():
+            gathered.append((role, path))
+        elif required:
+            raise typer.Exit(f"Missing required file {path}")
+
+    role_order = {"profile": 0, "claims": 1, "normalized": 2, "summaries": 3, "microfacts": 4}
+    gathered.sort(key=lambda item: (role_order.get(item[0], 99), str(item[1])))
+    return gathered
+
+
+def _latest_normalized_day(root: Path) -> Optional[str]:
+    base = root / "data" / "normalized"
+    if not base.exists():
+        return None
+    candidates = sorted(p.name for p in base.iterdir() if p.is_dir())
+    return candidates[-1] if candidates else None
+
+
+def _resolve_pack_date(level: str, requested: Optional[str], root: Path) -> str:
+    if requested:
+        return requested
+    if level == "L1":
+        return _now().strftime("%Y-%m-%d")
+    latest = _latest_normalized_day(root)
+    if latest:
+        return latest
+    typer.secho("No normalized entries available; provide --date.", fg=typer.colors.RED, err=True)
+    raise typer.Exit(1)
+
+
+def _build_pack_payload(
+    entries: List[dict[str, Any]],
+    level: str,
+    date: str,
+    trimmed: List[str],
+    total_tokens: int,
+    max_tokens: int,
+) -> dict[str, Any]:
+    return {
+        "level": level,
+        "date": date,
+        "files": entries,
+        "meta": {
+            "total_tokens": total_tokens,
+            "max_tokens": max_tokens,
+            "trimmed": trimmed,
+            "generated_at": _format_timestamp(_now()),
+        },
+    }
+@app.command("pack")
+def pack(
+    level: str = typer.Option("L2", "--level", "-l", help="Context depth (L1 or L2)."),
+    date: Optional[str] = typer.Option(
+        None,
+        "--date",
+        "-d",
+        help="Date (YYYY-MM-DD); auto-detected for L2 when omitted.",
+    ),
+    output: Optional[Path] = typer.Option(None, "--output", "-o"),
+    max_tokens: Optional[int] = typer.Option(None, "--max-tokens"),
+    fmt: str = typer.Option("yaml", "--format", help="Output format: yaml or json."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Show plan without emitting payload."),
+) -> None:
+    """Assemble a context bundle for prompting."""
+
+    level = level.upper()
+    fmt_value = fmt.lower()
+    if fmt_value not in {"yaml", "json"}:
+        typer.secho(f"Unsupported format: {fmt}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(1)
+    fmt = fmt_value
+    default_budget = {"L1": 1200, "L2": 2000}
+    budget = max_tokens or default_budget.get(level, 2000)
+
+    root = Path.cwd()
+    resolved_date = _resolve_pack_date(level, date, root)
+    entries_info = _collect_pack_entries(root, level, resolved_date)
+
+    entries_payload: List[dict[str, Any]] = []
+    for role, path in entries_info:
+        text = path.read_text(encoding="utf-8")
+        rel = _relative_source_path(path, root)
+        entries_payload.append(
+            {
+                "role": role,
+                "path": rel,
+                "tokens": _pack_token_count(text),
+                "content": text,
+            }
+        )
+
+    total_tokens = sum(entry["tokens"] for entry in entries_payload)
+    trimmed: List[str] = []
+    if total_tokens > budget:
+        _pack_trim_entries(entries_payload, budget, trimmed)
+        total_tokens = sum(entry["tokens"] for entry in entries_payload)
+
+    payload = _build_pack_payload(entries_payload, level, resolved_date, trimmed, total_tokens, budget)
+
+    if dry_run:
+        typer.echo("Planned files:")
+        for entry in entries_payload:
+            typer.echo(f"- {entry['path']} ({entry['tokens']} tokens)")
+        if trimmed:
+            typer.echo("trimmed: " + ", ".join(trimmed))
+        return
+
+    if output:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        changed = False
+        if fmt == "json":
+            changed = _write_json_if_changed(output, payload)
+        else:
+            changed = _write_yaml_if_changed(output, payload)
+        if changed:
+            typer.echo(str(output))
+        else:
+            typer.echo("No changes")
+        return
+
+    if fmt == "json":
+        typer.echo(json.dumps(payload, indent=2))
+    else:
+        typer.echo(yaml.safe_dump(payload, sort_keys=False))
