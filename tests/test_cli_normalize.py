@@ -27,12 +27,12 @@ def freeze_now(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(cli_module, "_now", lambda: FROZEN_NOW, raising=False)
 
 
-def _write_markdown(path: Path) -> None:
+def _write_markdown(path: Path, *, created_at: str = "2025-02-03T14:05:00Z") -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         """---
 id: 2025-02-03-sync-notes
-created_at: 2025-02-03T14:05:00Z
+created_at: {created_at}
 title: Sync Notes
 tags: [team, planning]
 ---
@@ -42,7 +42,7 @@ Discussed roadmap and blockers.
 
 ## Decisions
 Ship MVP this week.
-""",
+""".format(created_at=created_at),
         encoding="utf-8",
     )
 
@@ -96,3 +96,23 @@ def test_normalize_is_idempotent(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     after_mtime = normalized_path.stat().st_mtime
 
     assert before_mtime == after_mtime, "File should not be rewritten on second run"
+
+
+def test_normalize_converts_timezones_to_utc(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    entry_path = (
+        tmp_path / "data" / "journal" / "2025" / "02" / "03" / f"{EXPECTED_SLUG}.md"
+    )
+    _write_markdown(entry_path, created_at="2025-02-03T09:00:00-05:00")
+
+    result = runner.invoke(app, ["normalize", str(entry_path)])
+
+    assert result.exit_code == 0, result.output
+
+    normalized_path = (
+        tmp_path / "data" / "normalized" / EXPECTED_DATE / f"{EXPECTED_SLUG}.yaml"
+    )
+    data = _read_yaml(normalized_path)
+    assert data["created_at"] == "2025-02-03T14:00:00Z"
