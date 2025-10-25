@@ -38,6 +38,20 @@ aijournal new "Morning sync" --tags focus planning
 
 Emits `data/journal/YYYY/MM/DD/<slug>.md` with YAML frontmatter and refuses to overwrite an existing slug.
 
+### Ingest existing Markdown (blogs, notes)
+
+Use the ingestion agent to normalize entire directories of Markdown or Hugo posts. By default it
+talks to your local Ollama server (set `AIJOURNAL_FAKE_OLLAMA=1` to use the deterministic fake
+parser in tests/CI):
+
+```sh
+aijournal ingest /home/basnijholt/Work/nijho.lt/content/post --source-type blog
+```
+
+Each ingested file is hashed (manifest stored at `data/manifest/ingested.yaml`), a raw snapshot is
+saved under `data/raw/<hash>.md`, and normalized YAML lands in `data/normalized/<DATE>/...`. If your
+Ollama daemon is listening on a non-default address, set `AIJOURNAL_OLLAMA_HOST` accordingly.
+
 ### Normalize Markdown into YAML
 
 ```sh

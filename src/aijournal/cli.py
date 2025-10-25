@@ -10,8 +10,17 @@ from hashlib import sha256
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
+from agno.agent import Agent
 import typer
 import yaml
+
+from aijournal.ingest_agent import (
+    AgentSettings,
+    IngestResult,
+    IngestSection,
+    build_ingest_agent,
+    ingest_with_agent,
+)
 
 
 app = typer.Typer(help="Local-first personal journal utilities.")
@@ -35,6 +44,8 @@ AUTHORITATIVE_DIRS = (
     "data",
     "data/journal",
     "data/normalized",
+    "data/raw",
+    "data/manifest",
     "prompts",
 )
 
@@ -90,6 +101,8 @@ HIGH_IMPACT_PROBES = [
     "- Feedback style you prefer when you’re wrong?",
     "- Three coping strategies that reliably help under stress.",
 ]
+
+MARKDOWN_SUFFIXES = {".md", ".markdown"}
 
 
 def _now() -> datetime:
@@ -156,25 +169,26 @@ def _ensure_files(base: Path) -> tuple[int, int]:
 
 
 def _split_frontmatter(text: str) -> tuple[str, str]:
-    if not text.startswith("---"):
-        raise ValueError("Markdown entry missing YAML frontmatter delimiter")
+    delimiter = None
+    if text.startswith("---"):
+        delimiter = "---"
+    elif text.startswith("+++"):
+        delimiter = "+++"
+    if delimiter is None:
+        raise ValueError("Markdown entry missing YAML/TOML frontmatter delimiter")
 
-    parts = text.split("---", 2)
+    parts = text.split(delimiter, 2)
     if len(parts) < 3:
-        raise ValueError("Incomplete YAML frontmatter block")
+        raise ValueError("Incomplete YAML/TOML frontmatter block")
 
     frontmatter_raw = parts[1].strip()
     body = parts[2]
     return frontmatter_raw, body
 
 
-def _parse_entry(entry_path: Path) -> tuple[dict[str, Any], List[dict[str, Any]]]:
-    text = entry_path.read_text(encoding="utf-8")
-    frontmatter_raw, body = _split_frontmatter(text)
-    data = yaml.safe_load(frontmatter_raw) or {}
-
+def _scan_headings(text: str) -> List[dict[str, Any]]:
     sections: List[dict[str, Any]] = []
-    for line in body.splitlines():
+    for line in text.splitlines():
         heading_match = re.match(r"^(#{1,6})\s+(.*)$", line.strip())
         if heading_match:
             sections.append(
@@ -183,7 +197,14 @@ def _parse_entry(entry_path: Path) -> tuple[dict[str, Any], List[dict[str, Any]]
                     "level": len(heading_match.group(1)),
                 }
             )
+    return sections
 
+
+def _parse_entry(entry_path: Path) -> tuple[dict[str, Any], List[dict[str, Any]]]:
+    text = entry_path.read_text(encoding="utf-8")
+    frontmatter_raw, body = _split_frontmatter(text)
+    data = yaml.safe_load(frontmatter_raw) or {}
+    sections = _scan_headings(body)
     return data, sections
 
 
@@ -236,6 +257,269 @@ def _created_date(created_at: str) -> str:
 
 def _load_yaml(path: Path) -> dict[str, Any]:
     return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+
+
+def _load_config(root: Path) -> dict[str, Any]:
+    config_path = root / "config" / "config.yaml"
+    if not config_path.exists():
+        return {}
+    return _load_yaml(config_path)
+
+
+def _use_fake_llm() -> bool:
+    return os.getenv("AIJOURNAL_FAKE_OLLAMA") == "1"
+
+
+def _resolve_model_name(config: dict[str, Any]) -> str:
+    return os.getenv("AIJOURNAL_MODEL") or str(config.get("model") or "llama3.1:8b-instruct")
+
+
+def _coerce_float(value: Any) -> Optional[float]:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _coerce_int(value: Any) -> Optional[int]:
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _manifest_path(root: Path) -> Path:
+    return root / "data" / "manifest" / "ingested.yaml"
+
+
+def _load_manifest(path: Path) -> List[dict[str, Any]]:
+    if not path.exists():
+        return []
+    data = yaml.safe_load(path.read_text(encoding="utf-8")) or []
+    if isinstance(data, list):
+        return data
+    return []
+
+
+def _write_manifest(path: Path, entries: List[dict[str, Any]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(yaml.safe_dump(entries, sort_keys=False), encoding="utf-8")
+
+
+def _discover_markdown_files(inputs: Iterable[Path]) -> List[Path]:
+    files: List[Path] = []
+    for source in inputs:
+        resolved = source.expanduser().resolve()
+        if resolved.is_dir():
+            for candidate in sorted(resolved.rglob("*")):
+                if candidate.is_file() and candidate.suffix.lower() in MARKDOWN_SUFFIXES:
+                    files.append(candidate)
+        elif resolved.is_file():
+            files.append(resolved)
+
+    unique: List[Path] = []
+    seen: set[Path] = set()
+    for file in files:
+        if file not in seen:
+            seen.add(file)
+            unique.append(file)
+    return unique
+
+
+def _normalize_tags(raw: Iterable[Any]) -> List[str]:
+    tags: List[str] = []
+    seen: set[str] = set()
+    for value in raw:
+        if value is None:
+            continue
+        text = str(value).strip()
+        if not text:
+            continue
+        slug = _slugify_title(text)
+        if slug and slug not in seen:
+            seen.add(slug)
+            tags.append(slug)
+    return tags
+
+
+def _clean_summary(text: Optional[str], fallback: Optional[str] = None) -> Optional[str]:
+    candidate = (text or "").strip()
+    if candidate:
+        for marker in (',"entry_id"', ',"tags"', ',"sections"'):
+            idx = candidate.find(marker)
+            if idx != -1:
+                candidate = candidate[:idx]
+                break
+        candidate = candidate.replace("\n", " ").strip().strip('\"')
+        sentences = re.split(r"(?<=[.!?])\s+", candidate)
+        sentences = [sentence.strip() for sentence in sentences if sentence.strip()]
+        if sentences:
+            candidate = " ".join(sentences[:2])
+        else:
+            candidate = ""
+
+    if not candidate and fallback:
+        candidate = fallback.strip()
+
+    return candidate or None
+
+
+def _merge_sections(
+    primary: Iterable[IngestSection],
+    fallback: Iterable[dict[str, Any]],
+    *,
+    title: str,
+    limit: int = 6,
+) -> List[dict[str, Any]]:
+    entries: List[dict[str, Any]] = []
+    seen: set[str] = set()
+
+    def add_section(heading: str, level: int, summary: Optional[str] = None) -> None:
+        heading = heading.strip()
+        if not heading:
+            return
+        key = heading.lower()
+        if key in seen:
+            return
+        seen.add(key)
+        entry: dict[str, Any] = {
+            "heading": heading,
+            "level": max(1, min(6, int(level or 1))),
+        }
+        if summary:
+            entry["summary"] = summary.strip()
+        entries.append(entry)
+
+    for section in primary:
+        add_section(section.heading, section.level, section.summary)
+        if len(entries) >= limit:
+            return entries
+
+    for section in fallback:
+        add_section(str(section.get("heading") or title), int(section.get("level", 2)))
+        if len(entries) >= limit:
+            return entries
+
+    if not entries:
+        add_section(title or "entry", 1)
+    return entries
+
+
+def _sanitize_entry_id(candidate: Optional[str], title: str, date_str: str, digest: str) -> str:
+    slug = ""
+    if candidate and candidate.strip():
+        slug = _slugify_title(candidate)
+    elif title.strip():
+        slug = _slugify_title(title)
+
+    if slug:
+        if not slug.startswith(date_str):
+            slug = f"{date_str}-{slug}"
+    else:
+        slug = f"{date_str}-{digest[:8]}"
+
+    return slug[:96]
+
+
+def _extract_frontmatter_tags(frontmatter: dict[str, Any]) -> List[str]:
+    values: List[str] = []
+    for key in ("tags", "categories", "keywords", "topics", "projects"):
+        raw = frontmatter.get(key)
+        if raw is None:
+            continue
+        if isinstance(raw, str):
+            values.append(raw)
+        elif isinstance(raw, list):
+            for item in raw:
+                values.append(str(item))
+    return values
+
+
+def _fake_structured_entry(entry_path: Path) -> IngestResult:
+    try:
+        frontmatter, sections_raw = _parse_entry(entry_path)
+    except ValueError:
+        frontmatter = {}
+        sections_raw = []
+
+    created_value = (
+        frontmatter.get("created_at")
+        or frontmatter.get("date")
+        or frontmatter.get("published")
+        or _format_timestamp(_now())
+    )
+    created_dt = _parse_datetime(str(created_value)) or _now()
+    title = str(frontmatter.get("title") or entry_path.stem)
+    section_models = [
+        IngestSection(
+            heading=str(section.get("heading", title)),
+            level=int(section.get("level", 2) or 2),
+        )
+        for section in sections_raw
+    ]
+    if not section_models:
+        section_models = [IngestSection(heading=title, level=1)]
+
+    summary = frontmatter.get("summary")
+    tags = _extract_frontmatter_tags(frontmatter)
+    entry_id = frontmatter.get("id") or frontmatter.get("slug")
+
+    return IngestResult(
+        entry_id=str(entry_id) if entry_id else None,
+        created_at=created_dt,
+        title=title,
+        tags=tags,
+        sections=section_models,
+        summary=str(summary) if isinstance(summary, str) else None,
+    )
+
+
+def _normalized_from_structured(
+    structured: IngestResult,
+    *,
+    source_path: Path,
+    root: Path,
+    digest: str,
+    source_type: str,
+    fallback_sections: Optional[List[dict[str, Any]]] = None,
+    fallback_tags: Optional[List[str]] = None,
+    fallback_summary: Optional[str] = None,
+) -> tuple[dict[str, Any], str]:
+    created_at = structured.created_at
+    if isinstance(created_at, datetime):
+        created_str = _format_timestamp(created_at.astimezone(timezone.utc))
+    else:
+        created_str = _normalize_created_at(created_at)
+
+    date_str = _created_date(created_str)
+    entry_id = _sanitize_entry_id(structured.entry_id, structured.title, date_str, digest)
+    tags = _normalize_tags(list(structured.tags or []) + list(fallback_tags or []))
+
+    merged_sections = _merge_sections(
+        structured.sections or [],
+        fallback_sections or [],
+        title=structured.title.strip() or entry_id,
+    )
+
+    normalized = {
+        "id": entry_id,
+        "created_at": created_str,
+        "source_path": _relative_source_path(source_path, root),
+        "title": structured.title.strip() or entry_id,
+        "tags": tags,
+        "sections": merged_sections,
+        "source_hash": digest,
+        "source_type": source_type,
+    }
+    summary = _clean_summary(structured.summary, fallback_summary)
+    if summary:
+        normalized["summary"] = summary
+
+    return normalized, date_str
 
 
 def _load_normalized_entries(root: Path, day: str) -> List[dict[str, Any]]:
@@ -446,6 +730,161 @@ def new(
     entry_path.write_text(body, encoding="utf-8")
 
     typer.echo(str(entry_path))
+
+
+@app.command()
+def ingest(
+    sources: List[Path] = typer.Argument(
+        ...,
+        exists=True,
+        dir_okay=True,
+        file_okay=True,
+        readable=True,
+        resolve_path=True,
+        help="Markdown files or directories to ingest.",
+    ),
+    source_type: str = typer.Option(
+        "external",
+        "--source-type",
+        help="Label recorded in the manifest for these sources.",
+    ),
+    limit: Optional[int] = typer.Option(
+        None,
+        "--limit",
+        help="Maximum number of files to ingest.",
+    ),
+    snapshot: bool = typer.Option(
+        True,
+        "--snapshot/--no-snapshot",
+        help="Store raw copies under data/raw/<hash>.md.",
+    ),
+) -> None:
+    """Ingest Markdown posts into normalized YAML via Ollama."""
+
+    if limit is not None and limit <= 0:
+        typer.secho("--limit must be positive when provided.", fg=typer.colors.RED, err=True)
+        raise typer.Exit(1)
+
+    root = Path.cwd()
+    files = _discover_markdown_files(sources)
+    if not files:
+        typer.secho("No Markdown files found in the provided sources.", fg=typer.colors.RED, err=True)
+        raise typer.Exit(1)
+    if limit is not None:
+        files = files[:limit]
+
+    config = _load_config(root)
+    model_name = _resolve_model_name(config)
+    is_fake = _use_fake_llm()
+    agent: Optional[Agent] = None
+    if not is_fake:
+        settings = AgentSettings(
+            model=model_name,
+            host=os.getenv("AIJOURNAL_OLLAMA_HOST"),
+            temperature=_coerce_float(config.get("temperature")),
+            seed=_coerce_int(config.get("seed")),
+        )
+        try:
+            agent = build_ingest_agent(settings)
+        except Exception as exc:  # pragma: no cover - initialization errors are rare
+            typer.secho(
+                f"Unable to initialize Ollama ingestion agent: {exc}",
+                fg=typer.colors.RED,
+                err=True,
+            )
+            raise typer.Exit(1)
+
+    manifest_path = _manifest_path(root)
+    manifest_entries = _load_manifest(manifest_path)
+    known_hashes = {entry.get("hash"): entry for entry in manifest_entries if entry.get("hash")}
+
+    ingested = 0
+    skipped = 0
+    errors = 0
+    raw_dir = root / "data" / "raw"
+
+    for file in files:
+        try:
+            raw_bytes = file.read_bytes()
+        except OSError as exc:
+            errors += 1
+            typer.secho(f"Failed to read {file}: {exc}", fg=typer.colors.RED, err=True)
+            continue
+
+        digest = sha256(raw_bytes).hexdigest()
+        if digest in known_hashes:
+            skipped += 1
+            typer.echo(f"Skipping {file} (already ingested)")
+            continue
+
+        try:
+            text = raw_bytes.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            errors += 1
+            typer.secho(f"Failed to decode {file}: {exc}", fg=typer.colors.RED, err=True)
+            continue
+
+        try:
+            frontmatter_data, fallback_sections = _parse_entry(file)
+        except ValueError:
+            frontmatter_data = {}
+            fallback_sections = _scan_headings(text)
+        fallback_tags = _extract_frontmatter_tags(frontmatter_data)
+        fallback_summary = frontmatter_data.get("summary")
+        if fallback_summary is not None:
+            fallback_summary = str(fallback_summary)
+
+        try:
+            if is_fake:
+                structured = _fake_structured_entry(file)
+            else:
+                assert agent is not None
+                structured = ingest_with_agent(agent, source_path=file, markdown=text)
+            normalized, date_str = _normalized_from_structured(
+                structured,
+                source_path=file,
+                root=root,
+                digest=digest,
+                source_type=source_type,
+                fallback_sections=fallback_sections,
+                fallback_tags=fallback_tags,
+                fallback_summary=fallback_summary,
+            )
+        except Exception as exc:
+            errors += 1
+            typer.secho(f"Failed to ingest {file}: {exc}", fg=typer.colors.RED, err=True)
+            continue
+
+        normalized_path = _normalized_path(root, date_str, normalized["id"])
+        _write_yaml_if_changed(normalized_path, normalized)
+
+        if snapshot:
+            raw_dir.mkdir(parents=True, exist_ok=True)
+            (raw_dir / f"{digest}.md").write_bytes(raw_bytes)
+
+        manifest_entry = {
+            "hash": digest,
+            "path": _relative_source_path(file, root),
+            "normalized": _relative_source_path(normalized_path, root),
+            "source_type": source_type,
+            "ingested_at": _format_timestamp(_now()),
+            "created_at": normalized["created_at"],
+            "id": normalized["id"],
+            "tags": normalized.get("tags", []),
+            "model": model_name if not is_fake else "fake-ollama",
+        }
+        manifest_entries.append(manifest_entry)
+        known_hashes[digest] = manifest_entry
+
+        typer.echo(f"Ingested {file} -> {normalized_path}")
+        ingested += 1
+
+    if ingested:
+        _write_manifest(manifest_path, manifest_entries)
+
+    typer.echo(f"Ingest summary: {ingested} new, {skipped} skipped, {errors} errors.")
+    if errors:
+        raise typer.Exit(1)
 
 
 @app.command()

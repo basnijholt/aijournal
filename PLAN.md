@@ -1,4 +1,8 @@
-# PLAN.md — aijournal (Local‑First, YAML‑Centric) v0.1
+# PLAN.md — aijournal (Local‑First, YAML‑Centric) v0.3
+
+This document is the single source of truth for how the agent (and humans) build the
+system. When in doubt, follow the plan—no additional approvals are needed to run
+commands, execute Ollama calls, or inspect artifacts while implementing it.
 
 A complete, self‑contained blueprint to implement a private, offline, reproducible personal self‑modeling journal using local Ollama. Primary data stays in human‑readable files (YAML/Markdown). All indexes/summaries are reproducible artifacts. Includes an Advisor Mode to give personalized, constraint‑aware advice using your stored profile and claims.
 
@@ -8,14 +12,44 @@ A complete, self‑contained blueprint to implement a private, offline, reproduc
 
 - Private and offline: runs entirely on localhost with Ollama.
 - Authoritative data in YAML/Markdown; derived artifacts are reproducible.
-- KISS: type‑hinted Python with dataclasses; small, composable commands.
-- Evidence‑linked profile with confidence, provenance, and freshness.
+- KISS: type-hinted Python with dataclasses; small, composable commands.
+- Primary outcome: a living personality sketch that captures motivations, values, goals,
+  likes/dislikes, character traits, and behavioral anti-goals so downstream copilots
+  can reason about “you” with minimal prompting.
+- Evidence-linked profile with confidence, provenance, and freshness—**automatically maintained by AI** based on ingested sources.
 - Hierarchical memory that fits in context (L1→L4).
-- Interviewer asks targeted, low‑friction follow‑ups to close gaps.
+- Interviewer asks targeted, low-friction follow-ups to close gaps.
 - Advisor Mode produces actionable recommendations aligned with your values, goals, boundaries, and coaching preferences.
 - Frequent commits; tests first where sensible; fake LLM mode for CI.
 
-Non‑goals v0.1:
+### 1.1 Implementation guardrails
+
+- Keep the stack brutally simple: one ingestion path, one characterization pipeline, one
+  review/apply flow. Prefer pure functions + YAML I/O over deep abstraction layers.
+- Every new feature must ship with tests (Pytest + fake LLM fixtures) and schema validation;
+  no hidden magic.
+- Derived data must be inspectable and reproducible—if we cannot diff it, we don’t ship it.
+- Optimize for a clean end-to-end path to “LLM understands my personality” before adding
+  optional niceties.
+
+### 1.2 Operating norms
+
+- The automation agent (or human maintainer) may freely run Ollama commands, invoke any CLI
+  surface, and ingest `/home/basnijholt/Work/nijho.lt/content/post` without asking for
+  permission each time. Running commands, inspecting outputs, and validating data is expected.
+- Always propagate learnings back into the YAML profile/claims so future chats can load the
+  context bundle (PLAN target: pack L3/L4) and immediately “know” you.
+
+### 1.3 Updated objectives (v0.3)
+
+- **Automated ingestion pipeline**: `aijournal ingest` accepts directories or explicit file lists (blogs, journals, chats), calculates SHA-256 hashes, stores raw snapshots, and records provenance in `data/manifest/ingested.yaml` so the same artifact is never processed twice.
+- **Normalization + ETL**: the ingestion step produces normalized YAML entries with rich sections, tags, and summaries that are ready for characterization.
+- **AI-maintained personality sketch**: `aijournal characterize` (to be implemented) replaces the `_fake_*` helpers with real LLM integrations that continuously update `profile/self_profile.yaml` and `profile/claims.yaml` with evidence citations, confidence, and freshness timers. The output should be detailed enough to drop into any LLM chat as context and immediately convey motivations, goals, habits, boundaries, and coaching preferences.
+- **Review/approval loop**: `aijournal review-updates` lets you inspect proposed facet/claim changes, showing which hashes/evidence generated them before acceptance.
+- **Data interaction model**: multiple files reinforce or challenge traits via weighted aggregation; conflicting evidence is captured as ambiguity metadata so Advisor/Interview modes can highlight it.
+- **Reproducible safety**: every derived artifact references the manifest hash(es) it used, enabling pack context to prove exactly which sources shaped each trait.
+
+Non‑goals v0.3:
 - No cloud dependencies, no multi‑user tenancy, no real‑time UI (CLI + local HTTP later if needed).
 
 ---
@@ -73,6 +107,23 @@ aijournal/
     advice/YYYY-MM-DD/<id>.yaml
     index/                      # optional embeddings later
 ```
+
+### 2.1 Ingestion + Characterization Pipeline (new for v0.3)
+
+```
+sources/ (user files) ──▶ aijournal ingest ──┬── manifest entries (data/manifest/ingested.yaml)
+                                             ├── optional raw snapshot (data/raw/<hash>.md)
+                                             └── normalized entry (data/normalized/YYYY-MM-DD/<id>.yaml)
+
+normalized entries + manifest + profile ──▶ aijournal characterize ──▶ proposed profile/claim updates + evidence links
+                                                                      ▼
+                                                            aijournal review-updates (approve/reject)
+```
+
+- **Manifest**: YAML list of `{hash, path, source_type, ingested_at, tags}`, stored under `data/manifest/`. Hashes (SHA‑256) gate ingestion so files are consumed once.
+- **Normalization adapters**: pluggable readers (Markdown, HTML, chat export) feed the shared schema (`schemas/normalized_entry.json`).
+- **Characterize**: uses the agno-driven model interface to infer traits/motivations/claims from aggregated entries, writing proposed edits with `evidence_hashes`, `method`, `confidence`, and `review_after_days` adjustments.
+- **Review**: staged updates land in `derived/pending/profile_updates/<timestamp>.yaml`; `aijournal review-updates --apply` merges them into `profile/self_profile.yaml` and `profile/claims.yaml` once approved.
 
 ---
 

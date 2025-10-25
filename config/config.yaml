@@ -1,4 +1,4 @@
-model: "llama3.1:8b-instruct"
+model: "qwen3:8b"
 temperature: 0.2
 seed: 42
 paths:
