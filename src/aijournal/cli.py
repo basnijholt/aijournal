@@ -254,8 +254,13 @@ def _derived_profile_suggestions_path(root: Path, day: str) -> Path:
     return root / "derived" / "profile_suggestions" / f"{day}.yaml"
 
 
-def _hash_prompt(prompt_path: str) -> str:
-    return sha256(prompt_path.encode("utf-8")).hexdigest()
+def _hash_prompt(prompt_path: str) -> Optional[str]:
+    path = Path(prompt_path)
+    try:
+        data = path.read_bytes()
+    except FileNotFoundError:
+        return None
+    return sha256(data).hexdigest()
 
 
 def _build_meta(prompt_path: str, model: str = "fake-ollama") -> dict[str, Any]:
