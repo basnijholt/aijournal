@@ -60,21 +60,21 @@ claims:
     _write_yaml(tmp_path / "profile" / "claims.yaml", claims)
 
 
-def _invoke(tmp_path: Path) -> tuple[str, Path]:
+def _invoke(tmp_path: Path) -> tuple[str, Path, int]:
     env = {"AIJOURNAL_FAKE_OLLAMA": "1"}
     result = runner.invoke(app, ["advise", "How to plan next week?"], env=env)
     assert result.exit_code == 0, result.output
     folder = tmp_path / "derived" / "advice" / DATE
     files = sorted(folder.glob("*.yaml"))
     assert files, "No advice file generated"
-    return result.output, files[0]
+    return result.output, files[0], len(files)
 
 
 def test_advise_generates_advice(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.chdir(tmp_path)
     _seed_profile(tmp_path)
 
-    output, advice_file = _invoke(tmp_path)
+    output, advice_file, count = _invoke(tmp_path)
     assert str(advice_file) in output
 
     data = yaml.safe_load(advice_file.read_text(encoding="utf-8"))
@@ -89,8 +89,12 @@ def test_advise_is_idempotent(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
     monkeypatch.chdir(tmp_path)
     _seed_profile(tmp_path)
 
-    _, advice_file = _invoke(tmp_path)
+    output1, advice_file, count1 = _invoke(tmp_path)
     before = advice_file.stat().st_mtime
 
-    _, advice_file_again = _invoke(tmp_path)
+    output2, advice_file_again, count2 = _invoke(tmp_path)
+    assert advice_file_again == advice_file
+    assert count1 == count2
     assert advice_file_again.stat().st_mtime == before
+    assert str(advice_file_again) in output1
+    assert str(advice_file_again) in output2
