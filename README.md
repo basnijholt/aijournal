@@ -1,6 +1,6 @@
 # aijournal
 
-Local-first, YAML-centric personal self-modeling agent. All authoritative data lives in human-readable files; derived artifacts are reproducible via local Ollama. See `PLAN.md` for end-to-end specs, validation details, flows, and commit roadmap.
+Local-first, YAML-centric personal self-modeling agent. All authoritative data lives in human-readable files; derived artifacts are reproducible via local Ollama. See `PLAN.md` for the full persona-first roadmap (typed claim atoms, retrieval-backed chat, persona core packs).
 
 ## Getting Started
 
@@ -8,6 +8,9 @@ Local-first, YAML-centric personal self-modeling agent. All authoritative data l
 uv sync
 uv run pytest -q
 ```
+
+- Runtime deps beyond Typer/PyYAML/httpx/pydantic/dateutil: `numpy`, `annoy`, `fastapi`, `uvicorn`, `orjson`. Install once via `uv add ...`; everything stays local-first.
+- Default embedding model: `nomic-embed-text` via Ollama; configurable through `config/config.yaml` or `AIJOURNAL_MODEL`.
 
 - `config/config.yaml` stores runtime defaults (model, temperature, advisor settings).
 - `src/aijournal/models/` defines the Pydantic schemas the CLI enforces on every write.
@@ -24,6 +27,12 @@ Run `aijournal init` inside a fresh directory to materialize `data/`, `derived/`
 - **Fake mode (tests/CI):** `export AIJOURNAL_FAKE_OLLAMA=1` to bypass Ollama and return deterministic
   fixtures. The code automatically falls back to the fake path if a live request fails, so scripts remain
   robust even if the model is offline.
+
+### Claim atoms & persona core
+
+- Claims now live as typed, scoped atoms inside `profile/claims.yaml` with `{type, subject, predicate, value, scope, strength, provenance}` fields.
+- Run `aijournal migrate claims-v0.2-to-atoms` once to convert legacy free-form claims; uncertain parses are marked `status: tentative` for manual review.
+- `aijournal persona build` regenerates `derived/persona/persona_core.yaml` (≤ ~1200 tokens) by selecting top claim atoms + key profile facets. Packs/chat always include this file as L1 context.
 
 ## Usage
 
@@ -59,6 +68,17 @@ aijournal new --fake 3 --seed 7 --tags focus planning
 ```
 
 Produces three Markdown files with full frontmatter (`id`, `created_at`, `title`, `tags`, `projects`, `mood`) plus short body paragraphs. The command never calls Ollama and is safe to run offline; existing slugs are skipped. Provide `--seed` for deterministic fixtures (great for tests/CI) and optionally layer `--tags` to override the auto-generated tag sets.
+
+### Build or tail the retrieval index
+
+```sh
+aijournal index rebuild          # one-shot rebuild (SQLite + Annoy) from normalized YAML
+aijournal index tail --since 7d  # optional helper: follow manifest entries and index new files
+```
+
+- Index lives under `derived/index/` (`index.db`, `annoy.index`, `meta.json`).
+- Chunking is deterministic (700–1200 characters, sentence boundaries) and every chunk stores normalized_id/date/tags.
+- When Annoy is unavailable the CLI falls back to pure FTS search and annotates `meta.mode: fake(fallback)`.
 
 ### Ingest existing Markdown (blogs, notes)
 
@@ -139,6 +159,21 @@ Builds an advice card under `derived/advice/<DATE>/<slug>.yaml` using `prompts/a
 facets/claims referenced in each recommendation. Fake mode remains available for CI by setting
 `AIJOURNAL_FAKE_OLLAMA=1`.
 
+### Retrieval-backed chat (CLI or FastAPI)
+
+```sh
+# CLI/TUI session
+aijournal chat
+
+# FastAPI server (default http://localhost:8765)
+aijournal chatd --port 8765
+```
+
+- Each turn is intent-classified (`advice|planning|reflection|qa_about_me|meta`), retrieves top claim atoms + journal chunks through the Annoy/SQLite index, and assembles context with persona core + conversation summary under the configured token budget.
+- Responses must cite claims (`[claim:pref.deep_work.window]`) and/or journal entries (`[entry:2025-10-25_x9t3#p0]`) and may ask at most one clarifying question if `coaching_prefs.probing` allows.
+- Learnings from **user** messages are extracted into micro-facts, run through the consolidation service, and queued in `derived/pending/profile_updates/…`; session artifacts live under `derived/chat_sessions/<session_id>/{transcript.jsonl, summary.yaml, learnings.yaml}`.
+- Tune behavior via `config.chat` (`max_retrieved_chunks`, `max_claims`, `follow_up_enabled`, `write_back_facts`). Fake mode stamps `meta.mode: fake(fallback)` whenever LLM calls fail and heuristics are used.
+
 ### Profile suggestions
 
 ```sh
@@ -156,6 +191,14 @@ aijournal profile apply --date 2025-02-03 --yes
 ```
 
 Applies the derived suggestions into `profile/self_profile.yaml` and `profile/claims.yaml`, updating `last_updated` stamps only when something changes.
+
+### Regenerate persona core (L1)
+
+```sh
+aijournal persona build
+```
+
+Writes `derived/persona/persona_core.yaml` by ranking accepted claim atoms (`effective_strength × impact_weight`) and trimming under the configured token budget. This file is always included in packs and seeded into the chat orchestrator.
 
 ### Characterize normalized entries
 
@@ -196,7 +239,34 @@ aijournal pack --level L4 --date 2025-02-03 --history-days 2 --dry-run
 aijournal pack --level L4 --date 2025-02-03 --history-days 1 --format json > /tmp/context-l4.json
 ```
 
-`pack` always includes profile + claims (L1). L2 adds the selected day's normalized entries plus `derived/summaries` and `derived/microfacts` when present. L3 layers on `derived/advice/<date>/*.yaml` and `derived/profile_suggestions/<date>.yaml`—they're optional, so missing files simply drop out. L4 adds every prompt under `prompts/`, the current `config/config.yaml`, and raw `data/journal/YYYY/MM/DD/*.md` files for the base day and any additional days supplied via `--history-days` (history defaults to zero).
+`pack` now follows the standardized layers:
+
+- **L1 (Persona Core):** `derived/persona/persona_core.yaml` + top accepted claim atoms.
+- **L2 (Recent Activity):** today’s normalized entries + last 7 summaries/micro-facts.
+- **L3 (Extended Profile):** complete claims + extended self_profile facets + optional advice/suggestions for the day.
+- **L4 (Background):** prompts, config, raw journals for base day ± `--history-days`.
+
+All packs log `meta.token_estimator` (default `char/4.2`), `planned_tokens`, and any trimmed files (`role`, `path`, `reason`).
+
+### Retrieval index & filters
+
+```sh
+aijournal index rebuild
+aijournal index tail
+```
+
+- `derived/index/index.db` stores chunk metadata + FTS5 virtual table; `derived/index/annoy.index` stores embeddings; `meta.json` records embedding model/dim/build timestamp and whether fake mode ran.
+- Chunking is deterministic (700–1200 chars, sentence boundaries) and each chunk stores `{normalized_id, date, tags, source_type, chunk_index, tokens}`.
+- Prefer the ANN-backed path for speed, but you can opt out of databases: store chunk manifests under `derived/index/chunks/YYYY-MM-DD.yaml` (plus optional `.npy` vector shards) and run pure cosine/text search without SQLite—everything remains human-readable and reproducible.
+- `Retriever.search("question about deep work", k=12, filters=...)` powers chat/advice, combining Annoy cosine scores with a light recency boost; when Annoy/SQLite are unavailable the CLI streams the YAML chunk manifests instead and stamps `meta.mode: fake(fallback)`.
+
+### Configuration quick reference
+
+`config/config.yaml` now includes:
+
+- `embedding_model`, `token_estimator.char_per_token`, and `index.{rebuild_threshold,ann_trees,search_k_factor}`.
+- `chat.{max_retrieved_chunks,max_claims,follow_up_enabled,write_back_facts}` to tune the orchestrator.
+- Expanded `impact_weights` covering claim atom types (`value`, `goal`, `boundary`, `trait`, `preference`, `habit`, `skill`).
 
 Trimming now prioritizes raw journal content first; when a pack exceeds `--max-tokens`, entries are zeroed in deterministic role order and `meta.trimmed` captures a list of `{role, path}` objects so you can inspect exactly what was removed. Dry-run output still lists every planned file with its token estimate, and both YAML/JSON payloads remain deterministic for caching or scripting.
 

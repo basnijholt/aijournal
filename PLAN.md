@@ -49,6 +49,16 @@ A complete, self‑contained blueprint to implement a private, offline, reproduc
 - **Data interaction model**: multiple files reinforce or challenge traits via weighted aggregation; conflicting evidence is captured as ambiguity metadata so Advisor/Interview modes can highlight it.
 - **Reproducible safety**: every derived artifact references the manifest hash(es) it used, enabling pack context to prove exactly which sources shaped each trait.
 
+### 1.4 Persona-first addendum (v0.3+)
+
+Feedback from the principal engineer doubles down on "make it really know me" requirements:
+
+- Claims become **typed atoms with scope** so downstream agents can reason about `type/subject/predicate/value` pairs instead of prose.
+- Retrieval is **first-class**: normalized entries are chunked, embedded, and indexed (SQLite FTS + Annoy) and all higher-level features consume retrieval APIs.
+- A compact, deterministic **persona core** file (L1) is regenerated whenever profile data changes.
+- Chat + advisor surfaces must cite claims or journal evidence and write learnings back through consolidation utilities.
+- L1–L4 terminology is standardized everywhere (README, CLI help, pack outputs, persona builder).
+
 Non‑goals v0.3:
 - No cloud dependencies, no multi‑user tenancy, no real‑time UI (CLI + local HTTP later if needed).
 
@@ -98,8 +108,21 @@ aijournal/
     interviews/YYYY-MM-DD.yaml
     advice/YYYY-MM-DD/<id>.yaml
     pending/profile_updates/<timestamp>.yaml
-    index/                      # optional embeddings later
+    persona/persona_core.yaml   # deterministic ≤1200 token persona core (L1)
+    index/
+      index.db                  # SQLite manifest + FTS5
+      annoy.index               # Annoy ANN vectors
+      meta.json                 # embedding metadata
 ```
+
+### 2.2 Memory layers (canonical definitions)
+
+- **L1 – Persona Core:** `derived/persona/persona_core.yaml` + top accepted claims; always present.
+- **L2 – Recent Activity:** last 7 days of summaries, micro-facts, and today's normalized entries.
+- **L3 – Extended Profile:** full accepted claims plus extended `self_profile` facets (trimmed deterministically).
+- **L4 – Background:** prompts, config, and raw journals for the base day ± optional history.
+
+`pack` composes these layers under a hard token budget with deterministic trimming metadata.
 
 ### 2.1 Ingestion + Characterization Pipeline (new for v0.3)
 
@@ -147,7 +170,18 @@ Use uv for all Python project management: initialization, dependency resolution,
   - Run any tool inside the project env: `uv run <cmd>` (e.g., `uv run pytest`)
   - Add/remove deps: `uv add ...`, `uv remove ...`
   - Update/lock: `uv lock --upgrade` (or targeted upgrades)
-  - One‑off tools: `uvx ruff` / `uvx mypy` if you prefer ephemeral tools (optional; dev deps already pinned).
+- One-off tools: `uvx ruff` / `uvx mypy` if you prefer ephemeral tools (optional; dev deps already pinned).
+
+## 2.2 Runtime dependencies (add-on for persona-first scope)
+
+Add via `uv add` unless already present:
+
+- `numpy` — vector math for embeddings and consolidation weights.
+- `annoy` — approximate nearest neighbor index (portable, rebuildable).
+- `fastapi` + `uvicorn` — lightweight local chat server/orchestrator.
+- `orjson` — faster JSON (optional but recommended for chat transcripts/index meta).
+
+Embedding defaults rely on Ollama (e.g., `nomic-embed-text`); keep everything local-first.
 
 ---
 
@@ -266,7 +300,7 @@ coaching_prefs:
   probing: {max_questions: 2, prefer: "yes/no + one short open follow-up"}
 ```
 
-### 3.4 Claims (evidence‑linked)
+### 3.4 Claims (evidence-linked)
 - Path: `profile/claims.yaml`
 
 ```yaml
@@ -285,6 +319,38 @@ claims:
     review_after_days: 120
     last_updated: "2025-10-25T10:10:00Z"
 ```
+
+### 3.5 Claim atoms with scope (persona-first upgrade)
+
+- Path stays `profile/claims.yaml`, but each entry is a **ClaimAtom** with explicit type, subject, predicate, value, and scope. Reference implementation lives in `src/aijournal/models/claims.py`.
+- Scope captures `domain`, `context[]`, and `conditions[]` so advisors/interviews can differentiate weekday vs weekend, solos vs teams, etc.
+- Provenance is normalized (`sources[]`, `first_seen`, `last_updated`).
+
+Example:
+
+```yaml
+claims:
+  - id: "pref.deep_work.window"
+    type: "preference"
+    subject: "deep_work"
+    predicate: "best_window"
+    value: "09:00-12:00"
+    statement: "Best deep work between 09:00–12:00 on weekdays."
+    scope: {domain: "work", context: ["weekday"], conditions: []}
+    strength: 0.78
+    status: "accepted"
+    method: "inferred"
+    user_verified: true
+    review_after_days: 120
+    provenance:
+      sources:
+        - entry_id: "2025-10-25_x9t3"
+          spans: [{type: "para", index: 0}]
+      first_seen: "2024-11-02"
+      last_updated: "2025-10-25T10:10:00Z"
+```
+
+Add `aijournal migrate claims-v0.2-to-atoms` to convert legacy free-form claims into atoms; unclear parses become `status: tentative` and require review.
 
 ---
 
@@ -475,6 +541,33 @@ meta:
   created_at: "2025-02-03T12:00:00Z"
 ```
 
+### 4.7 Retrieval index artifacts
+
+- SQLite FTS database: `derived/index/index.db` stores chunk metadata + `fts5` virtual table.
+- Annoy vector file: `derived/index/annoy.index` stores embeddings keyed by SQLite rowid.
+- `derived/index/meta.json` captures embedding model, vector dim, build time, count, Annoy params, and whether fake mode was used.
+- Chunk schema: `{id, normalized_id, date, tags, source_type, chunk_index, chunk_text, tokens}` with deterministic chunking (700–1200 chars, sentence boundaries, include section headings when available).
+- Rebuild commands regenerate both indexes deterministically from normalized YAML; no authoritative data stored here.
+- **File-only fallback:** when you want to avoid databases entirely, write deterministic chunk manifests under `derived/index/chunks/YYYY-MM-DD.yaml` (plus optional `.npy` vector shards). Retrieval can stream those YAML files directly or run pure cosine search without SQLite/Annoy; document and test this mode alongside the ANN-backed index so either path can be regenerated on demand.
+
+### 4.8 Persona core file (L1)
+
+- Path: `derived/persona/persona_core.yaml`.
+- Trigger: regenerate whenever `profile/*.yaml` or `claims.yaml` changes, or when `persona build` is invoked explicitly.
+- Contents: values/goals/boundaries/coaching prefs snapshot plus top-N accepted claim atoms ranked by `effective_strength × impact_weight` and trimmed to ≤ ~1200 tokens.
+- Metadata: include `{generated_at, llm_model (if any), selection_strategy, trimmed}` for determinism.
+
+### 4.9 Claim consolidation & conflict handling
+
+- Implement `ClaimConsolidator` service that ingests new micro-facts/characterization outputs and merges them into ClaimAtoms using weighted averaging:
+  - `strength_new = clamp01((w_prev * strength_prev + w_obs * signal) / (w_prev + w_obs))`
+  - `w_prev = min(1.0, log1p(n_prev))`, `w_obs = 1.0`, `signal = evidence confidence (default 0.6)`.
+- Conflicts (same `type/subject/predicate/scope` but different `value`):
+  - If qualifiers exist (weekend vs weekday, solo vs team) split into scoped atoms.
+  - Otherwise downgrade both to `status: tentative`, drop strengths by 0.15, and enqueue an interview question.
+- Decay applied at read time only: `effective_strength = strength * exp(-lambda * staleness)` with `lambda ≈ 0.2` and `staleness = min(2, days_since / review_after_days)`.
+- `review-updates` must surface conflicts + scopes so humans understand why merges occur before applying.
+
 ---
 
 ## 5. IDs, Slugs, and Time
@@ -504,12 +597,12 @@ meta:
 
 ## 7. Hierarchical Memory (L1→L4)
 
-- L1 (Active): today’s normalized entries + last summary (≤ 400 tokens).
-- L2 (Recent): last 7 days summaries + high‑confidence micro‑facts (≤ 900 tokens).
-- L3 (Profile Core): accepted claims + key facets from `self_profile.yaml` (≤ 1800 tokens).
-- L4 (Background): weekly/quarterly aggregates or embeddings (optional).
+- **L1 (Persona Core):** `derived/persona/persona_core.yaml` + top accepted claim atoms; always included in packs/chat.
+- **L2 (Recent Activity):** today’s normalized entries plus last 7 days of summaries + high-confidence micro-facts (≤ ~900 tokens by trimming).
+- **L3 (Extended Profile):** full accepted claims + extended self_profile facets (deterministically trimmed, ≤ ~1800 tokens).
+- **L4 (Background):** prompts, config, and raw journal files for the base day ± optional `--history-days`.
 
-Command: `aijournal pack --level L3 --out /tmp/context.txt`
+Command: `aijournal pack --level L3 --out /tmp/context.txt` (uses standardized trimming metadata described in §2.2).
 
 ---
 
@@ -524,17 +617,40 @@ Command: `aijournal pack --level L3 --out /tmp/context.txt`
 Health check:
 - `aijournal ollama health` returns model list and selected default.
 
+### 8.1 Embedding + retrieval services
+
+- Embeddings default to `nomic-embed-text` via Ollama (`EmbeddingClient` wraps HTTP calls, caches dims, exposes `embed_texts`).
+- `Indexer` manages chunking (700–1200 chars, boundary aware), writes SQLite rows, and updates Annoy (rebuild after N inserts or on-demand `index rebuild`).
+- `Retriever` loads query embeddings, performs ANN search (`search_k = factor * k * trees`), filters by tags/date/source, applies lightweight rerank: `score = 0.7*cos + 0.3*recency` where `recency = 1/(1+0.05*days)`.
+- Pure file/FTS fallback (documented/tested) activates when Annoy or SQLite are unavailable: stream YAML chunk manifests from `derived/index/chunks/`, run cosine search over in-memory vectors (or regex/fts-like text search), and mark `meta.mode: "fake(fallback)"` in outputs so it’s obvious which path ran.
+
+### 8.2 Chat orchestrator (RAG + write-back)
+
+- `aijournal chat` (CLI/TUI) and `aijournal chatd` (FastAPI) wrap a pipeline:
+  1. Maintain rolling summaries under `derived/chat_sessions/<id>/summary.yaml` when history grows.
+  2. Intent classify each user turn (`advice|planning|reflection|qa_about_me|meta`).
+  3. Retrieve relevant claims (filtered by intent/subject heuristics + top `effective_strength`) and journal chunks via `Retriever.search` (k≈12, filters optional).
+  4. Assemble context: persona core (L1), selected claims, retrieved chunks (with citations), conversation summary, and any relevant config/coach prefs respecting token budget + deterministic trimming metadata.
+  5. Generate responses that must cite claims/journal entries (`[claim:pref.deep_work.window]`, `[entry:2025-10-25_x9t3#p0]`), include `why this fits you`, and ask at most one clarifying question if `coaching_prefs.probing` allows.
+  6. Extract micro-facts from user messages, run them through `ClaimConsolidator`, and queue updates under `derived/pending/profile_updates/…` (or micro-facts) with explicit provenance.
+  7. Capture feedback (thumbs up/down) to tweak cited claim strengths (+0.03/−0.05 within 0..1).
+- Outputs live under `derived/chat_sessions/<session_id>/{transcript.jsonl, summary.yaml, learnings.yaml}` with deterministic ordering + metadata.
+
 ---
 
 ## 9. Configuration
 
 - Path: `config/config.yaml`
   - `model: "llama3.1:8b-instruct"`
+  - `embedding_model: "nomic-embed-text"`
   - `temperature: 0.2`
   - `seed: 42`
   - `paths: {data, profile, derived, prompts}`
-  - `impact_weights: {...}`
+  - `impact_weights: {...}` (extend to include claim types: value, goal, boundary, trait, preference, habit, skill)
   - `advisor: {max_recos: 3, include_risks: true}`
+  - `chat: {max_retrieved_chunks: 12, max_claims: 16, follow_up_enabled: true, write_back_facts: true}`
+  - `index: {rebuild_threshold: 1000, ann_trees: 50, search_k_factor: 3}`
+  - `token_estimator: {char_per_token: 4.2}`
 - Env overrides:
   - `AIJOURNAL_CONFIG=...`
   - `AIJOURNAL_FAKE_OLLAMA=1`
@@ -549,18 +665,24 @@ Health check:
 - `aijournal normalize --date YYYY-MM-DD` — MD→normalized YAML (no LLM).
 - `aijournal summarize --date YYYY-MM-DD` — day summary via Ollama.
 - `aijournal facts --date YYYY-MM-DD` — extract micro‑facts via Ollama.
-- `aijournal profile status` — list stale/high‑impact facets/claims with ranks.
+- `aijournal profile status` — list stale/high-impact facets/claims with ranks.
 - `aijournal profile suggest [--since YYYY-MM-DD]` — write suggestions YAML (facets+claims).
 - `aijournal profile apply [--file derived/profile_suggestions/...]` — interactive accept/merge.
 - `aijournal characterize --date YYYY-MM-DD` — emit manifest-linked claim/facet proposals under `derived/pending/profile_updates/`.
-- `aijournal review-updates [--file ...] [--apply]` — inspect pending batches and optionally merge them into `profile/`.
-- `aijournal interview --max 4` — prioritized probes; uses 8 high‑impact questions when gaps exist.
-- `aijournal advise "question" [--level L1|L2|L3] [--max 3]` — Advisor Mode; generates `derived/advice/...yaml` and prints a concise summary to stdout.
-- `aijournal pack --level L1|L2|L3|L4 --out path` — assemble context pack for prompts.
-- `aijournal ollama health` — verify local model availability.
+- `aijournal review-updates [--file ...] [--apply]` — inspect pending batches, preview scope conflicts, and optionally merge them into `profile/`.
+- `aijournal interview --max 4` — prioritized probes (information-gain scoring, scope-focused questions).
+- `aijournal advise "question" [--level L1|L2|L3] [--max 3]` — Advisor Mode; generates `derived/advice/...yaml` with citations.
+- `aijournal pack --level L1|L2|L3|L4 --out path` — assemble context pack with standardized layer semantics + trimming metadata.
+- `aijournal persona build` — regenerate `derived/persona/persona_core.yaml` (feeds packs + chat primer).
+- `aijournal index rebuild` — rebuild SQLite + Annoy from normalized YAML.
+- `aijournal index tail` — tail manifest and incrementally index new normalized files.
+- `aijournal migrate claims-v0.2-to-atoms` — convert legacy claims into scoped ClaimAtoms.
+- `aijournal chat` — local RAG chat (retrieval, citations, single clarifying question, learnings write-back).
+- `aijournal chatd --port <int>` — FastAPI server exposing the same orchestrator.
+- `aijournal ollama health` — verify local model availability (fake mode warns when falling back).
 
-Interactive apply (text‑mode):
-- Show each suggestion diff (YAML delta), accept/skip, then write back to authoritative file(s) and update timestamps/freshness.
+Interactive apply (text-mode):
+- Show each suggestion diff (YAML delta) plus scope/conflict notes, accept/skip, then write back to authoritative file(s) and update timestamps/freshness.
 
 ---
 
@@ -593,17 +715,25 @@ To make evidence robust yet simple:
 ## 13. Testing Strategy
 
 Unit:
-- Pydantic (de)serialization for JournalEntry, NormalizedEntry, Fact, Claim, SelfProfile facets.
+- Pydantic (de)serialization for JournalEntry, NormalizedEntry, MicroFact, ClaimAtom + Scope/Provenance, SelfProfile facets.
+- Claim consolidation math (aggregation, contradiction handling, decay-at-read helper).
+- Chunker determinism (same text → same chunk boundaries) + token estimator.
+- Retrieval rerank scores (cosine + recency) and filter logic.
 - Path mappers and slug/ID generators are deterministic.
-- Staleness ranking and impact weights.
+- Staleness/impact/uncertainty scoring for interviews.
 
 Functional (CLI):
 - `init/new/normalize` produces expected files and paths.
 - `summarize/facts` under fake mode write valid derived YAML; validate against Pydantic models; snapshot key sections.
 - `advise` under fake mode returns a valid Advice Card and respects tone/boundaries.
+- `index rebuild` + `index tail` build reproducible SQLite/Annoy artifacts; `retriever.search` returns stable top-K on seed corpus.
+- `persona build` creates deterministic persona_core ≤ token budget.
+- `chat` end-to-end: retrieves claims + chunks, enforces citations, stores transcript/summary/learnings, and writes pending updates when write-back enabled.
+- `review-updates --apply` shows conflict scope info before merging.
+- Interview ranking favors high uncertainty/missing scope facets.
 
 Validation:
-- Pydantic models cover each artifact (`DailySummary`, `MicroFactsFile`, `AdviceCard`, etc.).
+- Pydantic models cover each artifact (`DailySummary`, `MicroFactsFile`, `AdviceCard`, `ClaimAtom`, `PersonaCore`, `ProfileUpdateBatch`, etc.).
 - `pytest` loads written YAML and validates via those models.
 
 LLM Contracts:
@@ -764,19 +894,34 @@ ci:          just fake_on test mypy
 - Include end‑to‑end usage, fake mode, regeneration semantics, Advisor Mode examples.
 
 15) optional: pack
-- `aijournal pack --level L1|L2|L3|L4` assembles context; token‑aware trimming.
+- `aijournal pack --level L1|L2|L3|L4` assembles context; token-aware trimming.
+
+### Addendum roadmap (persona-first scope)
+
+16) feat(models): typed ClaimAtom + Scope + Provenance + migration command/tests.
+
+17) feat(index): SQLite + Annoy indexer (`index rebuild`, `index tail`) + deterministic retrieval tests.
+
+18) feat(persona): persona_core builder + updated L1 packs (token budgeting + trimmed metadata).
+
+19) feat(consolidation): merge/conflict/decay utilities wired into `characterize`, `profile suggest/apply`.
+
+20) feat(chat): chat orchestrator (CLI + FastAPI) with RAG, citations, write-back learnings.
+
+21) feat(interview+advisor): information-gain ranking, scope-aware prompts, conflict surfacing in `review-updates`.
+
+22) docs: README/PLAN refresh (this doc), config additions, glossary updates.
 
 ---
 
-## 22. Acceptance Criteria (MVP)
+## 22. Acceptance Criteria (persona-first MVP)
 
-- Can add entries, normalize, derive summaries and micro‑facts via local Ollama.
-- Can propose and apply profile/claim updates with provenance and re‑validation cadence.
-- Interviewer outputs targeted questions prioritizing stale/high‑impact facets.
-- Advisor Mode produces personalized, constraint‑aware Advice Cards and concise terminal summaries.
-- All artifacts are human-readable and validated via shared Pydantic models.
-- Fake LLM mode enables offline, deterministic tests.
-- Context pack L3 comfortably ≤ 1800 tokens.
+- **Persona core coverage:** `derived/persona/persona_core.yaml` includes top values, current goals, boundaries, coaching prefs, and ≥10 high-strength claim atoms with scopes under ≤ ~1200 tokens.
+- **Typed claims & consolidation:** Claim atoms include `type/subject/predicate/value/scope`, merge new micro-facts deterministically, and surface conflicts (scoped split or tentative downgrade + interview question).
+- **Retrieval relevance:** `aijournal chat` answers reference claims or journal entries with citations ≥90% of the time on seed QA, and retrieval latency stays <150 ms on a laptop with 50k+ chunks.
+- **Learning loop:** Marking assistant replies helpful/ unhelpful updates cited claim strengths (+/-) and queues learnings into pending profile updates.
+- **Interview upgrade:** Ranking considers staleness, uncertainty, and missing scopes; prompts explicitly probe for qualifiers.
+- **Packs & token budgets:** All pack levels include standardized layer semantics, trimming metadata, and remain within configured token budgets.
 
 ---
 
@@ -785,8 +930,9 @@ ci:          just fake_on test mypy
 - Authoritative: files edited by the user that define truth (`data/`, `profile/`, `prompts/`, `config/`).
 - Derived: reproducible files created from authoritative inputs (`derived/`).
 - Facet: a structured field in `self_profile.yaml` (e.g., `traits.big_five.openness`).
-- Claim: evidence‑linked statement with confidence and freshness in `claims.yaml`.
+- Claim Atom: typed/scoped statement (`type/subject/predicate/value`) with strength + provenance in `claims.yaml`.
 - Advice Card: a reproducible artifact with tailored recommendations and traceable rationale.
+- Persona Core: deterministic L1 context built from profile + top claim atoms.
 
 ---
 
@@ -802,3 +948,6 @@ ci:          just fake_on test mypy
 - `aijournal profile apply`
 - `aijournal interview --max 4`
 - `aijournal advise "How should I schedule next week around family time while shipping the MVP?"`
+- `aijournal index rebuild`
+- `aijournal persona build`
+- `aijournal chat "What should I focus on tomorrow?"`
