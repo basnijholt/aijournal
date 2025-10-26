@@ -252,6 +252,7 @@ class PersonaCoreMeta(AijournalModel):
     min_claims: int | None = None
     budget_exceeded: bool = False
     sources: dict[str, str] = Field(default_factory=dict)
+    source_mtimes: dict[str, float] = Field(default_factory=dict)
 
 
 class PersonaCore(AijournalModel):

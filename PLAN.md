@@ -986,14 +986,14 @@ moving without blocking on LLM availability.
 
 ### Next focus (week of 2025-11-03)
 
-3. **feat(persona-core): `persona build` + auto-regeneration.** ✅ _Shipped 2025-10-26 via the new `aijournal persona build` command, schema-backed payloads, trimming metadata, and Pytests. Lightweight change reminders/watchers still planned as an enhancement._
+3. **feat(persona-core): `persona build` + auto-regeneration.** ✅ _Shipped 2025-10-26 via the new `aijournal persona build` command, schema-backed payloads, trimming metadata, Pytests, and now (2025-10-26) mtime-based reminders through `aijournal persona status` + pack gating that require fresh `derived/persona/persona_core.yaml`._
    - Compose persona core from `self_profile` + accepted claim atoms sorted by
      `effective_strength × impact_weight`, trim to ≤1200 tokens, and capture `meta` with
      generator metadata.
    - Integrate with packs: L1 always references the latest persona core; L2/L3 reuse it when
      assembling bundles so context stays deterministic.
-   - Add file watchers (simple mtimes) so `profile/*.yaml` or `claims.yaml` edits trigger a
-     reminder to re-run `persona build`.
+   - Change reminders now run through `persona status` (compares mtimes) and `pack` prints a
+     warning whenever the cached persona core is stale.
 
 4. **feat(consolidation): pending-update fusion.**
    - Finish `ClaimConsolidator` so micro-facts, characterize batches, and chat learnings merge via

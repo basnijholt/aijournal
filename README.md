@@ -33,6 +33,7 @@ Run `aijournal init` inside a fresh directory to materialize `data/`, `derived/`
 - Claims now live as typed, scoped atoms inside `profile/claims.yaml` with `{type, subject, predicate, value, scope, strength, provenance}` fields.
 - `aijournal persona build` regenerates `derived/persona/persona_core.yaml` (≤ ~1200 tokens) by selecting top claim atoms + key profile facets. Packs/chat always include this file as L1 context.
 - There is intentionally **no** legacy format support—if schema changes, re-run `aijournal init` and regenerate data rather than carrying migration code.
+- Use `aijournal persona status` anytime you edit `profile/*.yaml` to confirm the cached persona core matches the latest mtimes. The builder now records source file mtimes and `pack` warns when the persona core is stale or missing so you remember to rebuild before sharing context bundles.
 
 ## Usage
 
@@ -209,6 +210,17 @@ estimates respect `token_estimator.char_per_token` (default 4.2). The generated
 file is always included in packs/chat as the canonical L1 persona core and can
 be regenerated safely anytime.
 
+Check whether the cached persona core matches the latest profile edits at any
+time:
+
+```sh
+aijournal persona status
+```
+
+The status command compares the recorded mtimes for `profile/*.yaml` against the
+current filesystem and prints a yellow reminder (without blocking) when you need
+to re-run `persona build`.
+
 ### Characterize normalized entries
 
 ```sh
@@ -256,6 +268,7 @@ aijournal pack --level L4 --date 2025-02-03 --history-days 1 --format json > /tm
 - **L4 (Background):** prompts, config, raw journals for base day ± `--history-days`.
 
 All packs log `meta.token_estimator` (default `char/4.2`), `planned_tokens`, and any trimmed files (`role`, `path`, `reason`).
+`aijournal pack` now refuses to run until `derived/persona/persona_core.yaml` exists and injects that file at every level (even L2–L4) before layering profile history. If profile/claims files change, the command prints a yellow reminder to re-run `aijournal persona build` so your exported bundles always reflect the latest persona snapshot.
 
 ### Retrieval index & filters
 

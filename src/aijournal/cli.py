@@ -196,6 +196,7 @@ SEED_FILES = {
 }
 
 ROLE_ORDER = [
+    "persona_core",
     "profile",
     "claims",
     "config",
@@ -2526,6 +2527,89 @@ def _relative_to_root(path: Path, root: Path) -> str:
         return str(path)
 
 
+def _profile_yaml_paths(root: Path) -> list[Path]:
+    profile_dir = root / "profile"
+    if not profile_dir.exists():
+        return []
+    return sorted(p for p in profile_dir.glob("*.yaml") if p.is_file())
+
+
+def _persona_source_mtimes(root: Path) -> dict[str, float]:
+    """Return rounded mtimes for all profile YAML files."""
+    state: dict[str, float] = {}
+    for path in _profile_yaml_paths(root):
+        rel = _relative_to_root(path, root)
+        state[rel] = round(path.stat().st_mtime, 6)
+    return state
+
+
+def _format_mtime_display(timestamp: float) -> str:
+    dt = datetime.fromtimestamp(timestamp, tz=UTC)
+    return dt.strftime("%Y-%m-%d %H:%M:%SZ")
+
+
+def _mtimes_close(a: float, b: float, epsilon: float = 1e-6) -> bool:
+    return abs(a - b) <= epsilon
+
+
+def _persona_state(root: Path) -> tuple[str, list[str]]:
+    persona_path = root / "derived" / "persona" / "persona_core.yaml"
+    if not persona_path.exists():
+        rel = _relative_to_root(persona_path, root)
+        return "missing", [f"Missing {rel}; run `aijournal persona build`."]
+
+    payload = _load_yaml(persona_path)
+    meta = payload.get("meta") if isinstance(payload, dict) else {}
+    stored_raw = meta.get("source_mtimes") if isinstance(meta, dict) else None
+    if not isinstance(stored_raw, dict):
+        return (
+            "stale",
+            [
+                "Persona core lacks source_mtimes metadata; rebuild once to capture profile state.",
+            ],
+        )
+
+    current_state = _persona_source_mtimes(root)
+    reasons: list[str] = []
+    for rel, current_mtime in current_state.items():
+        stored_value = stored_raw.get(rel)
+        stored_mtime = _coerce_float(stored_value)
+        if stored_mtime is None:
+            reasons.append(f"New profile file detected: {rel}")
+            continue
+        if not _mtimes_close(current_mtime, stored_mtime):
+            reasons.append(
+                f"{rel} modified at {_format_mtime_display(current_mtime)} (was {_format_mtime_display(stored_mtime)}).",
+            )
+
+    for rel in stored_raw:
+        if rel not in current_state:
+            reasons.append(f"{rel} missing; it existed when persona core was generated.")
+
+    if reasons:
+        return "stale", reasons
+    return "fresh", []
+
+
+def _ensure_persona_ready_for_pack(root: Path) -> None:
+    status, reasons = _persona_state(root)
+    if status == "missing":
+        typer.secho(
+            "Persona core not found. Run `aijournal persona build` before assembling packs.",
+            fg=typer.colors.RED,
+            err=True,
+        )
+        raise typer.Exit(1)
+    if status == "stale":
+        typer.secho(
+            "Persona core is stale; re-run `aijournal persona build` to refresh profile changes.",
+            fg=typer.colors.YELLOW,
+            err=True,
+        )
+        for reason in reasons:
+            typer.echo(f"- {reason}", err=True)
+
+
 def _persona_build_impl(
     *,
     token_budget_override: int | None = None,
@@ -2626,6 +2710,7 @@ def _persona_build_impl(
         sources["claims"] = _relative_to_root(claims_path, root)
     if sources:
         meta["sources"] = sources
+    meta["source_mtimes"] = _persona_source_mtimes(root)
 
     payload = {
         "persona": persona_block,
@@ -2659,6 +2744,24 @@ def persona_build(
     )
     status = "Wrote" if changed else "Persona core already up to date"
     typer.echo(f"{status}: {path}")
+
+
+@persona_app.command("status")
+def persona_status() -> None:
+    """Check whether persona_core.yaml matches the latest profile edits."""
+    root = Path.cwd()
+    status, reasons = _persona_state(root)
+    if status == "fresh":
+        typer.echo("Persona core is up to date (profile files unchanged).")
+        return
+
+    heading = "Persona core missing" if status == "missing" else "Persona core is stale"
+    color = typer.colors.RED if status == "missing" else typer.colors.YELLOW
+    typer.secho(heading, fg=color, err=True)
+    for reason in reasons:
+        typer.echo(f"- {reason}", err=True)
+    typer.echo("Run `aijournal persona build` to refresh.")
+    raise typer.Exit(1)
 
 
 def _atomic_write(
@@ -2985,6 +3088,16 @@ def _collect_pack_entries(
         typer.secho(msg, fg=typer.colors.RED, err=True)
         raise typer.Exit(1)
 
+    persona_core_path = root / "derived" / "persona" / "persona_core.yaml"
+    add_path("persona_core", persona_core_path, required=True)
+
+    if level == "L1":
+        role_rank = {role: idx for idx, role in enumerate(ROLE_ORDER)}
+        entries.sort(
+            key=lambda item: (role_rank.get(item[0], len(ROLE_ORDER)), item[2], str(item[1]))
+        )
+        return [(role, path) for role, path, _ in entries]
+
     add_path("profile", root / "profile" / "self_profile.yaml", required=True)
     add_path("claims", root / "profile" / "claims.yaml", required=True)
 
@@ -3099,6 +3212,7 @@ def pack(
     budget = max_tokens or default_budget.get(level, 2000)
 
     root = Path.cwd()
+    _ensure_persona_ready_for_pack(root)
     resolved_date = _resolve_pack_date(level, date, root)
     entries_info = _collect_pack_entries(
         root,

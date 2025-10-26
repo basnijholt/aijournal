@@ -64,6 +64,14 @@ traits:
     )
 
 
+def _ensure_persona_core(tmp_path: Path) -> Path:
+    result = runner.invoke(app, ["persona", "build"])
+    assert result.exit_code == 0, result.output
+    persona_path = tmp_path / "derived" / "persona" / "persona_core.yaml"
+    assert persona_path.exists(), "persona_core.yaml should be created"
+    return persona_path
+
+
 def _seed_daily_artifacts(
     tmp_path: Path,
     day: str = DATE,
@@ -179,41 +187,84 @@ def _seed_journal_entry(
     return journal_path
 
 
-def test_pack_l1_includes_profile_and_claims(
+def test_pack_l1_uses_persona_core(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    _seed_profile(tmp_path)
+    persona_path = _ensure_persona_core(tmp_path)
+
+    result = runner.invoke(app, ["pack", "--level", "L1", "--format", "yaml"])
+    assert result.exit_code == 0, result.output
+    payload = yaml.safe_load(result.output)
+    files = payload.get("files", [])
+    assert len(files) == 1
+    assert files[0]["path"] == str(persona_path.relative_to(tmp_path))
+
+
+def test_pack_l2_includes_daily_artifacts(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    _seed_profile(tmp_path)
+    _ensure_persona_core(tmp_path)
+    entry_slug = _seed_daily_artifacts(tmp_path)
+
+    result = runner.invoke(app, ["pack", "--level", "L2", "--date", DATE])
+    assert result.exit_code == 0
+    payload = yaml.safe_load(result.output)
+    paths = {entry["path"] for entry in payload.get("files", [])}
+    assert "derived/persona/persona_core.yaml" in paths
+    assert f"data/normalized/{DATE}/{entry_slug}.yaml" in paths
+    assert f"derived/summaries/{DATE}.yaml" in paths
+
+
+def test_pack_requires_persona_core(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.chdir(tmp_path)
     _seed_profile(tmp_path)
 
-    result = runner.invoke(app, ["pack", "--level", "L1", "--format", "yaml"])
-    assert result.exit_code == 0, result.output
-    assert "traits" in result.output
-    assert "claims:" in result.output
+    result = runner.invoke(app, ["pack", "--level", "L1"])
+    assert result.exit_code != 0
+    assert "persona core" in result.output.lower()
 
 
-def test_pack_l2_includes_daily_artifacts(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_pack_missing_profile_errors_for_l2(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.chdir(tmp_path)
     _seed_profile(tmp_path)
     _seed_daily_artifacts(tmp_path)
+    _ensure_persona_core(tmp_path)
+    (tmp_path / "profile" / "self_profile.yaml").unlink()
 
     result = runner.invoke(app, ["pack", "--level", "L2", "--date", DATE])
-    assert result.exit_code == 0
-    assert "normalized" in result.output or ENTRY_ID in result.output
-    assert "summaries" in result.output
-
-
-def test_pack_missing_profile_errors(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.chdir(tmp_path)
-
-    result = runner.invoke(app, ["pack", "--level", "L1"])
     assert result.exit_code != 0
     assert "self_profile" in result.output.lower()
+
+
+def test_pack_warns_when_persona_stale(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    _seed_profile(tmp_path)
+    _ensure_persona_core(tmp_path)
+    profile_path = tmp_path / "profile" / "self_profile.yaml"
+    existing = profile_path.read_text(encoding="utf-8")
+    profile_path.write_text(existing + "\n# updated\n", encoding="utf-8")
+
+    result = runner.invoke(app, ["pack", "--level", "L1"])
+    assert result.exit_code == 0
+    assert "persona core is stale" in result.output.lower()
 
 
 def test_pack_trims_to_budget(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.chdir(tmp_path)
     _seed_profile(tmp_path)
+    _ensure_persona_core(tmp_path)
     big_text = "sentence " * 500
     _write(tmp_path / "data" / "normalized" / DATE / "big.yaml", big_text)
 
@@ -228,6 +279,7 @@ def test_pack_trims_to_budget(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
 def test_pack_output_file_idempotent(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.chdir(tmp_path)
     _seed_profile(tmp_path)
+    _ensure_persona_core(tmp_path)
     out_path = tmp_path / "derived" / "packs" / "l1.yaml"
 
     first = runner.invoke(app, ["pack", "--level", "L1", "--output", str(out_path)])
@@ -242,10 +294,12 @@ def test_pack_output_file_idempotent(tmp_path: Path, monkeypatch: pytest.MonkeyP
 def test_pack_dry_run_lists_files(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.chdir(tmp_path)
     _seed_profile(tmp_path)
+    _ensure_persona_core(tmp_path)
     _seed_daily_artifacts(tmp_path)
 
     result = runner.invoke(app, ["pack", "--level", "L2", "--dry-run"])
     assert result.exit_code == 0
+    assert "derived/persona/persona_core.yaml" in result.output
     assert "profile/self_profile.yaml" in result.output
     assert "normalized" in result.output
 
@@ -253,6 +307,7 @@ def test_pack_dry_run_lists_files(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
 def test_pack_deterministic_order(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.chdir(tmp_path)
     _seed_profile(tmp_path)
+    _ensure_persona_core(tmp_path)
     _seed_daily_artifacts(tmp_path)
 
     first = runner.invoke(app, ["pack", "--level", "L2", "--date", DATE])
@@ -265,6 +320,7 @@ def test_pack_deterministic_order(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
 def test_pack_json_format(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.chdir(tmp_path)
     _seed_profile(tmp_path)
+    _ensure_persona_core(tmp_path)
 
     result = runner.invoke(app, ["pack", "--level", "L1", "--format", "json"])
     assert result.exit_code == 0
@@ -278,6 +334,7 @@ def test_pack_l3_includes_advice_and_profile_suggestions(
 ) -> None:
     monkeypatch.chdir(tmp_path)
     _seed_profile(tmp_path)
+    _ensure_persona_core(tmp_path)
     _seed_daily_artifacts(tmp_path)
     advice_path = _seed_advice(tmp_path)
     suggestions_path = _seed_profile_suggestions(tmp_path)
@@ -296,6 +353,7 @@ def test_pack_l4_history_days_includes_prior_context(
 ) -> None:
     monkeypatch.chdir(tmp_path)
     _seed_profile(tmp_path)
+    _ensure_persona_core(tmp_path)
     _seed_daily_artifacts(tmp_path)
     prior_entry = _seed_daily_artifacts(tmp_path, day=PRIOR_DATE, entry_id=PRIOR_ENTRY_ID)
     raw_path = _seed_journal_entry(tmp_path, PRIOR_DATE, PRIOR_ENTRY_ID)
@@ -323,6 +381,7 @@ def test_pack_l4_trimming_prioritizes_raw_journal_entries(
 ) -> None:
     monkeypatch.chdir(tmp_path)
     _seed_profile(tmp_path)
+    _ensure_persona_core(tmp_path)
     _seed_daily_artifacts(tmp_path)
     _seed_config(tmp_path)
     _seed_prompt(tmp_path)
@@ -354,8 +413,7 @@ def test_pack_l4_trimming_prioritizes_raw_journal_entries(
     first_trimmed = trimmed[0]
     assert first_trimmed["role"] == "journal_raw"
     assert first_trimmed["path"] == str(raw_path.relative_to(tmp_path))
-    profile_entry = next(entry for entry in payload["files"] if entry["role"] == "profile")
-    assert profile_entry["tokens"] > 0
+    assert all(item["role"] != "persona_core" for item in trimmed)
 
 
 def test_pack_l4_handles_missing_optional_artifacts(
@@ -364,6 +422,7 @@ def test_pack_l4_handles_missing_optional_artifacts(
 ) -> None:
     monkeypatch.chdir(tmp_path)
     _seed_profile(tmp_path)
+    _ensure_persona_core(tmp_path)
     _seed_daily_artifacts(tmp_path)
 
     result = runner.invoke(
@@ -380,6 +439,7 @@ def test_pack_l4_supports_json_output(tmp_path: Path, monkeypatch: pytest.Monkey
     monkeypatch.chdir(tmp_path)
     normalized_entry = _seed_daily_artifacts(tmp_path)
     _seed_profile(tmp_path)
+    _ensure_persona_core(tmp_path)
     _seed_config(tmp_path)
     _seed_prompt(tmp_path, "history_context.md")
 
@@ -411,6 +471,7 @@ def test_pack_l4_dry_run_lists_expected_files(
 ) -> None:
     monkeypatch.chdir(tmp_path)
     _seed_profile(tmp_path)
+    _ensure_persona_core(tmp_path)
     _seed_daily_artifacts(tmp_path)
     _seed_daily_artifacts(tmp_path, day=PRIOR_DATE, entry_id=PRIOR_ENTRY_ID)
     _seed_advice(tmp_path)
