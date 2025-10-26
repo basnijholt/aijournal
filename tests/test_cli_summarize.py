@@ -9,6 +9,8 @@ import yaml
 from typer.testing import CliRunner
 
 from aijournal.cli import app
+from aijournal.models import DailySummaryResponse, JournalSection, NormalizedEntry
+from aijournal.services import LLMResponseError
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -74,6 +76,7 @@ def test_summarize_generates_summary(tmp_path: Path, monkeypatch: pytest.MonkeyP
     meta = data.get("meta", {})
     for key in ("llm_model", "prompt_path", "prompt_hash", "created_at"):
         assert meta.get(key), f"Missing {key}"
+    assert meta.get("llm_model") == "fake-ollama"
     assert str(summary_path) in result.stdout
 
 
@@ -93,3 +96,88 @@ def test_summarize_is_idempotent(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     after = summary_path.stat().st_mtime
 
     assert before == after
+
+
+def test_summarize_progress_flag(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    _write_normalized(tmp_path)
+
+    env = {"AIJOURNAL_FAKE_OLLAMA": "1"}
+    result = runner.invoke(app, ["summarize", "--date", DATE, "--progress"], env=env)
+
+    assert result.exit_code == 0, result.stdout
+    assert "Summarizing entries for" in result.stdout
+    assert "[1/1]" in result.stdout
+
+
+def test_summarize_rejects_zero_timeout(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    _write_normalized(tmp_path)
+
+    env = {"AIJOURNAL_FAKE_OLLAMA": "1"}
+    result = runner.invoke(app, ["summarize", "--date", DATE, "--timeout", "0"], env=env)
+
+    assert result.exit_code != 0
+    assert "--timeout must be positive" in result.stdout
+
+
+def test_summarize_structured_success(monkeypatch: pytest.MonkeyPatch) -> None:
+    from aijournal import cli
+
+    entry = NormalizedEntry(
+        id="entry-1",
+        created_at=f"{DATE}T09:00:00Z",
+        source_path="data/journal/2025/02/03/entry-1.md",
+        title="Sync Notes",
+        tags=["team"],
+        sections=[JournalSection(heading="Updates", level=1)],
+        summary=None,
+    )
+
+    fake_response = DailySummaryResponse(
+        day=DATE,
+        bullets=["bullet"],
+        highlights=["highlight"],
+        todo_candidates=["todo"],
+    )
+
+    def fake_retry(func, *, retries: int, label: str) -> DailySummaryResponse:
+        assert "summarize" in label
+        return func()
+
+    def fake_invoke(*_args, **_kwargs) -> DailySummaryResponse:
+        return fake_response
+
+    monkeypatch.setattr(cli, "_use_fake_llm", lambda: False)
+    monkeypatch.setattr(cli, "_structured_call_with_retry", fake_retry)
+    monkeypatch.setattr(cli, "_invoke_structured_llm", fake_invoke)
+
+    summary = cli._summarize_day_payload([entry], DATE, {}, timeout=30.0, retries=1)
+
+    assert summary.day == DATE
+    assert summary.bullets == ["bullet"]
+    assert summary.highlights == ["highlight"]
+    assert summary.todo_candidates == ["todo"]
+
+
+def test_summarize_structured_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
+    from aijournal import cli
+
+    entry = NormalizedEntry(
+        id="entry-1",
+        created_at=f"{DATE}T09:00:00Z",
+        source_path="data/journal/2025/02/03/entry-1.md",
+        title="Sync Notes",
+        tags=["team"],
+        sections=[JournalSection(heading="Updates", level=1)],
+        summary=None,
+    )
+
+    def fake_retry(func, *, retries: int, label: str) -> DailySummaryResponse:
+        raise LLMResponseError("bad schema")
+
+    monkeypatch.setattr(cli, "_use_fake_llm", lambda: False)
+    monkeypatch.setattr(cli, "_structured_call_with_retry", fake_retry)
+
+    with pytest.raises(LLMResponseError):
+        cli._summarize_day_payload([entry], DATE, {}, timeout=30.0, retries=0)

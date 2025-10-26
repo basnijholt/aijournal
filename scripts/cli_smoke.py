@@ -99,6 +99,51 @@ def _build_specs(base_day: str) -> list[CommandSpec]:
             description="Layer prompts/config/raw history under the selected date.",
         ),
         CommandSpec(
+            name="summarize",
+            args=[
+                "aijournal",
+                "summarize",
+                "--date",
+                base_day,
+                "--progress",
+            ],
+            description="Summarize normalized entries for the base day.",
+        ),
+        CommandSpec(
+            name="facts",
+            args=[
+                "aijournal",
+                "facts",
+                "--date",
+                base_day,
+                "--progress",
+            ],
+            description="Extract micro-facts and consolidation preview.",
+        ),
+        CommandSpec(
+            name="profile suggest",
+            args=[
+                "aijournal",
+                "profile",
+                "suggest",
+                "--date",
+                base_day,
+                "--progress",
+            ],
+            description="Propose profile updates via structured responses.",
+        ),
+        CommandSpec(
+            name="characterize",
+            args=[
+                "aijournal",
+                "characterize",
+                "--date",
+                base_day,
+                "--progress",
+            ],
+            description="Generate pending profile updates for review.",
+        ),
+        CommandSpec(
             name="index rebuild",
             args=[
                 "aijournal",
@@ -175,15 +220,37 @@ def _persist_results(results: list[dict[str, Any]], repo_root: Path) -> Path:
 
 
 def _summarize(results: list[dict[str, Any]]) -> None:
+    failures: list[dict[str, Any]] = []
     for entry in results:
-        "PASS" if entry["succeeded"] else "FAIL"
-        if entry["met_expectation"]:
-            "" if entry["expect_success"] else " (expected failure)"
-        else:
-            pass
-    failures = [r for r in results if not r["met_expectation"]]
+        status = "PASS" if entry["succeeded"] else "FAIL"
+        marker = ""
+        if not entry["met_expectation"]:
+            marker = " (unexpected result)"
+            failures.append(entry)
+        elif not entry["expect_success"]:
+            marker = " (expected failure)"
+
+        print(f"[{status}] {entry['name']}{marker} — {entry['duration_seconds']:.2f}s")
+        if entry.get("description"):
+            print(f"    {entry['description']}")
+
+        if entry.get("stdout"):
+            print("    stdout:")
+            for line in entry["stdout"].splitlines():
+                print(f"      {line}")
+
+        if entry.get("stderr"):
+            print("    stderr:")
+            for line in entry["stderr"].splitlines():
+                print(f"      {line}")
+
+        print()
+
     if failures:
-        pass
+        print(f"{len(failures)} command(s) diverged from expectation.")
+        raise SystemExit(1)
+
+    print("All commands matched expectations.")
 
 
 def _reset_persona_core(repo_root: Path) -> bool:
@@ -194,12 +261,23 @@ def _reset_persona_core(repo_root: Path) -> bool:
     return False
 
 
+def _detect_default_day(repo_root: Path) -> str:
+    normalized_root = repo_root / "data" / "normalized"
+    candidates = sorted(
+        [path.name for path in normalized_root.iterdir() if path.is_dir() and path.name],
+    )
+    if not candidates:
+        msg = "No normalized entries found under data/normalized/."
+        raise RuntimeError(msg)
+    return candidates[-1]
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--base-day",
-        default="2025-10-25",
-        help="Date (YYYY-MM-DD) that already has normalized entries.",
+        default=None,
+        help="Date (YYYY-MM-DD) that already has normalized entries. Defaults to latest present.",
     )
     parser.add_argument(
         "--skip-persona-reset",
@@ -208,9 +286,16 @@ def main() -> None:
     )
     args = parser.parse_args()
     repo_root = Path(__file__).resolve().parents[1]
+    if args.base_day:
+        base_day = args.base_day
+    else:
+        base_day = _detect_default_day(repo_root)
+
     if not args.skip_persona_reset and _reset_persona_core(repo_root):
-        pass
-    specs = _build_specs(args.base_day)
+        print("Reset persona_core.yaml to simulate fresh build scenario.")
+
+    print(f"Using base day {base_day} for LLM-backed commands.")
+    specs = _build_specs(base_day)
     results = [_run_command(spec, repo_root) for spec in specs]
     _persist_results(results, repo_root)
     _summarize(results)

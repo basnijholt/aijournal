@@ -73,9 +73,11 @@ def _seed_profile(tmp_path: Path) -> None:
     _write_yaml(tmp_path / "profile" / "claims.yaml", claims)
 
 
-def _invoke(tmp_path: Path) -> tuple[str, Path, int]:
+def _invoke(tmp_path: Path, extra_args: list[str] | None = None) -> tuple[str, Path, int]:
     env = {"AIJOURNAL_FAKE_OLLAMA": "1"}
     args = ["profile", "suggest", "--date", DATE]
+    if extra_args:
+        args.extend(extra_args)
     result = runner.invoke(app, args, env=env)
     assert result.exit_code == 0, result.output
     path = tmp_path / "derived" / "profile_suggestions" / f"{DATE}.yaml"
@@ -101,6 +103,7 @@ def test_profile_suggest_writes_suggestions(
     meta = data.get("meta", {})
     for key in ("llm_model", "prompt_path", "prompt_hash", "created_at"):
         assert meta.get(key)
+    assert meta.get("llm_model") == "fake-ollama"
 
 
 def test_profile_suggest_is_idempotent(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -116,3 +119,17 @@ def test_profile_suggest_is_idempotent(tmp_path: Path, monkeypatch: pytest.Monke
     assert suggestions_path_again == suggestions_path
     assert count_before == count_after
     assert suggestions_path_again.stat().st_mtime == mtime_before
+
+
+def test_profile_suggest_progress_flag(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    _seed_normalized(tmp_path)
+    _seed_profile(tmp_path)
+
+    output, _, _ = _invoke(tmp_path, ["--progress"])
+
+    assert "Generating profile suggestions" in output
+    assert "[1/1]" in output

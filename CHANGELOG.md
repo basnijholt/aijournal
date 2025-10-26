@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- CLI commands `summarize`, `facts`, `profile suggest`, and `characterize` now request structured Agno responses (`DailySummaryResponse`, `ExtractedFactsResponse`, etc.) and surface errors when schemas fail validation instead of emitting heuristic fallbacks.
+- Added shared `--progress`, `--timeout`, and `--retries` flags across long-running LLM calls to surface per-entry progress and control retry behaviour.
 - Added `aijournal new --fake N` (with `--seed`) to synthesize deterministic Markdown entries for fixtures, demos, and CI without hitting Ollama.
 - Added `aijournal index rebuild/tail` to generate Annoy + SQLite retrieval indexes (with chunk manifests + meta) using local or fake embeddings.
 - Added `aijournal.services.retriever.Retriever` with ANN + fallback search plus Pytests for both modes.

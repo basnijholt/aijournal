@@ -480,6 +480,82 @@ class PersonaCoreMeta(AijournalModel):
     source_mtimes: dict[str, float] = Field(default_factory=dict)
 
 
+class DailySummaryResponse(AijournalModel):
+    """Structured LLM response for daily summaries."""
+
+    day: str
+    bullets: list[str] = Field(default_factory=list)
+    highlights: list[str] = Field(default_factory=list)
+    todo_candidates: list[str] = Field(default_factory=list)
+
+
+class ExtractedFactPayload(AijournalModel):
+    """Structured micro-fact emitted by the extraction pipeline."""
+
+    id: str
+    statement: str
+    confidence: float
+    evidence: FactEvidence
+    first_seen: str | None = None
+    last_seen: str | None = None
+
+
+class ClaimProposalPayload(AijournalModel):
+    """Structured claim proposal returned directly by the LLM."""
+
+    claim: ClaimAtom | dict[str, Any]
+    normalized_ids: list[str] = Field(default_factory=list)
+    evidence_hashes: list[str] = Field(default_factory=list)
+    manifest_hashes: list[str] = Field(default_factory=list)
+    rationale: str | None = None
+
+
+class ExtractedFactsResponse(AijournalModel):
+    """Structured response for the micro-facts pipeline."""
+
+    facts: list[ExtractedFactPayload] = Field(default_factory=list)
+    claim_proposals: list[ClaimProposalPayload] = Field(default_factory=list)
+
+
+class FacetProposalPayload(AijournalModel):
+    """Structured facet proposal produced during characterization."""
+
+    path: str | None = None
+    value: Any = None
+    operation: str | None = None
+    method: str | None = None
+    confidence: float | None = None
+    review_after_days: int | None = None
+    user_verified: bool | None = None
+    normalized_ids: list[str] = Field(default_factory=list)
+    evidence_hashes: list[str] = Field(default_factory=list)
+    rationale: str | None = None
+
+
+class CharacterizeResponse(AijournalModel):
+    """Structured response for profile characterization."""
+
+    claims: list[ClaimProposalPayload] = Field(default_factory=list)
+    facets: list[FacetProposalPayload] = Field(default_factory=list)
+    interview_prompts: list[str] = Field(default_factory=list)
+
+
+class ProfileSuggestionUpsertPayload(AijournalModel):
+    """Structured upsert proposal returned by profile suggestions."""
+
+    target: str = "claims"
+    operation: str = "upsert"
+    value: ClaimAtom | dict[str, Any]
+    rationale: str | None = None
+
+
+class ProfileSuggestionsResponse(AijournalModel):
+    """Structured response for profile suggestions."""
+
+    upserts: list[ProfileSuggestionUpsertPayload] = Field(default_factory=list)
+    updates: list[ProfileSuggestionUpdate] = Field(default_factory=list)
+
+
 class PersonaCore(AijournalModel):
     profile: dict[str, Any] = Field(default_factory=dict)
     claims: list[ClaimAtom] = Field(default_factory=list)
@@ -522,13 +598,16 @@ __all__ = [
     "ClaimSignaturePayload",
     "ClaimStatus",
     "ClaimType",
+    "ClaimProposalPayload",
     "ChunkManifest",
     "ChunkManifestChunk",
     "ChunkManifestMeta",
     "ClaimsFile",
     "DailySummary",
+    "DailySummaryResponse",
     "FactEvidence",
     "FactEvidenceSpan",
+    "FacetProposalPayload",
     "InterviewQuestion",
     "InterviewSet",
     "ManifestEntry",
@@ -542,9 +621,14 @@ __all__ = [
     "PersonaCoreFile",
     "PersonaCoreMeta",
     "IndexMeta",
+    "ExtractedFactPayload",
+    "ExtractedFactsResponse",
+    "CharacterizeResponse",
+    "ProfileSuggestionUpsertPayload",
     "ProfileSuggestionUpdate",
     "ProfileSuggestionUpsert",
     "ProfileSuggestions",
+    "ProfileSuggestionsResponse",
     "ProfileUpdateBatch",
     "ProfileUpdateInput",
     "ProfileUpdatePreview",

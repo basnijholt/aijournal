@@ -97,6 +97,11 @@ Ollama daemon is listening on a non-default address, set `AIJOURNAL_OLLAMA_HOST`
 directories can take a couple of minutes to process—let the command run to completion or increase
 your wrapper’s timeout if you’re invoking it from automation.
 
+Downstream LLM-backed commands (`summarize`, `facts`, `profile suggest`, `characterize`) now share a
+consistent ergonomics layer: `--progress` surfaces per-entry logging, `--timeout` tunes the per-call
+budget, and `--retries` controls structured-output retries before surfacing an explicit failure. Fake
+mode remains available for CI/tests by setting `AIJOURNAL_FAKE_OLLAMA=1`.
+
 ### Normalize Markdown into YAML
 
 ```sh
@@ -115,6 +120,14 @@ Calls `prompts/summarize_day.md` through Ollama and writes `derived/summaries/<D
 `bullets`, `highlights`, `todo_candidates`, plus a stamped `meta` block. Set
 `AIJOURNAL_FAKE_OLLAMA=1` for deterministic fixtures.
 
+`summarize` (and the other LLM-backed commands) now streams responses through
+Agno's structured output layer. The CLI requests a `DailySummaryResponse`
+Pydantic model from the model and retries schema failures up to `--retries`
+times (default 1). Use `--timeout` to extend the per-call budget (defaults to
+120s) and `--progress` to print each normalized entry before the request is
+sent. If the model keeps returning invalid JSON after the configured retries, the
+command aborts with an actionable error so you can inspect the upstream output.
+
 ### Micro-facts
 
 ```sh
@@ -131,6 +144,12 @@ resulting `preview.claim_events` mirror the output of `review-updates --dry-run`
 Any conflicts are scope-split (weekday vs. weekend, solo vs. team) before falling
 back to tentative downgrades, and queued follow-up prompts surface in the CLI so
 you can jump straight into `aijournal interview`.
+
+Pass `--progress` to watch the entry-by-entry feed, `--timeout` to adjust the
+per-call budget, and `--retries` to control how many schema failures trigger a
+retry. Responses are validated against the `ExtractedFactsResponse` schema; if
+validation still fails after the configured retries, the command stops with an
+error instead of silently emitting heuristics.
 
 ### Ollama health check (fake mode)
 
@@ -196,6 +215,12 @@ Runs `prompts/profile_suggest.md` with the current profile + claims and stores
 `ProfileSuggestions` Pydantic model before being written. Fake mode returns the
 same typed structures (claim upserts + facet updates) to keep pipelines consistent.
 
+The live command asks the model for a `ProfileSuggestionsResponse` payload via
+Agno’s structured output support. Use `--progress`, `--timeout`, and `--retries`
+to mirror the ergonomics of the other pipelines; if schema validation keeps
+failing after the configured retries, the CLI exits with an error so upstream
+prompt/debugging is explicit.
+
 ### Apply profile suggestions
 
 ```sh
@@ -241,6 +266,12 @@ aijournal characterize --date 2025-02-03
 Runs the characterization agent (or deterministic fake mode) and emits a batch
 under `derived/pending/profile_updates/<DATE>-<TIMESTAMP>.yaml`. Each batch
 captures claim/facet proposals plus the manifest hashes that justify them.
+`--progress`, `--timeout`, and `--retries` mirror the other commands. The
+structured response must satisfy the `CharacterizeResponse` schema; otherwise
+the CLI prints a warning, retries if configured, and finally falls back to the
+deterministic profile-updater when schema validation keeps failing. Interview
+prompts returned by the model are merged with the consolidation preview so they
+surface in the pending batch.
 
 ### Review pending updates
 

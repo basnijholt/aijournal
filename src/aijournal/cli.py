@@ -9,7 +9,7 @@ import random
 import re
 import sqlite3
 from array import array
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
@@ -17,13 +17,15 @@ from math import ceil, exp
 from pathlib import Path
 from string import Template
 from textwrap import dedent
-from typing import TYPE_CHECKING, Any, Literal
+from typing import Any, Literal, cast
 
 import numpy as np
 import typer
 import yaml
+from agno.agent import Agent
+from agno.models.ollama import Ollama
 from annoy import AnnoyIndex
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
 from aijournal.ingest_agent import (
     AgentSettings,
@@ -37,6 +39,7 @@ from aijournal.models import (
     AdviceCard,
     AdviceRecommendation,
     AdviceReference,
+    CharacterizeResponse,
     ChunkManifest,
     ChunkManifestChunk,
     ChunkManifestMeta,
@@ -49,6 +52,8 @@ from aijournal.models import (
     ClaimSource,
     ClaimSourceSpan,
     DailySummary,
+    DailySummaryResponse,
+    ExtractedFactsResponse,
     FacetProposal,
     FactEvidence,
     IndexMeta,
@@ -62,6 +67,7 @@ from aijournal.models import (
     PersonaCoreFile,
     PersonaCoreMeta,
     ProfileSuggestions,
+    ProfileSuggestionsResponse,
     ProfileSuggestionUpdate,
     ProfileSuggestionUpsert,
     ProfileUpdateBatch,
@@ -84,11 +90,6 @@ from aijournal.services import (
     OllamaTaskRunner,
 )
 from aijournal.services.embedding import EmbeddingBackend
-
-if TYPE_CHECKING:
-    from collections.abc import Callable, Iterable, Sequence
-
-    from agno.agent import Agent
 
 app = typer.Typer(help="Local-first personal journal utilities.")
 profile_app = typer.Typer(help="Profile utilities.")
@@ -550,25 +551,143 @@ def _build_ollama_runner(config: dict[str, Any]) -> OllamaTaskRunner:
     return OllamaTaskRunner(runner_config)
 
 
+_STRUCTURED_SYSTEM_PROMPT = (
+    "You are part of the local aijournal CLI. "
+    "Read the user's prompt carefully and respond with JSON that matches the declared response schema. "
+    "Do not include markdown fences or commentary."
+)
+
+
+def _build_structured_agent(
+    name: str,
+    response_model: type[BaseModel],
+    config: dict[str, Any],
+    *,
+    timeout: float | None = None,
+) -> Agent:
+    settings = config or {}
+    options: dict[str, float | int] = {}
+    temperature = _coerce_float(settings.get("temperature"))
+    if temperature is not None:
+        options["temperature"] = float(temperature)
+    seed = _coerce_int(settings.get("seed"))
+    if seed is not None:
+        options["seed"] = int(seed)
+    max_tokens = _coerce_int(settings.get("max_tokens"))
+    if max_tokens is not None:
+        options["num_predict"] = int(max_tokens)
+
+    return Agent(
+        name=name,
+        instructions=_STRUCTURED_SYSTEM_PROMPT,
+        model=Ollama(
+            id=_resolve_model_name(settings),
+            host=os.getenv("AIJOURNAL_OLLAMA_HOST"),
+            options=options or None,
+            timeout=timeout,
+        ),
+        output_schema=response_model,
+        add_datetime_to_context=False,
+        telemetry=False,
+    )
+
+
+def _invoke_structured_llm(
+    prompt_path: str,
+    variables: dict[str, str],
+    *,
+    response_model: type[BaseModel],
+    agent_name: str,
+    config: dict[str, Any],
+    timeout: float | None = None,
+) -> BaseModel:
+    prompt = _render_prompt(prompt_path, variables)
+    agent = _build_structured_agent(agent_name, response_model, config, timeout=timeout)
+    try:
+        run = agent.run(prompt)
+    except Exception as exc:  # pragma: no cover - runtime dependent
+        msg = f"Structured output generation failed for {prompt_path}: {exc}"
+        raise LLMResponseError(msg) from exc
+
+    content = getattr(run, "content", None)
+    if isinstance(content, response_model):
+        return content
+    msg = f"Structured output generation for {prompt_path} did not return {response_model.__name__}"
+    raise LLMResponseError(msg)
+
+
+DEFAULT_TIMEOUT_SECONDS = 120.0
+DEFAULT_LLM_RETRIES = 1
+
+
+def _validate_timeout(value: float) -> float:
+    if value <= 0:
+        typer.secho("--timeout must be positive.", fg=typer.colors.RED, err=True)
+        raise typer.Exit(1)
+    return value
+
+
+def _log_entry_progress(action: str, entries: Sequence[NormalizedEntry], enabled: bool) -> None:
+    if not enabled:
+        return
+    total = len(entries)
+    plural = "entry" if total == 1 else "entries"
+    typer.echo(f"{action}: {total} {plural}")
+    if total == 0:
+        return
+    for idx, entry in enumerate(entries, start=1):
+        label = entry.title or entry.id or f"entry-{idx}"
+        typer.echo(f"  [{idx}/{total}] {label}")
+
+
+def _is_timeout_exception(exc: BaseException) -> bool:
+    current: BaseException | None = exc
+    while current is not None:
+        message = str(current).lower()
+        if isinstance(current, TimeoutError) or "timed out" in message or "timeout" in message:
+            return True
+        current = current.__cause__ if current.__cause__ is not None else current.__context__
+    return False
+
+
+def _structured_call_with_retry(
+    func: Callable[[], BaseModel],
+    *,
+    retries: int,
+    label: str,
+) -> BaseModel:
+    attempts_used = 0
+    total_attempts = max(1, retries + 1)
+    while True:
+        try:
+            return func()
+        except LLMResponseError as exc:
+            if attempts_used >= retries:
+                raise
+            attempts_used += 1
+            reason = "timeout" if _is_timeout_exception(exc) else "schema error"
+            next_attempt = attempts_used + 1
+            typer.secho(
+                f"{label}: retrying after {reason} (attempt {next_attempt}/{total_attempts}).",
+                fg=typer.colors.YELLOW,
+                err=True,
+            )
+
+
 def _safe_llm_json(
     prompt_path: str,
     variables: dict[str, str],
     runner: OllamaTaskRunner,
-    fallback: Callable[[], dict[str, Any]],
 ) -> dict[str, Any]:
     prompt = _render_prompt(prompt_path, variables)
     try:
         return runner.generate_json(prompt)
-    except (
-        LLMResponseError,
-        Exception,
-    ) as exc:  # pragma: no cover - network errors hard to simulate
-        typer.secho(
-            f"Falling back to offline heuristics for {prompt_path}: {exc}",
-            fg=typer.colors.YELLOW,
-            err=True,
-        )
-        return fallback()
+    except LLMResponseError as exc:
+        msg = f"Structured JSON parsing failed for {prompt_path}: {exc}"
+        raise LLMResponseError(msg) from exc
+    except Exception as exc:  # pragma: no cover - dependent on runtime env
+        msg = f"Ollama request failed for {prompt_path}: {exc}"
+        raise LLMResponseError(msg) from exc
 
 
 def _journal_path(base: Path, dt: datetime, slug: str) -> Path:
@@ -1419,22 +1538,12 @@ def _build_meta(
     model: str | None = None,
     config: dict[str, Any] | None = None,
 ) -> SummaryMeta:
+    resolved_model: str
     if model:
         resolved_model = model
     else:
-        resolved_model = "fake-ollama" if _use_fake_llm() else None
-        if resolved_model is None:
-            config_payload = config if isinstance(config, dict) else {}
-            resolved_model = _resolve_model_name(config_payload)
-    return SummaryMeta(
-        llm_model=resolved_model,
-        prompt_path=prompt_path,
-        prompt_hash=_hash_prompt(prompt_path),
-        created_at=_format_timestamp(_now()),
-    )
-    if resolved_model is None:
         config_payload = config if isinstance(config, dict) else {}
-        resolved_model = _resolve_model_name(config_payload)
+        resolved_model = "fake-ollama" if _use_fake_llm() else _resolve_model_name(config_payload)
     return SummaryMeta(
         llm_model=resolved_model,
         prompt_path=prompt_path,
@@ -1667,33 +1776,50 @@ def _summarize_day_payload(
     entries: Sequence[NormalizedEntry],
     date: str,
     config: dict[str, Any],
+    *,
+    timeout: float | None = None,
+    retries: int = DEFAULT_LLM_RETRIES,
 ) -> DailySummary:
     def fallback_model() -> DailySummary:
         return _fake_summarize(entries, date)
 
-    def fallback_dict() -> dict[str, Any]:
-        return fallback_model().model_dump(mode="python")
-
     if _use_fake_llm():
         return fallback_model()
 
-    try:
-        runner = _build_ollama_runner(config)
-    except Exception as exc:  # pragma: no cover - dependent on runtime env
-        typer.secho(
-            f"Unable to initialize Ollama for summarize: {exc}",
-            fg=typer.colors.YELLOW,
-            err=True,
-        )
-        payload = fallback_dict()
-    else:
-        payload = _safe_llm_json(
-            "prompts/summarize_day.md",
-            {"date": date, "entries_json": _json_block(_entries_to_payload(entries))},
-            runner,
-            fallback_dict,
-        )
-    return DailySummary.model_validate(payload)
+    response_model = cast(
+        DailySummaryResponse,
+        _structured_call_with_retry(
+            lambda: _invoke_structured_llm(
+                "prompts/summarize_day.md",
+                {"date": date, "entries_json": _json_block(_entries_to_payload(entries))},
+                response_model=DailySummaryResponse,
+                agent_name="aijournal-summarize",
+                config=config,
+                timeout=timeout,
+            ),
+            retries=retries,
+            label=f"summarize {date}",
+        ),
+    )
+
+    bullets = [item for item in response_model.bullets if item]
+    highlights = [item for item in response_model.highlights if item]
+    todo_candidates = [item for item in response_model.todo_candidates if item]
+
+    if not bullets:
+        bullets = fallback_model().bullets
+    if not highlights:
+        highlights = bullets[:3]
+    if not todo_candidates:
+        todo_candidates = _todo_from_entries(entries)
+
+    day = response_model.day or date
+    return DailySummary(
+        day=day,
+        bullets=bullets,
+        highlights=highlights,
+        todo_candidates=todo_candidates,
+    )
 
 
 def _fact_sources_from_evidence(fact: MicroFact) -> list[ClaimSource]:
@@ -1834,12 +1960,11 @@ def _microfacts_payload(
     *,
     manifest_index: dict[str, ManifestEntry] | None = None,
     existing_claims: Sequence[ClaimAtom] | None = None,
+    timeout: float | None = None,
+    retries: int = DEFAULT_LLM_RETRIES,
 ) -> MicroFactsFile:
     def fallback_model() -> MicroFactsFile:
         return MicroFactsFile(facts=_fake_microfacts(entries))
-
-    def fallback_dict() -> dict[str, Any]:
-        return fallback_model().model_dump(mode="python")
 
     manifest_index = manifest_index or {}
     existing_claims = tuple(existing_claims or ())
@@ -1851,37 +1976,46 @@ def _microfacts_payload(
         default_sources,
     ) = _characterization_context(entries, manifest_index)
 
-    payload_dict: dict[str, Any] = {}
+    raw_claim_candidates: Iterable[Any] = []
+    facts_model: MicroFactsFile
     if _use_fake_llm():
         facts_model = fallback_model()
-        payload_dict = facts_model.model_dump(mode="python")
+        if facts_model.claim_proposals:
+            raw_claim_candidates = [
+                proposal.model_dump(mode="python") for proposal in facts_model.claim_proposals
+            ]
     else:
-        try:
-            runner = _build_ollama_runner(config)
-        except Exception as exc:  # pragma: no cover
-            typer.secho(
-                f"Unable to initialize Ollama for facts: {exc}",
-                fg=typer.colors.YELLOW,
-                err=True,
-            )
-            payload_dict = fallback_dict()
-        else:
-            payload_dict = _safe_llm_json(
-                "prompts/extract_facts.md",
-                {"date": date, "entries_json": _json_block(_entries_to_payload(entries))},
-                runner,
-                fallback_dict,
-            )
-        facts_model = MicroFactsFile.model_validate(payload_dict)
-
-    raw_claim_candidates: Iterable[Any] = []
-    claims_key = payload_dict.get("claim_proposals") if isinstance(payload_dict, dict) else None
-    if isinstance(claims_key, list):
-        raw_claim_candidates = claims_key
-    elif isinstance(payload_dict, dict):
-        legacy_claims = payload_dict.get("claims")
-        if isinstance(legacy_claims, list):
-            raw_claim_candidates = legacy_claims
+        response = cast(
+            ExtractedFactsResponse,
+            _structured_call_with_retry(
+                lambda: _invoke_structured_llm(
+                    "prompts/extract_facts.md",
+                    {"date": date, "entries_json": _json_block(_entries_to_payload(entries))},
+                    response_model=ExtractedFactsResponse,
+                    agent_name="aijournal-facts",
+                    config=config,
+                    timeout=timeout,
+                ),
+                retries=retries,
+                label=f"facts {date}",
+            ),
+        )
+        facts_model = MicroFactsFile(
+            facts=[
+                MicroFact(
+                    id=fact.id,
+                    statement=fact.statement,
+                    confidence=float(fact.confidence),
+                    evidence=fact.evidence.model_copy(deep=True),
+                    first_seen=fact.first_seen,
+                    last_seen=fact.last_seen,
+                )
+                for fact in response.facts
+            ],
+        )
+        raw_claim_candidates = [
+            proposal.model_dump(mode="python") for proposal in response.claim_proposals
+        ]
 
     llm_claims = _normalize_claim_proposals(
         raw_claims=raw_claim_candidates,
@@ -1930,6 +2064,9 @@ def _profile_suggestions_payload(
     claims: Sequence[ClaimAtom],
     date: str,
     config: dict[str, Any],
+    *,
+    timeout: float | None = None,
+    retries: int = DEFAULT_LLM_RETRIES,
 ) -> ProfileSuggestions:
     def fallback_model() -> ProfileSuggestions:
         return _fake_profile_suggestions(entries, profile, claims)
@@ -1937,72 +2074,55 @@ def _profile_suggestions_payload(
     if _use_fake_llm():
         suggestions = fallback_model()
     else:
-        try:
-            runner = _build_ollama_runner(config)
-        except Exception as exc:  # pragma: no cover
-            typer.secho(
-                f"Unable to initialize Ollama for profile suggestions: {exc}",
-                fg=typer.colors.YELLOW,
-                err=True,
-            )
-            suggestions = fallback_model()
-        else:
-            payload = _safe_llm_json(
-                "prompts/profile_suggest.md",
-                {
-                    "date": date,
-                    "entries_json": _json_block(_entries_to_payload(entries)),
-                    "profile_json": _json_block(profile),
-                    "claims_json": _json_block(
-                        {"claims": [claim.model_dump(mode="python") for claim in claims]}
-                    ),
-                },
-                runner,
-                lambda: fallback_model().model_dump(mode="python"),
-            )
-
-            upserts_obj = payload.get("upserts")
-            updates_obj = payload.get("updates")
-            raw_upserts = upserts_obj if isinstance(upserts_obj, list) else []
-            updates_raw = updates_obj if isinstance(updates_obj, list) else []
-            timestamp = _format_timestamp(_now())
-
-            normalized_upserts: list[ProfileSuggestionUpsert] = []
-            for upsert in raw_upserts:
-                if not isinstance(upsert, dict):
-                    continue
-                value = upsert.get("value")
-                if not isinstance(value, (dict, ClaimAtom)):
-                    continue
-                try:
-                    normalized_model = _normalize_claim_atom(value, timestamp=timestamp)
-                except (ValidationError, ValueError):
-                    continue
-                try:
-                    normalized_upserts.append(
-                        ProfileSuggestionUpsert(
-                            target=str(upsert.get("target") or "claims"),
-                            operation=str(upsert.get("operation") or "upsert"),
-                            value=normalized_model,
-                            rationale=upsert.get("rationale") or upsert.get("reason"),
+        response = cast(
+            ProfileSuggestionsResponse,
+            _structured_call_with_retry(
+                lambda: _invoke_structured_llm(
+                    "prompts/profile_suggest.md",
+                    {
+                        "date": date,
+                        "entries_json": _json_block(_entries_to_payload(entries)),
+                        "profile_json": _json_block(profile),
+                        "claims_json": _json_block(
+                            {"claims": [claim.model_dump(mode="python") for claim in claims]}
                         ),
-                    )
-                except ValidationError:
-                    continue
+                    },
+                    response_model=ProfileSuggestionsResponse,
+                    agent_name="aijournal-profile-suggest",
+                    config=config,
+                    timeout=timeout,
+                ),
+                retries=retries,
+                label=f"profile suggest {date}",
+            ),
+        )
+        timestamp = _format_timestamp(_now())
+        normalized_upserts: list[ProfileSuggestionUpsert] = []
+        for upsert in response.upserts:
+            try:
+                normalized_model = _normalize_claim_atom(
+                    upsert.value,
+                    timestamp=timestamp,
+                )
+            except (ValidationError, ValueError):
+                continue
+            try:
+                normalized_upserts.append(
+                    ProfileSuggestionUpsert(
+                        target=str(upsert.target or "claims"),
+                        operation=str(upsert.operation or "upsert"),
+                        value=normalized_model,
+                        rationale=upsert.rationale,
+                    ),
+                )
+            except ValidationError:
+                continue
 
-            update_models: list[ProfileSuggestionUpdate] = []
-            for update in updates_raw:
-                if not isinstance(update, dict):
-                    continue
-                try:
-                    update_models.append(ProfileSuggestionUpdate.model_validate(update))
-                except ValidationError:
-                    continue
-
-            suggestions = ProfileSuggestions(
-                upserts=normalized_upserts,
-                updates=update_models,
-            )
+        update_models = [update.model_copy(deep=True) for update in response.updates]
+        suggestions = ProfileSuggestions(
+            upserts=normalized_upserts,
+            updates=update_models,
+        )
 
     suggestions.meta = _build_meta("prompts/profile_suggest.md", config=config)
     return suggestions
@@ -2154,12 +2274,16 @@ def _normalize_facet_proposals(
 
 
 def _characterize_payload(
+    date: str,
     entries: Sequence[NormalizedEntry],
     profile: dict[str, Any],
     claims: Sequence[ClaimAtom],
     manifest_index: dict[str, ManifestEntry],
     config: dict[str, Any],
-) -> ProfileUpdateProposals:
+    *,
+    timeout: float | None = None,
+    retries: int = DEFAULT_LLM_RETRIES,
+) -> tuple[ProfileUpdateProposals, list[str]]:
     claim_timestamp = _format_timestamp(_now())
     (
         normalized_ids,
@@ -2171,46 +2295,44 @@ def _characterize_payload(
     def fallback_model() -> ProfileUpdateProposals:
         return _fake_characterize(entries, profile, claims)
 
-    def fallback_dict() -> dict[str, Any]:
-        return fallback_model().model_dump(mode="python")
-
-    if _use_fake_llm():
+    fake_mode = _use_fake_llm()
+    if fake_mode:
         base = fallback_model()
         raw_claims: Iterable[Any] = base.claims
         raw_facets: Iterable[Any] = base.facets
+        response_prompts: list[str] = []
     else:
-        try:
-            runner = _build_ollama_runner(config)
-        except Exception as exc:  # pragma: no cover
-            typer.secho(
-                f"Unable to initialize Ollama for characterize: {exc}",
-                fg=typer.colors.YELLOW,
-                err=True,
-            )
-            raw = fallback_dict()
-        else:
-            manifest_payload = _json_block(
-                {key: entry.model_dump(mode="python") for key, entry in manifest_index.items()},
-            )
-            raw = _safe_llm_json(
-                "prompts/characterize.md",
-                {
-                    "date": _created_date(claim_timestamp),
-                    "entries_json": _json_block(_entries_to_payload(entries)),
-                    "profile_json": _json_block(profile),
-                    "claims_json": _json_block(
-                        {"claims": [claim.model_dump(mode="python") for claim in claims]}
-                    ),
-                    "manifest_json": manifest_payload,
-                },
-                runner,
-                fallback_dict,
-            )
-
-        raw_claim_candidates = raw.get("claims")
-        raw_claims = raw_claim_candidates if isinstance(raw_claim_candidates, list) else []
-        raw_facet_candidates = raw.get("facets")
-        raw_facets = raw_facet_candidates if isinstance(raw_facet_candidates, list) else []
+        manifest_payload = _json_block(
+            {key: entry.model_dump(mode="python") for key, entry in manifest_index.items()},
+        )
+        target_date = date or _created_date(claim_timestamp)
+        response = cast(
+            CharacterizeResponse,
+            _structured_call_with_retry(
+                lambda: _invoke_structured_llm(
+                    "prompts/characterize.md",
+                    {
+                        "date": target_date,
+                        "entries_json": _json_block(_entries_to_payload(entries)),
+                        "profile_json": _json_block(profile),
+                        "claims_json": _json_block(
+                            {"claims": [claim.model_dump(mode="python") for claim in claims]}
+                        ),
+                        "manifest_json": manifest_payload,
+                    },
+                    response_model=CharacterizeResponse,
+                    agent_name="aijournal-characterize",
+                    config=config,
+                    timeout=timeout,
+                ),
+                retries=retries,
+                label=f"characterize {target_date}",
+            ),
+        )
+        raw_claims = [proposal.model_dump(mode="python") for proposal in response.claims]
+        raw_facets = [proposal.model_dump(mode="python") for proposal in response.facets]
+        response_prompts = [prompt for prompt in response.interview_prompts if prompt]
+    prompts = response_prompts if not fake_mode else []
 
     claims_payload = _normalize_claim_proposals(
         raw_claims,
@@ -2225,7 +2347,7 @@ def _characterize_payload(
         normalized_ids=normalized_ids,
         evidence_hashes=evidence_hashes,
     )
-    return ProfileUpdateProposals(claims=claims_payload, facets=facets_payload)
+    return ProfileUpdateProposals(claims=claims_payload, facets=facets_payload), prompts
 
 
 def _advice_identifier(question: str) -> str:
@@ -2259,19 +2381,26 @@ def _advice_payload(
         )
         payload = fallback_dict()
     else:
-        payload = _safe_llm_json(
-            "prompts/advise.md",
-            {
-                "date": _created_date(_format_timestamp(_now())),
-                "question": question,
-                "profile_json": _json_block(profile),
-                "claims_json": _json_block(
-                    {"claims": [claim.model_dump(mode="python") for claim in claims]}
-                ),
-            },
-            runner,
-            fallback_dict,
-        )
+        try:
+            payload = _safe_llm_json(
+                "prompts/advise.md",
+                {
+                    "date": _created_date(_format_timestamp(_now())),
+                    "question": question,
+                    "profile_json": _json_block(profile),
+                    "claims_json": _json_block(
+                        {"claims": [claim.model_dump(mode="python") for claim in claims]}
+                    ),
+                },
+                runner,
+            )
+        except LLMResponseError as exc:
+            typer.secho(
+                f"Advise schema mismatch ({exc}); using heuristic card.",
+                fg=typer.colors.YELLOW,
+                err=True,
+            )
+            payload = fallback_dict()
 
     fallback_defaults = fallback_model().model_dump(mode="python")
     advice_data = dict(payload)
@@ -2625,6 +2754,24 @@ def normalize(
 @app.command()
 def summarize(
     date: str = typer.Option(..., "--date", "-d", help="Date (YYYY-MM-DD) to summarize."),
+    timeout: float = typer.Option(
+        DEFAULT_TIMEOUT_SECONDS,
+        "--timeout",
+        help="Seconds to wait for the LLM response before retrying.",
+        show_default=True,
+    ),
+    retries: int = typer.Option(
+        DEFAULT_LLM_RETRIES,
+        "--retries",
+        min=0,
+        help="Number of retry attempts when the model times out or returns invalid JSON.",
+        show_default=True,
+    ),
+    progress: bool = typer.Option(
+        False,
+        "--progress/--no-progress",
+        help="Print progress for each normalized entry before calling the model.",
+    ),
 ) -> None:
     """Generate a daily summary from normalized entries."""
     root = Path.cwd()
@@ -2633,8 +2780,21 @@ def summarize(
         typer.secho(f"No normalized entries for {date}", fg=typer.colors.RED, err=True)
         raise typer.Exit(1)
 
+    timeout_value = _validate_timeout(timeout)
+    _log_entry_progress(f"Summarizing entries for {date}", entries, progress)
+
     config = _load_config(root)
-    summary_data = _summarize_day_payload(entries, date, config)
+    try:
+        summary_data = _summarize_day_payload(
+            entries,
+            date,
+            config,
+            timeout=timeout_value,
+            retries=retries,
+        )
+    except LLMResponseError as exc:
+        typer.secho(f"Summarize failed: {exc}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(1)
     summary_data.meta = _build_meta("prompts/summarize_day.md", config=config)
     summary_path = _derived_summary_path(root, date)
     write_yaml_model(summary_path, summary_data)
@@ -2644,6 +2804,24 @@ def summarize(
 @app.command()
 def facts(
     date: str = typer.Option(..., "--date", "-d", help="Date (YYYY-MM-DD) to analyze."),
+    timeout: float = typer.Option(
+        DEFAULT_TIMEOUT_SECONDS,
+        "--timeout",
+        help="Seconds to wait for the LLM response before retrying.",
+        show_default=True,
+    ),
+    retries: int = typer.Option(
+        DEFAULT_LLM_RETRIES,
+        "--retries",
+        min=0,
+        help="Number of retry attempts when the model times out or returns invalid JSON.",
+        show_default=True,
+    ),
+    progress: bool = typer.Option(
+        False,
+        "--progress/--no-progress",
+        help="Print progress for each normalized entry before calling the model.",
+    ),
 ) -> None:
     """Generate micro-facts from normalized entries."""
     root = Path.cwd()
@@ -2652,17 +2830,26 @@ def facts(
         typer.secho(f"No normalized entries for {date}", fg=typer.colors.RED, err=True)
         raise typer.Exit(1)
 
+    timeout_value = _validate_timeout(timeout)
+    _log_entry_progress(f"Extracting micro-facts for {date}", entries, progress)
+
     config = _load_config(root)
     manifest_entries = _load_manifest(_manifest_path(root))
     manifest_index = _manifest_by_id(manifest_entries)
     _, claim_models = _load_profile_components(root)
-    facts_data = _microfacts_payload(
-        entries,
-        date,
-        config,
-        manifest_index=manifest_index,
-        existing_claims=claim_models,
-    )
+    try:
+        facts_data = _microfacts_payload(
+            entries,
+            date,
+            config,
+            manifest_index=manifest_index,
+            existing_claims=claim_models,
+            timeout=timeout_value,
+            retries=retries,
+        )
+    except LLMResponseError as exc:
+        typer.secho(f"Facts extraction failed: {exc}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(1)
     facts_data.meta = _build_meta("prompts/extract_facts.md", config=config)
     facts_path = _derived_microfacts_path(root, date)
     write_yaml_model(facts_path, facts_data)
@@ -2674,6 +2861,24 @@ def facts(
 @profile_app.command("suggest")
 def profile_suggest(
     date: str = typer.Option(..., "--date", "-d", help="Date (YYYY-MM-DD) to analyze."),
+    timeout: float = typer.Option(
+        DEFAULT_TIMEOUT_SECONDS,
+        "--timeout",
+        help="Seconds to wait for the LLM response before retrying.",
+        show_default=True,
+    ),
+    retries: int = typer.Option(
+        DEFAULT_LLM_RETRIES,
+        "--retries",
+        min=0,
+        help="Number of retry attempts when the model times out or returns invalid JSON.",
+        show_default=True,
+    ),
+    progress: bool = typer.Option(
+        False,
+        "--progress/--no-progress",
+        help="Print progress for each normalized entry before calling the model.",
+    ),
 ) -> None:
     """Suggest profile updates based on normalized entries."""
     root = Path.cwd()
@@ -2681,6 +2886,9 @@ def profile_suggest(
     if not entries:
         typer.secho(f"No normalized entries for {date}", fg=typer.colors.RED, err=True)
         raise typer.Exit(1)
+
+    timeout_value = _validate_timeout(timeout)
+    _log_entry_progress(f"Generating profile suggestions for {date}", entries, progress)
 
     profile_model, claim_models = _load_profile_components(root)
     profile = _profile_to_dict(profile_model)
@@ -2690,7 +2898,19 @@ def profile_suggest(
         raise typer.Exit(1)
 
     config = _load_config(root)
-    suggestions_model = _profile_suggestions_payload(entries, profile, claims, date, config)
+    try:
+        suggestions_model = _profile_suggestions_payload(
+            entries,
+            profile,
+            claims,
+            date,
+            config,
+            timeout=timeout_value,
+            retries=retries,
+        )
+    except LLMResponseError as exc:
+        typer.secho(f"Profile suggestions failed: {exc}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(1)
     path = _derived_profile_suggestions_path(root, date)
     write_yaml_model(path, suggestions_model)
     typer.echo(str(path))
@@ -2747,6 +2967,24 @@ def profile_apply(
 @app.command()
 def characterize(
     date: str = typer.Option(..., "--date", "-d", help="Date (YYYY-MM-DD) to analyze."),
+    timeout: float = typer.Option(
+        DEFAULT_TIMEOUT_SECONDS,
+        "--timeout",
+        help="Seconds to wait for the LLM response before retrying.",
+        show_default=True,
+    ),
+    retries: int = typer.Option(
+        DEFAULT_LLM_RETRIES,
+        "--retries",
+        min=0,
+        help="Number of retry attempts when the model times out or returns invalid JSON.",
+        show_default=True,
+    ),
+    progress: bool = typer.Option(
+        False,
+        "--progress/--no-progress",
+        help="Print progress for each normalized entry before calling the model.",
+    ),
 ) -> None:
     """Derive pending profile updates from normalized entries."""
     root = Path.cwd()
@@ -2755,6 +2993,7 @@ def characterize(
         typer.secho(f"No normalized entries for {date}", fg=typer.colors.RED, err=True)
         raise typer.Exit(1)
 
+    timeout_value = _validate_timeout(timeout)
     manifest_entries = _load_manifest(_manifest_path(root))
     manifest_index = _manifest_by_id(manifest_entries)
     profile_model, claim_models = _load_profile_components(root)
@@ -2762,7 +3001,21 @@ def characterize(
     config = _load_config(root)
 
     entries = [entry for entry, _ in entries_with_paths]
-    proposals_model = _characterize_payload(entries, profile, claim_models, manifest_index, config)
+    _log_entry_progress(f"Characterizing entries for {date}", entries, progress)
+    try:
+        proposals_model, interview_prompts = _characterize_payload(
+            date,
+            entries,
+            profile,
+            claim_models,
+            manifest_index,
+            config,
+            timeout=timeout_value,
+            retries=retries,
+        )
+    except LLMResponseError as exc:
+        typer.secho(f"Characterize failed: {exc}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(1)
 
     timestamp = _format_timestamp(_now())
     batch_id = f"{date}-{timestamp}"
@@ -2772,6 +3025,16 @@ def characterize(
         claim_models,
         timestamp=timestamp,
     )
+    if interview_prompts:
+        prompts = [prompt for prompt in interview_prompts if prompt]
+        if prompts:
+            if preview_model is None:
+                preview_model = ProfileUpdatePreview(interview_prompts=_merge_unique([], prompts))
+            else:
+                preview_model.interview_prompts = _merge_unique(
+                    preview_model.interview_prompts,
+                    prompts,
+                )
 
     inputs: list[ProfileUpdateInput] = []
     for data, path in entries_with_paths:

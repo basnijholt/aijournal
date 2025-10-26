@@ -77,6 +77,7 @@ def test_facts_generates_microfacts(tmp_path: Path, monkeypatch: pytest.MonkeyPa
     meta = data.get("meta", {})
     for key in ("llm_model", "prompt_path", "prompt_hash", "created_at"):
         assert meta.get(key), f"Missing {key}"
+    assert meta.get("llm_model") == "fake-ollama"
     proposals = data.get("claim_proposals", [])
     assert isinstance(proposals, list) and proposals, "Expected claim proposals from micro-facts"
     preview = data.get("preview") or {}
@@ -103,3 +104,15 @@ def test_facts_is_idempotent(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) ->
     after = facts_path.stat().st_mtime
 
     assert before == after
+
+
+def test_facts_progress_flag(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    _write_normalized(tmp_path)
+
+    env = {"AIJOURNAL_FAKE_OLLAMA": "1"}
+    result = runner.invoke(app, ["facts", "--date", DATE, "--progress"], env=env)
+
+    assert result.exit_code == 0, result.stdout
+    assert "Extracting micro-facts" in result.stdout
+    assert "[1/1]" in result.stdout

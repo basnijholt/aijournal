@@ -93,14 +93,17 @@ def _seed_conflicting_claim(tmp_path: Path) -> None:
     _write_yaml(tmp_path / "profile" / "claims.yaml", {"claims": [conflict_claim]})
 
 
-def _run_characterize(tmp_path: Path) -> Path:
+def _run_characterize(tmp_path: Path, extra_args: list[str] | None = None) -> tuple[Path, str]:
     env = {"AIJOURNAL_FAKE_OLLAMA": "1"}
-    result = runner.invoke(app, ["characterize", "--date", DATE], env=env)
+    args = ["characterize", "--date", DATE]
+    if extra_args:
+        args.extend(extra_args)
+    result = runner.invoke(app, args, env=env)
     assert result.exit_code == 0, result.output
     pending_dir = tmp_path / "derived" / "pending" / "profile_updates"
     batches = sorted(pending_dir.glob("*.yaml"))
     assert batches, "Expected pending batch"
-    return batches[-1]
+    return batches[-1], result.stdout
 
 
 def test_characterize_generates_pending_batch(tmp_path: Path, monkeypatch) -> None:
@@ -109,11 +112,12 @@ def test_characterize_generates_pending_batch(tmp_path: Path, monkeypatch) -> No
     _seed_manifest(tmp_path)
     _seed_profile(tmp_path)
 
-    batch_path = _run_characterize(tmp_path)
+    batch_path, _ = _run_characterize(tmp_path)
     data = yaml.safe_load(batch_path.read_text(encoding="utf-8"))
 
     assert data.get("inputs")
     assert data.get("meta", {}).get("prompt_path") == "prompts/characterize.md"
+    assert data.get("meta", {}).get("llm_model") == "fake-ollama"
     proposals = data.get("proposals", {})
     claims = proposals.get("claims")
     assert claims, "Expected at least one claim proposal"
@@ -131,7 +135,7 @@ def test_review_updates_applies_batch(tmp_path: Path, monkeypatch) -> None:
     _seed_manifest(tmp_path)
     _seed_profile(tmp_path)
 
-    batch_path = _run_characterize(tmp_path)
+    batch_path, _ = _run_characterize(tmp_path)
     env = {"AIJOURNAL_FAKE_OLLAMA": "1"}
     result = runner.invoke(
         app,
@@ -156,7 +160,7 @@ def test_characterize_preview_flags_conflict(tmp_path: Path, monkeypatch) -> Non
     _seed_profile(tmp_path)
     _seed_conflicting_claim(tmp_path)
 
-    batch_path = _run_characterize(tmp_path)
+    batch_path, _ = _run_characterize(tmp_path)
     data = yaml.safe_load(batch_path.read_text(encoding="utf-8"))
     preview = data.get("preview", {})
     events = preview.get("claim_events") or []
@@ -164,3 +168,15 @@ def test_characterize_preview_flags_conflict(tmp_path: Path, monkeypatch) -> Non
     assert "conflict" in actions, "Expected conflict action in preview events"
     prompts = preview.get("interview_prompts") or []
     assert prompts, "Expected interview prompt queued for conflict"
+
+
+def test_characterize_progress_flag(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    _seed_normalized(tmp_path)
+    _seed_manifest(tmp_path)
+    _seed_profile(tmp_path)
+
+    _, output = _run_characterize(tmp_path, ["--progress"])
+
+    assert "Characterizing entries" in output
+    assert "[1/1]" in output
