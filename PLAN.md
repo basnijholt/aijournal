@@ -952,18 +952,18 @@ ci:          just fake_on test mypy
 - `aijournal advise "How should I schedule next week around family time while shipping the MVP?"`
 - `aijournal index rebuild`
 - `aijournal persona build`
-- `aijournal chat "What should I focus on tomorrow?"`
 
 ---
 
 ## 25. Execution Roadmap (October 2025)
 
-As of 2025-10-26 the CLI already ships `init`, `new`, `ingest`, `normalize`, `summarize`,
-`facts`, `profile suggest/apply`, `characterize`, `review-updates`, `advise`, `profile-status`,
-`interview`, `pack`, `ollama health`, `index rebuild/tail`, `retriever`, and the new
-`persona build`. The remaining persona-first items now concentrate on consolidation/conflict
-handling plus the chat surfaces/feedback loop. The timeline below keeps those deliverables
-moving without blocking on LLM availability.
+As of 2025-10-26 the CLI ships `init`, `new`, `ingest`, `normalize`, `summarize`, `facts`,
+`profile suggest/apply`, `characterize`, `review-updates`, `advise`, `profile-status`,
+`interview`, `pack`, `ollama health`, `index rebuild/tail`, `retriever`, and `persona build`.
+We just landed the first pass of `ClaimConsolidator` + preview wiring inside `review-updates`,
+but chat/chatd remain unimplemented despite being mentioned in README/PLAN snippets. The roadmap
+below keeps consolidation, documentation parity, and the chat/advisor loop moving without
+blocking on LLM availability.
 
 ### Immediate focus (week of 2025-10-27)
 
@@ -984,9 +984,16 @@ moving without blocking on LLM availability.
    - Ship Pytest coverage that stubs embeddings, verifies deterministic ranking, and exercises both
      ANN and fallback modes.
 
+3. **chore(pack + docs): token math + recent-history parity.** 🚧 _Newly identified via code/doc review (2025-10-26)._
+   - Make `pack` reuse the shared `_token_estimate` helper (respecting `token_estimator.char_per_token`)
+     instead of the current word-count heuristic so persona + pack trimming stay consistent.
+   - Extend L2 packs to include the last seven days of summaries/micro-facts as promised in README/PLAN.
+   - Refresh the fake `ollama health` sample and README quick start (`chat` commands) so docs only
+     advertise shipped surfaces.
+
 ### Next focus (week of 2025-11-03)
 
-3. **feat(persona-core): `persona build` + auto-regeneration.** ✅ _Shipped 2025-10-26 via the new `aijournal persona build` command, schema-backed payloads, trimming metadata, Pytests, and now (2025-10-26) mtime-based reminders through `aijournal persona status` + pack gating that require fresh `derived/persona/persona_core.yaml`._
+4. **feat(persona-core): `persona build` + auto-regeneration.** ✅ _Shipped 2025-10-26 via the new `aijournal persona build` command, schema-backed payloads, trimming metadata, Pytests, and now (2025-10-26) mtime-based reminders through `aijournal persona status` + pack gating that require fresh `derived/persona/persona_core.yaml`._
    - Compose persona core from `self_profile` + accepted claim atoms sorted by
      `effective_strength × impact_weight`, trim to ≤1200 tokens, and capture `meta` with
      generator metadata.
@@ -995,16 +1002,17 @@ moving without blocking on LLM availability.
    - Change reminders now run through `persona status` (compares mtimes) and `pack` prints a
      warning whenever the cached persona core is stale.
 
-4. **feat(consolidation): pending-update fusion.**
-   - Finish `ClaimConsolidator` so micro-facts, characterize batches, and chat learnings merge via
-     weighted averaging + decay-at-read semantics outlined in §4.9.
-   - Extend `review-updates` to show scope conflicts, downgrade contradictory atoms to
-     `status: tentative`, and enqueue interview prompts when ambiguity rises.
-   - Tests cover conflicting scope handling, decay math, and manifest/evidence propagation.
+5. **feat(consolidation): pending-update fusion.**
+   - Integrate the new `ClaimConsolidator` with micro-facts/characterize pipelines and queue follow-up
+     interviews whenever conflicts are detected (status drops to `tentative`).
+   - Flesh out scope-splitting heuristics (weekday vs. weekend, solo vs. team) instead of only
+     downgrading strength when values differ.
+   - Extend regression coverage: conflicting scope handling, decay math, manifest/evidence propagation,
+     and interview prompt generation.
 
 ### Later focus (mid-November 2025)
 
-5. **feat(chat + chatd): retrieval-backed conversation loop.**
+6. **feat(chat + chatd): retrieval-backed conversation loop.**
    - CLI `aijournal chat` orchestrates intent classification → retrieval (claims + journal chunks)
      → response assembly with citations + optional clarifying question respecting
      `coaching_prefs.probing`.
@@ -1012,7 +1020,7 @@ moving without blocking on LLM availability.
      `derived/chat_sessions/<session_id>/{transcript.jsonl,summary.yaml,learnings.yaml}`.
    - Wire in fake mode fixtures so CI can exercise the full flow offline.
 
-6. **feat(feedback + telemetry): learnings + strength nudges.**
+7. **feat(feedback + telemetry): learnings + strength nudges.**
    - Add thumbs up/down handling that adjusts cited claim strengths (+0.03 / −0.05 clamp 0..1) and
      queues learnings into `derived/pending/profile_updates/`.
    - Emit lightweight structured logs summarizing retrieval latency, chunk counts, and pack token
