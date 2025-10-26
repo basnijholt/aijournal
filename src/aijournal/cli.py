@@ -4903,42 +4903,55 @@ def _connect_index_db(path: Path, *, overwrite: bool = False) -> sqlite3.Connect
 
 
 def _prepare_index_schema(conn: sqlite3.Connection) -> None:
-    conn.executescript(
-        """
-        CREATE TABLE IF NOT EXISTS chunks (
-            chunk_id TEXT PRIMARY KEY,
-            normalized_id TEXT NOT NULL,
-            normalized_path TEXT NOT NULL,
-            chunk_index INTEGER NOT NULL,
-            chunk_text TEXT NOT NULL,
-            date TEXT NOT NULL,
-            tags TEXT NOT NULL,
-            source_type TEXT,
-            source_path TEXT,
-            tokens INTEGER NOT NULL,
-            source_hash TEXT,
-            manifest_hash TEXT,
-            embedding BLOB NOT NULL
-        );
-        CREATE TABLE IF NOT EXISTS chunk_fts (
-            chunk_id TEXT PRIMARY KEY,
-            chunk_text TEXT NOT NULL
-        );
-        CREATE TABLE IF NOT EXISTS sources (
-            normalized_path TEXT PRIMARY KEY,
-            normalized_id TEXT NOT NULL,
-            date TEXT NOT NULL,
-            source_hash TEXT,
-            manifest_hash TEXT,
-            chunk_count INTEGER NOT NULL,
-            updated_at TEXT NOT NULL
-        );
-        CREATE TABLE IF NOT EXISTS annoy_map (
-            annoy_idx INTEGER PRIMARY KEY,
-            chunk_id TEXT NOT NULL
-        );
-        """,
-    )
+    try:
+        conn.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS chunks (
+                chunk_id TEXT PRIMARY KEY,
+                normalized_id TEXT NOT NULL,
+                normalized_path TEXT NOT NULL,
+                chunk_index INTEGER NOT NULL,
+                chunk_text TEXT NOT NULL,
+                date TEXT NOT NULL,
+                tags TEXT NOT NULL,
+                source_type TEXT,
+                source_path TEXT,
+                tokens INTEGER NOT NULL,
+                source_hash TEXT,
+                manifest_hash TEXT,
+                embedding BLOB NOT NULL
+            );
+            CREATE VIRTUAL TABLE IF NOT EXISTS chunk_fts
+            USING fts5(
+                chunk_id UNINDEXED,
+                chunk_text,
+                content=''
+            );
+            CREATE TABLE IF NOT EXISTS sources (
+                normalized_path TEXT PRIMARY KEY,
+                normalized_id TEXT NOT NULL,
+                date TEXT NOT NULL,
+                source_hash TEXT,
+                manifest_hash TEXT,
+                chunk_count INTEGER NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS annoy_map (
+                annoy_idx INTEGER PRIMARY KEY,
+                chunk_id TEXT NOT NULL
+            );
+            """,
+        )
+    except sqlite3.OperationalError as exc:
+        message = str(exc).lower()
+        if "fts5" in message:
+            msg = (
+                "SQLite runtime does not support FTS5, which is required for the retrieval index. "
+                "Install a Python build with FTS5 enabled (e.g., the system sqlite3 on macOS via Homebrew) "
+                "or rebuild Python against an FTS5-capable SQLite."
+            )
+            raise RuntimeError(msg) from exc
+        raise
 
 
 def _delete_chunks_for_entry(conn: sqlite3.Connection, normalized_id: str) -> None:

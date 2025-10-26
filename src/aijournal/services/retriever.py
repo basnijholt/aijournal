@@ -1,10 +1,9 @@
-"""Shared retrieval service covering Annoy+SQLite and fallback modes."""
+"""Shared retrieval service backed by Annoy + SQLite."""
 
 from __future__ import annotations
 
 import json
 import os
-import re
 import sqlite3
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
@@ -12,10 +11,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from annoy import AnnoyIndex
-from pydantic import ValidationError
 
-from aijournal.io.yaml_io import load_yaml_model
-from aijournal.models import ChunkManifest, IndexMeta
+from aijournal.models import IndexMeta
 
 from .embedding import EmbeddingBackend
 
@@ -68,16 +65,12 @@ class Retriever:
         self,
         root: Path,
         config: dict[str, Any] | None = None,
-        *,
-        force_fallback: bool = False,
     ) -> None:
         self.root = Path(root)
         self.config: dict[str, Any] = dict(config or {})
-        self.force_fallback = force_fallback
         self.index_dir = self.root / "derived" / "index"
         self.db_path = self.index_dir / "index.db"
         self.annoy_path = self.index_dir / "annoy.index"
-        self.chunk_dir = self.index_dir / "chunks"
         self.meta_path = self.index_dir / "meta.json"
         self._meta = self._load_meta()
         self._conn: sqlite3.Connection | None = None
@@ -95,29 +88,23 @@ class Retriever:
         *,
         k: int = 8,
         filters: RetrievalFilters | None = None,
-        force_fallback: bool | None = None,
     ) -> RetrievalResult:
         query = query.strip()
         if not query:
             msg = "Query text is required"
             raise ValueError(msg)
         filters = filters or RetrievalFilters()
-        use_fallback = force_fallback if force_fallback is not None else self.force_fallback
-
-        if self._can_use_annoy() and not use_fallback:
-            chunks = self._search_annoy(query, k=k, filters=filters)
-            meta = RetrievalMeta(
-                mode="annoy",
-                source="annoy+sqlite",
-                k=k,
-                fake_mode=self._fake_mode,
+        if not self._can_use_annoy():
+            msg = (
+                "Retrieval index not available. Run `aijournal index rebuild` to generate "
+                "derived/index/index.db and derived/index/annoy.index before searching."
             )
-            return RetrievalResult(chunks=chunks, meta=meta)
+            raise RuntimeError(msg)
 
-        chunks = self._search_fallback(query, k=k, filters=filters)
+        chunks = self._search_annoy(query, k=k, filters=filters)
         meta = RetrievalMeta(
-            mode="fake(fallback)",
-            source="chunk_manifests",
+            mode="annoy",
+            source="annoy+sqlite",
             k=k,
             fake_mode=self._fake_mode,
         )
@@ -172,63 +159,6 @@ class Retriever:
         return scored
 
     # ------------------------------------------------------------------
-    # Fallback search over chunk manifests (no DB/Annoy required)
-    # ------------------------------------------------------------------
-    def _search_fallback(
-        self,
-        query: str,
-        *,
-        k: int,
-        filters: RetrievalFilters,
-    ) -> list[RetrievedChunk]:
-        manifests = sorted(self.chunk_dir.glob("*.yaml"))
-        if not manifests:
-            return []
-        terms = [term for term in re.split(r"\W+", query.lower()) if term]
-        today = datetime.now(tz=UTC).date()
-        results: list[RetrievedChunk] = []
-
-        for manifest_path in manifests:
-            try:
-                manifest = load_yaml_model(manifest_path, ChunkManifest)
-            except (ValidationError, FileNotFoundError):
-                continue
-            day = manifest.day or manifest_path.stem
-            for chunk in manifest.chunks:
-                chunk_date = day
-                tags = list(chunk.tags)
-                if not self._passes_filters(
-                    chunk_date,
-                    json.dumps(tags),
-                    chunk.source_type,
-                    filters,
-                ):
-                    continue
-                text = chunk.chunk_text or ""
-                base = self._text_score(text.lower(), terms)
-                if base == 0.0:
-                    continue
-                recency = self._recency_score(chunk_date, today)
-                final = 0.7 * base + 0.3 * recency
-                results.append(
-                    RetrievedChunk(
-                        chunk_id=chunk.chunk_id,
-                        normalized_id=chunk.normalized_id,
-                        chunk_index=chunk.chunk_index,
-                        text=text,
-                        date=chunk_date,
-                        tags=list(tags),
-                        source_type=chunk.source_type,
-                        source_path=chunk.source_path,
-                        tokens=chunk.tokens,
-                        score=final,
-                    ),
-                )
-
-        results.sort(key=lambda item: item.score, reverse=True)
-        return results[:k]
-
-    # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
     def close(self) -> None:
@@ -247,7 +177,7 @@ class Retriever:
         return IndexMeta.model_validate(data or {})
 
     def _can_use_annoy(self) -> bool:
-        return not self.force_fallback and self.db_path.exists() and self.annoy_path.exists()
+        return self.db_path.exists() and self.annoy_path.exists()
 
     def _connection(self) -> sqlite3.Connection:
         if self._conn is None:
@@ -343,14 +273,6 @@ class Retriever:
             tokens=row["tokens"],
             score=score,
         )
-
-    def _text_score(self, text: str, terms: Sequence[str]) -> float:
-        if not terms:
-            return 0.0
-        hits = sum(text.count(term) for term in terms)
-        if hits == 0:
-            return 0.0
-        return hits / max(1, len(text)) * 10
 
 
 class AnnoyMap(dict[int, str]):

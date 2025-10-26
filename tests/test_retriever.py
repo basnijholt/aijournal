@@ -66,7 +66,7 @@ def test_retriever_annoy_mode_returns_chunks(
     retriever.close()
 
 
-def test_retriever_fallback_mode_when_index_missing(
+def test_retriever_errors_when_index_missing(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -89,9 +89,9 @@ def test_retriever_fallback_mode_when_index_missing(
     config = yaml.safe_load((tmp_path / "config" / "config.yaml").read_text(encoding="utf-8"))
     retriever = Retriever(tmp_path, config)
     filters = RetrievalFilters(tags=frozenset({"focus"}))
-    result = retriever.search("reflection", k=1, filters=filters)
-
-    assert result.meta.mode == "fake(fallback)"
-    assert result.chunks
-    assert result.chunks[0].normalized_id == entry_id
+    with pytest.raises(
+        RuntimeError,
+        match="Retrieval index not available",
+    ):
+        retriever.search("reflection", k=1, filters=filters)
     retriever.close()

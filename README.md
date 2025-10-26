@@ -79,7 +79,7 @@ aijournal index tail --since 7d  # optional helper: follow manifest entries and 
 
 - Index lives under `derived/index/` (`index.db`, `annoy.index`, `meta.json`).
 - Chunking is deterministic (700–1200 characters, sentence boundaries) and every chunk stores normalized_id/date/tags.
-- When Annoy is unavailable the CLI falls back to pure FTS search and annotates `meta.mode: fake(fallback)`.
+- Retrieval relies on Annoy + SQLite FTS5; if those artifacts are missing, commands error loudly so you can rebuild with `aijournal index rebuild`.
 
 ### Ingest existing Markdown (blogs, notes)
 
@@ -158,14 +158,18 @@ export AIJOURNAL_FAKE_OLLAMA=1
 aijournal ollama health
 ```
 
-Prints the fixture's advertised `models` array and its `default_model`, for example:
+Prints the fixture's advertised `models` array and its `default` model, for example:
 
 ```
+endpoint: fake://ollama
+default: llama3.1:8b-instruct
 models:
-  - llama3.1:70b-instruct
-  - llama3.1:8b-instruct
-default_model: llama3.1:8b-instruct
-status: ok (fake)
+  - name: llama3.1:8b-instruct
+    size: 8B
+    quant: Q4_K_M
+  - name: llama3.1:70b-instruct
+    size: 70B
+    quant: Q4_K_M
 ```
 
 The fake health probe never touches the network, so it is safe to call repeatedly in automation to confirm Ollama wiring without mutating any files.
@@ -191,18 +195,7 @@ facets/claims referenced in each recommendation. Fake mode remains available for
 
 ### Retrieval-backed chat (CLI or FastAPI)
 
-```sh
-# CLI/TUI session
-aijournal chat
-
-# FastAPI server (default http://localhost:8765)
-aijournal chatd --port 8765
-```
-
-- Each turn is intent-classified (`advice|planning|reflection|qa_about_me|meta`), retrieves top claim atoms + journal chunks through the Annoy/SQLite index, and assembles context with persona core + conversation summary under the configured token budget.
-- Responses must cite claims (`[claim:pref.deep_work.window]`) and/or journal entries (`[entry:2025-10-25_x9t3#p0]`) and may ask at most one clarifying question if `coaching_prefs.probing` allows.
-- Learnings from **user** messages are extracted into micro-facts, run through the consolidation service, and queued in `derived/pending/profile_updates/…`; session artifacts live under `derived/chat_sessions/<session_id>/{transcript.jsonl, summary.yaml, learnings.yaml}`.
-- Tune behavior via `config.chat` (`max_retrieved_chunks`, `max_claims`, `follow_up_enabled`, `write_back_facts`). Fake mode stamps `meta.mode: fake(fallback)` whenever LLM calls fail and heuristics are used.
+> **Coming soon:** The retrieval-backed chat surfaces (`aijournal chat`, `aijournal chatd`) are on the roadmap but not shipped in this repository snapshot. See `PLAN.md` (“feat(chat + chatd)”) for the latest status. Once available, they will orchestrate intent classification, retrieval, citations, and learnings ingestion using the index built above.
 
 ### Profile suggestions
 
@@ -321,8 +314,8 @@ aijournal index tail
 
 - `derived/index/index.db` stores chunk metadata + FTS5 virtual table; `derived/index/annoy.index` stores embeddings; `meta.json` records embedding model/dim/build timestamp and whether fake mode ran.
 - Chunking is deterministic (700–1200 chars, sentence boundaries) and each chunk stores `{normalized_id, date, tags, source_type, chunk_index, tokens}`.
-- Prefer the ANN-backed path for speed, but you can opt out of databases: store chunk manifests under `derived/index/chunks/YYYY-MM-DD.yaml` (plus optional `.npy` vector shards) and run pure cosine/text search without SQLite—everything remains human-readable and reproducible.
-- `Retriever.search("question about deep work", k=12, filters=...)` (see `src/aijournal/services/retriever.py`) powers chat/advice, combining Annoy cosine scores with a light recency boost; when Annoy/SQLite are unavailable the CLI streams the YAML chunk manifests instead and stamps `meta.mode: fake(fallback)`.
+- Human-friendly chunk manifests under `derived/index/chunks/YYYY-MM-DD.yaml` (plus optional `.npy` vector shards) mirror the indexed data so you can inspect or reuse it elsewhere, while the built-in retriever expects the Annoy/SQLite artifacts to be present.
+- `Retriever.search("question about deep work", k=12, filters=...)` (see `src/aijournal/services/retriever.py`) powers chat/advice, combining Annoy cosine scores with a light recency boost. If the index artifacts are missing, retrieval fails fast and prompts you to rebuild.
 
 ### Configuration quick reference
 

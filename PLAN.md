@@ -551,7 +551,7 @@ meta:
 - `derived/index/meta.json` captures embedding model, vector dim, build time, count, Annoy params, and whether fake mode was used.
 - Chunk schema: `{id, normalized_id, date, tags, source_type, chunk_index, chunk_text, tokens}` with deterministic chunking (700–1200 chars, sentence boundaries, include section headings when available).
 - Rebuild commands regenerate both indexes deterministically from normalized YAML; no authoritative data stored here.
-- **File-only fallback:** when you want to avoid databases entirely, write deterministic chunk manifests under `derived/index/chunks/YYYY-MM-DD.yaml` (plus optional `.npy` vector shards). Retrieval can stream those YAML files directly or run pure cosine search without SQLite/Annoy; document and test this mode alongside the ANN-backed index so either path can be regenerated on demand.
+- **Chunk manifests for inspection:** deterministic YAML manifests under `derived/index/chunks/YYYY-MM-DD.yaml` (plus optional `.npy` vector shards) mirror the indexed chunks so humans can audit or feed them to other tools, but the primary retrieval path still depends on the SQLite/Annoy artifacts.
 
 ### 4.8 Persona core file (L1)
 
@@ -626,7 +626,7 @@ Health check:
 - Embeddings default to `nomic-embed-text` via Ollama (`EmbeddingClient` wraps HTTP calls, caches dims, exposes `embed_texts`).
 - `Indexer` manages chunking (700–1200 chars, boundary aware), writes SQLite rows, and updates Annoy (rebuild after N inserts or on-demand `index rebuild`).
 - `Retriever` loads query embeddings, performs ANN search (`search_k = factor * k * trees`), filters by tags/date/source, applies lightweight rerank: `score = 0.7*cos + 0.3*recency` where `recency = 1/(1+0.05*days)`.
-- Pure file/FTS fallback (documented/tested) activates when Annoy or SQLite are unavailable: stream YAML chunk manifests from `derived/index/chunks/`, run cosine search over in-memory vectors (or regex/fts-like text search), and mark `meta.mode: "fake(fallback)"` in outputs so it’s obvious which path ran.
+- Retrieval requires the Annoy + SQLite artifacts; if either is missing, commands error immediately so you can rebuild via `aijournal index rebuild`.
 
 ### 8.2 Chat orchestrator (RAG + write-back)
 
@@ -974,16 +974,15 @@ blocking on LLM availability.
      trimmed chunk stats.
    - Expose `--since`/`--limit` knobs and write regression tests that rebuild from
      fixtures and assert identical Annoy/SQLite digests across runs.
-   - Include YAML-only fallback path (writes `derived/index/chunks/YYYY-MM-DD.yaml` + optional
-     `.npy` vectors) and document it in README/PLAN.
+   - Write human-readable chunk manifests (`derived/index/chunks/YYYY-MM-DD.yaml` + optional
+     `.npy` vectors) alongside the database artifacts for inspection.
 
-2. **feat(retriever): shared search service.** ✅ _Shipped 2025-10-25 via `aijournal.services.retriever.Retriever`, the shared `EmbeddingBackend`, and Pytests covering ANN + fallback modes (`tests/test_retriever.py`)._
+2. **feat(retriever): shared search service.** ✅ _Shipped 2025-10-25 via `aijournal.services.retriever.Retriever`, the shared `EmbeddingBackend`, and Pytests covering the ANN search path (`tests/test_retriever.py`)._
    - Build `Retriever` API that loads metadata, performs ANN search with `search_k_factor`
      defaults, mixes cosine + recency scoring, and surfaces filter hooks (tags, date, source).
-   - Provide lightweight pure-FTS/regex fallback for environments without Annoy/SQLite and mark
-     responses with `meta.mode: fake(fallback)` so downstream commands can branch deterministically.
-   - Ship Pytest coverage that stubs embeddings, verifies deterministic ranking, and exercises both
-     ANN and fallback modes.
+   - Retrieval now requires the generated SQLite + Annoy artifacts; when they are missing, `Retriever.search`
+     raises a clear error directing operators to rebuild the index.
+   - Ship Pytest coverage that stubs embeddings, verifies deterministic ranking, and asserts loud failures when the index is absent.
 
 3. **chore(pack + docs): token math + recent-history parity.** ✅ _Shipped 2025-10-26 by aligning pack token math with the shared estimator and documenting the updated L2 scope._
    - `pack` now reuses the shared `_token_estimate` helper (respecting `token_estimator.char_per_token`)
