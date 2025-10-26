@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from math import ceil
 from typing import TYPE_CHECKING
 
 import pytest
@@ -142,17 +143,16 @@ def _seed_profile_suggestions(tmp_path: Path, day: str = DATE) -> Path:
     return suggestions_path
 
 
-def _seed_config(tmp_path: Path) -> Path:
+def _seed_config(tmp_path: Path, *, char_per_token: float | None = None) -> Path:
+    payload: dict[str, object] = {
+        "model": "fake-ollama",
+        "seed": 7,
+        "impact_weights": {"values_goals": 1.2},
+    }
+    if char_per_token is not None:
+        payload["token_estimator"] = {"char_per_token": char_per_token}
     config_path = tmp_path / "config" / "config.yaml"
-    _write(
-        config_path,
-        """
-model: fake-ollama
-seed: 7
-impact_weights:
-  values_goals: 1.2
-        """,
-    )
+    _write(config_path, yaml.safe_dump(payload, sort_keys=False))
     return config_path
 
 
@@ -208,6 +208,7 @@ def test_pack_l2_includes_daily_artifacts(tmp_path: Path, monkeypatch: pytest.Mo
     _seed_profile(tmp_path)
     _ensure_persona_core(tmp_path)
     entry_slug = _seed_daily_artifacts(tmp_path)
+    _seed_daily_artifacts(tmp_path, day=PRIOR_DATE, entry_id=PRIOR_ENTRY_ID)
 
     result = runner.invoke(app, ["pack", "--level", "L2", "--date", DATE])
     assert result.exit_code == 0
@@ -216,6 +217,9 @@ def test_pack_l2_includes_daily_artifacts(tmp_path: Path, monkeypatch: pytest.Mo
     assert "derived/persona/persona_core.yaml" in paths
     assert f"data/normalized/{DATE}/{entry_slug}.yaml" in paths
     assert f"derived/summaries/{DATE}.yaml" in paths
+    assert f"derived/summaries/{PRIOR_DATE}.yaml" in paths
+    assert f"derived/microfacts/{PRIOR_DATE}.yaml" in paths
+    assert f"data/normalized/{PRIOR_DATE}/{PRIOR_ENTRY_ID}.yaml" not in paths
 
 
 def test_pack_requires_persona_core(
@@ -373,6 +377,30 @@ def test_pack_l4_history_days_includes_prior_context(
     assert str(raw_path.relative_to(tmp_path)) in paths
     assert str(config_path.relative_to(tmp_path)) in paths
     assert str(prompt_path.relative_to(tmp_path)) in paths
+
+
+def test_pack_respects_token_estimator_config(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    _seed_profile(tmp_path)
+    _seed_daily_artifacts(tmp_path)
+    _seed_config(tmp_path, char_per_token=2.0)
+    _ensure_persona_core(tmp_path)
+
+    result = runner.invoke(app, ["pack", "--level", "L2", "--date", DATE])
+    assert result.exit_code == 0
+    payload = yaml.safe_load(result.output)
+    files = payload.get("files", [])
+    normalized_path = f"data/normalized/{DATE}/{ENTRY_ID}.yaml"
+
+    normalized_entry = next(entry for entry in files if entry["path"] == normalized_path)
+    normalized_file = (tmp_path / "data" / "normalized" / DATE / f"{ENTRY_ID}.yaml").read_text(
+        encoding="utf-8"
+    )
+    expected_tokens = ceil(len(normalized_file) / 2.0)
+    assert normalized_entry["tokens"] == expected_tokens
 
 
 def test_pack_l4_trimming_prioritizes_raw_journal_entries(

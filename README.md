@@ -266,11 +266,11 @@ aijournal pack --level L4 --date 2025-02-03 --history-days 1 --format json > /tm
 `pack` now follows the standardized layers:
 
 - **L1 (Persona Core):** `derived/persona/persona_core.yaml` + top accepted claim atoms.
-- **L2 (Recent Activity):** today’s normalized entries + last 7 summaries/micro-facts.
+- **L2 (Recent Activity):** today’s normalized entries plus the most recent 7 summaries/micro-facts.
 - **L3 (Extended Profile):** complete claims + extended self_profile facets + optional advice/suggestions for the day.
 - **L4 (Background):** prompts, config, raw journals for base day ± `--history-days`.
 
-All packs log `meta.token_estimator` (default `char/4.2`), `planned_tokens`, and any trimmed files (`role`, `path`, `reason`).
+All packs log `meta.token_estimator` (default `char/4.2`), `planned_tokens`, and any trimmed files (`role`, `path`, `reason`). Token counts reuse the shared `_token_estimate` helper so changes to `token_estimator.char_per_token` in `config/config.yaml` stay consistent across persona, index, and pack budgets.
 `aijournal pack` now refuses to run until `derived/persona/persona_core.yaml` exists and injects that file at every level (even L2–L4) before layering profile history. If profile/claims files change, the command prints a yellow reminder to re-run `aijournal persona build` so your exported bundles always reflect the latest persona snapshot.
 
 ### Retrieval index & filters

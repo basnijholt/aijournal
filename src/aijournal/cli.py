@@ -1417,8 +1417,9 @@ def _build_meta(prompt_path: str, model: str = "fake-ollama") -> SummaryMeta:
 
 
 def _fake_summarize(entries: Iterable[NormalizedEntry], date: str) -> DailySummary:
+    entry_list = list(entries)
     bullets: list[str] = []
-    for entry in entries:
+    for entry in entry_list:
         title = entry.title or entry.id
         sections = entry.sections or []
         section_titles = ", ".join(section.heading for section in sections[:2] if section.heading)
@@ -1432,7 +1433,7 @@ def _fake_summarize(entries: Iterable[NormalizedEntry], date: str) -> DailySumma
         day=date,
         bullets=bullets,
         highlights=bullets[:3],
-        todo_candidates=_todo_from_entries(entries),
+        todo_candidates=_todo_from_entries(entry_list),
     )
 
 
@@ -3460,10 +3461,6 @@ def _write_json_if_changed(path: Path, payload: dict[str, Any]) -> bool:
     return True
 
 
-def _pack_token_count(text: str) -> int:
-    return len(text.split())
-
-
 def _pack_trim_entries(
     entries: list[PackEntry],
     budget: int,
@@ -3542,21 +3539,27 @@ def _collect_pack_entries(
         day: str,
         day_index: int,
         *,
+        include_normalized: bool,
+        include_summary: bool,
+        include_microfacts: bool,
         include_raw: bool,
         required_core: bool,
     ) -> None:
-        normalized_dir = root / "data" / "normalized" / day
-        add_dir(
-            "normalized",
-            normalized_dir,
-            required=required_core,
-            pattern="*.yaml",
-            day_index=day_index,
-        )
-        summary_path = root / "derived" / "summaries" / f"{day}.yaml"
-        add_path("summaries", summary_path, day_index=day_index)
-        microfacts_path = root / "derived" / "microfacts" / f"{day}.yaml"
-        add_path("microfacts", microfacts_path, day_index=day_index)
+        if include_normalized:
+            normalized_dir = root / "data" / "normalized" / day
+            add_dir(
+                "normalized",
+                normalized_dir,
+                required=required_core,
+                pattern="*.yaml",
+                day_index=day_index,
+            )
+        if include_summary:
+            summary_path = root / "derived" / "summaries" / f"{day}.yaml"
+            add_path("summaries", summary_path, day_index=day_index)
+        if include_microfacts:
+            microfacts_path = root / "derived" / "microfacts" / f"{day}.yaml"
+            add_path("microfacts", microfacts_path, day_index=day_index)
         if include_raw:
             year, month, day_part = day.split("-")
             journal_dir = root / "data" / "journal" / year / month / day_part
@@ -3582,9 +3585,9 @@ def _collect_pack_entries(
 
     include_history = level == "L4"
     if level in {"L2", "L3", "L4"}:
+        anchor = datetime.fromisoformat(date)
         day_offsets: list[tuple[str, int]] = [(date, 0)]
         if include_history and history_days > 0:
-            anchor = datetime.fromisoformat(date)
             for offset in range(1, history_days + 1):
                 prior = (anchor - timedelta(days=offset)).strftime("%Y-%m-%d")
                 day_offsets.append((prior, offset))
@@ -3593,9 +3596,25 @@ def _collect_pack_entries(
             add_day_artifacts(
                 day_value,
                 idx,
+                include_normalized=True,
+                include_summary=True,
+                include_microfacts=True,
                 include_raw=include_history,
                 required_core=idx == 0,
             )
+
+        if level == "L2":
+            for offset in range(1, 7):
+                prior = (anchor - timedelta(days=offset)).strftime("%Y-%m-%d")
+                add_day_artifacts(
+                    prior,
+                    offset,
+                    include_normalized=False,
+                    include_summary=True,
+                    include_microfacts=True,
+                    include_raw=False,
+                    required_core=False,
+                )
 
     if level in {"L3", "L4"}:
         advice_dir = root / "derived" / "advice" / date
@@ -3687,6 +3706,8 @@ def pack(
     budget = max_tokens or default_budget.get(level, 2000)
 
     root = Path.cwd()
+    config = _load_config(root)
+    _, _, char_per_token = _index_settings(config)
     _ensure_persona_ready_for_pack(root)
     resolved_date = _resolve_pack_date(level, date, root)
     entries_info = _collect_pack_entries(
@@ -3700,11 +3721,12 @@ def pack(
     for role, path in entries_info:
         text = path.read_text(encoding="utf-8")
         rel = _relative_source_path(path, root)
+        tokens = _token_estimate(text, char_per_token)
         entries_payload.append(
             PackEntry(
                 role=role,
                 path=rel,
-                tokens=_pack_token_count(text),
+                tokens=tokens,
                 content=text,
             ),
         )

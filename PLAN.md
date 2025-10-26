@@ -984,12 +984,12 @@ blocking on LLM availability.
    - Ship Pytest coverage that stubs embeddings, verifies deterministic ranking, and exercises both
      ANN and fallback modes.
 
-3. **chore(pack + docs): token math + recent-history parity.** 🚧 _Newly identified via code/doc review (2025-10-26)._
-   - Make `pack` reuse the shared `_token_estimate` helper (respecting `token_estimator.char_per_token`)
-     instead of the current word-count heuristic so persona + pack trimming stay consistent.
-   - Extend L2 packs to include the last seven days of summaries/micro-facts as promised in README/PLAN.
-   - Refresh the fake `ollama health` sample and README quick start (`chat` commands) so docs only
-     advertise shipped surfaces.
+3. **chore(pack + docs): token math + recent-history parity.** ✅ _Shipped 2025-10-26 by aligning pack token math with the shared estimator and documenting the updated L2 scope._
+   - `pack` now reuses the shared `_token_estimate` helper (respecting `token_estimator.char_per_token`)
+     so persona/index/pack trimming rules stay consistent.
+   - L2 packs include the anchor day’s normalized entries plus the latest seven summaries/micro-facts,
+     matching the README promise.
+   - README updated with the new token-estimator note; fake `ollama health` refresh tracked separately.
 
 ### Next focus (week of 2025-11-03)
 
