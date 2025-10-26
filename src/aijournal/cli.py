@@ -1730,9 +1730,9 @@ def _microfact_claim_proposals(
     timestamp: str,
 ) -> list[ClaimProposal]:
     entry_by_id: dict[str, NormalizedEntry] = {}
-    for entry in entries:
-        if entry.id:
-            entry_by_id[entry.id] = entry
+    for entry_model in entries:
+        if entry_model.id:
+            entry_by_id[entry_model.id] = entry_model
 
     proposals: list[ClaimProposal] = []
     for fact in facts:
@@ -1740,7 +1740,7 @@ def _microfact_claim_proposals(
             continue
         evidence_sources = _fact_sources_from_evidence(fact)
         entry_id = fact.evidence.entry_id if fact.evidence else None
-        entry = entry_by_id.get(entry_id) if entry_id else None
+        entry: NormalizedEntry | None = entry_by_id.get(entry_id) if entry_id else None
         scope = _scope_from_fact(fact, entry)
 
         provenance_sources = (
