@@ -38,6 +38,9 @@ from aijournal.models import (
     ClaimsFile,
     ManifestEntry,
     NormalizedEntry,
+    ProfileSuggestionUpdate,
+    ProfileSuggestionUpsert,
+    ProfileSuggestions,
     ProfileUpdateBatch,
     ProfileUpdateInput,
     ProfileUpdateProposals,
@@ -1269,6 +1272,10 @@ def _build_meta(prompt_path: str, model: str = "fake-ollama") -> dict[str, Any]:
     }
 
 
+def _build_meta_model(prompt_path: str, model: str = "fake-ollama") -> SummaryMeta:
+    return SummaryMeta.model_validate(_build_meta(prompt_path, model=model))
+
+
 def _fake_summarize(entries: Iterable[NormalizedEntry]) -> list[str]:
     bullets: list[str] = []
     for entry in entries:
@@ -1373,37 +1380,37 @@ def _fake_profile_suggestions(
     entries: Sequence[NormalizedEntry],
     profile: dict[str, Any],
     claims: list[dict[str, Any]],
-) -> dict[str, Any]:
-    upserts = []
-    updates = []
+) -> ProfileSuggestions:
+    upserts: list[ProfileSuggestionUpsert] = []
+    updates: list[ProfileSuggestionUpdate] = []
 
     for entry in entries[:1]:
         statement = entry.title or "New observation"
         claim_id = f"auto_{entry.id or 'entry'}"
         upserts.append(
-            {
-                "target": "claims",
-                "operation": "upsert",
-                "value": _build_claim_atom_from_entry(
+            ProfileSuggestionUpsert(
+                target="claims",
+                operation="upsert",
+                value=_build_claim_atom_from_entry(
                     entry,
                     claim_id=claim_id,
                     statement=statement,
                     strength=0.6,
                     status="tentative",
                 ),
-            },
+            ),
         )
 
     if profile:
         updates.append(
-            {
-                "target": "values_motivations.schwartz_top5",
-                "operation": "update",
-                "value": profile.get("values_motivations", {}).get("schwartz_top5", []),
-            },
+            ProfileSuggestionUpdate(
+                target="values_motivations.schwartz_top5",
+                operation="update",
+                value=profile.get("values_motivations", {}).get("schwartz_top5", []),
+            ),
         )
 
-    return {"upserts": upserts, "updates": updates}
+    return ProfileSuggestions(upserts=upserts, updates=updates)
 
 
 def _fake_characterize(
@@ -1470,15 +1477,15 @@ def _summarize_day_payload(
     entries: Sequence[NormalizedEntry],
     date: str,
     config: dict[str, Any],
-) -> dict[str, Any]:
-    def fallback() -> dict[str, Any]:
+) -> DailySummary:
+    def fallback() -> DailySummary:
         bullets = _fake_summarize(entries)
-        return {
-            "day": date,
-            "bullets": bullets,
-            "highlights": bullets[:3],
-            "todo_candidates": _todo_from_entries(entries),
-        }
+        return DailySummary(
+            day=date,
+            bullets=bullets,
+            highlights=bullets[:3],
+            todo_candidates=_todo_from_entries(entries),
+        )
 
     if _use_fake_llm():
         return fallback()
@@ -1499,23 +1506,23 @@ def _summarize_day_payload(
         runner,
         fallback,
     )
-    return {
-        "day": str(payload.get("day") or date),
-        "bullets": _coerce_str_list(payload.get("bullets")),
-        "highlights": _coerce_str_list(payload.get("highlights"))
+    return DailySummary(
+        day=str(payload.get("day") or date),
+        bullets=_coerce_str_list(payload.get("bullets")),
+        highlights=_coerce_str_list(payload.get("highlights"))
         or _coerce_str_list(payload.get("bullets"))[:3],
-        "todo_candidates": _coerce_str_list(payload.get("todo_candidates"))
+        todo_candidates=_coerce_str_list(payload.get("todo_candidates"))
         or _todo_from_entries(entries),
-    }
+    )
 
 
 def _microfacts_payload(
     entries: Sequence[NormalizedEntry],
     date: str,
     config: dict[str, Any],
-) -> dict[str, Any]:
-    def fallback() -> dict[str, Any]:
-        return {"facts": _fake_microfacts(entries)}
+) -> MicroFactsFile:
+    def fallback() -> MicroFactsFile:
+        return MicroFactsFile(facts=_fake_microfacts(entries))
 
     if _use_fake_llm():
         return fallback()
@@ -1539,7 +1546,7 @@ def _microfacts_payload(
     facts = payload.get("facts")
     if not isinstance(facts, list):
         return fallback()
-    return {"facts": facts}
+    return MicroFactsFile(facts=facts)
 
 
 def _profile_suggestions_payload(
@@ -1548,56 +1555,74 @@ def _profile_suggestions_payload(
     claims: list[dict[str, Any]],
     date: str,
     config: dict[str, Any],
-) -> dict[str, Any]:
-    def fallback() -> dict[str, Any]:
-        return _fake_profile_suggestions(entries, profile, claims)
+) -> ProfileSuggestions:
+    fallback_model = _fake_profile_suggestions(entries, profile, claims)
 
     if _use_fake_llm():
-        return fallback()
-
-    try:
-        runner = _build_ollama_runner(config)
-    except Exception as exc:  # pragma: no cover
-        typer.secho(
-            f"Unable to initialize Ollama for profile suggestions: {exc}",
-            fg=typer.colors.YELLOW,
-            err=True,
-        )
-        return fallback()
-
-    payload = _safe_llm_json(
-        "prompts/profile_suggest.md",
-        {
-            "date": date,
-            "entries_json": _json_block(_entries_to_payload(entries)),
-            "profile_json": _json_block(profile),
-            "claims_json": _json_block({"claims": claims}),
-        },
-        runner,
-        fallback,
-    )
-
-    upserts_obj = payload.get("upserts")
-    updates_obj = payload.get("updates")
-    raw_upserts = upserts_obj if isinstance(upserts_obj, list) else []
-    updates = updates_obj if isinstance(updates_obj, list) else []
-    timestamp = _format_timestamp(_now())
-    normalized_upserts: list[dict[str, Any]] = []
-    for upsert in raw_upserts:
-        if not isinstance(upsert, dict):
-            continue
-        value = upsert.get("value")
-        if not isinstance(value, dict):
-            continue
+        suggestions = fallback_model
+    else:
         try:
-            normalized_value = _ensure_claim_atom_dict(value, timestamp=timestamp)
-        except ValueError:
-            continue
-        entry = dict(upsert)
-        entry["value"] = normalized_value
-        normalized_upserts.append(entry)
+            runner = _build_ollama_runner(config)
+        except Exception as exc:  # pragma: no cover
+            typer.secho(
+                f"Unable to initialize Ollama for profile suggestions: {exc}",
+                fg=typer.colors.YELLOW,
+                err=True,
+            )
+            suggestions = fallback_model
+        else:
+            payload = _safe_llm_json(
+                "prompts/profile_suggest.md",
+                {
+                    "date": date,
+                    "entries_json": _json_block(_entries_to_payload(entries)),
+                    "profile_json": _json_block(profile),
+                    "claims_json": _json_block({"claims": claims}),
+                },
+                runner,
+                lambda: fallback_model.model_dump(mode="python"),
+            )
 
-    return {"upserts": normalized_upserts, "updates": updates}
+            upserts_obj = payload.get("upserts")
+            updates_obj = payload.get("updates")
+            raw_upserts = upserts_obj if isinstance(upserts_obj, list) else []
+            updates_raw = updates_obj if isinstance(updates_obj, list) else []
+            timestamp = _format_timestamp(_now())
+
+            normalized_upserts: list[ProfileSuggestionUpsert] = []
+            for upsert in raw_upserts:
+                if not isinstance(upsert, dict):
+                    continue
+                value = upsert.get("value")
+                if not isinstance(value, dict):
+                    continue
+                try:
+                    normalized_value = _ensure_claim_atom_dict(value, timestamp=timestamp)
+                except ValueError:
+                    continue
+                entry = dict(upsert)
+                entry["value"] = normalized_value
+                try:
+                    normalized_upserts.append(ProfileSuggestionUpsert.model_validate(entry))
+                except ValidationError:
+                    continue
+
+            update_models: list[ProfileSuggestionUpdate] = []
+            for update in updates_raw:
+                if not isinstance(update, dict):
+                    continue
+                try:
+                    update_models.append(ProfileSuggestionUpdate.model_validate(update))
+                except ValidationError:
+                    continue
+
+            suggestions = ProfileSuggestions(
+                upserts=normalized_upserts,
+                updates=update_models,
+            )
+
+    suggestions.meta = _build_meta_model("prompts/profile_suggest.md")
+    return suggestions
 
 
 def _characterization_context(
@@ -2147,10 +2172,9 @@ def summarize(
 
     config = _load_config(root)
     summary_data = _summarize_day_payload(entries, date, config)
-    summary_data["meta"] = _build_meta("prompts/summarize_day.md")
-
+    summary_data.meta = _build_meta_model("prompts/summarize_day.md")
     summary_path = _derived_summary_path(root, date)
-    _write_yaml_if_changed(summary_path, summary_data, schema="summary")
+    write_yaml_model(summary_path, summary_data)
     typer.echo(str(summary_path))
 
 
@@ -2167,10 +2191,9 @@ def facts(
 
     config = _load_config(root)
     facts_data = _microfacts_payload(entries, date, config)
-    facts_data["meta"] = _build_meta("prompts/extract_facts.md")
-
+    facts_data.meta = _build_meta_model("prompts/extract_facts.md")
     facts_path = _derived_microfacts_path(root, date)
-    _write_yaml_if_changed(facts_path, facts_data, schema="microfacts")
+    write_yaml_model(facts_path, facts_data)
     typer.echo(str(facts_path))
 
 
@@ -2193,11 +2216,9 @@ def profile_suggest(
         raise typer.Exit(1)
 
     config = _load_config(root)
-    suggestions = _profile_suggestions_payload(entries, profile, claims, date, config)
-    suggestions["meta"] = _build_meta("prompts/profile_suggest.md")
-
+    suggestions_model = _profile_suggestions_payload(entries, profile, claims, date, config)
     path = _derived_profile_suggestions_path(root, date)
-    _write_yaml_if_changed(path, suggestions, schema="profile_suggestions")
+    write_yaml_model(path, suggestions_model)
     typer.echo(str(path))
 
 
@@ -2219,23 +2240,23 @@ def profile_apply(
         )
         raise typer.Exit(1)
 
-    suggestions = _load_yaml(suggestions_path)
+    suggestions_model = load_yaml_model(suggestions_path, ProfileSuggestions)
     profile_model, claim_models = _load_profile_components(root)
     profile = _profile_to_dict(profile_model)
     claims = _claims_to_list(claim_models)
     timestamp = _format_timestamp(_now())
     changed = False
 
-    for upsert in suggestions.get("upserts", []):
-        if upsert.get("target") == "claims":
-            if _apply_claim_upsert(claims, upsert.get("value", {}), timestamp):
+    for upsert in suggestions_model.upserts:
+        if upsert.target == "claims":
+            if _apply_claim_upsert(claims, upsert.value, timestamp):
                 changed = True
 
-    for update in suggestions.get("updates", []):
-        target = update.get("target")
+    for update in suggestions_model.updates:
+        target = update.target
         if not target:
             continue
-        if _apply_profile_update(profile, target, update.get("value"), timestamp):
+        if _apply_profile_update(profile, target, update.value, timestamp):
             changed = True
 
     if not changed:
