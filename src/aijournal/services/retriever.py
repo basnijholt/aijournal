@@ -11,8 +11,11 @@ from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-import yaml
 from annoy import AnnoyIndex
+from pydantic import ValidationError
+
+from aijournal.io.yaml_io import load_yaml_model
+from aijournal.models import ChunkManifest, IndexMeta
 
 from .embedding import EmbeddingBackend
 
@@ -45,9 +48,17 @@ class RetrievedChunk:
 
 
 @dataclass(frozen=True)
+class RetrievalMeta:
+    mode: str
+    source: str
+    k: int
+    fake_mode: bool
+
+
+@dataclass(frozen=True)
 class RetrievalResult:
     chunks: list[RetrievedChunk]
-    meta: dict[str, Any]
+    meta: RetrievalMeta
 
 
 class Retriever:
@@ -95,22 +106,21 @@ class Retriever:
 
         if self._can_use_annoy() and not use_fallback:
             chunks = self._search_annoy(query, k=k, filters=filters)
-            mode = "annoy"
-            meta = {
-                "mode": mode,
-                "source": "annoy+sqlite",
-                "k": k,
-                "fake_mode": self._fake_mode,
-            }
+            meta = RetrievalMeta(
+                mode="annoy",
+                source="annoy+sqlite",
+                k=k,
+                fake_mode=self._fake_mode,
+            )
             return RetrievalResult(chunks=chunks, meta=meta)
 
         chunks = self._search_fallback(query, k=k, filters=filters)
-        meta = {
-            "mode": "fake(fallback)",
-            "source": "chunk_manifests",
-            "k": k,
-            "fake_mode": self._fake_mode,
-        }
+        meta = RetrievalMeta(
+            mode="fake(fallback)",
+            source="chunk_manifests",
+            k=k,
+            fake_mode=self._fake_mode,
+        )
         return RetrievalResult(chunks=chunks, meta=meta)
 
     # ------------------------------------------------------------------
@@ -179,19 +189,22 @@ class Retriever:
         results: list[RetrievedChunk] = []
 
         for manifest_path in manifests:
-            payload = yaml.safe_load(manifest_path.read_text(encoding="utf-8")) or {}
-            day = payload.get("day") or manifest_path.stem
-            for chunk in payload.get("chunks", []):
-                chunk_date = str(chunk.get("date") or day)
-                tags = chunk.get("tags") or []
+            try:
+                manifest = load_yaml_model(manifest_path, ChunkManifest)
+            except (ValidationError, FileNotFoundError):
+                continue
+            day = manifest.day or manifest_path.stem
+            for chunk in manifest.chunks:
+                chunk_date = day
+                tags = list(chunk.tags)
                 if not self._passes_filters(
                     chunk_date,
                     json.dumps(tags),
-                    chunk.get("source_type"),
+                    chunk.source_type,
                     filters,
                 ):
                     continue
-                text = str(chunk.get("chunk_text") or "")
+                text = chunk.chunk_text or ""
                 base = self._text_score(text.lower(), terms)
                 if base == 0.0:
                     continue
@@ -199,15 +212,15 @@ class Retriever:
                 final = 0.7 * base + 0.3 * recency
                 results.append(
                     RetrievedChunk(
-                        chunk_id=str(chunk.get("chunk_id")),
-                        normalized_id=str(chunk.get("normalized_id")),
-                        chunk_index=int(chunk.get("chunk_index", 0)),
+                        chunk_id=chunk.chunk_id,
+                        normalized_id=chunk.normalized_id,
+                        chunk_index=chunk.chunk_index,
                         text=text,
                         date=chunk_date,
                         tags=list(tags),
-                        source_type=chunk.get("source_type"),
-                        source_path=str(chunk.get("source_path") or ""),
-                        tokens=int(chunk.get("tokens") or 0),
+                        source_type=chunk.source_type,
+                        source_path=chunk.source_path,
+                        tokens=chunk.tokens,
                         score=final,
                     ),
                 )
@@ -224,13 +237,14 @@ class Retriever:
             self._conn = None
         self._annoy = None
 
-    def _load_meta(self) -> dict[str, Any]:
+    def _load_meta(self) -> IndexMeta:
         if not self.meta_path.exists():
-            return {}
+            return IndexMeta()
         try:
-            return json.loads(self.meta_path.read_text(encoding="utf-8"))
+            data = json.loads(self.meta_path.read_text(encoding="utf-8"))
         except json.JSONDecodeError:
-            return {}
+            return IndexMeta()
+        return IndexMeta.model_validate(data or {})
 
     def _can_use_annoy(self) -> bool:
         return not self.force_fallback and self.db_path.exists() and self.annoy_path.exists()
@@ -244,7 +258,7 @@ class Retriever:
 
     def _annoy_index(self) -> AnnoyIndex:
         if self._annoy is None:
-            dim = int(self._meta.get("vector_dimension") or self._get_embedder().dim)
+            dim = int(self._meta.vector_dimension or self._get_embedder().dim)
             index = AnnoyIndex(dim, metric="angular")
             index.load(str(self.annoy_path))
             self._annoy = index
@@ -253,12 +267,12 @@ class Retriever:
     def _get_embedder(self) -> EmbeddingBackend:
         if self._embedder_instance is None:
             model = str(
-                self._meta.get("embedding_model")
+                self._meta.embedding_model
                 or self.config.get("embedding_model")
                 or "nomic-embed-text",
             )
             host = os.getenv("AIJOURNAL_OLLAMA_HOST")
-            dimension = self._meta.get("vector_dimension")
+            dimension = self._meta.vector_dimension
             self._embedder_instance = EmbeddingBackend(
                 model,
                 host=host,

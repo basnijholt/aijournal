@@ -120,7 +120,9 @@ aijournal facts --date 2025-02-03
 ```
 
 Uses `prompts/extract_facts.md` to create `derived/microfacts/<DATE>.yaml` filled with
-evidence-backed statements. Fake mode falls back to the deterministic placeholder generator for CI.
+evidence-backed statements. Outputs are validated against the `MicroFactsFile`
+model, and fake mode now emits typed `MicroFact` objects for each entry so the
+structure matches real runs even in CI.
 
 ### Ollama health check (fake mode)
 
@@ -183,7 +185,8 @@ aijournal profile suggest --date 2025-02-03
 
 Runs `prompts/profile_suggest.md` with the current profile + claims and stores
 `derived/profile_suggestions/<DATE>.yaml`. Outputs are validated against the
-`ProfileSuggestions` Pydantic model before being written. Enable fake mode for deterministic fixtures.
+`ProfileSuggestions` Pydantic model before being written. Fake mode returns the
+same typed structures (claim upserts + facet updates) to keep pipelines consistent.
 
 ### Apply profile suggestions
 

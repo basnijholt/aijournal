@@ -60,7 +60,7 @@ def test_retriever_annoy_mode_returns_chunks(
     retriever = Retriever(tmp_path, config)
     result = retriever.search("focus blocks", k=3)
 
-    assert result.meta["mode"] == "annoy"
+    assert result.meta.mode == "annoy"
     assert result.chunks
     assert result.chunks[0].normalized_id == entry_id
     retriever.close()
@@ -91,7 +91,7 @@ def test_retriever_fallback_mode_when_index_missing(
     filters = RetrievalFilters(tags=frozenset({"focus"}))
     result = retriever.search("reflection", k=1, filters=filters)
 
-    assert result.meta["mode"] == "fake(fallback)"
+    assert result.meta.mode == "fake(fallback)"
     assert result.chunks
     assert result.chunks[0].normalized_id == entry_id
     retriever.close()

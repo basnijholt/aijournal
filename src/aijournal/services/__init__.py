@@ -10,6 +10,7 @@ from .embedding import DEFAULT_EMBED_DIM, EmbeddingBackend
 from .ollama import LLMResponseError, OllamaConfig, OllamaTaskRunner
 from .retriever import (
     RetrievalFilters,
+    RetrievalMeta,
     RetrievalResult,
     RetrievedChunk,
     Retriever,
@@ -26,6 +27,7 @@ __all__ = [
     "OllamaConfig",
     "OllamaTaskRunner",
     "RetrievalFilters",
+    "RetrievalMeta",
     "RetrievalResult",
     "RetrievedChunk",
     "Retriever",

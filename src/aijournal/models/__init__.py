@@ -130,6 +130,31 @@ class MicroFactsFile(AijournalModel):
     meta: SummaryMeta = Field(default_factory=SummaryMeta)
 
 
+class ChunkManifestMeta(AijournalModel):
+    embedding_model: str
+    vector_dimension: int
+    generated_at: str
+
+
+class ChunkManifestChunk(AijournalModel):
+    chunk_id: str
+    normalized_id: str
+    chunk_index: int
+    chunk_text: str
+    tags: list[str] = Field(default_factory=list)
+    source_type: str | None = None
+    source_path: str
+    tokens: int = 0
+    source_hash: str | None = None
+    manifest_hash: str | None = None
+
+
+class ChunkManifest(AijournalModel):
+    day: str
+    chunks: list[ChunkManifestChunk] = Field(default_factory=list)
+    meta: ChunkManifestMeta
+
+
 class ClaimsFile(AijournalModel):
     claims: list[ClaimAtom] = Field(default_factory=list)
 
@@ -417,6 +442,22 @@ class PersonaCoreFile(AijournalModel):
     meta: PersonaCoreMeta
 
 
+class IndexMeta(AijournalModel):
+    embedding_model: str | None = None
+    vector_dimension: int | None = None
+    chunk_count: int | None = None
+    entry_count: int | None = None
+    mode: str | None = None
+    fake_mode: bool | None = None
+    annoy_trees: int | None = None
+    search_k_factor: float | None = None
+    char_per_token: float | None = None
+    since: str | None = None
+    limit: int | None = None
+    touched_dates: list[str] = Field(default_factory=list)
+    updated_at: str | None = None
+
+
 __all__ = [
     "AdviceCard",
     "AdviceRecommendation",
@@ -430,6 +471,9 @@ __all__ = [
     "ClaimSourceSpan",
     "ClaimStatus",
     "ClaimType",
+    "ChunkManifest",
+    "ChunkManifestChunk",
+    "ChunkManifestMeta",
     "ClaimsFile",
     "DailySummary",
     "FactEvidence",
@@ -446,6 +490,7 @@ __all__ = [
     "PersonaCore",
     "PersonaCoreFile",
     "PersonaCoreMeta",
+    "IndexMeta",
     "ProfileSuggestionUpdate",
     "ProfileSuggestionUpsert",
     "ProfileSuggestions",

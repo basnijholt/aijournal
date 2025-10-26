@@ -37,6 +37,9 @@ from aijournal.models import (
     AdviceCard,
     AdviceRecommendation,
     AdviceReference,
+    ChunkManifest,
+    ChunkManifestChunk,
+    ChunkManifestMeta,
     ClaimAtom,
     ClaimProposal,
     ClaimsFile,
@@ -44,9 +47,12 @@ from aijournal.models import (
     ClaimSourceSpan,
     DailySummary,
     FacetProposal,
+    FactEvidence,
+    IndexMeta,
     InterviewQuestion,
     InterviewSet,
     ManifestEntry,
+    MicroFact,
     MicroFactsFile,
     NormalizedEntry,
     PersonaCore,
@@ -1401,20 +1407,16 @@ def _hash_prompt(prompt_path: str) -> str | None:
     return sha256(data).hexdigest()
 
 
-def _build_meta(prompt_path: str, model: str = "fake-ollama") -> dict[str, Any]:
-    return {
-        "llm_model": model,
-        "prompt_path": prompt_path,
-        "prompt_hash": _hash_prompt(prompt_path),
-        "created_at": _format_timestamp(_now()),
-    }
+def _build_meta(prompt_path: str, model: str = "fake-ollama") -> SummaryMeta:
+    return SummaryMeta(
+        llm_model=model,
+        prompt_path=prompt_path,
+        prompt_hash=_hash_prompt(prompt_path),
+        created_at=_format_timestamp(_now()),
+    )
 
 
-def _build_meta_model(prompt_path: str, model: str = "fake-ollama") -> SummaryMeta:
-    return SummaryMeta.model_validate(_build_meta(prompt_path, model=model))
-
-
-def _fake_summarize(entries: Iterable[NormalizedEntry]) -> list[str]:
+def _fake_summarize(entries: Iterable[NormalizedEntry], date: str) -> DailySummary:
     bullets: list[str] = []
     for entry in entries:
         title = entry.title or entry.id
@@ -1424,31 +1426,42 @@ def _fake_summarize(entries: Iterable[NormalizedEntry]) -> list[str]:
             bullets.append(f"{title}: {section_titles}")
         else:
             bullets.append(f"{title}: no sections")
-    return bullets or ["No content available"]
+    if not bullets:
+        bullets = ["No content available"]
+    return DailySummary(
+        day=date,
+        bullets=bullets,
+        highlights=bullets[:3],
+        todo_candidates=_todo_from_entries(entries),
+    )
 
 
-def _fake_microfacts(entries: Iterable[NormalizedEntry]) -> list[dict[str, Any]]:
-    facts: list[dict[str, Any]] = []
-    for entry in entries:
-        entry_id = entry.id or "entry"
+def _fake_microfacts(entries: Iterable[NormalizedEntry]) -> list[MicroFact]:
+    facts: list[MicroFact] = []
+    for idx, entry in enumerate(entries, start=1):
+        entry_id = str(entry.id or f"entry-{idx}")
         title = entry.title or entry_id
         sections = entry.sections or []
         statement = f"{title} covers {len(sections)} sections"
         facts.append(
-            {
-                "id": f"fact-{entry_id}",
-                "statement": statement,
-                "confidence": 0.8,
-                "evidence": {"entry_id": entry_id},
-            },
+            MicroFact(
+                id=f"fact-{entry_id}",
+                statement=statement,
+                confidence=0.8,
+                evidence=FactEvidence(entry_id=entry_id),
+            ),
         )
-    return facts or [
-        {
-            "id": "fact-empty",
-            "statement": "No normalized entries available",
-            "confidence": 0.0,
-            "evidence": {"entry_id": "unknown"},
-        },
+
+    if facts:
+        return facts
+
+    return [
+        MicroFact(
+            id="fact-empty",
+            statement="No normalized entries available",
+            confidence=0.0,
+            evidence=FactEvidence(entry_id="unknown"),
+        ),
     ]
 
 
@@ -1536,7 +1549,7 @@ def _fake_profile_suggestions(
             ProfileSuggestionUpsert(
                 target="claims",
                 operation="upsert",
-                value=claim_model,
+                value=claim_model.model_copy(deep=True),
             ),
         )
 
@@ -1628,13 +1641,7 @@ def _summarize_day_payload(
     config: dict[str, Any],
 ) -> DailySummary:
     def fallback_model() -> DailySummary:
-        bullets = _fake_summarize(entries)
-        return DailySummary(
-            day=date,
-            bullets=bullets,
-            highlights=bullets[:3],
-            todo_candidates=_todo_from_entries(entries),
-        )
+        return _fake_summarize(entries, date)
 
     def fallback_dict() -> dict[str, Any]:
         return fallback_model().model_dump(mode="python")
@@ -1667,7 +1674,7 @@ def _microfacts_payload(
     config: dict[str, Any],
 ) -> MicroFactsFile:
     def fallback_model() -> MicroFactsFile:
-        return MicroFactsFile.model_validate({"facts": _fake_microfacts(entries)})
+        return MicroFactsFile(facts=_fake_microfacts(entries))
 
     def fallback_dict() -> dict[str, Any]:
         return fallback_model().model_dump(mode="python")
@@ -1701,10 +1708,11 @@ def _profile_suggestions_payload(
     date: str,
     config: dict[str, Any],
 ) -> ProfileSuggestions:
-    fallback_model = _fake_profile_suggestions(entries, profile, claims)
+    def fallback_model() -> ProfileSuggestions:
+        return _fake_profile_suggestions(entries, profile, claims)
 
     if _use_fake_llm():
-        suggestions = fallback_model
+        suggestions = fallback_model()
     else:
         try:
             runner = _build_ollama_runner(config)
@@ -1714,7 +1722,7 @@ def _profile_suggestions_payload(
                 fg=typer.colors.YELLOW,
                 err=True,
             )
-            suggestions = fallback_model
+            suggestions = fallback_model()
         else:
             payload = _safe_llm_json(
                 "prompts/profile_suggest.md",
@@ -1727,7 +1735,7 @@ def _profile_suggestions_payload(
                     ),
                 },
                 runner,
-                lambda: fallback_model.model_dump(mode="python"),
+                lambda: fallback_model().model_dump(mode="python"),
             )
 
             upserts_obj = payload.get("upserts")
@@ -1773,7 +1781,7 @@ def _profile_suggestions_payload(
                 updates=update_models,
             )
 
-    suggestions.meta = _build_meta_model("prompts/profile_suggest.md")
+    suggestions.meta = _build_meta("prompts/profile_suggest.md")
     return suggestions
 
 
@@ -2404,7 +2412,7 @@ def summarize(
 
     config = _load_config(root)
     summary_data = _summarize_day_payload(entries, date, config)
-    summary_data.meta = _build_meta_model("prompts/summarize_day.md")
+    summary_data.meta = _build_meta("prompts/summarize_day.md")
     summary_path = _derived_summary_path(root, date)
     write_yaml_model(summary_path, summary_data)
     typer.echo(str(summary_path))
@@ -2423,7 +2431,7 @@ def facts(
 
     config = _load_config(root)
     facts_data = _microfacts_payload(entries, date, config)
-    facts_data.meta = _build_meta_model("prompts/extract_facts.md")
+    facts_data.meta = _build_meta("prompts/extract_facts.md")
     facts_path = _derived_microfacts_path(root, date)
     write_yaml_model(facts_path, facts_data)
     typer.echo(str(facts_path))
@@ -2539,7 +2547,7 @@ def characterize(
                 tags=list(data.tags or []),
             ),
         )
-    meta_model = SummaryMeta.model_validate(_build_meta("prompts/characterize.md"))
+    meta_model = _build_meta("prompts/characterize.md")
     batch_model = ProfileUpdateBatch(
         batch_id=batch_id,
         created_at=timestamp,
@@ -2643,7 +2651,7 @@ def advise(
     config = _load_config(root)
     advice_card = _advice_payload(question, profile, claims, config)
     model_name = "fake-ollama" if _use_fake_llm() else _resolve_model_name(config)
-    advice_card.meta = _build_meta_model("prompts/advise.md", model=model_name)
+    advice_card.meta = _build_meta("prompts/advise.md", model=model_name)
 
     day = _created_date(_format_timestamp(_now()))
     advice_path = _derived_advice_path(root, day, question)
@@ -4367,37 +4375,37 @@ def _write_chunk_manifests(
             """,
             (day,),
         ).fetchall()
-        chunks: list[dict[str, Any]] = []
-        payload = {
-            "day": day,
-            "chunks": chunks,
-            "meta": {
-                "embedding_model": embedder.model,
-                "vector_dimension": embedder.dim,
-                "generated_at": _format_timestamp(_now()),
-            },
-        }
+        chunk_models: list[ChunkManifestChunk] = []
         vectors: list[list[float]] = []
         for row in rows:
             tags = json.loads(row["tags"] or "[]")
-            chunks.append(
-                {
-                    "chunk_id": row["chunk_id"],
-                    "normalized_id": row["normalized_id"],
-                    "chunk_index": row["chunk_index"],
-                    "chunk_text": row["chunk_text"],
-                    "tags": tags,
-                    "source_type": row["source_type"],
-                    "source_path": row["source_path"],
-                    "tokens": row["tokens"],
-                    "source_hash": row["source_hash"],
-                    "manifest_hash": row["manifest_hash"],
-                },
+            chunk_models.append(
+                ChunkManifestChunk(
+                    chunk_id=str(row["chunk_id"]),
+                    normalized_id=str(row["normalized_id"]),
+                    chunk_index=int(row["chunk_index"]),
+                    chunk_text=str(row["chunk_text"] or ""),
+                    tags=list(tags),
+                    source_type=row["source_type"],
+                    source_path=str(row["source_path"] or ""),
+                    tokens=int(row["tokens"] or 0),
+                    source_hash=row["source_hash"],
+                    manifest_hash=row["manifest_hash"],
+                ),
             )
             vectors.append(_blob_to_vector(row["embedding"]))
 
         manifest_path = chunk_dir / f"{day}.yaml"
-        manifest_path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
+        manifest = ChunkManifest(
+            day=day,
+            chunks=chunk_models,
+            meta=ChunkManifestMeta(
+                embedding_model=embedder.model,
+                vector_dimension=embedder.dim,
+                generated_at=_format_timestamp(_now()),
+            ),
+        )
+        write_yaml_model(manifest_path, manifest)
         vector_array = (
             np.array(vectors, dtype="float32")
             if vectors
@@ -4427,19 +4435,20 @@ def _write_index_meta(
     limit: int | None,
     touched_dates: Iterable[str],
 ) -> None:
-    payload = {
-        "embedding_model": embedder.model,
-        "vector_dimension": embedder.dimension,
-        "chunk_count": chunk_total,
-        "entry_count": entry_total,
-        "mode": mode,
-        "fake_mode": fake_mode,
-        "annoy_trees": ann_trees,
-        "search_k_factor": search_k_factor,
-        "char_per_token": char_per_token,
-        "since": since,
-        "limit": limit,
-        "touched_dates": sorted(set(touched_dates)),
-        "updated_at": _format_timestamp(_now()),
-    }
+    index_meta = IndexMeta(
+        embedding_model=embedder.model,
+        vector_dimension=embedder.dimension,
+        chunk_count=chunk_total,
+        entry_count=entry_total,
+        mode=mode,
+        fake_mode=fake_mode,
+        annoy_trees=ann_trees,
+        search_k_factor=search_k_factor,
+        char_per_token=char_per_token,
+        since=since,
+        limit=limit,
+        touched_dates=sorted(set(touched_dates)),
+        updated_at=_format_timestamp(_now()),
+    )
+    payload = index_meta.model_dump(mode="python", exclude_none=True)
     _index_meta_path(root).write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
