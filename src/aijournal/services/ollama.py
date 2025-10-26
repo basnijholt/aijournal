@@ -80,8 +80,8 @@ def build_ollama_config_from_mapping(
     """Construct an OllamaConfig from a loose mapping of settings."""
 
     settings = config or {}
-    resolved_model = (
-        model or os.getenv("AIJOURNAL_MODEL") or str(settings.get("model") or DEFAULT_MODEL_NAME)
+    resolved_model = model or str(
+        settings.get("model") or os.getenv("AIJOURNAL_MODEL") or DEFAULT_MODEL_NAME
     )
     resolved_host = host or os.getenv("AIJOURNAL_OLLAMA_HOST")
     temperature = _maybe_float(settings.get("temperature"))

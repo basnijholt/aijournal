@@ -21,6 +21,7 @@ A complete, self‑contained blueprint to implement a private, offline, reproduc
 - Interviewer asks targeted, low-friction follow-ups to close gaps.
 - Advisor Mode produces actionable recommendations aligned with your values, goals, boundaries, and coaching preferences.
 - Frequent commits; tests first where sensible; fake LLM mode for CI.
+- NEVER amend commits or change history! Just add new commits to fix mistakes.
 
 ### 1.1 Implementation guardrails
 

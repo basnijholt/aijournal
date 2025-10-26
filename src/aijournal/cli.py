@@ -678,7 +678,6 @@ def _invoke_structured_llm(
     try:
         ollama_config = build_ollama_config_from_mapping(
             config,
-            model=_resolve_model_name(config),
             timeout=float(timeout) if timeout is not None else None,
         )
         output = run_ollama_agent(
@@ -766,7 +765,6 @@ def _safe_llm_json(
     try:
         resolved_config = build_ollama_config_from_mapping(
             config,
-            model=_resolve_model_name(config),
             timeout=timeout,
         )
         return run_ollama_agent(resolved_config, prompt)
@@ -1025,10 +1023,6 @@ def _load_config(root: Path) -> dict[str, Any]:
 
 def _use_fake_llm() -> bool:
     return os.getenv("AIJOURNAL_FAKE_OLLAMA") == "1"
-
-
-def _resolve_model_name(config: dict[str, Any]) -> str:
-    return os.getenv("AIJOURNAL_MODEL") or str(config.get("model") or "llama3.1:8b-instruct")
 
 
 def _coerce_float(value: Any) -> float | None:
@@ -1628,7 +1622,11 @@ def _build_meta(
         resolved_model = model
     else:
         config_payload = config if isinstance(config, dict) else {}
-        resolved_model = "fake-ollama" if _use_fake_llm() else _resolve_model_name(config_payload)
+        resolved_model = (
+            "fake-ollama"
+            if _use_fake_llm()
+            else build_ollama_config_from_mapping(config_payload).model
+        )
     return SummaryMeta(
         llm_model=resolved_model,
         prompt_path=prompt_path,
@@ -2633,7 +2631,8 @@ def ingest(
         files = files[:limit]
 
     config = _load_config(root)
-    model_name = _resolve_model_name(config)
+    llm_config = build_ollama_config_from_mapping(config)
+    model_name = llm_config.model
     is_fake = _use_fake_llm()
     agent: Agent | None = None
     if not is_fake:
@@ -3205,7 +3204,9 @@ def advise(
 
     config = _load_config(root)
     advice_card = _advice_payload(question, profile, claims, config)
-    model_name = "fake-ollama" if _use_fake_llm() else _resolve_model_name(config)
+    model_name = (
+        "fake-ollama" if _use_fake_llm() else build_ollama_config_from_mapping(config).model
+    )
     advice_card.meta = _build_meta("prompts/advise.md", model=model_name)
 
     day = _created_date(_format_timestamp(_now()))
@@ -3258,7 +3259,7 @@ def ollama_health() -> None:
     config = _load_config(root)
     payload = {
         "endpoint": base,
-        "default": _resolve_model_name(config),
+        "default": build_ollama_config_from_mapping(config).model,
         "models": models_payload,
     }
     typer.echo(yaml.safe_dump(payload, sort_keys=False).rstrip())
