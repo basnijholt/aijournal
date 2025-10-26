@@ -7,21 +7,19 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
+from ..models import ClaimAtom, ClaimSource, ClaimSourceSpan, Provenance, Scope
+
 
 def _clamp01(value: float) -> float:
     return max(0.0, min(1.0, value))
 
 
-def _scope_tuple(
-    scope: dict[str, Any] | None,
-) -> tuple[str | None, tuple[str, ...], tuple[str, ...]]:
-    scope = scope or {}
-    domain = scope.get("domain")
-    context = tuple(str(item).strip() for item in scope.get("context", []) if str(item).strip())
-    conditions = tuple(
-        str(item).strip() for item in scope.get("conditions", []) if str(item).strip()
-    )
-    return (str(domain) if domain else None, context, conditions)
+def _scope_tuple(scope: Scope | None) -> tuple[str | None, tuple[str, ...], tuple[str, ...]]:
+    scope = scope or Scope()
+    domain = scope.domain if scope.domain else None
+    context = tuple(item.strip() for item in scope.context if item.strip())
+    conditions = tuple(item.strip() for item in scope.conditions if item.strip())
+    return (domain, context, conditions)
 
 
 @dataclass(frozen=True)
@@ -34,12 +32,12 @@ class ClaimSignature:
     scope: tuple[str | None, tuple[str, ...], tuple[str, ...]]
 
     @classmethod
-    def from_claim(cls, claim: dict[str, Any]) -> ClaimSignature:
+    def from_atom(cls, claim: ClaimAtom) -> ClaimSignature:
         return cls(
-            claim_type=str(claim.get("type") or "preference"),
-            subject=str(claim.get("subject") or ""),
-            predicate=str(claim.get("predicate") or ""),
-            scope=_scope_tuple(claim.get("scope")),
+            claim_type=claim.type,
+            subject=claim.subject,
+            predicate=claim.predicate,
+            scope=_scope_tuple(claim.scope),
         )
 
     def as_tuple(self) -> tuple[str, str, str, tuple[str | None, tuple[str, ...], tuple[str, ...]]]:
@@ -55,7 +53,7 @@ class ClaimConflict:
     statement: str
     existing_value: str
     incoming_value: str
-    incoming_sources: list[dict[str, Any]]
+    incoming_sources: list[ClaimSource]
 
 
 @dataclass
@@ -75,16 +73,30 @@ class ClaimConsolidator:
     def __init__(self, *, timestamp: str) -> None:
         self._timestamp = timestamp
 
-    def upsert(self, claims: list[dict[str, Any]], incoming: dict[str, Any]) -> ClaimMergeOutcome:
-        signature = ClaimSignature.from_claim(incoming)
-        index = self._find_existing_index(claims, signature, incoming.get("id"))
+    def upsert(self, claims: list[Any], incoming: ClaimAtom | dict[str, Any]) -> ClaimMergeOutcome:
+        incoming_atom = (
+            incoming if isinstance(incoming, ClaimAtom) else ClaimAtom.model_validate(incoming)
+        )
+        typed_input = all(isinstance(item, ClaimAtom) for item in claims)
+        atom_claims = [
+            item if isinstance(item, ClaimAtom) else ClaimAtom.model_validate(item)
+            for item in claims
+        ]
+        outcome = self._upsert_atoms(atom_claims, incoming_atom)
+        if typed_input:
+            claims[:] = atom_claims
+        else:
+            claims[:] = [claim.model_dump(mode="python") for claim in atom_claims]
+        return outcome
+
+    def _upsert_atoms(self, claims: list[ClaimAtom], incoming: ClaimAtom) -> ClaimMergeOutcome:
+        signature = ClaimSignature.from_atom(incoming)
+        index = self._find_existing_index(claims, signature, incoming.id)
 
         if index is None:
-            self._initialize_provenance(incoming)
+            self._initialize_provenance(incoming.provenance)
             claims.append(incoming)
-            return ClaimMergeOutcome(
-                changed=True, action="created", claim_id=str(incoming.get("id"))
-            )
+            return ClaimMergeOutcome(changed=True, action="created", claim_id=incoming.id)
 
         existing = claims[index]
         if self._values_equal(existing, incoming):
@@ -106,7 +118,7 @@ class ClaimConsolidator:
             return ClaimMergeOutcome(
                 changed=changed,
                 action="merged" if changed else "noop",
-                claim_id=str(existing.get("id")),
+                claim_id=existing.id,
                 delta_strength=delta,
             )
 
@@ -114,65 +126,60 @@ class ClaimConsolidator:
         return ClaimMergeOutcome(
             changed=conflict is not None,
             action="conflict" if conflict else "noop",
-            claim_id=str(existing.get("id")),
+            claim_id=existing.id,
             delta_strength=delta if conflict else 0.0,
             conflict=conflict,
         )
 
     def _find_existing_index(
         self,
-        claims: Sequence[dict[str, Any]],
+        claims: Sequence[ClaimAtom],
         signature: ClaimSignature,
-        incoming_id: Any,
+        incoming_id: str | None,
     ) -> int | None:
-        incoming_id_str = str(incoming_id) if incoming_id else None
         for idx, claim in enumerate(claims):
-            if incoming_id_str and str(claim.get("id")) == incoming_id_str:
+            if incoming_id and claim.id == incoming_id:
                 return idx
-            if ClaimSignature.from_claim(claim) == signature:
+            if ClaimSignature.from_atom(claim) == signature:
                 return idx
         return None
 
-    def _initialize_provenance(self, claim: dict[str, Any]) -> None:
-        provenance = claim.setdefault("provenance", {})
-        existing_count = provenance.get("observation_count")
-        if not isinstance(existing_count, int) or existing_count <= 0:
-            provenance["observation_count"] = max(1, len(provenance.get("sources", [])) or 1)
-        provenance["last_updated"] = self._timestamp
-        if not provenance.get("first_seen"):
-            provenance["first_seen"] = self._timestamp.split("T", 1)[0]
+    def _initialize_provenance(self, provenance: Provenance) -> None:
+        if provenance.observation_count <= 0:
+            provenance.observation_count = max(1, len(provenance.sources) or 1)
+        provenance.last_updated = self._timestamp
+        if not provenance.first_seen:
+            provenance.first_seen = self._timestamp.split("T", 1)[0]
 
-    def _values_equal(self, existing: dict[str, Any], incoming: dict[str, Any]) -> bool:
-        return str(existing.get("value")) == str(incoming.get("value"))
+    def _values_equal(self, existing: ClaimAtom, incoming: ClaimAtom) -> bool:
+        return existing.value == incoming.value
 
     def _merge_strength(
         self,
-        existing: dict[str, Any],
-        incoming: dict[str, Any],
+        existing: ClaimAtom,
+        incoming: ClaimAtom,
     ) -> tuple[float, bool]:
-        prev_strength = _clamp01(float(existing.get("strength", 0.6)))
-        signal = _clamp01(float(incoming.get("strength", incoming.get("confidence", 0.6))))
+        prev_strength = _clamp01(float(existing.strength))
+        signal = _clamp01(float(incoming.strength))
 
-        provenance = existing.setdefault("provenance", {})
-        n_prev = provenance.get("observation_count")
-        if not isinstance(n_prev, int) or n_prev <= 0:
-            n_prev = len(provenance.get("sources", [])) or 1
+        provenance = existing.provenance
+        n_prev = provenance.observation_count or len(provenance.sources) or 1
         w_prev = min(1.0, math.log1p(n_prev))
         w_obs = 1.0
         merged_strength = _clamp01((w_prev * prev_strength + w_obs * signal) / (w_prev + w_obs))
 
-        provenance["observation_count"] = n_prev + 1
-        provenance["last_updated"] = self._timestamp
+        provenance.observation_count = n_prev + 1
+        provenance.last_updated = self._timestamp
         delta = merged_strength - prev_strength
         if delta:
-            existing["strength"] = merged_strength
+            existing.strength = merged_strength
         else:
-            existing["strength"] = prev_strength
+            existing.strength = prev_strength
         return delta, True
 
-    def _merge_sources(self, existing: dict[str, Any], incoming: dict[str, Any]) -> bool:
-        existing_sources = list(existing.get("provenance", {}).get("sources", []))
-        incoming_sources = list(incoming.get("provenance", {}).get("sources", []))
+    def _merge_sources(self, existing: ClaimAtom, incoming: ClaimAtom) -> bool:
+        existing_sources = list(existing.provenance.sources)
+        incoming_sources = list(incoming.provenance.sources)
         combined = list(existing_sources)
         seen = {_source_key(source) for source in existing_sources}
         changed = False
@@ -184,89 +191,76 @@ class ClaimConsolidator:
             combined.append(source)
             changed = True
         if changed:
-            existing.setdefault("provenance", {})["sources"] = combined
+            existing.provenance.sources = combined
         return changed
 
-    def _maybe_promote_status(self, existing: dict[str, Any], incoming: dict[str, Any]) -> bool:
-        existing_status = str(existing.get("status", "tentative"))
-        incoming_status = str(incoming.get("status", existing_status))
-        if existing_status == "accepted":
+    def _maybe_promote_status(self, existing: ClaimAtom, incoming: ClaimAtom) -> bool:
+        if existing.status == "accepted":
             return False
-        if incoming_status == "accepted":
-            existing["status"] = "accepted"
+        if incoming.status == "accepted":
+            existing.status = "accepted"
             return True
         return False
 
-    def _maybe_upgrade_method(self, existing: dict[str, Any], incoming: dict[str, Any]) -> bool:
+    def _maybe_upgrade_method(self, existing: ClaimAtom, incoming: ClaimAtom) -> bool:
         priorities = {"behavioral": 3, "self_report": 2, "inferred": 1}
-        existing_method = str(existing.get("method", "inferred"))
-        incoming_method = str(incoming.get("method", existing_method))
-        if priorities.get(incoming_method, 0) > priorities.get(existing_method, 0):
-            existing["method"] = incoming_method
+        existing_method = priorities.get(existing.method, 0)
+        incoming_method = priorities.get(incoming.method, 0)
+        if incoming_method > existing_method:
+            existing.method = incoming.method
             return True
         return False
 
-    def _propagate_user_verified(self, existing: dict[str, Any], incoming: dict[str, Any]) -> bool:
-        if existing.get("user_verified"):
+    def _propagate_user_verified(self, existing: ClaimAtom, incoming: ClaimAtom) -> bool:
+        if existing.user_verified:
             return False
-        if incoming.get("user_verified"):
-            existing["user_verified"] = True
+        if incoming.user_verified:
+            existing.user_verified = True
             return True
         return False
 
     def _handle_conflict(
         self,
-        existing: dict[str, Any],
-        incoming: dict[str, Any],
+        existing: ClaimAtom,
+        incoming: ClaimAtom,
         signature: ClaimSignature,
     ) -> tuple[ClaimConflict | None, float]:
-        prev_strength = _clamp01(float(existing.get("strength", 0.6)))
+        prev_strength = _clamp01(float(existing.strength))
         new_strength = _clamp01(prev_strength - 0.15)
         changed = False
         if new_strength != prev_strength:
-            existing["strength"] = new_strength
+            existing.strength = new_strength
             changed = True
-        if str(existing.get("status")) != "tentative":
-            existing["status"] = "tentative"
+        if existing.status != "tentative":
+            existing.status = "tentative"
             changed = True
-        provenance = existing.setdefault("provenance", {})
-        count = provenance.get("observation_count")
-        if not isinstance(count, int) or count <= 0:
-            count = len(provenance.get("sources", [])) or 1
-        provenance["observation_count"] = count + 1
-        provenance["last_updated"] = self._timestamp
+
+        provenance = existing.provenance
+        count = provenance.observation_count or len(provenance.sources) or 1
+        provenance.observation_count = count + 1
+        provenance.last_updated = self._timestamp
         sources_changed = self._merge_sources(existing, incoming)
         changed = changed or sources_changed
         if not changed:
             return (None, 0.0)
         conflict = ClaimConflict(
-            claim_id=str(existing.get("id")),
+            claim_id=existing.id,
             signature=signature,
-            statement=str(existing.get("statement", "")),
-            existing_value=str(existing.get("value", "")),
-            incoming_value=str(incoming.get("value", "")),
-            incoming_sources=list(incoming.get("provenance", {}).get("sources", [])),
+            statement=existing.statement,
+            existing_value=existing.value,
+            incoming_value=incoming.value,
+            incoming_sources=list(incoming.provenance.sources),
         )
         return (conflict, new_strength - prev_strength)
 
 
-def _source_key(source: dict[str, Any]) -> tuple[str, tuple[tuple[Any, ...], ...]]:
-    entry_id = str(source.get("entry_id", ""))
-    spans = source.get("spans") if isinstance(source, dict) else None
-    normalized_spans: list[tuple[Any, ...]] = []
-    if isinstance(spans, Sequence):
-        for span in spans:
-            if not isinstance(span, dict):
-                continue
-            normalized_spans.append(
-                (
-                    span.get("type"),
-                    span.get("index"),
-                    span.get("start"),
-                    span.get("end"),
-                ),
-            )
-    return (entry_id, tuple(normalized_spans))
+def _source_key(
+    source: ClaimSource,
+) -> tuple[str, tuple[tuple[str | None, int | None, int | None, int | None], ...]]:
+    def span_key(span: ClaimSourceSpan) -> tuple[str | None, int | None, int | None, int | None]:
+        return (span.type, span.index, span.start, span.end)
+
+    return (source.entry_id, tuple(span_key(span) for span in source.spans))
 
 
 __all__ = [

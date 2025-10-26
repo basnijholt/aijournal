@@ -10,7 +10,7 @@ import re
 import sqlite3
 from array import array
 from collections.abc import Iterable, Sequence
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from math import ceil, exp
@@ -34,19 +34,32 @@ from aijournal.ingest_agent import (
 )
 from aijournal.io.yaml_io import load_yaml_model, write_yaml_model
 from aijournal.models import (
+    AdviceCard,
+    AdviceRecommendation,
+    AdviceReference,
     ClaimAtom,
+    ClaimProposal,
     ClaimsFile,
+    ClaimSource,
+    ClaimSourceSpan,
+    DailySummary,
+    FacetProposal,
+    InterviewQuestion,
+    InterviewSet,
     ManifestEntry,
+    MicroFactsFile,
     NormalizedEntry,
     PersonaCore,
     PersonaCoreFile,
     PersonaCoreMeta,
+    ProfileSuggestions,
     ProfileSuggestionUpdate,
     ProfileSuggestionUpsert,
-    ProfileSuggestions,
     ProfileUpdateBatch,
     ProfileUpdateInput,
     ProfileUpdateProposals,
+    Provenance,
+    Scope,
     SelfProfile,
     SummaryMeta,
 )
@@ -274,6 +287,17 @@ PERSONA_DEFAULTS = {
     "max_claims": 24,
     "min_claims": 8,
 }
+
+
+@dataclass
+class PersonaClaimSelection:
+    """Persona claim selection result with token accounting."""
+
+    claims: list[ClaimAtom]
+    trimmed_ids: list[str]
+    planned_tokens: int
+    budget_exceeded: bool
+
 
 DEFAULT_CHAR_PER_TOKEN = 4.2
 
@@ -900,129 +924,204 @@ def _coerce_timestamp(value: Any) -> str | None:
     return text if text else None
 
 
-def _ensure_scope_dict(raw: Any) -> dict[str, Any]:
-    scope = raw if isinstance(raw, dict) else {}
-    domain = scope.get("domain")
-    scope_dict: dict[str, Any] = {"domain": str(domain) if domain else None}
-    context_raw = scope.get("context") if isinstance(scope, dict) else None
-    context = context_raw if isinstance(context_raw, list) else []
-    scope_dict["context"] = [str(item).strip() for item in context if str(item).strip()]
-    conditions_raw = scope.get("conditions") if isinstance(scope, dict) else None
-    conditions = conditions_raw if isinstance(conditions_raw, list) else []
-    scope_dict["conditions"] = [str(item).strip() for item in conditions if str(item).strip()]
-    return scope_dict
+def _normalize_scope(raw: Any) -> Scope:
+    if isinstance(raw, Scope):
+        return raw.model_copy(deep=True)
+
+    scope_dict = raw if isinstance(raw, dict) else {}
+    domain_raw = scope_dict.get("domain")
+    domain = str(domain_raw).strip() if isinstance(domain_raw, str) and domain_raw.strip() else None
+
+    def _string_list(values: Any) -> list[str]:
+        if not isinstance(values, list):
+            return []
+        sanitized: list[str] = []
+        for item in values:
+            text = str(item).strip()
+            if text:
+                sanitized.append(text)
+        return sanitized
+
+    context = _string_list(scope_dict.get("context"))
+    conditions = _string_list(scope_dict.get("conditions"))
+    return Scope(domain=domain, context=context, conditions=conditions)
 
 
-def _ensure_provenance_dict(
-    raw: Any,
-    timestamp: str,
-    default_sources: list[dict[str, Any]] | None,
-) -> dict[str, Any]:
-    provenance = raw if isinstance(raw, dict) else {}
-    sources_raw = provenance.get("sources") if isinstance(provenance, dict) else None
-    normalized_sources: list[dict[str, Any]] = []
-    if isinstance(sources_raw, list):
-        for source in sources_raw:
-            if not isinstance(source, dict):
-                continue
-            entry_id = source.get("entry_id")
-            if not entry_id:
-                continue
-            spans = source.get("spans") if isinstance(source.get("spans"), list) else []
-            normalized_sources.append(
-                {
-                    "entry_id": str(entry_id),
-                    "spans": spans,
-                },
-            )
-    if not normalized_sources and default_sources:
-        normalized_sources = [dict(src) for src in default_sources]
-    provenance = dict(provenance)
-    provenance["sources"] = normalized_sources
-    first_seen_raw = provenance.get("first_seen")
-    first_seen = _coerce_timestamp(first_seen_raw)
-    if first_seen:
-        provenance["first_seen"] = _created_date(first_seen)
+def _normalize_sources(raw: Any) -> list[ClaimSource]:
+    sources: list[ClaimSource] = []
+    if not isinstance(raw, list):
+        return sources
+    for source in raw:
+        if isinstance(source, ClaimSource):
+            sources.append(source.model_copy(deep=True))
+            continue
+        if not isinstance(source, dict):
+            continue
+        entry_id = source.get("entry_id")
+        if not entry_id:
+            continue
+        spans_raw = source.get("spans")
+        spans: list[ClaimSourceSpan] = []
+        if isinstance(spans_raw, list):
+            for span in spans_raw:
+                if isinstance(span, ClaimSourceSpan):
+                    spans.append(span.model_copy(deep=True))
+                    continue
+                if not isinstance(span, dict):
+                    continue
+                spans.append(
+                    ClaimSourceSpan(
+                        type=str(span.get("type") or "excerpt"),
+                        index=_coerce_int(span.get("index")),
+                        start=_coerce_int(span.get("start")),
+                        end=_coerce_int(span.get("end")),
+                    ),
+                )
+        sources.append(ClaimSource(entry_id=str(entry_id), spans=spans))
+    return sources
+
+
+def _default_claim_sources(raw: ClaimAtom | dict[str, Any]) -> list[ClaimSource]:
+    claim_id: str | None
+    if isinstance(raw, ClaimAtom):
+        claim_id = raw.id
+    elif isinstance(raw, dict):
+        claim_id_raw = raw.get("id")
+        claim_id = str(claim_id_raw) if claim_id_raw else None
     else:
-        provenance["first_seen"] = _created_date(timestamp)
-    last_updated = _coerce_timestamp(provenance.get("last_updated")) or timestamp
-    provenance["last_updated"] = last_updated
-    count_raw = provenance.get("observation_count")
-    count = _coerce_int(count_raw)
-    if count is None or count <= 0:
-        count = len(normalized_sources) or 1
-    provenance["observation_count"] = max(1, count)
+        claim_id = None
+    if not claim_id:
+        return []
+    claim_id_str = str(claim_id)
+    return [ClaimSource(entry_id=claim_id_str, spans=[])]
+
+
+def _normalize_provenance(
+    raw: Any,
+    *,
+    timestamp: str,
+    default_sources: Sequence[ClaimSource] | None,
+) -> Provenance:
+    if isinstance(raw, Provenance):
+        provenance = raw.model_copy(deep=True)
+    else:
+        data = raw if isinstance(raw, dict) else {}
+        sources = _normalize_sources(data.get("sources"))
+        observation_count = _coerce_int(data.get("observation_count"))
+        first_seen_coerced = _coerce_timestamp(data.get("first_seen"))
+        last_updated_coerced = _coerce_timestamp(data.get("last_updated")) or timestamp
+        provenance = Provenance(
+            sources=sources,
+            first_seen=_created_date(first_seen_coerced or timestamp),
+            last_updated=last_updated_coerced,
+            observation_count=observation_count
+            if observation_count and observation_count > 0
+            else max(1, len(sources) or 1),
+        )
+
+    if (not provenance.sources) and default_sources:
+        provenance.sources = [source.model_copy(deep=True) for source in default_sources]
+
+    first_seen_ts = _coerce_timestamp(provenance.first_seen)
+    provenance.first_seen = (
+        _created_date(first_seen_ts) if first_seen_ts else _created_date(timestamp)
+    )
+    provenance.last_updated = _coerce_timestamp(provenance.last_updated) or timestamp
+    if provenance.observation_count <= 0:
+        provenance.observation_count = max(1, len(provenance.sources) or 1)
     return provenance
 
 
-def _ensure_claim_atom_dict(
-    data: dict[str, Any],
+def _normalize_claim_atom(
+    data: ClaimAtom | dict[str, Any],
     *,
     timestamp: str,
-    default_sources: list[dict[str, Any]] | None = None,
-) -> dict[str, Any]:
-    atom = dict(data)
-    statement = str(atom.get("statement") or "").strip()
+    default_sources: Sequence[ClaimSource] | None = None,
+) -> ClaimAtom:
+    if default_sources is None:
+        default_sources = _default_claim_sources(data)
+
+    base = data.model_dump(mode="python") if isinstance(data, ClaimAtom) else dict(data)
+
+    statement = str(base.get("statement") or "").strip()
     if not statement:
         msg = "Claim statement is required"
         raise ValueError(msg)
-    atom["statement"] = statement
 
-    claim_type = str(atom.get("type") or "preference").strip() or "preference"
-    atom["type"] = claim_type
+    claim_type_raw = str(base.get("type") or "preference").strip().lower()
+    valid_types = {
+        "preference",
+        "value",
+        "goal",
+        "boundary",
+        "trait",
+        "habit",
+        "aversion",
+        "skill",
+    }
+    claim_type = claim_type_raw if claim_type_raw in valid_types else "preference"
 
-    subject = atom.get("subject") or atom.get("id") or _slugify_title(statement) or "observation"
-    atom["subject"] = str(subject)
+    subject_candidate = (
+        base.get("subject") or base.get("id") or _slugify_title(statement) or "observation"
+    )
+    subject = str(subject_candidate).strip() or "observation"
 
-    predicate = str(atom.get("predicate") or "statement")
-    atom["predicate"] = predicate
+    predicate = str(base.get("predicate") or "statement").strip() or "statement"
 
-    value_text = atom.get("value")
-    if value_text is None or not str(value_text).strip():
-        value_text = statement
-    atom["value"] = str(value_text)
+    value_raw = base.get("value")
+    value = (
+        str(value_raw).strip() if value_raw is not None and str(value_raw).strip() else statement
+    )
 
-    claim_id = atom.get("id")
+    claim_id_raw = base.get("id")
+    if claim_id_raw:
+        claim_id = str(claim_id_raw).strip() or None
+    else:
+        claim_id = None
     if not claim_id:
-        subject_slug = _slugify_title(str(subject)) or "subject"
+        subject_slug = _slugify_title(subject) or "subject"
         predicate_slug = _slugify_title(predicate) or "predicate"
         claim_id = f"{claim_type}.{subject_slug}.{predicate_slug}"
-    atom["id"] = str(claim_id)[:96]
+    claim_id = claim_id[:96]
 
-    atom["scope"] = _ensure_scope_dict(atom.get("scope"))
+    scope = _normalize_scope(base.get("scope"))
 
-    strength_value = atom.get("strength")
-    if strength_value is None:
-        strength_value = atom.get("confidence")
-    base_strength = _coerce_float(strength_value)
-    atom["strength"] = _clamp01(base_strength if base_strength is not None else 0.6)
+    strength_value = base.get("strength", base.get("confidence"))
+    strength_numeric = _coerce_float(strength_value)
+    strength = _clamp01(strength_numeric if strength_numeric is not None else 0.6)
 
-    atom["status"] = str(atom.get("status") or "tentative")
-    atom["method"] = str(atom.get("method") or "inferred")
-    atom["user_verified"] = bool(atom.get("user_verified", False))
-    atom["review_after_days"] = _coerce_int(atom.get("review_after_days")) or 120
+    status_raw = str(base.get("status") or "tentative").strip().lower()
+    valid_status = {"accepted", "tentative", "rejected"}
+    status = status_raw if status_raw in valid_status else "tentative"
 
-    provenance = _ensure_provenance_dict(
-        atom.get("provenance"),
-        timestamp,
-        default_sources,
+    method_raw = str(base.get("method") or "inferred").strip().lower()
+    valid_methods = {"self_report", "inferred", "behavioral"}
+    method = method_raw if method_raw in valid_methods else "inferred"
+
+    user_verified = bool(base.get("user_verified", False))
+    review_after_days = _coerce_int(base.get("review_after_days")) or 120
+
+    provenance = _normalize_provenance(
+        base.get("provenance"),
+        timestamp=timestamp,
+        default_sources=default_sources,
     )
-    allowed = {
-        "id": atom["id"],
-        "type": atom["type"],
-        "subject": atom["subject"],
-        "predicate": atom["predicate"],
-        "value": atom["value"],
-        "statement": atom["statement"],
-        "scope": atom["scope"],
-        "strength": atom["strength"],
-        "status": atom["status"],
-        "method": atom["method"],
-        "user_verified": atom["user_verified"],
-        "review_after_days": atom["review_after_days"],
-        "provenance": provenance,
-    }
-    return allowed
+
+    return ClaimAtom(
+        id=claim_id,
+        type=claim_type,  # type: ignore[arg-type]
+        subject=subject,
+        predicate=predicate,
+        value=value,
+        statement=statement,
+        scope=scope,
+        strength=strength,
+        status=status,  # type: ignore[arg-type]
+        method=method,  # type: ignore[arg-type]
+        user_verified=user_verified,
+        review_after_days=review_after_days,
+        provenance=provenance,
+    )
 
 
 def _build_claim_atom_from_entry(
@@ -1032,14 +1131,9 @@ def _build_claim_atom_from_entry(
     statement: str,
     strength: float,
     status: str,
-) -> dict[str, Any]:
+) -> ClaimAtom:
     timestamp = _format_timestamp(_now())
-    default_sources = [
-        {
-            "entry_id": entry.id or claim_id,
-            "spans": [],
-        },
-    ]
+    default_sources = [ClaimSource(entry_id=entry.id or claim_id, spans=[])]
     raw = {
         "id": claim_id,
         "type": "preference",
@@ -1058,11 +1152,11 @@ def _build_claim_atom_from_entry(
         "user_verified": False,
         "review_after_days": 120,
         "provenance": {
-            "sources": default_sources,
+            "sources": [source.model_dump(mode="python") for source in default_sources],
             "first_seen": entry.created_at or timestamp,
         },
     }
-    return _ensure_claim_atom_dict(raw, timestamp=timestamp, default_sources=default_sources)
+    return _normalize_claim_atom(raw, timestamp=timestamp, default_sources=default_sources)
 
 
 def _clean_summary(text: str | None, fallback: str | None = None) -> str | None:
@@ -1361,12 +1455,12 @@ def _fake_microfacts(entries: Iterable[NormalizedEntry]) -> list[dict[str, Any]]
 def _fake_advise(
     question: str,
     profile: dict[str, Any],
-    claims: list[dict[str, Any]],
-) -> dict[str, Any]:
-    claim = claims[0] if claims else {}
+    claims: Sequence[ClaimAtom],
+) -> AdviceCard:
+    primary_claim = claims[0] if claims else None
     advice_id = _advice_identifier(question)
-    claim_statement = claim.get("statement") or "Reflect on priorities"
-    claim_id = claim.get("id")
+    claim_statement = primary_claim.statement if primary_claim else "Reflect on priorities"
+    claim_id = primary_claim.id if primary_claim else None
 
     facets: list[str] = []
     if profile.get("affect_energy"):
@@ -1376,54 +1470,54 @@ def _fake_advise(
     if profile.get("values_motivations"):
         facets.append("values_motivations.schwartz_top5")
 
-    reference = {
-        "facets": facets,
-        "claims": [claim_id] if claim_id else [],
-    }
+    alignment = AdviceReference(
+        facets=facets,
+        claims=[claim_id] if claim_id else [],
+    )
 
     assumption = (
         f"Reference claim: {claim_statement}" if claim_statement else "No verified claims available"
     )
 
-    recommendation = {
-        "title": claim_statement,
-        "why_this_fits_you": {
-            "facets": list(reference["facets"]),
-            "claims": list(reference["claims"]),
-        },
-        "steps": [
+    recommendation = AdviceRecommendation(
+        title=claim_statement,
+        why_this_fits_you=AdviceReference(
+            facets=list(alignment.facets),
+            claims=list(alignment.claims),
+        ),
+        steps=[
             "Protect two deep-work mornings for focused execution.",
             f"Question under review: {question}",
         ],
-        "risks": ["Schedule collisions", "Unclear stakeholder updates"],
-        "mitigations": [
+        risks=["Schedule collisions", "Unclear stakeholder updates"],
+        mitigations=[
             "Share the plan with collaborators early.",
             "Add end-of-day shutdown reminders to honor boundaries.",
         ],
-    }
+    )
 
     style = profile.get("coaching_prefs") or {"tone": "direct", "depth": "concrete-first"}
 
-    return {
-        "id": advice_id,
-        "query": question,
-        "assumptions": [assumption],
-        "recommendations": [recommendation],
-        "tradeoffs": ["Shipping speed may dip slightly while routines stabilize."],
-        "next_actions": [
+    return AdviceCard(
+        id=advice_id,
+        query=question,
+        assumptions=[assumption],
+        recommendations=[recommendation],
+        tradeoffs=["Shipping speed may dip slightly while routines stabilize."],
+        next_actions=[
             "Block two 3-hour focus windows next week.",
             "Schedule a 10-minute Friday review with yourself.",
         ],
-        "confidence": 0.5,
-        "alignment": reference,
-        "style": style,
-    }
+        confidence=0.5,
+        alignment=alignment,
+        style=style,
+    )
 
 
 def _fake_profile_suggestions(
     entries: Sequence[NormalizedEntry],
     profile: dict[str, Any],
-    claims: list[dict[str, Any]],
+    claims: Sequence[ClaimAtom],
 ) -> ProfileSuggestions:
     upserts: list[ProfileSuggestionUpsert] = []
     updates: list[ProfileSuggestionUpdate] = []
@@ -1431,17 +1525,18 @@ def _fake_profile_suggestions(
     for entry in entries[:1]:
         statement = entry.title or "New observation"
         claim_id = f"auto_{entry.id or 'entry'}"
+        claim_model = _build_claim_atom_from_entry(
+            entry,
+            claim_id=claim_id,
+            statement=statement,
+            strength=0.6,
+            status="tentative",
+        )
         upserts.append(
             ProfileSuggestionUpsert(
                 target="claims",
                 operation="upsert",
-                value=_build_claim_atom_from_entry(
-                    entry,
-                    claim_id=claim_id,
-                    statement=statement,
-                    strength=0.6,
-                    status="tentative",
-                ),
+                value=claim_model,
             ),
         )
 
@@ -1460,10 +1555,10 @@ def _fake_profile_suggestions(
 def _fake_characterize(
     entries: Sequence[NormalizedEntry],
     profile: dict[str, Any],
-    claims: list[dict[str, Any]],
-) -> dict[str, Any]:
+    claims: Sequence[ClaimAtom],
+) -> ProfileUpdateProposals:
     if not entries:
-        return {"claims": [], "facets": []}
+        return ProfileUpdateProposals()
 
     seed = entries[0]
     date = _created_date(seed.created_at or _format_timestamp(_now()))
@@ -1483,21 +1578,31 @@ def _fake_characterize(
         status="tentative",
     )
 
-    facet = {
-        "path": "values_motivations.recurring_theme",
-        "operation": "set",
-        "value": {
+    facet = FacetProposal(
+        path="values_motivations.recurring_theme",
+        value={
             "label": theme,
             "tag_hint": tag,
             "last_seen": date,
         },
-        "method": "inferred",
-        "confidence": 0.55,
-        "review_after_days": 90,
-        "user_verified": False,
-    }
+        operation="set",
+        method="inferred",
+        confidence=0.55,
+        review_after_days=90,
+        user_verified=False,
+    )
 
-    return {"claims": [claim], "facets": [facet]}
+    claim_proposal = ClaimProposal(
+        claim=claim,
+        normalized_ids=[],
+        evidence_hashes=[],
+        manifest_hashes=[],
+    )
+
+    return ProfileUpdateProposals(
+        claims=[claim_proposal],
+        facets=[facet],
+    )
 
 
 def _coerce_str_list(value: Any) -> list[str]:
@@ -1522,7 +1627,7 @@ def _summarize_day_payload(
     date: str,
     config: dict[str, Any],
 ) -> DailySummary:
-    def fallback() -> DailySummary:
+    def fallback_model() -> DailySummary:
         bullets = _fake_summarize(entries)
         return DailySummary(
             day=date,
@@ -1531,8 +1636,11 @@ def _summarize_day_payload(
             todo_candidates=_todo_from_entries(entries),
         )
 
+    def fallback_dict() -> dict[str, Any]:
+        return fallback_model().model_dump(mode="python")
+
     if _use_fake_llm():
-        return fallback()
+        return fallback_model()
 
     try:
         runner = _build_ollama_runner(config)
@@ -1542,22 +1650,15 @@ def _summarize_day_payload(
             fg=typer.colors.YELLOW,
             err=True,
         )
-        return fallback()
-
-    payload = _safe_llm_json(
-        "prompts/summarize_day.md",
-        {"date": date, "entries_json": _json_block(_entries_to_payload(entries))},
-        runner,
-        fallback,
-    )
-    return DailySummary(
-        day=str(payload.get("day") or date),
-        bullets=_coerce_str_list(payload.get("bullets")),
-        highlights=_coerce_str_list(payload.get("highlights"))
-        or _coerce_str_list(payload.get("bullets"))[:3],
-        todo_candidates=_coerce_str_list(payload.get("todo_candidates"))
-        or _todo_from_entries(entries),
-    )
+        payload = fallback_dict()
+    else:
+        payload = _safe_llm_json(
+            "prompts/summarize_day.md",
+            {"date": date, "entries_json": _json_block(_entries_to_payload(entries))},
+            runner,
+            fallback_dict,
+        )
+    return DailySummary.model_validate(payload)
 
 
 def _microfacts_payload(
@@ -1565,11 +1666,14 @@ def _microfacts_payload(
     date: str,
     config: dict[str, Any],
 ) -> MicroFactsFile:
-    def fallback() -> MicroFactsFile:
-        return MicroFactsFile(facts=_fake_microfacts(entries))
+    def fallback_model() -> MicroFactsFile:
+        return MicroFactsFile.model_validate({"facts": _fake_microfacts(entries)})
+
+    def fallback_dict() -> dict[str, Any]:
+        return fallback_model().model_dump(mode="python")
 
     if _use_fake_llm():
-        return fallback()
+        return fallback_model()
 
     try:
         runner = _build_ollama_runner(config)
@@ -1579,24 +1683,21 @@ def _microfacts_payload(
             fg=typer.colors.YELLOW,
             err=True,
         )
-        return fallback()
-
-    payload = _safe_llm_json(
-        "prompts/extract_facts.md",
-        {"date": date, "entries_json": _json_block(_entries_to_payload(entries))},
-        runner,
-        fallback,
-    )
-    facts = payload.get("facts")
-    if not isinstance(facts, list):
-        return fallback()
-    return MicroFactsFile(facts=facts)
+        payload = fallback_dict()
+    else:
+        payload = _safe_llm_json(
+            "prompts/extract_facts.md",
+            {"date": date, "entries_json": _json_block(_entries_to_payload(entries))},
+            runner,
+            fallback_dict,
+        )
+    return MicroFactsFile.model_validate(payload)
 
 
 def _profile_suggestions_payload(
     entries: Sequence[NormalizedEntry],
     profile: dict[str, Any],
-    claims: list[dict[str, Any]],
+    claims: Sequence[ClaimAtom],
     date: str,
     config: dict[str, Any],
 ) -> ProfileSuggestions:
@@ -1621,7 +1722,9 @@ def _profile_suggestions_payload(
                     "date": date,
                     "entries_json": _json_block(_entries_to_payload(entries)),
                     "profile_json": _json_block(profile),
-                    "claims_json": _json_block({"claims": claims}),
+                    "claims_json": _json_block(
+                        {"claims": [claim.model_dump(mode="python") for claim in claims]}
+                    ),
                 },
                 runner,
                 lambda: fallback_model.model_dump(mode="python"),
@@ -1638,16 +1741,21 @@ def _profile_suggestions_payload(
                 if not isinstance(upsert, dict):
                     continue
                 value = upsert.get("value")
-                if not isinstance(value, dict):
+                if not isinstance(value, (dict, ClaimAtom)):
                     continue
                 try:
-                    normalized_value = _ensure_claim_atom_dict(value, timestamp=timestamp)
-                except ValueError:
+                    normalized_model = _normalize_claim_atom(value, timestamp=timestamp)
+                except (ValidationError, ValueError):
                     continue
-                entry = dict(upsert)
-                entry["value"] = normalized_value
                 try:
-                    normalized_upserts.append(ProfileSuggestionUpsert.model_validate(entry))
+                    normalized_upserts.append(
+                        ProfileSuggestionUpsert(
+                            target=str(upsert.get("target") or "claims"),
+                            operation=str(upsert.get("operation") or "upsert"),
+                            value=normalized_model,
+                            rationale=upsert.get("rationale") or upsert.get("reason"),
+                        ),
+                    )
                 except ValidationError:
                     continue
 
@@ -1672,11 +1780,11 @@ def _profile_suggestions_payload(
 def _characterization_context(
     entries: Sequence[NormalizedEntry],
     manifest_index: dict[str, ManifestEntry],
-) -> tuple[list[str], list[str], list[str], list[dict[str, Any]]]:
+) -> tuple[list[str], list[str], list[str], list[ClaimSource]]:
     normalized_ids: list[str] = []
     source_hashes: set[str] = set()
     manifest_hashes: set[str] = set()
-    default_sources: list[dict[str, Any]] = []
+    default_sources: list[ClaimSource] = []
 
     for idx, entry in enumerate(entries):
         entry_id = entry.id or f"entry-{idx + 1}"
@@ -1688,7 +1796,7 @@ def _characterization_context(
         manifest_hash = manifest_entry.hash if manifest_entry else None
         if manifest_hash:
             manifest_hashes.add(str(manifest_hash))
-        default_sources.append({"entry_id": entry_id, "spans": []})
+        default_sources.append(ClaimSource(entry_id=entry_id, spans=[]))
 
     return (
         normalized_ids,
@@ -1698,79 +1806,129 @@ def _characterization_context(
     )
 
 
+def _merge_unique(existing: Iterable[str], extras: Iterable[str]) -> list[str]:
+    seen: set[str] = set()
+    merged: list[str] = []
+    for value in existing:
+        if not value:
+            continue
+        key = str(value)
+        if key in seen:
+            continue
+        seen.add(key)
+        merged.append(key)
+    for value in extras:
+        if not value:
+            continue
+        key = str(value)
+        if key in seen:
+            continue
+        seen.add(key)
+        merged.append(key)
+    return merged
+
+
 def _normalize_claim_proposals(
-    raw_claims: Iterable[dict[str, Any]],
+    raw_claims: Iterable[Any],
     *,
     normalized_ids: list[str],
     evidence_hashes: list[str],
     manifest_hashes: list[str],
-    default_sources: list[dict[str, Any]],
+    default_sources: Sequence[ClaimSource],
     timestamp: str,
-) -> list[dict[str, Any]]:
-    proposals: list[dict[str, Any]] = []
+) -> list[ClaimProposal]:
+    proposals: list[ClaimProposal] = []
     for raw in raw_claims:
+        if isinstance(raw, ClaimProposal):
+            claim_model = raw.claim.model_copy(deep=True)
+            proposals.append(
+                ClaimProposal(
+                    claim=claim_model,
+                    normalized_ids=_merge_unique(raw.normalized_ids, normalized_ids),
+                    evidence_hashes=_merge_unique(raw.evidence_hashes, evidence_hashes),
+                    manifest_hashes=_merge_unique(raw.manifest_hashes, manifest_hashes),
+                    rationale=raw.rationale,
+                ),
+            )
+            continue
         if not isinstance(raw, dict):
             continue
         raw_claim = raw.get("claim")
-        candidate = raw_claim if isinstance(raw_claim, dict) else raw
+        candidate = raw_claim if raw_claim is not None else raw
         try:
-            claim = _ensure_claim_atom_dict(
+            claim_model = _normalize_claim_atom(
                 candidate,
                 timestamp=timestamp,
                 default_sources=default_sources,
             )
-        except ValueError:
+        except (ValidationError, ValueError):
             continue
 
         proposals.append(
-            {
-                "claim": claim,
-                "normalized_ids": list(normalized_ids),
-                "evidence_hashes": list(evidence_hashes),
-                "manifest_hashes": list(manifest_hashes),
-                "rationale": raw.get("rationale") or raw.get("reason"),
-            },
+            ClaimProposal(
+                claim=claim_model,
+                normalized_ids=list(normalized_ids),
+                evidence_hashes=list(evidence_hashes),
+                manifest_hashes=list(manifest_hashes),
+                rationale=str(raw.get("rationale") or raw.get("reason") or "").strip() or None,
+            ),
         )
     return proposals
 
 
 def _normalize_facet_proposals(
-    raw_facets: Iterable[dict[str, Any]],
+    raw_facets: Iterable[Any],
     *,
     normalized_ids: list[str],
     evidence_hashes: list[str],
-) -> list[dict[str, Any]]:
-    proposals: list[dict[str, Any]] = []
+) -> list[FacetProposal]:
+    proposals: list[FacetProposal] = []
     for raw in raw_facets:
+        if isinstance(raw, FacetProposal):
+            proposals.append(
+                FacetProposal(
+                    path=raw.path,
+                    value=raw.value,
+                    operation=raw.operation,
+                    method=raw.method,
+                    confidence=raw.confidence,
+                    review_after_days=raw.review_after_days,
+                    user_verified=raw.user_verified,
+                    normalized_ids=_merge_unique(raw.normalized_ids, normalized_ids),
+                    evidence_hashes=_merge_unique(raw.evidence_hashes, evidence_hashes),
+                    rationale=raw.rationale,
+                ),
+            )
+            continue
         if not isinstance(raw, dict):
             continue
         path = raw.get("path") or raw.get("target")
         if not path:
             continue
-        value = raw.get("value")
-        proposal = {
-            "path": str(path),
-            "value": value,
-            "operation": raw.get("operation") or "set",
-            "method": raw.get("method") or "inferred",
-            "confidence": _coerce_float(raw.get("confidence")) or 0.55,
-            "review_after_days": _coerce_int(raw.get("review_after_days")) or 90,
-            "user_verified": bool(raw.get("user_verified", False)),
-            "normalized_ids": list(normalized_ids),
-            "evidence_hashes": list(evidence_hashes),
-            "rationale": raw.get("rationale") or raw.get("reason"),
-        }
-        proposals.append(proposal)
+        proposals.append(
+            FacetProposal(
+                path=str(path),
+                value=raw.get("value"),
+                operation=str(raw.get("operation") or "set"),
+                method=str(raw.get("method") or "inferred"),
+                confidence=_coerce_float(raw.get("confidence")) or 0.55,
+                review_after_days=_coerce_int(raw.get("review_after_days")) or 90,
+                user_verified=bool(raw.get("user_verified", False)),
+                normalized_ids=_merge_unique(raw.get("normalized_ids", []), normalized_ids),
+                evidence_hashes=_merge_unique(raw.get("evidence_hashes", []), evidence_hashes),
+                rationale=str(raw.get("rationale") or raw.get("reason") or "").strip() or None,
+            ),
+        )
     return proposals
 
 
 def _characterize_payload(
     entries: Sequence[NormalizedEntry],
     profile: dict[str, Any],
-    claims: list[dict[str, Any]],
+    claims: Sequence[ClaimAtom],
     manifest_index: dict[str, ManifestEntry],
     config: dict[str, Any],
-) -> dict[str, Any]:
+) -> ProfileUpdateProposals:
     claim_timestamp = _format_timestamp(_now())
     (
         normalized_ids,
@@ -1779,11 +1937,16 @@ def _characterize_payload(
         default_sources,
     ) = _characterization_context(entries, manifest_index)
 
-    def fallback() -> dict[str, Any]:
+    def fallback_model() -> ProfileUpdateProposals:
         return _fake_characterize(entries, profile, claims)
 
+    def fallback_dict() -> dict[str, Any]:
+        return fallback_model().model_dump(mode="python")
+
     if _use_fake_llm():
-        raw = fallback()
+        base = fallback_model()
+        raw_claims: Iterable[Any] = base.claims
+        raw_facets: Iterable[Any] = base.facets
     else:
         try:
             runner = _build_ollama_runner(config)
@@ -1793,7 +1956,7 @@ def _characterize_payload(
                 fg=typer.colors.YELLOW,
                 err=True,
             )
-            raw = fallback()
+            raw = fallback_dict()
         else:
             manifest_payload = _json_block(
                 {key: entry.model_dump(mode="python") for key, entry in manifest_index.items()},
@@ -1804,17 +1967,19 @@ def _characterize_payload(
                     "date": _created_date(claim_timestamp),
                     "entries_json": _json_block(_entries_to_payload(entries)),
                     "profile_json": _json_block(profile),
-                    "claims_json": _json_block({"claims": claims}),
+                    "claims_json": _json_block(
+                        {"claims": [claim.model_dump(mode="python") for claim in claims]}
+                    ),
                     "manifest_json": manifest_payload,
                 },
                 runner,
-                fallback,
+                fallback_dict,
             )
 
-    raw_claim_candidates = raw.get("claims")
-    raw_claims = raw_claim_candidates if isinstance(raw_claim_candidates, list) else []
-    raw_facet_candidates = raw.get("facets")
-    raw_facets = raw_facet_candidates if isinstance(raw_facet_candidates, list) else []
+        raw_claim_candidates = raw.get("claims")
+        raw_claims = raw_claim_candidates if isinstance(raw_claim_candidates, list) else []
+        raw_facet_candidates = raw.get("facets")
+        raw_facets = raw_facet_candidates if isinstance(raw_facet_candidates, list) else []
 
     claims_payload = _normalize_claim_proposals(
         raw_claims,
@@ -1829,7 +1994,7 @@ def _characterize_payload(
         normalized_ids=normalized_ids,
         evidence_hashes=evidence_hashes,
     )
-    return {"claims": claims_payload, "facets": facets_payload}
+    return ProfileUpdateProposals(claims=claims_payload, facets=facets_payload)
 
 
 def _advice_identifier(question: str) -> str:
@@ -1841,14 +2006,17 @@ def _advice_identifier(question: str) -> str:
 def _advice_payload(
     question: str,
     profile: dict[str, Any],
-    claims: list[dict[str, Any]],
+    claims: Sequence[ClaimAtom],
     config: dict[str, Any],
-) -> dict[str, Any]:
-    def fallback() -> dict[str, Any]:
+) -> AdviceCard:
+    def fallback_model() -> AdviceCard:
         return _fake_advise(question, profile, claims)
 
+    def fallback_dict() -> dict[str, Any]:
+        return fallback_model().model_dump(mode="python")
+
     if _use_fake_llm():
-        return fallback()
+        return fallback_model()
 
     try:
         runner = _build_ollama_runner(config)
@@ -1858,32 +2026,52 @@ def _advice_payload(
             fg=typer.colors.YELLOW,
             err=True,
         )
-        return fallback()
+        payload = fallback_dict()
+    else:
+        payload = _safe_llm_json(
+            "prompts/advise.md",
+            {
+                "date": _created_date(_format_timestamp(_now())),
+                "question": question,
+                "profile_json": _json_block(profile),
+                "claims_json": _json_block(
+                    {"claims": [claim.model_dump(mode="python") for claim in claims]}
+                ),
+            },
+            runner,
+            fallback_dict,
+        )
 
-    payload = _safe_llm_json(
-        "prompts/advise.md",
-        {
-            "date": _created_date(_format_timestamp(_now())),
-            "question": question,
-            "profile_json": _json_block(profile),
-            "claims_json": _json_block({"claims": claims}),
-        },
-        runner,
-        fallback,
-    )
+    fallback_defaults = fallback_model().model_dump(mode="python")
+    advice_data = dict(payload)
+    advice_data.setdefault("id", _advice_identifier(question))
+    advice_data.setdefault("query", question)
 
-    fallback_defaults = fallback()
-    advice = dict(payload)
-    advice.setdefault("id", _advice_identifier(question))
-    advice.setdefault("query", question)
-    advice.setdefault("assumptions", ["Grounded in supplied profile data"])
-    advice.setdefault("recommendations", fallback_defaults.get("recommendations", []))
-    advice.setdefault("tradeoffs", [])
-    advice.setdefault("next_actions", [])
-    advice.setdefault("confidence", 0.6)
-    advice.setdefault("alignment", {"facets": [], "claims": []})
-    advice.setdefault("style", profile.get("coaching_prefs", {}))
-    return advice
+    assumptions = advice_data.get("assumptions")
+    if not isinstance(assumptions, list) or not assumptions:
+        advice_data["assumptions"] = fallback_defaults.get("assumptions", [])
+
+    recommendations = advice_data.get("recommendations")
+    if not isinstance(recommendations, list) or not recommendations:
+        advice_data["recommendations"] = fallback_defaults.get("recommendations", [])
+
+    advice_data.setdefault("tradeoffs", fallback_defaults.get("tradeoffs", []))
+    advice_data.setdefault("next_actions", fallback_defaults.get("next_actions", []))
+    advice_data.setdefault("confidence", fallback_defaults.get("confidence", 0.6))
+
+    alignment = advice_data.get("alignment")
+    if not isinstance(alignment, dict):
+        advice_data["alignment"] = fallback_defaults.get("alignment", {"facets": [], "claims": []})
+
+    style = advice_data.get("style")
+    if not isinstance(style, dict):
+        advice_data["style"] = profile.get("coaching_prefs", {})
+
+    try:
+        return AdviceCard.model_validate(advice_data)
+    except ValidationError:
+        # Fall back to the deterministic fake advice if validation fails.
+        return fallback_model()
 
 
 @app.command()
@@ -2254,7 +2442,7 @@ def profile_suggest(
 
     profile_model, claim_models = _load_profile_components(root)
     profile = _profile_to_dict(profile_model)
-    claims = _claims_to_list(claim_models)
+    claims = [claim.model_copy(deep=True) for claim in claim_models]
     if not profile and not claims:
         typer.secho("No profile data", fg=typer.colors.RED, err=True)
         raise typer.Exit(1)
@@ -2287,7 +2475,7 @@ def profile_apply(
     suggestions_model = load_yaml_model(suggestions_path, ProfileSuggestions)
     profile_model, claim_models = _load_profile_components(root)
     profile = _profile_to_dict(profile_model)
-    claims = _claims_to_list(claim_models)
+    claims = [claim.model_copy(deep=True) for claim in claim_models]
     timestamp = _format_timestamp(_now())
     changed = False
 
@@ -2308,7 +2496,7 @@ def profile_apply(
         raise typer.Exit(0)
 
     updated_profile = SelfProfile.model_validate(profile)
-    updated_claims = _claims_to_models(claims)
+    updated_claims = [claim.model_copy(deep=True) for claim in claims]
     write_yaml_model(root / "profile" / "self_profile.yaml", updated_profile)
     write_yaml_model(root / "profile" / "claims.yaml", ClaimsFile(claims=updated_claims))
     typer.echo("Applied 1 suggestions file")
@@ -2329,11 +2517,10 @@ def characterize(
     manifest_index = _manifest_by_id(manifest_entries)
     profile_model, claim_models = _load_profile_components(root)
     profile = _profile_to_dict(profile_model)
-    claims = _claims_to_list(claim_models)
     config = _load_config(root)
 
     entries = [entry for entry, _ in entries_with_paths]
-    proposals = _characterize_payload(entries, profile, claims, manifest_index, config)
+    proposals_model = _characterize_payload(entries, profile, claim_models, manifest_index, config)
 
     timestamp = _format_timestamp(_now())
     batch_id = f"{date}-{timestamp}"
@@ -2352,7 +2539,6 @@ def characterize(
                 tags=list(data.tags or []),
             ),
         )
-    proposals_model = ProfileUpdateProposals.model_validate(proposals)
     meta_model = SummaryMeta.model_validate(_build_meta("prompts/characterize.md"))
     batch_model = ProfileUpdateBatch(
         batch_id=batch_id,
@@ -2389,27 +2575,24 @@ def review_updates(
         raise typer.Exit(1)
 
     batch = load_yaml_model(batch_path, ProfileUpdateBatch)
-    claim_proposals = [proposal.model_dump(mode="python") for proposal in batch.proposals.claims]
-    facet_proposals = [proposal.model_dump(mode="python") for proposal in batch.proposals.facets]
+    claim_proposals: list[ClaimProposal] = [
+        proposal.model_copy(deep=True) for proposal in batch.proposals.claims
+    ]
+    facet_proposals: list[FacetProposal] = [
+        proposal.model_copy(deep=True) for proposal in batch.proposals.facets
+    ]
 
     batch_id = batch.batch_id or batch_path.stem
     typer.echo(
         f"Batch {batch_id}: {len(claim_proposals)} claim(s), {len(facet_proposals)} facet(s)",
     )
 
-    for proposal in claim_proposals:
-        claim = proposal.get("claim") if isinstance(proposal, dict) else None
-        if not isinstance(claim, dict):
-            continue
-        typer.echo(f"- claim {claim.get('id')}: {claim.get('statement')}")
+    for claim_proposal in claim_proposals:
+        typer.echo(f"- claim {claim_proposal.claim.id}: {claim_proposal.claim.statement}")
 
-    for proposal in facet_proposals:
-        if not isinstance(proposal, dict):
-            continue
-        path = proposal.get("path")
-        if not path:
-            continue
-        typer.echo(f"- facet {path}: {proposal.get('value')}")
+    for facet_proposal in facet_proposals:
+        if facet_proposal.path:
+            typer.echo(f"- facet {facet_proposal.path}: {facet_proposal.value}")
 
     if not apply:
         _preview_claim_consolidation(root, claim_proposals)
@@ -2417,25 +2600,19 @@ def review_updates(
 
     profile_model, claim_models = _load_profile_components(root)
     profile = _profile_to_dict(profile_model)
-    claims_data = _claims_to_list(claim_models)
+    claims_data = [claim.model_copy(deep=True) for claim in claim_models]
     timestamp = _format_timestamp(_now())
     applied = 0
     merge_events: list[ClaimMergeOutcome] = []
 
-    for proposal in claim_proposals:
-        claim = proposal.get("claim") if isinstance(proposal, dict) else None
-        if not isinstance(claim, dict):
-            continue
-        if _apply_claim_upsert(claims_data, claim, timestamp, events=merge_events):
+    for claim_proposal in claim_proposals:
+        if _apply_claim_upsert(claims_data, claim_proposal.claim, timestamp, events=merge_events):
             applied += 1
 
-    for proposal in facet_proposals:
-        if not isinstance(proposal, dict):
+    for facet_proposal in facet_proposals:
+        if not facet_proposal.path:
             continue
-        path = proposal.get("path") or proposal.get("target")
-        if not path:
-            continue
-        if _apply_profile_update(profile, str(path), proposal.get("value"), timestamp):
+        if _apply_profile_update(profile, facet_proposal.path, facet_proposal.value, timestamp):
             applied += 1
 
     if not applied:
@@ -2443,7 +2620,7 @@ def review_updates(
         return
 
     updated_profile = SelfProfile.model_validate(profile)
-    updated_claims = _claims_to_models(claims_data)
+    updated_claims = [claim.model_copy(deep=True) for claim in claims_data]
     write_yaml_model(root / "profile" / "self_profile.yaml", updated_profile)
     write_yaml_model(root / "profile" / "claims.yaml", ClaimsFile(claims=updated_claims))
     _emit_claim_merge_events(merge_events, "Applied claim consolidations:")
@@ -2458,19 +2635,19 @@ def advise(
     root = Path.cwd()
     profile_model, claim_models = _load_profile_components(root)
     profile = _profile_to_dict(profile_model)
-    claims = _claims_to_list(claim_models)
+    claims = [claim.model_copy(deep=True) for claim in claim_models]
     if not profile and not claims:
         typer.secho("No profile data", fg=typer.colors.RED, err=True)
         raise typer.Exit(1)
 
     config = _load_config(root)
-    advice_content = _advice_payload(question, profile, claims, config)
+    advice_card = _advice_payload(question, profile, claims, config)
     model_name = "fake-ollama" if _use_fake_llm() else _resolve_model_name(config)
-    advice_content["meta"] = _build_meta("prompts/advise.md", model=model_name)
+    advice_card.meta = _build_meta_model("prompts/advise.md", model=model_name)
 
     day = _created_date(_format_timestamp(_now()))
     advice_path = _derived_advice_path(root, day, question)
-    _write_yaml_if_changed(advice_path, advice_content, schema="advice")
+    write_yaml_model(advice_path, advice_card)
     typer.echo(str(advice_path))
 
 
@@ -2537,11 +2714,7 @@ def _load_profile_components(root: Path) -> tuple[SelfProfile | None, list[Claim
     profile_path = root / "profile" / "self_profile.yaml"
     claims_path = root / "profile" / "claims.yaml"
 
-    profile = (
-        load_yaml_model(profile_path, SelfProfile)
-        if profile_path.exists()
-        else None
-    )
+    profile = load_yaml_model(profile_path, SelfProfile) if profile_path.exists() else None
     if claims_path.exists():
         try:
             claims_file = load_yaml_model(claims_path, ClaimsFile)
@@ -2558,36 +2731,21 @@ def _profile_to_dict(profile: SelfProfile | None) -> dict[str, Any]:
     return profile.model_dump(mode="python") if profile else {}
 
 
-def _claims_to_list(claims: Sequence[ClaimAtom]) -> list[dict[str, Any]]:
-    return [claim.model_dump(mode="python") for claim in claims]
-
-
-def _claims_to_models(claims: Sequence[dict[str, Any]]) -> list[ClaimAtom]:
+def _claims_to_models(claims: Sequence[Any]) -> list[ClaimAtom]:
     normalized: list[ClaimAtom] = []
     timestamp = _format_timestamp(_now())
     for raw in claims:
-        if not isinstance(raw, dict):
+        if not isinstance(raw, (dict, ClaimAtom)):
             continue
         try:
-            normalized.append(ClaimAtom.model_validate(raw))
-            continue
-        except ValidationError:
-            pass
-        default_sources = [
-            {
-                "entry_id": str(raw.get("id") or "claim"),
-                "spans": [],
-            },
-        ]
-        try:
-            normalized_dict = _ensure_claim_atom_dict(
-                raw,
-                timestamp=timestamp,
-                default_sources=default_sources,
+            normalized.append(
+                _normalize_claim_atom(
+                    raw,
+                    timestamp=timestamp,
+                ),
             )
-        except ValueError:
+        except (ValidationError, ValueError):
             continue
-        normalized.append(ClaimAtom.model_validate(normalized_dict))
     return normalized
 
 
@@ -2606,9 +2764,9 @@ def _persona_profile_slice(profile: dict[str, Any]) -> dict[str, Any]:
     return subset
 
 
-def _claim_weight(claim: dict[str, Any], weights: dict[str, Any]) -> float:
+def _claim_weight(claim: ClaimAtom, weights: dict[str, Any]) -> float:
     """Resolve the impact weight for a claim based on config overrides."""
-    claim_type = str(claim.get("type") or "preference")
+    claim_type = str(claim.type or "preference")
     claim_types_raw = weights.get("claim_types")
     claim_weights = claim_types_raw if isinstance(claim_types_raw, dict) else {}
     if claim_type in claim_weights:
@@ -2621,39 +2779,39 @@ def _claim_weight(claim: dict[str, Any], weights: dict[str, Any]) -> float:
 
 
 def _claim_effective_strength(
-    claim: dict[str, Any],
+    claim: ClaimAtom,
     *,
     weights: dict[str, Any],
     now: datetime,
 ) -> float:
-    strength = _clamp01(claim.get("strength", 0.5))
+    strength = _clamp01(claim.strength or 0.5)
     weight = _claim_weight(claim, weights)
     last_updated = _claim_last_updated(claim)
-    review_after = _coerce_int(claim.get("review_after_days")) or 120
+    review_after = int(claim.review_after_days or 120)
     days_since = _days_between(now, last_updated) or 0.0
     staleness = min(2.0, max(0.0, days_since / max(review_after, 1)))
     decay = exp(-0.2 * staleness)
-    status = str(claim.get("status") or "tentative").lower()
+    status = str(claim.status or "tentative").lower()
     status_bonus = 0.05 if status == "accepted" else 0.0
     return (strength * weight * decay) + status_bonus
 
 
 def _rank_claims_for_persona(
-    claims: list[dict[str, Any]],
+    claims: Sequence[ClaimAtom],
     weights: dict[str, Any],
     now: datetime,
-) -> list[dict[str, Any]]:
+) -> list[ClaimAtom]:
     if not claims:
         return []
-    ranked: list[tuple[int, float, dict[str, Any]]] = []
+    ranked: list[tuple[int, float, ClaimAtom]] = []
     status_priority = {"accepted": 0, "tentative": 1, "rejected": 2}
     for claim in claims:
         score = _claim_effective_strength(claim, weights=weights, now=now)
-        status = str(claim.get("status") or "tentative").lower()
+        status = str(claim.status or "tentative").lower()
         priority = status_priority.get(status, 1)
-        ranked.append((priority, -score, copy.deepcopy(claim)))
-    ranked.sort(key=lambda item: (item[0], item[1], item[2].get("id", "")))
-    return [item[2] for item in ranked]
+        ranked.append((priority, -score, claim))
+    ranked.sort(key=lambda item: (item[0], item[1], item[2].id))
+    return [entry[2].model_copy(deep=True) for entry in ranked]
 
 
 def _estimate_persona_tokens(persona_block: dict[str, Any], char_per_token: float) -> int:
@@ -2663,25 +2821,35 @@ def _estimate_persona_tokens(persona_block: dict[str, Any], char_per_token: floa
 
 
 def _select_persona_claims(
-    claims: list[dict[str, Any]],
+    claims: Sequence[ClaimAtom],
     profile_slice: dict[str, Any],
     *,
     token_budget: int,
     char_per_token: float,
     min_claims: int,
     max_claims: int,
-) -> tuple[list[dict[str, Any]], list[str], int, bool]:
-    selected = claims[:max_claims]
-    persona_block = {"profile": profile_slice, "claims": selected}
-    tokens = _estimate_persona_tokens(persona_block, char_per_token)
+) -> PersonaClaimSelection:
+    selected = [claim.model_copy(deep=True) for claim in claims[:max_claims]]
+
+    def persona_block() -> dict[str, Any]:
+        return {
+            "profile": profile_slice,
+            "claims": [claim.model_dump(mode="python") for claim in selected],
+        }
+
+    tokens = _estimate_persona_tokens(persona_block(), char_per_token)
     trimmed_ids: list[str] = []
     while tokens > token_budget and len(selected) > min_claims and selected:
         removed = selected.pop()
-        trimmed_ids.append(str(removed.get("id", f"claim-{len(trimmed_ids)}")))
-        persona_block = {"profile": profile_slice, "claims": selected}
-        tokens = _estimate_persona_tokens(persona_block, char_per_token)
+        trimmed_ids.append(removed.id)
+        tokens = _estimate_persona_tokens(persona_block(), char_per_token)
     budget_exceeded = tokens > token_budget
-    return selected, trimmed_ids, tokens, budget_exceeded
+    return PersonaClaimSelection(
+        claims=selected,
+        trimmed_ids=trimmed_ids,
+        planned_tokens=tokens,
+        budget_exceeded=budget_exceeded,
+    )
 
 
 def _relative_to_root(path: Path, root: Path) -> str:
@@ -2789,8 +2957,7 @@ def _persona_build_impl(
     root = Path.cwd()
     profile_model, claim_models = _load_profile_components(root)
     profile = _profile_to_dict(profile_model)
-    claims = _claims_to_list(claim_models)
-    if not profile and not claims:
+    if not profile and not claim_models:
         typer.secho(
             "No profile data or claims available; run `aijournal init` or add entries first.",
             fg=typer.colors.RED,
@@ -2834,7 +3001,7 @@ def _persona_build_impl(
     now_dt = _now()
     impact_weights_raw = config.get("impact_weights")
     impact_weights = impact_weights_raw if isinstance(impact_weights_raw, dict) else {}
-    ranked_claims = _rank_claims_for_persona(claims, impact_weights, now_dt)
+    ranked_claims = _rank_claims_for_persona(claim_models, impact_weights, now_dt)
 
     if not profile_slice and not ranked_claims:
         typer.secho(
@@ -2844,7 +3011,7 @@ def _persona_build_impl(
         )
         raise typer.Exit(1)
 
-    selected_claims, trimmed_ids, planned_tokens, budget_exceeded = _select_persona_claims(
+    selection = _select_persona_claims(
         ranked_claims,
         profile_slice,
         token_budget=token_budget,
@@ -2854,22 +3021,7 @@ def _persona_build_impl(
     )
 
     now = _format_timestamp(now_dt)
-    persona_claim_models: list[ClaimAtom] = []
-    for claim_dict in selected_claims:
-        try:
-            persona_claim_models.append(ClaimAtom.model_validate(claim_dict))
-        except ValidationError:
-            normalized = _ensure_claim_atom_dict(
-                claim_dict,
-                timestamp=now,
-                default_sources=[
-                    {
-                        "entry_id": str(claim_dict.get("id") or "claim"),
-                        "spans": [],
-                    },
-                ],
-            )
-            persona_claim_models.append(ClaimAtom.model_validate(normalized))
+    persona_claim_models = [claim.model_copy(deep=True) for claim in selection.claims]
 
     persona_core = PersonaCore(
         profile=copy.deepcopy(profile_slice),
@@ -2888,15 +3040,17 @@ def _persona_build_impl(
     meta_model = PersonaCoreMeta(
         generated_at=now,
         token_budget=token_budget,
-        planned_tokens=planned_tokens,
+        planned_tokens=selection.planned_tokens,
         char_per_token=char_per_token,
         selection_strategy="strength*impact*decay",
-        trimmed=[{"type": "claim", "id": cid} for cid in trimmed_ids] if trimmed_ids else [],
+        trimmed=[{"type": "claim", "id": cid} for cid in selection.trimmed_ids]
+        if selection.trimmed_ids
+        else [],
         claim_pool=len(ranked_claims),
         claim_count=len(persona_claim_models),
         max_claims=max_claims,
         min_claims=min_claims,
-        budget_exceeded=budget_exceeded,
+        budget_exceeded=selection.budget_exceeded,
         sources=sources,
         source_mtimes=source_mtimes,
     )
@@ -2982,7 +3136,7 @@ def _impact_for(path: str, weights: dict[str, float]) -> float:
 
 def _compute_rankings(
     profile: dict[str, Any],
-    claims: list[dict[str, Any]],
+    claims: Sequence[ClaimAtom],
     weights: dict[str, float],
     now: datetime,
 ) -> list[tuple[str, float]]:
@@ -2997,9 +3151,9 @@ def _compute_rankings(
         ranked.append((path, staleness * _impact_for(path, weights)))
 
     for claim in claims:
-        path = claim.get("id", "claim")
+        path = claim.id or "claim"
         days = _days_between(now, _claim_last_updated(claim))
-        review = claim.get("review_after_days") or 90
+        review = claim.review_after_days or 90
         if days is None:
             continue
         staleness = days / float(review)
@@ -3010,27 +3164,33 @@ def _compute_rankings(
 
 
 def _build_targeted_probes(
-    rankings: list[tuple[str, float]],
+    rankings: Sequence[tuple[str, float]],
     entries: Sequence[NormalizedEntry],
     *,
     max_items: int = 4,
-) -> list[str]:
-    title = entries[0].title if entries else "recent notes"
-    if not title:
-        title = entries[0].id if entries else "recent notes"
-    probes: list[str] = []
-    for path, score in rankings:
-        probes.append(
-            (
-                f"- {path}: What new observations from {title} should update this area? "
-                f"(score {score:.2f})"
+) -> InterviewSet:
+    title = "recent notes"
+    if entries:
+        first = entries[0]
+        title = first.title or first.id or title
+
+    questions: list[InterviewQuestion] = []
+    for idx, (path, score) in enumerate(rankings, start=1):
+        prompt = f"What new observations from {title} should update {path}? (score {score:.2f})"
+        questions.append(
+            InterviewQuestion(
+                id=f"ranked-{idx}",
+                text=prompt,
+                target_facet=path,
+                priority=f"{score:.2f}",
             ),
         )
-        if len(probes) >= max_items:
+        if len(questions) >= max_items:
             break
-    if len(probes) < 2:
-        return []
-    return probes
+
+    if len(questions) < 2:
+        return InterviewSet()
+    return InterviewSet(questions=questions)
 
 
 def _print_rankings(ranked: list[tuple[str, float]]) -> None:
@@ -3043,28 +3203,24 @@ def _print_rankings(ranked: list[tuple[str, float]]) -> None:
 
 
 def _apply_claim_upsert(
-    claims: list[dict[str, Any]],
-    value: dict[str, Any],
+    claims: list[ClaimAtom],
+    value: ClaimAtom | dict[str, Any],
     timestamp: str,
     events: list[ClaimMergeOutcome] | None = None,
 ) -> bool:
     try:
-        normalized = _ensure_claim_atom_dict(
-            value,
-            timestamp=timestamp,
-            default_sources=None,
-        )
-    except ValueError:
+        normalized = _normalize_claim_atom(value, timestamp=timestamp)
+    except (ValidationError, ValueError):
         return False
 
     for existing in claims:
-        if existing.get("id") == normalized.get("id") and _claims_equivalent(existing, normalized):
+        if existing.id == normalized.id and _claims_equivalent(existing, normalized):
             if events is not None:
                 events.append(
                     ClaimMergeOutcome(
                         changed=False,
                         action="noop",
-                        claim_id=str(existing.get("id")),
+                        claim_id=existing.id,
                         delta_strength=0.0,
                     ),
                 )
@@ -3077,18 +3233,45 @@ def _apply_claim_upsert(
     return outcome.changed
 
 
-def _claims_equivalent(existing: dict[str, Any], incoming: dict[str, Any]) -> bool:
-    def _sanitize(claim: dict[str, Any]) -> dict[str, Any]:
-        cleaned = copy.deepcopy(claim)
-        provenance = cleaned.get("provenance")
-        if isinstance(provenance, dict):
-            trimmed = dict(provenance)
-            trimmed.pop("last_updated", None)
-            trimmed.pop("observation_count", None)
-            cleaned["provenance"] = trimmed
-        return cleaned
+_CLAIM_FLOAT_TOLERANCE = 1e-6
 
-    return _sanitize(existing) == _sanitize(incoming)
+
+def _sanitize_provenance_for_compare(provenance: Provenance) -> dict[str, Any]:
+    sanitized = provenance.model_dump(mode="python")
+    sanitized.pop("last_updated", None)
+    sanitized.pop("observation_count", None)
+    return sanitized
+
+
+def _claim_compare_payload(claim: ClaimAtom) -> dict[str, Any]:
+    payload = claim.model_dump(mode="python")
+    payload["provenance"] = _sanitize_provenance_for_compare(claim.provenance)
+    payload.pop("strength", None)
+    return payload
+
+
+def _structures_equal(lhs: Any, rhs: Any) -> bool:
+    if isinstance(lhs, float) and isinstance(rhs, float):
+        return abs(lhs - rhs) <= _CLAIM_FLOAT_TOLERANCE
+    if isinstance(lhs, dict) and isinstance(rhs, dict):
+        if lhs.keys() != rhs.keys():
+            return False
+        return all(_structures_equal(lhs[key], rhs[key]) for key in lhs)
+    if isinstance(lhs, list) and isinstance(rhs, list):
+        if len(lhs) != len(rhs):
+            return False
+        return all(_structures_equal(a, b) for a, b in zip(lhs, rhs))
+    return lhs == rhs
+
+
+def _claims_equivalent(existing: ClaimAtom, incoming: ClaimAtom) -> bool:
+    if existing.id != incoming.id:
+        return False
+    if abs(existing.strength - incoming.strength) > _CLAIM_FLOAT_TOLERANCE:
+        return False
+    existing_payload = _claim_compare_payload(existing)
+    incoming_payload = _claim_compare_payload(incoming)
+    return _structures_equal(existing_payload, incoming_payload)
 
 
 def _format_scope_label(scope: tuple[str | None, tuple[str, ...], tuple[str, ...]]) -> str:
@@ -3125,26 +3308,33 @@ def _emit_claim_merge_events(events: list[ClaimMergeOutcome], heading: str) -> N
             )
 
 
-def _preview_claim_consolidation(root: Path, claim_proposals: list[dict[str, Any]]) -> None:
+def _preview_claim_consolidation(
+    root: Path,
+    claim_proposals: Sequence[Any],
+) -> None:
     if not claim_proposals:
         return
     _, claim_models = _load_profile_components(root)
-    claims_data = _claims_to_list(claim_models)
-    if not claims_data:
+    if not claim_models:
         return
     timestamp = _format_timestamp(_now())
-    working_claims = copy.deepcopy(claims_data)
+    working_claims = [claim.model_copy(deep=True) for claim in claim_models]
     consolidator = ClaimConsolidator(timestamp=timestamp)
     events: list[ClaimMergeOutcome] = []
     for proposal in claim_proposals:
-        claim = proposal.get("claim") if isinstance(proposal, dict) else None
-        if not isinstance(claim, dict):
+        if isinstance(proposal, ClaimProposal):
+            incoming = proposal.claim.model_copy(deep=True)
+        elif isinstance(proposal, dict):
+            raw_claim = proposal.get("claim") if isinstance(proposal, dict) else None
+            if raw_claim is None:
+                continue
+            try:
+                incoming = _normalize_claim_atom(raw_claim, timestamp=timestamp)
+            except (ValidationError, ValueError):
+                continue
+        else:
             continue
-        try:
-            normalized = _ensure_claim_atom_dict(claim, timestamp=timestamp)
-        except ValueError:
-            continue
-        outcome = consolidator.upsert(working_claims, normalized)
+        outcome = consolidator.upsert(working_claims, incoming)
         if outcome.action != "noop":
             events.append(outcome)
     _emit_claim_merge_events(events, "Preview (claim consolidation):")
@@ -3164,27 +3354,23 @@ def _apply_profile_update(profile: dict[str, Any], target: str, value: Any, time
     return True
 
 
-def _claim_last_updated(claim: dict[str, Any]) -> str | None:
-    provenance = claim.get("provenance")
-    if isinstance(provenance, dict):
-        return _coerce_timestamp(provenance.get("last_updated"))
-    return _coerce_timestamp(claim.get("last_updated"))
+def _claim_last_updated(claim: ClaimAtom) -> str | None:
+    return _coerce_timestamp(claim.provenance.last_updated)
 
 
 def _profile_status_impl() -> None:
     root = Path.cwd()
     profile_model, claim_models = _load_profile_components(root)
     profile = _profile_to_dict(profile_model)
-    claims = _claims_to_list(claim_models)
     config_path = root / "config" / "config.yaml"
     config = _load_yaml(config_path) if config_path.exists() else {}
     weights = config.get("impact_weights", {})
 
-    if not profile and not claims:
+    if not profile and not claim_models:
         typer.echo("No profile data")
         raise typer.Exit(0)
 
-    rankings = _compute_rankings(profile, claims, weights, _now())
+    rankings = _compute_rankings(profile, claim_models, weights, _now())
     if not rankings:
         typer.echo("No profile data")
         raise typer.Exit(0)
@@ -3219,7 +3405,7 @@ def interview(
     root = Path.cwd()
     profile_model, claim_models = _load_profile_components(root)
     profile = _profile_to_dict(profile_model)
-    claims = _claims_to_list(claim_models)
+    claims = [claim.model_copy(deep=True) for claim in claim_models]
     if not profile and not claims:
         typer.secho("No profile data", fg=typer.colors.RED, err=True)
         raise typer.Exit(1)
@@ -3234,13 +3420,21 @@ def interview(
     weights = config.get("impact_weights", {})
 
     rankings = _compute_rankings(profile, claims, weights, _now())
-    probes = _build_targeted_probes(rankings, entries)
-    if not probes:
-        probes = HIGH_IMPACT_PROBES
+    interview_set = _build_targeted_probes(rankings, entries)
+    if not interview_set.questions:
+        fallback_questions = [
+            InterviewQuestion(
+                id=f"default-{idx + 1}",
+                text=probe.lstrip("- ").strip(),
+                priority="baseline",
+            )
+            for idx, probe in enumerate(HIGH_IMPACT_PROBES)
+        ]
+        interview_set = InterviewSet(questions=fallback_questions)
 
     typer.echo("Interview probes:")
-    for probe in probes:
-        typer.echo(probe)
+    for question in interview_set.questions:
+        typer.echo(f"- {question.text}")
 
 
 def _write_json_if_changed(path: Path, payload: dict[str, Any]) -> bool:
