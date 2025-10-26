@@ -93,7 +93,9 @@ aijournal ingest /home/basnijholt/Work/nijho.lt/content/post --source-type blog
 
 Each ingested file is hashed (manifest stored at `data/manifest/ingested.yaml`), a raw snapshot is
 saved under `data/raw/<hash>.md`, and normalized YAML lands in `data/normalized/<DATE>/...`. If your
-Ollama daemon is listening on a non-default address, set `AIJOURNAL_OLLAMA_HOST` accordingly.
+Ollama daemon is listening on a non-default address, set `AIJOURNAL_OLLAMA_HOST` accordingly. Large
+directories can take a couple of minutes to process—let the command run to completion or increase
+your wrapper’s timeout if you’re invoking it from automation.
 
 ### Normalize Markdown into YAML
 

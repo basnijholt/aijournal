@@ -1413,9 +1413,30 @@ def _hash_prompt(prompt_path: str) -> str | None:
     return sha256(data).hexdigest()
 
 
-def _build_meta(prompt_path: str, model: str = "fake-ollama") -> SummaryMeta:
+def _build_meta(
+    prompt_path: str,
+    *,
+    model: str | None = None,
+    config: dict[str, Any] | None = None,
+) -> SummaryMeta:
+    if model:
+        resolved_model = model
+    else:
+        resolved_model = "fake-ollama" if _use_fake_llm() else None
+        if resolved_model is None:
+            config_payload = config if isinstance(config, dict) else {}
+            resolved_model = _resolve_model_name(config_payload)
     return SummaryMeta(
-        llm_model=model,
+        llm_model=resolved_model,
+        prompt_path=prompt_path,
+        prompt_hash=_hash_prompt(prompt_path),
+        created_at=_format_timestamp(_now()),
+    )
+    if resolved_model is None:
+        config_payload = config if isinstance(config, dict) else {}
+        resolved_model = _resolve_model_name(config_payload)
+    return SummaryMeta(
+        llm_model=resolved_model,
         prompt_path=prompt_path,
         prompt_hash=_hash_prompt(prompt_path),
         created_at=_format_timestamp(_now()),
@@ -1983,7 +2004,7 @@ def _profile_suggestions_payload(
                 updates=update_models,
             )
 
-    suggestions.meta = _build_meta("prompts/profile_suggest.md")
+    suggestions.meta = _build_meta("prompts/profile_suggest.md", config=config)
     return suggestions
 
 
@@ -2614,7 +2635,7 @@ def summarize(
 
     config = _load_config(root)
     summary_data = _summarize_day_payload(entries, date, config)
-    summary_data.meta = _build_meta("prompts/summarize_day.md")
+    summary_data.meta = _build_meta("prompts/summarize_day.md", config=config)
     summary_path = _derived_summary_path(root, date)
     write_yaml_model(summary_path, summary_data)
     typer.echo(str(summary_path))
@@ -2642,7 +2663,7 @@ def facts(
         manifest_index=manifest_index,
         existing_claims=claim_models,
     )
-    facts_data.meta = _build_meta("prompts/extract_facts.md")
+    facts_data.meta = _build_meta("prompts/extract_facts.md", config=config)
     facts_path = _derived_microfacts_path(root, date)
     write_yaml_model(facts_path, facts_data)
     if facts_data.preview:
@@ -2766,7 +2787,7 @@ def characterize(
                 tags=list(data.tags or []),
             ),
         )
-    meta_model = _build_meta("prompts/characterize.md")
+    meta_model = _build_meta("prompts/characterize.md", config=config)
     batch_model = ProfileUpdateBatch(
         batch_id=batch_id,
         created_at=timestamp,
