@@ -552,6 +552,7 @@ meta:
 - Chunk schema: `{id, normalized_id, date, tags, source_type, chunk_index, chunk_text, tokens}` with deterministic chunking (700–1200 chars, sentence boundaries, include section headings when available).
 - Rebuild commands regenerate both indexes deterministically from normalized YAML; no authoritative data stored here.
 - **Chunk manifests for inspection:** deterministic YAML manifests under `derived/index/chunks/YYYY-MM-DD.yaml` (plus optional `.npy` vector shards) mirror the indexed chunks so humans can audit or feed them to other tools, but the primary retrieval path still depends on the SQLite/Annoy artifacts.
+- **Operator search surface:** `aijournal index search "query" --tags focus --source journal --date-from 2025-02-01` wraps the shared Retriever with formatted streaming output, enforcing the same Annoy + FTS5 prerequisites and filter semantics that downstream chat relies on.
 
 ### 4.8 Persona core file (L1)
 
@@ -627,6 +628,7 @@ Health check:
 - `Indexer` manages chunking (700–1200 chars, boundary aware), writes SQLite rows, and updates Annoy (rebuild after N inserts or on-demand `index rebuild`).
 - `Retriever` loads query embeddings, performs ANN search (`search_k = factor * k * trees`), filters by tags/date/source, applies lightweight rerank: `score = 0.7*cos + 0.3*recency` where `recency = 1/(1+0.05*days)`.
 - Retrieval requires the Annoy + SQLite artifacts; if either is missing, commands error immediately so you can rebuild via `aijournal index rebuild`.
+- CLI operators now have `aijournal index search` for local QA/debug: it reuses `Retriever.search`, respects fake mode, exits non-zero when artifacts are missing, and prints scored snippets with `{date, source_path, tags}` metadata to keep expectations aligned with upcoming chat usage.
 
 ### 8.2 Chat orchestrator (RAG + write-back)
 
@@ -977,7 +979,7 @@ blocking on LLM availability.
    - Write human-readable chunk manifests (`derived/index/chunks/YYYY-MM-DD.yaml` + optional
      `.npy` vectors) alongside the database artifacts for inspection.
 
-2. **feat(retriever): shared search service.** ✅ _Shipped 2025-10-25 via `aijournal.services.retriever.Retriever`, the shared `EmbeddingBackend`, and Pytests covering the ANN search path (`tests/test_retriever.py`)._
+2. **feat(retriever): shared search service.** ✅ _Shipped 2025-10-25 via `aijournal.services.retriever.Retriever`, the shared `EmbeddingBackend`, Pytests covering the ANN search path (`tests/test_retriever.py`), and (2025-10-27) the operator-facing `aijournal index search` CLI with coverage in `tests/test_cli_index.py`._
    - Build `Retriever` API that loads metadata, performs ANN search with `search_k_factor`
      defaults, mixes cosine + recency scoring, and surfaces filter hooks (tags, date, source).
    - Retrieval now requires the generated SQLite + Annoy artifacts; when they are missing, `Retriever.search`
@@ -1016,6 +1018,7 @@ blocking on LLM availability.
 ### Later focus (mid-November 2025)
 
 6. **feat(chat + chatd): retrieval-backed conversation loop.**
+   - `aijournal index search` gives operators a deterministic retrieval probe; next integration step is to reuse its filters/output framing inside chat so QA/debug flows stay consistent.
    - CLI `aijournal chat` orchestrates intent classification → retrieval (claims + journal chunks)
      → response assembly with citations + optional clarifying question respecting
      `coaching_prefs.probing`.

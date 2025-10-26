@@ -90,6 +90,7 @@ from aijournal.services import (
     OllamaTaskRunner,
 )
 from aijournal.services.embedding import EmbeddingBackend
+from aijournal.services.retriever import RetrievalFilters, Retriever
 
 app = typer.Typer(help="Local-first personal journal utilities.")
 profile_app = typer.Typer(help="Profile utilities.")
@@ -4621,6 +4622,86 @@ def index_tail(
         conn.close()
 
 
+@index_app.command("search")
+def index_search(
+    query: str = typer.Argument(..., help="Query text to search within indexed chunks."),
+    top: int = typer.Option(
+        8,
+        "--top",
+        "-k",
+        help="Number of results to display.",
+    ),
+    tags: str | None = typer.Option(
+        None,
+        "--tags",
+        help="Comma- or space-separated tags to filter by (match any).",
+    ),
+    source: str | None = typer.Option(
+        None,
+        "--source",
+        help="Comma- or space-separated source types to filter by.",
+    ),
+    date_from: str | None = typer.Option(
+        None,
+        "--date-from",
+        help="Earliest chunk date (YYYY-MM-DD).",
+    ),
+    date_to: str | None = typer.Option(
+        None,
+        "--date-to",
+        help="Latest chunk date (YYYY-MM-DD).",
+    ),
+) -> None:
+    """Search the retrieval index and stream formatted results."""
+    if top <= 0:
+        typer.secho("--top must be positive.", fg=typer.colors.RED, err=True)
+        raise typer.Exit(1)
+
+    root = Path.cwd()
+    config = _load_config(root)
+    filters = RetrievalFilters(
+        tags=_split_filter_values(tags),
+        source_types=_split_filter_values(source),
+        date_from=_validate_date_option(date_from, "--date-from"),
+        date_to=_validate_date_option(date_to, "--date-to"),
+    )
+
+    retriever = Retriever(root, config)
+    try:
+        result = retriever.search(query, k=top, filters=filters)
+    except RuntimeError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        raise typer.Exit(1) from exc
+    except ValueError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        raise typer.Exit(1) from exc
+    finally:
+        retriever.close()
+
+    if not result.chunks:
+        typer.echo("No matches found.")
+        return
+
+    header = f"Top {len(result.chunks)} match(es) - source: {result.meta.source}"
+    if result.meta.fake_mode:
+        header += " (fake mode)"
+    typer.echo(header)
+
+    for idx, chunk in enumerate(result.chunks, start=1):
+        tag_display = ", ".join(chunk.tags) if chunk.tags else "-"
+        source_path = chunk.source_path or chunk.normalized_id
+        snippet = _format_search_snippet(chunk.text)
+        typer.echo(
+            f"{idx}. [{chunk.date}] {source_path}",
+        )
+        typer.echo(
+            f"   score: {chunk.score:.3f}  tags: {tag_display}",
+        )
+        typer.echo(f"   {snippet}")
+        if idx != len(result.chunks):
+            typer.echo("")
+
+
 def _index_dir(root: Path) -> Path:
     return root / "derived" / "index"
 
@@ -4675,6 +4756,32 @@ def _resolve_since_filter(value: str | None, fallback_days: int | None = None) -
     if fallback_days is not None:
         return (_now() - timedelta(days=fallback_days)).strftime("%Y-%m-%d")
     return None
+
+
+def _validate_date_option(value: str | None, option: str) -> str | None:
+    if value is None:
+        return None
+    text = value.strip()
+    if not text:
+        return None
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", text):
+        typer.secho(f"{option} must be YYYY-MM-DD.", fg=typer.colors.RED, err=True)
+        raise typer.Exit(1)
+    return text
+
+
+def _split_filter_values(raw: str | None) -> frozenset[str]:
+    if not raw:
+        return frozenset()
+    parts = [part.strip() for part in re.split(r"[,\s]+", raw) if part.strip()]
+    return frozenset(parts)
+
+
+def _format_search_snippet(text: str, limit: int = 200) -> str:
+    collapsed = " ".join(text.split())
+    if len(collapsed) <= limit:
+        return collapsed
+    return collapsed[: limit - 3].rstrip() + "..."
 
 
 def _build_embedding_backend(config: dict[str, Any]) -> EmbeddingBackend:

@@ -75,11 +75,15 @@ Produces three Markdown files with full frontmatter (`id`, `created_at`, `title`
 ```sh
 aijournal index rebuild          # one-shot rebuild (SQLite + Annoy) from normalized YAML
 aijournal index tail --since 7d  # optional helper: follow manifest entries and index new files
+aijournal index search "deep work ideas" --tags focus --date-from 2025-02-01
 ```
 
 - Index lives under `derived/index/` (`index.db`, `annoy.index`, `meta.json`).
 - Chunking is deterministic (700–1200 characters, sentence boundaries) and every chunk stores normalized_id/date/tags.
 - Retrieval relies on Annoy + SQLite FTS5; if those artifacts are missing, commands error loudly so you can rebuild with `aijournal index rebuild`.
+- `aijournal index search` reuses the Retriever service to stream scored snippets with source path/date metadata, honoring `--tags`, `--source`, `--date-from`, and `--date-to` filters.
+- FTS5 is a hard requirement: verify with `python - <<'PY'\nimport sqlite3\nprint('fts5' in sqlite3.connect(':memory:').execute(\"pragma compile_options\").fetchall().__str__().lower())\nPY`. If it prints `False`, install an FTS5-enabled SQLite and rebuild Python (macOS: `brew install sqlite` then reinstall Python via `pyenv` or `uv`; Linux: `sudo apt install libsqlite3-dev` before building Python).
+- After editing retrieval-related code run `uv run pytest -q` to ensure the CLI and retriever fixtures remain deterministic.
 
 ### Ingest existing Markdown (blogs, notes)
 
@@ -315,7 +319,7 @@ aijournal index tail
 - `derived/index/index.db` stores chunk metadata + FTS5 virtual table; `derived/index/annoy.index` stores embeddings; `meta.json` records embedding model/dim/build timestamp and whether fake mode ran.
 - Chunking is deterministic (700–1200 chars, sentence boundaries) and each chunk stores `{normalized_id, date, tags, source_type, chunk_index, tokens}`.
 - Human-friendly chunk manifests under `derived/index/chunks/YYYY-MM-DD.yaml` (plus optional `.npy` vector shards) mirror the indexed data so you can inspect or reuse it elsewhere, while the built-in retriever expects the Annoy/SQLite artifacts to be present.
-- `Retriever.search("question about deep work", k=12, filters=...)` (see `src/aijournal/services/retriever.py`) powers chat/advice, combining Annoy cosine scores with a light recency boost. If the index artifacts are missing, retrieval fails fast and prompts you to rebuild.
+- `Retriever.search("question about deep work", k=12, filters=...)` (see `src/aijournal/services/retriever.py`) powers chat/advice and the new `aijournal index search` CLI, combining Annoy cosine scores with a light recency boost. If the index artifacts are missing, retrieval fails fast and prompts you to rebuild.
 
 ### Configuration quick reference
 
