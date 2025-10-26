@@ -1004,7 +1004,8 @@ blocking on LLM availability.
 
 5. **feat(consolidation): pending-update fusion.**
    - Integrate the new `ClaimConsolidator` with micro-facts/characterize pipelines and queue follow-up
-     interviews whenever conflicts are detected (status drops to `tentative`).
+     interviews whenever conflicts are detected (status drops to `tentative`). _Characterize batches now
+     emit consolidation previews + queued interview prompts (2025-10-26); micro-facts ingest remains._
    - Flesh out scope-splitting heuristics (weekday vs. weekend, solo vs. team) instead of only
      downgrading strength when values differ.
    - Extend regression coverage: conflicting scope handling, decay math, manifest/evidence propagation,

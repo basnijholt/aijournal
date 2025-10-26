@@ -405,6 +405,48 @@ class ProfileUpdateProposals(AijournalModel):
     facets: list[FacetProposal] = Field(default_factory=list)
 
 
+class ClaimSignaturePayload(AijournalModel):
+    """Serialized signature describing the target slot for a claim."""
+
+    claim_type: str
+    subject: str
+    predicate: str
+    domain: str | None = None
+    context: list[str] = Field(default_factory=list)
+    conditions: list[str] = Field(default_factory=list)
+
+
+class ClaimConflictPayload(AijournalModel):
+    """Structured conflict emitted during consolidation previews."""
+
+    claim_id: str
+    signature: ClaimSignaturePayload
+    statement: str
+    existing_value: str
+    incoming_value: str
+    incoming_sources: list[ClaimSource] = Field(default_factory=list)
+
+
+class ClaimPreviewEvent(AijournalModel):
+    """Outcome of attempting to merge a claim proposal into existing atoms."""
+
+    action: str
+    claim_id: str
+    delta_strength: float = 0.0
+    statement: str | None = None
+    value: str | None = None
+    strength: float | None = None
+    signature: ClaimSignaturePayload | None = None
+    conflict: ClaimConflictPayload | None = None
+
+
+class ProfileUpdatePreview(AijournalModel):
+    """Preview metadata bundled with a profile update batch."""
+
+    claim_events: list[ClaimPreviewEvent] = Field(default_factory=list)
+    interview_prompts: list[str] = Field(default_factory=list)
+
+
 class ProfileUpdateBatch(AijournalModel):
     """Pending profile update batch emitted by `aijournal characterize`."""
 
@@ -414,6 +456,7 @@ class ProfileUpdateBatch(AijournalModel):
     inputs: list[ProfileUpdateInput] = Field(default_factory=list)
     proposals: ProfileUpdateProposals = Field(default_factory=ProfileUpdateProposals)
     meta: SummaryMeta = Field(default_factory=SummaryMeta)
+    preview: ProfileUpdatePreview | None = None
 
 
 class PersonaCoreMeta(AijournalModel):
@@ -469,6 +512,9 @@ __all__ = [
     "ClaimMethod",
     "ClaimSource",
     "ClaimSourceSpan",
+    "ClaimConflictPayload",
+    "ClaimPreviewEvent",
+    "ClaimSignaturePayload",
     "ClaimStatus",
     "ClaimType",
     "ChunkManifest",
@@ -496,6 +542,7 @@ __all__ = [
     "ProfileSuggestions",
     "ProfileUpdateBatch",
     "ProfileUpdateInput",
+    "ProfileUpdatePreview",
     "ProfileUpdateProposals",
     "Provenance",
     "Scope",

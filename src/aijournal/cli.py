@@ -41,7 +41,10 @@ from aijournal.models import (
     ChunkManifestChunk,
     ChunkManifestMeta,
     ClaimAtom,
+    ClaimConflictPayload,
+    ClaimPreviewEvent,
     ClaimProposal,
+    ClaimSignaturePayload,
     ClaimsFile,
     ClaimSource,
     ClaimSourceSpan,
@@ -63,6 +66,7 @@ from aijournal.models import (
     ProfileSuggestionUpsert,
     ProfileUpdateBatch,
     ProfileUpdateInput,
+    ProfileUpdatePreview,
     ProfileUpdateProposals,
     Provenance,
     Scope,
@@ -71,8 +75,10 @@ from aijournal.models import (
 )
 from aijournal.schema import SchemaValidationError, validate_schema
 from aijournal.services import (
+    ClaimConflict,
     ClaimConsolidator,
     ClaimMergeOutcome,
+    ClaimSignature,
     LLMResponseError,
     OllamaConfig,
     OllamaTaskRunner,
@@ -2534,6 +2540,12 @@ def characterize(
     timestamp = _format_timestamp(_now())
     batch_id = f"{date}-{timestamp}"
 
+    preview_model = _build_claim_preview(
+        proposals_model.claims,
+        claim_models,
+        timestamp=timestamp,
+    )
+
     inputs: list[ProfileUpdateInput] = []
     for data, path in entries_with_paths:
         entry_id = data.id or path.stem
@@ -2556,6 +2568,7 @@ def characterize(
         inputs=inputs,
         proposals=proposals_model,
         meta=meta_model,
+        preview=preview_model,
     )
     pending_dir = _pending_updates_dir(root)
     pending_dir.mkdir(parents=True, exist_ok=True)
@@ -2604,7 +2617,12 @@ def review_updates(
             typer.echo(f"- facet {facet_proposal.path}: {facet_proposal.value}")
 
     if not apply:
-        _preview_claim_consolidation(root, claim_proposals)
+        if batch.preview and batch.preview.claim_events:
+            _print_claim_preview(batch.preview)
+        else:
+            _preview_claim_consolidation(root, claim_proposals)
+        if batch.preview and batch.preview.interview_prompts:
+            typer.echo("Hint: run `aijournal interview` to follow up on the queued prompts.")
         return
 
     profile_model, claim_models = _load_profile_components(root)
@@ -3283,6 +3301,41 @@ def _claims_equivalent(existing: ClaimAtom, incoming: ClaimAtom) -> bool:
     return _structures_equal(existing_payload, incoming_payload)
 
 
+def _signature_payload_from_claim(claim: ClaimAtom) -> ClaimSignaturePayload:
+    scope = claim.scope or Scope()
+    return ClaimSignaturePayload(
+        claim_type=str(claim.type or "preference"),
+        subject=str(claim.subject or ""),
+        predicate=str(claim.predicate or ""),
+        domain=scope.domain,
+        context=[item for item in scope.context if item],
+        conditions=[item for item in scope.conditions if item],
+    )
+
+
+def _signature_payload_from_signature(signature: ClaimSignature) -> ClaimSignaturePayload:
+    domain, context, conditions = signature.scope
+    return ClaimSignaturePayload(
+        claim_type=signature.claim_type,
+        subject=signature.subject,
+        predicate=signature.predicate,
+        domain=domain,
+        context=[item for item in context if item],
+        conditions=[item for item in conditions if item],
+    )
+
+
+def _conflict_payload_from_outcome(conflict: ClaimConflict) -> ClaimConflictPayload:
+    return ClaimConflictPayload(
+        claim_id=conflict.claim_id,
+        signature=_signature_payload_from_signature(conflict.signature),
+        statement=conflict.statement,
+        existing_value=conflict.existing_value,
+        incoming_value=conflict.incoming_value,
+        incoming_sources=[source.model_copy(deep=True) for source in conflict.incoming_sources],
+    )
+
+
 def _format_scope_label(scope: tuple[str | None, tuple[str, ...], tuple[str, ...]]) -> str:
     domain, context, conditions = scope
     parts: list[str] = []
@@ -3347,6 +3400,106 @@ def _preview_claim_consolidation(
         if outcome.action != "noop":
             events.append(outcome)
     _emit_claim_merge_events(events, "Preview (claim consolidation):")
+
+
+def _build_claim_preview(
+    claim_proposals: Sequence[ClaimProposal],
+    existing_claims: Sequence[ClaimAtom],
+    *,
+    timestamp: str,
+) -> ProfileUpdatePreview | None:
+    if not claim_proposals:
+        return None
+
+    working_claims = [claim.model_copy(deep=True) for claim in existing_claims]
+    consolidator = ClaimConsolidator(timestamp=timestamp)
+    events: list[ClaimPreviewEvent] = []
+    prompts: list[str] = []
+
+    for proposal in claim_proposals:
+        incoming = proposal.claim.model_copy(deep=True)
+        outcome = consolidator.upsert(working_claims, incoming)
+        if outcome.action == "noop":
+            continue
+        signature_payload = _signature_payload_from_claim(incoming)
+        conflict_payload = None
+        if outcome.conflict:
+            conflict_payload = _conflict_payload_from_outcome(outcome.conflict)
+            scope_label = _format_scope_label(outcome.conflict.signature.scope)
+            prompts.append(
+                (
+                    f"Clarify claim {outcome.claim_id} [{scope_label}]: "
+                    f"existing='{outcome.conflict.existing_value}' vs incoming='{outcome.conflict.incoming_value}'."
+                )
+            )
+        events.append(
+            ClaimPreviewEvent(
+                action=outcome.action,
+                claim_id=outcome.claim_id,
+                delta_strength=float(outcome.delta_strength or 0.0),
+                statement=incoming.statement,
+                value=incoming.value,
+                strength=float(incoming.strength or 0.0),
+                signature=signature_payload,
+                conflict=conflict_payload,
+            )
+        )
+
+    if not events and not prompts:
+        return None
+    return ProfileUpdatePreview(claim_events=events, interview_prompts=prompts)
+
+
+def _scope_tuple_from_payload(
+    signature: ClaimSignaturePayload | None,
+) -> tuple[str | None, tuple[str, ...], tuple[str, ...]]:
+    if signature is None:
+        return (None, tuple(), tuple())
+    return (
+        signature.domain,
+        tuple(signature.context),
+        tuple(signature.conditions),
+    )
+
+
+def _print_claim_preview(preview: ProfileUpdatePreview) -> None:
+    events = [event for event in preview.claim_events if event.action != "noop"]
+    if events:
+        typer.echo("Preview (claim consolidation):")
+        for event in events:
+            scope_label = _format_scope_label(_scope_tuple_from_payload(event.signature))
+            if event.action == "created":
+                typer.echo(f"  • new claim {event.claim_id} [{scope_label}]")
+            elif event.action == "merged":
+                typer.echo(
+                    (
+                        f"  • merged {event.claim_id} [{scope_label}] "
+                        f"(Δstrength {event.delta_strength:+0.2f})"
+                    ),
+                )
+            elif event.action == "conflict" and event.conflict:
+                conflict = event.conflict
+                scope_label = _format_scope_label(
+                    (
+                        conflict.signature.domain,
+                        tuple(conflict.signature.context),
+                        tuple(conflict.signature.conditions),
+                    ),
+                )
+                typer.secho(
+                    (
+                        f"  • conflict {event.claim_id} [{scope_label}]: "
+                        f"'{conflict.existing_value}' vs '{conflict.incoming_value}'"
+                    ),
+                    fg=typer.colors.YELLOW,
+                )
+            else:
+                typer.echo(f"  • {event.action} {event.claim_id} [{scope_label}]")
+
+    if preview.interview_prompts:
+        typer.echo("Follow-up interviews queued:")
+        for prompt in preview.interview_prompts:
+            typer.echo(f"  • {prompt}")
 
 
 def _apply_profile_update(profile: dict[str, Any], target: str, value: Any, timestamp: str) -> bool:

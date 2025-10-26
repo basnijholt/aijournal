@@ -69,6 +69,30 @@ def _seed_profile(tmp_path: Path) -> None:
     _write_yaml(tmp_path / "profile" / "claims.yaml", claims)
 
 
+def _seed_conflicting_claim(tmp_path: Path) -> None:
+    conflict_claim = {
+        "id": "focus-notes-conflict",
+        "type": "preference",
+        "subject": "Focus Notes",
+        "predicate": "insight",
+        "value": "Afternoon sessions are more effective.",
+        "statement": "Afternoon sessions are more effective.",
+        "scope": {"domain": None, "context": ["focus", "planning"], "conditions": []},
+        "strength": 0.72,
+        "status": "accepted",
+        "method": "self_report",
+        "user_verified": True,
+        "review_after_days": 120,
+        "provenance": {
+            "sources": [{"entry_id": "legacy-entry", "spans": []}],
+            "first_seen": f"{DATE}T06:00:00Z",
+            "last_updated": f"{DATE}T06:00:00Z",
+            "observation_count": 1,
+        },
+    }
+    _write_yaml(tmp_path / "profile" / "claims.yaml", {"claims": [conflict_claim]})
+
+
 def _run_characterize(tmp_path: Path) -> Path:
     env = {"AIJOURNAL_FAKE_OLLAMA": "1"}
     result = runner.invoke(app, ["characterize", "--date", DATE], env=env)
@@ -95,6 +119,10 @@ def test_characterize_generates_pending_batch(tmp_path: Path, monkeypatch) -> No
     assert claims, "Expected at least one claim proposal"
     first_claim = claims[0]
     assert SOURCE_HASH in (first_claim.get("evidence_hashes") or [])
+    preview = data.get("preview", {})
+    events = preview.get("claim_events") or []
+    assert events and events[0].get("action") == "created"
+    assert not (preview.get("interview_prompts") or [])
 
 
 def test_review_updates_applies_batch(tmp_path: Path, monkeypatch) -> None:
@@ -119,3 +147,20 @@ def test_review_updates_applies_batch(tmp_path: Path, monkeypatch) -> None:
 
     assert profile_data.get("values_motivations", {}).get("recurring_theme")
     assert claims_data.get("claims"), "Expected claim upsert applied"
+
+
+def test_characterize_preview_flags_conflict(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    _seed_normalized(tmp_path)
+    _seed_manifest(tmp_path)
+    _seed_profile(tmp_path)
+    _seed_conflicting_claim(tmp_path)
+
+    batch_path = _run_characterize(tmp_path)
+    data = yaml.safe_load(batch_path.read_text(encoding="utf-8"))
+    preview = data.get("preview", {})
+    events = preview.get("claim_events") or []
+    actions = {event.get("action") for event in events}
+    assert "conflict" in actions, "Expected conflict action in preview events"
+    prompts = preview.get("interview_prompts") or []
+    assert prompts, "Expected interview prompt queued for conflict"
