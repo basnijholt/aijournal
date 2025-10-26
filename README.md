@@ -224,10 +224,10 @@ Runs `prompts/profile_suggest.md` with the current profile + claims and stores
 `ProfileSuggestions` Pydantic model before being written. Fake mode returns the
 same typed structures (claim upserts + facet updates) to keep pipelines consistent.
 
-The live command asks the model for a `ProfileSuggestionsResponse` payload via
-Agno’s structured output support. Use `--progress`, `--timeout`, and `--retries`
-to mirror the ergonomics of the other pipelines; if schema validation keeps
-failing after the configured retries, the CLI exits with an error so upstream
+The live command asks the model for a simplified `suggestions` array (claims and
+facets) via Agno’s structured output support. Use `--progress`, `--timeout`, and
+`--retries` to mirror the ergonomics of the other pipelines; if schema validation
+fails after the configured retries, the CLI exits with an error so upstream
 prompt/debugging is explicit.
 
 ### Apply profile suggestions

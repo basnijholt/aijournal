@@ -52,6 +52,7 @@ from aijournal.models import (
     ClaimSignaturePayload,
     ClaimSource,
     ClaimSourceSpan,
+    ClaimStatus,
     DailySummary,
     DailySummaryResponse,
     ExtractedFactsResponse,
@@ -68,7 +69,6 @@ from aijournal.models import (
     PersonaCoreFile,
     PersonaCoreMeta,
     ProfileSuggestions,
-    ProfileSuggestionsResponse,
     ProfileSuggestionUpdate,
     ProfileSuggestionUpsert,
     ProfileUpdateBatch,
@@ -78,6 +78,8 @@ from aijournal.models import (
     Provenance,
     Scope,
     SelfProfile,
+    SimpleProfileSuggestionsResponse,
+    SimpleSuggestion,
     SummaryMeta,
 )
 from aijournal.schema import SchemaValidationError, validate_schema
@@ -543,6 +545,118 @@ def _render_prompt(prompt_path: str, variables: dict[str, str]) -> str:
 
 def _json_block(data: Any) -> str:
     return json.dumps(data, indent=2, ensure_ascii=False)
+
+
+def _clamp_strength(value: float | None, default: float = 0.6) -> float:
+    try:
+        strength = float(value) if value is not None else default
+    except (TypeError, ValueError):
+        strength = default
+    return max(0.0, min(1.0, strength))
+
+
+def _normalize_status(value: str | None) -> ClaimStatus:
+    status = (value or "tentative").strip().lower()
+    if status not in {"accepted", "tentative", "rejected"}:
+        status = "tentative"
+    return cast(ClaimStatus, status)
+
+
+def _simple_suggestions_to_profile(
+    simple: SimpleProfileSuggestionsResponse,
+    *,
+    timestamp: str,
+) -> ProfileSuggestions:
+    upserts: list[ProfileSuggestionUpsert] = []
+    updates: list[ProfileSuggestionUpdate] = []
+
+    for suggestion in simple.suggestions:
+        kind = (suggestion.kind or "").strip().lower()
+        if kind == "claim":
+            upsert = _simple_claim_to_upsert(suggestion, timestamp)
+            if upsert is not None:
+                upserts.append(upsert)
+        elif kind == "facet":
+            update = _simple_facet_to_update(suggestion)
+            if update is not None:
+                updates.append(update)
+        else:
+            typer.secho(
+                f"Ignoring unknown suggestion kind: {suggestion.kind}",
+                fg=typer.colors.YELLOW,
+                err=True,
+            )
+
+    return ProfileSuggestions(upserts=upserts, updates=updates)
+
+
+def _simple_claim_to_upsert(
+    suggestion: SimpleSuggestion,
+    timestamp: str,
+) -> ProfileSuggestionUpsert | None:
+    statement = (suggestion.statement or "").strip()
+    if not statement:
+        typer.secho(
+            "Skipping claim suggestion without statement.", fg=typer.colors.YELLOW, err=True
+        )
+        # If missing statement, skip.
+        return None
+
+    claim_id = (suggestion.id or _slugify_title(statement))[:96]
+    sources = [
+        ClaimSource(entry_id=str(entry).strip(), spans=[]) for entry in suggestion.evidence if entry
+    ]
+    provenance = Provenance(
+        sources=sources,
+        first_seen=timestamp,
+        last_updated=timestamp,
+        observation_count=max(1, len(sources)) or 1,
+    )
+
+    claim_atom = ClaimAtom(
+        id=claim_id,
+        type="preference",
+        subject="self",
+        predicate="insight",
+        value=statement,
+        statement=statement,
+        scope=Scope(),
+        strength=_clamp_strength(suggestion.confidence),
+        status=_normalize_status(suggestion.status),
+        method="inferred",
+        user_verified=False,
+        review_after_days=120,
+        provenance=provenance,
+    )
+
+    return ProfileSuggestionUpsert(
+        target="claims",
+        operation="upsert",
+        value=claim_atom,
+        rationale=suggestion.rationale,
+    )
+
+
+def _simple_facet_to_update(suggestion: SimpleSuggestion) -> ProfileSuggestionUpdate | None:
+    path = (suggestion.facet_path or "").strip()
+    if not path or suggestion.value is None:
+        typer.secho(
+            "Skipping facet suggestion without facet_path or value.",
+            fg=typer.colors.YELLOW,
+            err=True,
+        )
+        return None
+
+    evidence = [str(entry).strip() for entry in suggestion.evidence if entry]
+    return ProfileSuggestionUpdate(
+        target=path,
+        operation="set",
+        value=suggestion.value,
+        method="inferred",
+        user_verified=False,
+        evidence=evidence,
+        rationale=suggestion.rationale,
+    )
 
 
 def _build_ollama_runner(config: dict[str, Any]) -> OllamaTaskRunner:
@@ -2075,8 +2189,8 @@ def _profile_suggestions_payload(
     if _use_fake_llm():
         suggestions = _fake_profile_suggestions(entries, profile, claims)
     else:
-        suggestion_response = cast(
-            ProfileSuggestionsResponse,
+        simple_response = cast(
+            SimpleProfileSuggestionsResponse,
             _structured_call_with_retry(
                 lambda: _invoke_structured_llm(
                     "prompts/profile_suggest.md",
@@ -2088,7 +2202,7 @@ def _profile_suggestions_payload(
                             {"claims": [claim.model_dump(mode="python") for claim in claims]}
                         ),
                     },
-                    response_model=ProfileSuggestionsResponse,
+                    response_model=SimpleProfileSuggestionsResponse,
                     agent_name="aijournal-profile-suggest",
                     config=config,
                     timeout=timeout,
@@ -2098,26 +2212,7 @@ def _profile_suggestions_payload(
             ),
         )
         timestamp = _format_timestamp(_now())
-        normalized_upserts: list[ProfileSuggestionUpsert] = []
-        for upsert in suggestion_response.upserts:
-            normalized_model = _normalize_claim_atom(
-                upsert.value,
-                timestamp=timestamp,
-            )
-            normalized_upserts.append(
-                ProfileSuggestionUpsert(
-                    target=str(upsert.target or "claims"),
-                    operation=str(upsert.operation or "upsert"),
-                    value=normalized_model,
-                    rationale=upsert.rationale,
-                ),
-            )
-
-        update_models = [update.model_copy(deep=True) for update in suggestion_response.updates]
-        suggestions = ProfileSuggestions(
-            upserts=normalized_upserts,
-            updates=update_models,
-        )
+        suggestions = _simple_suggestions_to_profile(simple_response, timestamp=timestamp)
 
     suggestions.meta = _build_meta("prompts/profile_suggest.md", config=config)
     return suggestions

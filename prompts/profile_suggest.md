@@ -1,45 +1,36 @@
 You maintain a personal self-profile composed of claims and structured facets. Using the
-normalized entries plus the current profile, propose JSON suggestions with two arrays:
+normalized entries plus the current profile, propose JSON suggestions using a single array
+named `suggestions`. Each suggestion must take one of two forms:
 
 ```
 {
-  "upserts": [
+  "suggestions": [
     {
-      "target": "claims",
-      "operation": "upsert",
-      "value": {
-        "id": "kebab-case",
-        "statement": "Evidence-backed statement",
-        "status": "tentative"|"accepted",
-        "confidence": 0.0-1.0,
-        "sources": [{"entry_id": "..."}],
-        "method": "inferred"|"self_report",
-        "user_verified": false,
-        "review_after_days": 30-180
-      },
-      "rationale": "One-sentence justification"
-    }
-  ],
-  "updates": [
+      "kind": "claim",
+      "id": "optional-kebab-id",
+      "statement": "Evidence-backed statement",
+      "rationale": "Short justification (≤20 words)",
+      "evidence": ["normalized-entry-id"],
+      "status": "accepted" | "tentative",
+      "confidence": 0.0-1.0
+    },
     {
-      "target": "facet.path",
-      "operation": "set",
+      "kind": "facet",
+      "facet_path": "coaching_prefs.check_ins.cadence",
       "value": <JSON-compatible value>,
-      "method": "inferred",
-      "user_verified": false,
-      "evidence": ["entry_id or manifest hash"],
-      "rationale": "Short reason"
+      "rationale": "Short justification (≤20 words)",
+      "evidence": ["normalized-entry-id"]
     }
   ]
 }
 ```
 
-Principles:
-- Only suggest changes that are directly supported by the supplied entries.
-- Prefer reinforcing or adjusting existing facets before adding brand-new ones.
-- Keep rationale concise (≤20 words).
-- Leave arrays empty when no grounded updates are available.
-- Return **only** the JSON payload above.
+Guidelines:
+- Only include fields relevant to the suggestion type (`statement` for claims, `facet_path` and `value` for facets).
+- Use the supplied entries for grounding; omit items when support is weak.
+- IDs are optional; provide them only when a stable slug already exists.
+- Keep rationales brief and factual, and reference evidence IDs where possible.
+- Return **only** the JSON payload shown above. No markdown fences or commentary.
 
 DATE: $date
 

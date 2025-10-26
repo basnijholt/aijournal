@@ -21,6 +21,9 @@ from .claim_atoms import (
 
 Claim = ClaimAtom
 
+JsonScalar = str | int | float | bool | None
+JsonValue = JsonScalar | list[Any] | dict[str, Any]
+
 
 class ManifestEntry(AijournalModel):
     """Manifest row describing an ingested Markdown source."""
@@ -556,6 +559,26 @@ class ProfileSuggestionsResponse(AijournalModel):
     updates: list[ProfileSuggestionUpdate] = Field(default_factory=list)
 
 
+class SimpleSuggestion(AijournalModel):
+    """Flattened suggestion item returned by the simplified LLM schema."""
+
+    kind: str
+    id: str | None = None
+    statement: str | None = None
+    facet_path: str | None = None
+    value: JsonValue | None = None
+    rationale: str | None = None
+    evidence: list[str] = Field(default_factory=list)
+    status: str | None = None
+    confidence: float | None = None
+
+
+class SimpleProfileSuggestionsResponse(AijournalModel):
+    """Simplified schema returned directly by the LLM."""
+
+    suggestions: list[SimpleSuggestion] = Field(default_factory=list)
+
+
 class PersonaCore(AijournalModel):
     profile: dict[str, Any] = Field(default_factory=dict)
     claims: list[ClaimAtom] = Field(default_factory=list)
@@ -626,6 +649,8 @@ __all__ = [
     "CharacterizeResponse",
     "ProfileSuggestionUpsertPayload",
     "ProfileSuggestionUpdate",
+    "SimpleSuggestion",
+    "SimpleProfileSuggestionsResponse",
     "ProfileSuggestionUpsert",
     "ProfileSuggestions",
     "ProfileSuggestionsResponse",

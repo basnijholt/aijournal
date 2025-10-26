@@ -1030,8 +1030,8 @@ blocking on LLM availability.
      budgets so regressions are visible without extra tooling.
 
 8. **feat(profile-structured-live): align prompts with live Ollama responses.**
-   - `aijournal profile suggest` currently falls back to the JSON runner and succeeds, but the structured-output path returns `invalid JSON schema` from devstral:24b. Tighten prompts/response parsing so live mode passes without retries/fallback warnings.
-   - `aijournal characterize` hits the same structured-output error and the JSON runner fails to emit valid payloads, so the CLI falls back to heuristic proposals. Update prompts or acceptance logic so live mode produces validated `CharacterizeResponse` payloads.
+   - `aijournal profile suggest` now uses the simplified `suggestions` array and converts it into rich internal updates (shipped 2025-10-26). Live runs succeed against devstral:24b without fallbacks.
+   - `aijournal characterize` still triggers `invalid JSON schema`; restructure the response shape (or split the workflow) so live mode produces validated payloads instead of falling back to heuristics.
    - `aijournal interview` still relies on heuristic probes; wire it to the shared LLM runner (with fake-mode guard rails) once structured outputs remain stable so live runs gain adaptive questioning.
 
 Document each milestone in CHANGELOG.md once merged so README and PLAN stay aligned with shipped
