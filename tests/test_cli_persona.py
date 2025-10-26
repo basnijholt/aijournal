@@ -124,7 +124,7 @@ def test_persona_build_handles_empty_claims(
     result = runner.invoke(app, ["persona", "build"])
     assert result.exit_code == 0, result.stdout
     payload = yaml.safe_load(
-        (tmp_path / "derived" / "persona" / "persona_core.yaml").read_text(encoding="utf-8")
+        (tmp_path / "derived" / "persona" / "persona_core.yaml").read_text(encoding="utf-8"),
     )
     assert payload["persona"]["claims"] == []
     assert payload["persona"]["profile"], "profile slice should be included when available"
@@ -154,7 +154,7 @@ def test_persona_build_respects_min_claims(
     )
     assert result.exit_code == 0, result.stdout
     payload = yaml.safe_load(
-        (tmp_path / "derived" / "persona" / "persona_core.yaml").read_text(encoding="utf-8")
+        (tmp_path / "derived" / "persona" / "persona_core.yaml").read_text(encoding="utf-8"),
     )
     assert payload["meta"]["claim_count"] == 2
     assert payload["meta"].get("budget_exceeded") is True

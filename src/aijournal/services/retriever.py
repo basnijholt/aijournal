@@ -6,16 +6,18 @@ import json
 import os
 import re
 import sqlite3
-from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import yaml
 from annoy import AnnoyIndex
 
 from .embedding import EmbeddingBackend
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
 
 @dataclass(frozen=True)
@@ -150,10 +152,7 @@ class Retriever:
             if not self._passes_filters(chunk_date, row["tags"], row["source_type"], filters):
                 continue
             annoy_idx = mapping.inverse.get(chunk_id)
-            if annoy_idx is None:
-                distance = 1.0
-            else:
-                distance = distance_map.get(annoy_idx, 1.0)
+            distance = 1.0 if annoy_idx is None else distance_map.get(annoy_idx, 1.0)
             cosine = max(0.0, 1.0 - distance)
             recency = self._recency_score(chunk_date, today)
             final_score = 0.7 * cosine + 0.3 * recency

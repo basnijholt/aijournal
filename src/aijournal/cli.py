@@ -9,7 +9,6 @@ import random
 import re
 import sqlite3
 from array import array
-from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
@@ -36,7 +35,7 @@ from aijournal.services import LLMResponseError, OllamaConfig, OllamaTaskRunner
 from aijournal.services.embedding import EmbeddingBackend
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Iterable, Sequence
 
     from agno.agent import Agent
 
@@ -3094,7 +3093,7 @@ def _collect_pack_entries(
     if level == "L1":
         role_rank = {role: idx for idx, role in enumerate(ROLE_ORDER)}
         entries.sort(
-            key=lambda item: (role_rank.get(item[0], len(ROLE_ORDER)), item[2], str(item[1]))
+            key=lambda item: (role_rank.get(item[0], len(ROLE_ORDER)), item[2], str(item[1])),
         )
         return [(role, path) for role, path, _ in entries]
 

@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import random
-from collections.abc import Sequence
 from dataclasses import dataclass, field
 from hashlib import sha256
+from typing import TYPE_CHECKING
 
 from ollama import Client
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
 DEFAULT_EMBED_DIM = 384
 
