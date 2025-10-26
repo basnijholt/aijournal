@@ -10,7 +10,7 @@ import re
 import sqlite3
 from array import array
 from collections.abc import Iterable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from math import ceil, exp
@@ -38,6 +38,9 @@ from aijournal.models import (
     ClaimsFile,
     ManifestEntry,
     NormalizedEntry,
+    PersonaCore,
+    PersonaCoreFile,
+    PersonaCoreMeta,
     ProfileSuggestionUpdate,
     ProfileSuggestionUpsert,
     ProfileSuggestions,
@@ -336,6 +339,47 @@ class IndexTask:
     entry: NormalizedEntry
     source_hash: str | None
     manifest: ManifestEntry | None
+
+
+@dataclass
+class PackEntry:
+    """Context file included in a pack."""
+
+    role: str
+    path: str
+    tokens: int
+    content: str
+
+
+@dataclass
+class TrimmedFile:
+    """Metadata describing a trimmed pack entry."""
+
+    role: str
+    path: str
+
+
+@dataclass
+class PackMeta:
+    """Pack-level metadata."""
+
+    total_tokens: int
+    max_tokens: int
+    trimmed: list[TrimmedFile]
+    generated_at: str
+
+
+@dataclass
+class PackBundle:
+    """Structured bundle for pack output."""
+
+    level: str
+    date: str
+    files: list[PackEntry]
+    meta: PackMeta
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
 
 
 FAKE_TIME_BLOCKS = [
@@ -2678,10 +2722,16 @@ def _persona_state(root: Path) -> tuple[str, list[str]]:
         rel = _relative_to_root(persona_path, root)
         return "missing", [f"Missing {rel}; run `aijournal persona build`."]
 
-    payload = _load_yaml(persona_path)
-    meta = payload.get("meta") if isinstance(payload, dict) else {}
-    stored_raw = meta.get("source_mtimes") if isinstance(meta, dict) else None
-    if not isinstance(stored_raw, dict):
+    try:
+        persona_file = load_yaml_model(persona_path, PersonaCoreFile)
+    except ValidationError as exc:
+        return (
+            "stale",
+            [f"Persona core failed validation ({exc.__class__.__name__}); rebuild to refresh."],
+        )
+
+    stored_raw = persona_file.meta.source_mtimes
+    if not stored_raw:
         return (
             "stale",
             [
@@ -2803,25 +2853,28 @@ def _persona_build_impl(
         max_claims=max_claims,
     )
 
-    persona_block = {
-        "profile": profile_slice,
-        "claims": selected_claims,
-    }
     now = _format_timestamp(now_dt)
-    meta: dict[str, Any] = {
-        "generated_at": now,
-        "token_budget": token_budget,
-        "planned_tokens": planned_tokens,
-        "char_per_token": char_per_token,
-        "selection_strategy": "strength*impact*decay",
-        "claim_pool": len(ranked_claims),
-        "claim_count": len(selected_claims),
-        "max_claims": max_claims,
-        "min_claims": min_claims,
-        "budget_exceeded": budget_exceeded,
-    }
-    if trimmed_ids:
-        meta["trimmed"] = [{"type": "claim", "id": cid} for cid in trimmed_ids]
+    persona_claim_models: list[ClaimAtom] = []
+    for claim_dict in selected_claims:
+        try:
+            persona_claim_models.append(ClaimAtom.model_validate(claim_dict))
+        except ValidationError:
+            normalized = _ensure_claim_atom_dict(
+                claim_dict,
+                timestamp=now,
+                default_sources=[
+                    {
+                        "entry_id": str(claim_dict.get("id") or "claim"),
+                        "spans": [],
+                    },
+                ],
+            )
+            persona_claim_models.append(ClaimAtom.model_validate(normalized))
+
+    persona_core = PersonaCore(
+        profile=copy.deepcopy(profile_slice),
+        claims=persona_claim_models,
+    )
 
     sources: dict[str, str] = {}
     profile_path = root / "profile" / "self_profile.yaml"
@@ -2830,16 +2883,35 @@ def _persona_build_impl(
         sources["profile"] = _relative_to_root(profile_path, root)
     if claims_path.exists():
         sources["claims"] = _relative_to_root(claims_path, root)
-    if sources:
-        meta["sources"] = sources
-    meta["source_mtimes"] = _persona_source_mtimes(root)
+    source_mtimes = _persona_source_mtimes(root)
 
-    payload = {
-        "persona": persona_block,
-        "meta": meta,
-    }
+    meta_model = PersonaCoreMeta(
+        generated_at=now,
+        token_budget=token_budget,
+        planned_tokens=planned_tokens,
+        char_per_token=char_per_token,
+        selection_strategy="strength*impact*decay",
+        trimmed=[{"type": "claim", "id": cid} for cid in trimmed_ids] if trimmed_ids else [],
+        claim_pool=len(ranked_claims),
+        claim_count=len(persona_claim_models),
+        max_claims=max_claims,
+        min_claims=min_claims,
+        budget_exceeded=budget_exceeded,
+        sources=sources,
+        source_mtimes=source_mtimes,
+    )
+
+    persona_file = PersonaCoreFile(persona=persona_core, meta=meta_model)
     persona_path = root / "derived" / "persona" / "persona_core.yaml"
-    changed = _write_yaml_if_changed(persona_path, payload, schema="persona_core")
+    existing: PersonaCoreFile | None = None
+    if persona_path.exists():
+        try:
+            existing = load_yaml_model(persona_path, PersonaCoreFile)
+        except ValidationError:
+            existing = None
+
+    changed = existing is None or existing != persona_file
+    write_yaml_model(persona_path, persona_file)
     return persona_path, changed
 
 
@@ -3191,24 +3263,24 @@ def _pack_token_count(text: str) -> int:
 
 
 def _pack_trim_entries(
-    entries: list[dict[str, Any]],
+    entries: list[PackEntry],
     budget: int,
-    trimmed: list[dict[str, str]],
+    trimmed: list[TrimmedFile],
 ) -> None:
     priority_roles = TRIM_PRIORITY
 
     def total_tokens() -> int:
-        return sum(entry["tokens"] for entry in entries)
+        return sum(entry.tokens for entry in entries)
 
     if total_tokens() <= budget:
         return
 
     for role in priority_roles:
         for entry in entries:
-            if entry["role"] == role and entry["tokens"] > 0:
-                trimmed.append({"role": role, "path": entry["path"]})
-                entry["content"] = "(trimmed due to token budget)"
-                entry["tokens"] = 0
+            if entry.role == role and entry.tokens > 0:
+                trimmed.append(TrimmedFile(role=role, path=entry.path))
+                entry.content = "(trimmed due to token budget)"
+                entry.tokens = 0
                 if total_tokens() <= budget:
                     return
 
@@ -3360,24 +3432,20 @@ def _resolve_pack_date(level: str, requested: str | None, root: Path) -> str:
 
 
 def _build_pack_payload(
-    entries: list[dict[str, Any]],
+    entries: list[PackEntry],
     level: str,
     date: str,
-    trimmed: list[dict[str, str]],
+    trimmed: list[TrimmedFile],
     total_tokens: int,
     max_tokens: int,
-) -> dict[str, Any]:
-    return {
-        "level": level,
-        "date": date,
-        "files": entries,
-        "meta": {
-            "total_tokens": total_tokens,
-            "max_tokens": max_tokens,
-            "trimmed": trimmed,
-            "generated_at": _format_timestamp(_now()),
-        },
-    }
+) -> PackBundle:
+    meta = PackMeta(
+        total_tokens=total_tokens,
+        max_tokens=max_tokens,
+        trimmed=trimmed,
+        generated_at=_format_timestamp(_now()),
+    )
+    return PackBundle(level=level, date=date, files=entries, meta=meta)
 
 
 @app.command("pack")
@@ -3426,24 +3494,24 @@ def pack(
         history_days if level == "L4" else 0,
     )
 
-    entries_payload: list[dict[str, Any]] = []
+    entries_payload: list[PackEntry] = []
     for role, path in entries_info:
         text = path.read_text(encoding="utf-8")
         rel = _relative_source_path(path, root)
         entries_payload.append(
-            {
-                "role": role,
-                "path": rel,
-                "tokens": _pack_token_count(text),
-                "content": text,
-            },
+            PackEntry(
+                role=role,
+                path=rel,
+                tokens=_pack_token_count(text),
+                content=text,
+            ),
         )
 
-    total_tokens = sum(entry["tokens"] for entry in entries_payload)
-    trimmed: list[dict[str, str]] = []
+    total_tokens = sum(entry.tokens for entry in entries_payload)
+    trimmed: list[TrimmedFile] = []
     if total_tokens > budget:
         _pack_trim_entries(entries_payload, budget, trimmed)
-        total_tokens = sum(entry["tokens"] for entry in entries_payload)
+        total_tokens = sum(entry.tokens for entry in entries_payload)
 
     payload = _build_pack_payload(
         entries_payload,
@@ -3457,9 +3525,9 @@ def pack(
     if dry_run:
         typer.echo("Planned files:")
         for entry in entries_payload:
-            typer.echo(f"- {entry['path']} ({entry['tokens']} tokens)")
+            typer.echo(f"- {entry.path} ({entry.tokens} tokens)")
         if trimmed:
-            trimmed_display = ", ".join(f"{item['role']}:{item['path']}" for item in trimmed)
+            trimmed_display = ", ".join(f"{item.role}:{item.path}" for item in trimmed)
             typer.echo(f"trimmed: {trimmed_display}")
         return
 
@@ -3467,9 +3535,9 @@ def pack(
         output.parent.mkdir(parents=True, exist_ok=True)
         changed = False
         if fmt == "json":
-            changed = _write_json_if_changed(output, payload)
+            changed = _write_json_if_changed(output, payload.to_dict())
         else:
-            changed = _write_yaml_if_changed(output, payload)
+            changed = _write_yaml_if_changed(output, payload.to_dict())
         if changed:
             typer.echo(str(output))
         else:
@@ -3477,9 +3545,9 @@ def pack(
         return
 
     if fmt == "json":
-        typer.echo(json.dumps(payload, indent=2))
+        typer.echo(json.dumps(payload.to_dict(), indent=2))
     else:
-        typer.echo(yaml.safe_dump(payload, sort_keys=False))
+        typer.echo(yaml.safe_dump(payload.to_dict(), sort_keys=False))
 
 
 @index_app.command("rebuild")
