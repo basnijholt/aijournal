@@ -22,6 +22,25 @@ def _scope_tuple(scope: Scope | None) -> tuple[str | None, tuple[str, ...], tupl
     return (domain, context, conditions)
 
 
+_SCOPE_QUALIFIER_GROUPS: dict[str, dict[str, tuple[str, ...]]] = {
+    "day_type": {
+        "weekday": ("weekday", "weekdays", "workday", "workdays"),
+        "weekend": ("weekend", "weekends"),
+    },
+    "company": {
+        "solo": ("solo", "independent", "individual", "alone"),
+        "team": ("team", "collaborative", "pair", "paired", "pairing", "group"),
+    },
+}
+
+_SCOPE_COMPLEMENTS: dict[str, str] = {
+    "weekday": "weekend",
+    "weekend": "weekday",
+    "solo": "team",
+    "team": "solo",
+}
+
+
 @dataclass(frozen=True)
 class ClaimSignature:
     """Canonical identifier for matching claims without relying on the claim id."""
@@ -65,6 +84,10 @@ class ClaimMergeOutcome:
     claim_id: str
     delta_strength: float = 0.0
     conflict: ClaimConflict | None = None
+    related_claim_id: str | None = None
+    related_action: str | None = None
+    signature: ClaimSignature | None = None
+    related_signature: ClaimSignature | None = None
 
 
 class ClaimConsolidator:
@@ -96,7 +119,12 @@ class ClaimConsolidator:
         if index is None:
             self._initialize_provenance(incoming.provenance)
             claims.append(incoming)
-            return ClaimMergeOutcome(changed=True, action="created", claim_id=incoming.id)
+            return ClaimMergeOutcome(
+                changed=True,
+                action="created",
+                claim_id=incoming.id,
+                signature=signature,
+            )
 
         existing = claims[index]
         if self._values_equal(existing, incoming):
@@ -120,16 +148,10 @@ class ClaimConsolidator:
                 action="merged" if changed else "noop",
                 claim_id=existing.id,
                 delta_strength=delta,
+                signature=ClaimSignature.from_atom(existing),
             )
 
-        conflict, delta = self._handle_conflict(existing, incoming, signature)
-        return ClaimMergeOutcome(
-            changed=conflict is not None,
-            action="conflict" if conflict else "noop",
-            claim_id=existing.id,
-            delta_strength=delta if conflict else 0.0,
-            conflict=conflict,
-        )
+        return self._handle_conflict(claims, index, existing, incoming, signature)
 
     def _find_existing_index(
         self,
@@ -221,10 +243,16 @@ class ClaimConsolidator:
 
     def _handle_conflict(
         self,
+        claims: list[ClaimAtom],
+        index: int,
         existing: ClaimAtom,
         incoming: ClaimAtom,
         signature: ClaimSignature,
-    ) -> tuple[ClaimConflict | None, float]:
+    ) -> ClaimMergeOutcome:
+        scoped_outcome = self._attempt_scope_split(claims, existing, incoming)
+        if scoped_outcome is not None:
+            return scoped_outcome
+
         prev_strength = _clamp01(float(existing.strength))
         new_strength = _clamp01(prev_strength - 0.15)
         changed = False
@@ -242,16 +270,150 @@ class ClaimConsolidator:
         sources_changed = self._merge_sources(existing, incoming)
         changed = changed or sources_changed
         if not changed:
-            return (None, 0.0)
+            return ClaimMergeOutcome(
+                changed=False,
+                action="noop",
+                claim_id=existing.id,
+                delta_strength=0.0,
+                conflict=None,
+                signature=ClaimSignature.from_atom(existing),
+            )
+
         conflict = ClaimConflict(
             claim_id=existing.id,
-            signature=signature,
+            signature=ClaimSignature.from_atom(existing),
             statement=existing.statement,
             existing_value=existing.value,
             incoming_value=incoming.value,
             incoming_sources=list(incoming.provenance.sources),
         )
-        return (conflict, new_strength - prev_strength)
+        return ClaimMergeOutcome(
+            changed=True,
+            action="conflict",
+            claim_id=existing.id,
+            delta_strength=new_strength - prev_strength,
+            conflict=conflict,
+            signature=conflict.signature,
+        )
+
+    def _attempt_scope_split(
+        self,
+        claims: list[ClaimAtom],
+        existing: ClaimAtom,
+        incoming: ClaimAtom,
+    ) -> ClaimMergeOutcome | None:
+        for keyword_map in _SCOPE_QUALIFIER_GROUPS.values():
+            existing_label = self._detect_scope_label(existing, keyword_map)
+            incoming_label = self._detect_scope_label(incoming, keyword_map)
+
+            target_existing = existing_label
+            target_incoming = incoming_label
+            if target_existing == target_incoming and target_existing is not None:
+                continue
+
+            if target_existing is None and target_incoming is None:
+                continue
+
+            if target_existing is None and target_incoming is not None:
+                target_existing = _SCOPE_COMPLEMENTS.get(target_incoming)
+            elif target_incoming is None and target_existing is not None:
+                target_incoming = _SCOPE_COMPLEMENTS.get(target_existing)
+
+            if (
+                target_existing is None
+                or target_incoming is None
+                or target_existing == target_incoming
+            ):
+                continue
+
+            if existing.scope is None:
+                existing.scope = Scope()
+            if incoming.scope is None:
+                incoming.scope = Scope()
+
+            self._ensure_scope_label(existing.scope, target_existing)
+            existing.provenance.last_updated = self._timestamp
+
+            scoped_claim = incoming.model_copy(deep=True)
+            self._ensure_scope_label(scoped_claim.scope, target_incoming)
+            scoped_claim.provenance.last_updated = self._timestamp
+            scoped_claim.provenance.observation_count = max(
+                1,
+                scoped_claim.provenance.observation_count or 1,
+            )
+            scoped_claim.id = self._unique_scoped_id(claims, scoped_claim.id, target_incoming)
+
+            scoped_outcome = self._upsert_atoms(claims, scoped_claim)
+            related_signature = scoped_outcome.signature or ClaimSignature.from_atom(scoped_claim)
+            conflict = ClaimConflict(
+                claim_id=existing.id,
+                signature=ClaimSignature.from_atom(existing),
+                statement=existing.statement,
+                existing_value=existing.value,
+                incoming_value=incoming.value,
+                incoming_sources=list(incoming.provenance.sources),
+            )
+            return ClaimMergeOutcome(
+                changed=True,
+                action="scope_split",
+                claim_id=existing.id,
+                delta_strength=scoped_outcome.delta_strength if scoped_outcome.changed else 0.0,
+                conflict=conflict,
+                related_claim_id=scoped_outcome.claim_id,
+                related_action=scoped_outcome.action,
+                signature=conflict.signature,
+                related_signature=related_signature,
+            )
+        return None
+
+    def _detect_scope_label(
+        self,
+        claim: ClaimAtom,
+        keyword_map: dict[str, tuple[str, ...]],
+    ) -> str | None:
+        scope = claim.scope or Scope()
+        context_lower = {item.lower() for item in scope.context}
+        condition_lower = {item.lower() for item in scope.conditions}
+        for label, keywords in keyword_map.items():
+            keyword_set = {word.lower() for word in keywords}
+            if context_lower & keyword_set:
+                return label
+            if condition_lower & keyword_set:
+                return label
+
+        for text in (claim.statement, claim.value):
+            if not text:
+                continue
+            lowered = text.lower()
+            for label, keywords in keyword_map.items():
+                if any(word in lowered for word in keywords):
+                    return label
+        return None
+
+    def _ensure_scope_label(self, scope: Scope, label: str) -> None:
+        normalized = (label or "").strip()
+        if not normalized:
+            return
+        existing = list(scope.context or [])
+        lower_map = {item.lower(): idx for idx, item in enumerate(existing)}
+        if normalized.lower() in lower_map:
+            existing[lower_map[normalized.lower()]] = normalized
+        else:
+            existing.append(normalized)
+        scope.context = existing
+
+    def _unique_scoped_id(self, claims: Sequence[ClaimAtom], base_id: str, label: str) -> str:
+        existing_ids = {claim.id for claim in claims}
+        if base_id not in existing_ids:
+            return base_id[:96]
+
+        suffix = label.replace(" ", "-").replace("/", "-").lower() or "scope"
+        candidate = f"{base_id}.{suffix}"[:96]
+        counter = 1
+        while candidate in existing_ids:
+            candidate = f"{base_id}.{suffix}-{counter}"[:96]
+            counter += 1
+        return candidate
 
 
 def _source_key(

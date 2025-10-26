@@ -1005,11 +1005,13 @@ blocking on LLM availability.
 5. **feat(consolidation): pending-update fusion.**
    - Integrate the new `ClaimConsolidator` with micro-facts/characterize pipelines and queue follow-up
      interviews whenever conflicts are detected (status drops to `tentative`). _Characterize batches now
-     emit consolidation previews + queued interview prompts (2025-10-26); micro-facts ingest remains._
+     emit consolidation previews + queued interview prompts (2025-10-26); micro-facts ingest gained the
+     same preview + prompt wiring 2025-10-27._
    - Flesh out scope-splitting heuristics (weekday vs. weekend, solo vs. team) instead of only
-     downgrading strength when values differ.
+     downgrading strength when values differ. _Implemented 2025-10-27 with automatic scope splits before
+     falling back to tentative downgrades._
    - Extend regression coverage: conflicting scope handling, decay math, manifest/evidence propagation,
-     and interview prompt generation.
+     and interview prompt generation. _New CLI micro-facts + consolidator tests landed 2025-10-27._
 
 ### Later focus (mid-November 2025)
 

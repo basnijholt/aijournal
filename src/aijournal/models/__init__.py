@@ -127,6 +127,8 @@ class MicroFact(AijournalModel):
 
 class MicroFactsFile(AijournalModel):
     facts: list[MicroFact] = Field(default_factory=list)
+    claim_proposals: list[ClaimProposal] = Field(default_factory=list)
+    preview: ProfileUpdatePreview | None = None
     meta: SummaryMeta = Field(default_factory=SummaryMeta)
 
 
@@ -438,6 +440,9 @@ class ClaimPreviewEvent(AijournalModel):
     strength: float | None = None
     signature: ClaimSignaturePayload | None = None
     conflict: ClaimConflictPayload | None = None
+    related_claim_id: str | None = None
+    related_action: str | None = None
+    related_signature: ClaimSignaturePayload | None = None
 
 
 class ProfileUpdatePreview(AijournalModel):

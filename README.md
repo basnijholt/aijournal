@@ -122,7 +122,13 @@ aijournal facts --date 2025-02-03
 Uses `prompts/extract_facts.md` to create `derived/microfacts/<DATE>.yaml` filled with
 evidence-backed statements. Outputs are validated against the `MicroFactsFile`
 model, and fake mode now emits typed `MicroFact` objects for each entry so the
-structure matches real runs even in CI.
+structure matches real runs even in CI. Each run now also attaches the derived
+claim proposals and a consolidation preview: micro-facts are converted into
+`ClaimProposal` atoms, pushed through the shared `ClaimConsolidator`, and the
+resulting `preview.claim_events` mirror the output of `review-updates --dry-run`.
+Any conflicts are scope-split (weekday vs. weekend, solo vs. team) before falling
+back to tentative downgrades, and queued follow-up prompts surface in the CLI so
+you can jump straight into `aijournal interview`.
 
 ### Ollama health check (fake mode)
 

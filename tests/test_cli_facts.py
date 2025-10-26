@@ -77,6 +77,13 @@ def test_facts_generates_microfacts(tmp_path: Path, monkeypatch: pytest.MonkeyPa
     meta = data.get("meta", {})
     for key in ("llm_model", "prompt_path", "prompt_hash", "created_at"):
         assert meta.get(key), f"Missing {key}"
+    proposals = data.get("claim_proposals", [])
+    assert isinstance(proposals, list) and proposals, "Expected claim proposals from micro-facts"
+    preview = data.get("preview") or {}
+    events = preview.get("claim_events") or []
+    assert events, "Expected preview events for micro-facts consolidation"
+    assert any(event.get("action") == "created" for event in events)
+    assert "Preview (claim consolidation)" in result.stdout
     assert str(facts_path) in result.stdout
 
 

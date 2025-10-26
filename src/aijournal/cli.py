@@ -44,8 +44,8 @@ from aijournal.models import (
     ClaimConflictPayload,
     ClaimPreviewEvent,
     ClaimProposal,
-    ClaimSignaturePayload,
     ClaimsFile,
+    ClaimSignaturePayload,
     ClaimSource,
     ClaimSourceSpan,
     DailySummary,
@@ -1675,10 +1675,144 @@ def _summarize_day_payload(
     return DailySummary.model_validate(payload)
 
 
+def _fact_sources_from_evidence(fact: MicroFact) -> list[ClaimSource]:
+    evidence = fact.evidence
+    if evidence is None:
+        return []
+    spans: list[ClaimSourceSpan] = []
+    for span in evidence.spans or []:
+        spans.append(
+            ClaimSourceSpan(
+                type=span.type,
+                index=span.index,
+                start=span.start,
+                end=span.end,
+            )
+        )
+    if not evidence.entry_id:
+        return []
+    return [ClaimSource(entry_id=evidence.entry_id, spans=spans)]
+
+
+def _scope_from_fact(
+    fact: MicroFact,
+    entry: NormalizedEntry | None,
+) -> Scope:
+    domain = entry.source_type if entry and entry.source_type else None
+    context_candidates: list[str] = []
+    if entry and entry.tags:
+        context_candidates.extend(tag for tag in entry.tags if tag)
+
+    statement_lower = fact.statement.lower()
+    keyword_pairs = {
+        "weekday": ("weekday", "weekdays", "workday", "workdays"),
+        "weekend": ("weekend", "weekends"),
+        "solo": ("solo", "independent", "alone"),
+        "team": ("team", "collaborative", "pairing", "group"),
+    }
+    for label, keywords in keyword_pairs.items():
+        if any(word in statement_lower for word in keywords):
+            context_candidates.append(label)
+
+    unique_context = _merge_unique(context_candidates, [])
+    return Scope(
+        domain=domain,
+        context=unique_context,
+        conditions=[],
+    )
+
+
+def _microfact_claim_proposals(
+    facts: Sequence[MicroFact],
+    *,
+    entries: Sequence[NormalizedEntry],
+    manifest_index: dict[str, ManifestEntry],
+    timestamp: str,
+) -> list[ClaimProposal]:
+    entry_by_id: dict[str, NormalizedEntry] = {}
+    for entry in entries:
+        if entry.id:
+            entry_by_id[entry.id] = entry
+
+    proposals: list[ClaimProposal] = []
+    for fact in facts:
+        if not fact.statement.strip():
+            continue
+        evidence_sources = _fact_sources_from_evidence(fact)
+        entry_id = fact.evidence.entry_id if fact.evidence else None
+        entry = entry_by_id.get(entry_id) if entry_id else None
+        scope = _scope_from_fact(fact, entry)
+
+        provenance_sources = (
+            evidence_sources
+            if evidence_sources
+            else (
+                [ClaimSource(entry_id=entry_id, spans=[])]
+                if entry_id
+                else [ClaimSource(entry_id=f"microfact-{fact.id}", spans=[])]
+            )
+        )
+
+        manifest_entry = manifest_index.get(entry_id) if entry_id else None
+        source_hash = entry.source_hash if entry and entry.source_hash else None
+
+        normalized_ids: list[str] = []
+        if entry_id:
+            normalized_ids = [entry_id]
+        elif entry_by_id:
+            normalized_ids = [next(iter(entry_by_id.keys()))]
+
+        evidence_hashes = [source_hash] if source_hash else []
+        manifest_hashes = [manifest_entry.hash] if manifest_entry else []
+
+        raw_claim = {
+            "id": f"microfact.{fact.id}",
+            "type": "preference",
+            "subject": fact.id,
+            "predicate": "insight",
+            "value": fact.statement,
+            "statement": fact.statement,
+            "scope": scope.model_dump(mode="python"),
+            "strength": fact.confidence,
+            "status": "tentative",
+            "method": "inferred",
+            "review_after_days": 90,
+            "provenance": {
+                "sources": [source.model_dump(mode="python") for source in provenance_sources],
+                "first_seen": fact.first_seen or _created_date(timestamp),
+                "last_updated": fact.last_seen or timestamp,
+                "observation_count": 1,
+            },
+        }
+
+        try:
+            claim_model = _normalize_claim_atom(
+                raw_claim,
+                timestamp=timestamp,
+                default_sources=provenance_sources,
+            )
+        except (ValidationError, ValueError):
+            continue
+
+        proposals.append(
+            ClaimProposal(
+                claim=claim_model,
+                normalized_ids=normalized_ids,
+                evidence_hashes=evidence_hashes,
+                manifest_hashes=manifest_hashes,
+                rationale=f"Derived from micro-fact {fact.id}",
+            )
+        )
+    return proposals
+
+
 def _microfacts_payload(
     entries: Sequence[NormalizedEntry],
     date: str,
     config: dict[str, Any],
+    *,
+    manifest_index: dict[str, ManifestEntry] | None = None,
+    existing_claims: Sequence[ClaimAtom] | None = None,
 ) -> MicroFactsFile:
     def fallback_model() -> MicroFactsFile:
         return MicroFactsFile(facts=_fake_microfacts(entries))
@@ -1686,26 +1820,87 @@ def _microfacts_payload(
     def fallback_dict() -> dict[str, Any]:
         return fallback_model().model_dump(mode="python")
 
-    if _use_fake_llm():
-        return fallback_model()
+    manifest_index = manifest_index or {}
+    existing_claims = tuple(existing_claims or ())
+    claim_timestamp = _format_timestamp(_now())
+    (
+        normalized_ids,
+        evidence_hashes,
+        manifest_hashes,
+        default_sources,
+    ) = _characterization_context(entries, manifest_index)
 
-    try:
-        runner = _build_ollama_runner(config)
-    except Exception as exc:  # pragma: no cover
-        typer.secho(
-            f"Unable to initialize Ollama for facts: {exc}",
-            fg=typer.colors.YELLOW,
-            err=True,
-        )
-        payload = fallback_dict()
+    payload_dict: dict[str, Any] = {}
+    if _use_fake_llm():
+        facts_model = fallback_model()
+        payload_dict = facts_model.model_dump(mode="python")
     else:
-        payload = _safe_llm_json(
-            "prompts/extract_facts.md",
-            {"date": date, "entries_json": _json_block(_entries_to_payload(entries))},
-            runner,
-            fallback_dict,
-        )
-    return MicroFactsFile.model_validate(payload)
+        try:
+            runner = _build_ollama_runner(config)
+        except Exception as exc:  # pragma: no cover
+            typer.secho(
+                f"Unable to initialize Ollama for facts: {exc}",
+                fg=typer.colors.YELLOW,
+                err=True,
+            )
+            payload_dict = fallback_dict()
+        else:
+            payload_dict = _safe_llm_json(
+                "prompts/extract_facts.md",
+                {"date": date, "entries_json": _json_block(_entries_to_payload(entries))},
+                runner,
+                fallback_dict,
+            )
+        facts_model = MicroFactsFile.model_validate(payload_dict)
+
+    raw_claim_candidates: Iterable[Any] = []
+    claims_key = payload_dict.get("claim_proposals") if isinstance(payload_dict, dict) else None
+    if isinstance(claims_key, list):
+        raw_claim_candidates = claims_key
+    elif isinstance(payload_dict, dict):
+        legacy_claims = payload_dict.get("claims")
+        if isinstance(legacy_claims, list):
+            raw_claim_candidates = legacy_claims
+
+    llm_claims = _normalize_claim_proposals(
+        raw_claims=raw_claim_candidates,
+        normalized_ids=normalized_ids,
+        evidence_hashes=evidence_hashes,
+        manifest_hashes=manifest_hashes,
+        default_sources=default_sources,
+        timestamp=claim_timestamp,
+    )
+
+    derived_claims = _microfact_claim_proposals(
+        facts_model.facts,
+        entries=entries,
+        manifest_index=manifest_index,
+        timestamp=claim_timestamp,
+    )
+
+    combined: list[ClaimProposal] = []
+    seen_ids: set[str] = set()
+    for proposal in llm_claims:
+        claim_id = proposal.claim.id
+        if claim_id in seen_ids:
+            continue
+        combined.append(proposal)
+        seen_ids.add(claim_id)
+
+    for proposal in derived_claims:
+        claim_id = proposal.claim.id
+        if claim_id in seen_ids:
+            continue
+        combined.append(proposal)
+        seen_ids.add(claim_id)
+
+    facts_model.claim_proposals = combined
+    facts_model.preview = _build_claim_preview(
+        combined,
+        [claim.model_copy(deep=True) for claim in existing_claims],
+        timestamp=claim_timestamp,
+    )
+    return facts_model
 
 
 def _profile_suggestions_payload(
@@ -2437,10 +2632,21 @@ def facts(
         raise typer.Exit(1)
 
     config = _load_config(root)
-    facts_data = _microfacts_payload(entries, date, config)
+    manifest_entries = _load_manifest(_manifest_path(root))
+    manifest_index = _manifest_by_id(manifest_entries)
+    _, claim_models = _load_profile_components(root)
+    facts_data = _microfacts_payload(
+        entries,
+        date,
+        config,
+        manifest_index=manifest_index,
+        existing_claims=claim_models,
+    )
     facts_data.meta = _build_meta("prompts/extract_facts.md")
     facts_path = _derived_microfacts_path(root, date)
     write_yaml_model(facts_path, facts_data)
+    if facts_data.preview:
+        _print_claim_preview(facts_data.preview)
     typer.echo(str(facts_path))
 
 
@@ -3368,6 +3574,19 @@ def _emit_claim_merge_events(events: list[ClaimMergeOutcome], heading: str) -> N
                 ),
                 fg=typer.colors.YELLOW,
             )
+        elif event.action == "scope_split":
+            existing_scope = (
+                _format_scope_label(event.conflict.signature.scope) if event.conflict else "global"
+            )
+            related_scope = (
+                _format_scope_label(event.related_signature.scope)
+                if event.related_signature
+                else "global"
+            )
+            target = event.related_claim_id or "new-claim"
+            typer.echo(
+                f"  • scope split {event.claim_id} [{existing_scope}] -> {target} [{related_scope}]"
+            )
 
 
 def _preview_claim_consolidation(
@@ -3421,16 +3640,23 @@ def _build_claim_preview(
         outcome = consolidator.upsert(working_claims, incoming)
         if outcome.action == "noop":
             continue
-        signature_payload = _signature_payload_from_claim(incoming)
+        signature_payload = (
+            _signature_payload_from_signature(outcome.signature)
+            if outcome.signature
+            else _signature_payload_from_claim(incoming)
+        )
+        related_signature_payload = (
+            _signature_payload_from_signature(outcome.related_signature)
+            if outcome.related_signature
+            else None
+        )
         conflict_payload = None
         if outcome.conflict:
             conflict_payload = _conflict_payload_from_outcome(outcome.conflict)
             scope_label = _format_scope_label(outcome.conflict.signature.scope)
             prompts.append(
-                (
-                    f"Clarify claim {outcome.claim_id} [{scope_label}]: "
-                    f"existing='{outcome.conflict.existing_value}' vs incoming='{outcome.conflict.incoming_value}'."
-                )
+                f"Clarify claim {outcome.claim_id} [{scope_label}]: "
+                f"existing='{outcome.conflict.existing_value}' vs incoming='{outcome.conflict.incoming_value}'."
             )
         events.append(
             ClaimPreviewEvent(
@@ -3442,6 +3668,9 @@ def _build_claim_preview(
                 strength=float(incoming.strength or 0.0),
                 signature=signature_payload,
                 conflict=conflict_payload,
+                related_claim_id=outcome.related_claim_id,
+                related_action=outcome.related_action,
+                related_signature=related_signature_payload,
             )
         )
 
@@ -3475,6 +3704,18 @@ def _print_claim_preview(preview: ProfileUpdatePreview) -> None:
                     (
                         f"  • merged {event.claim_id} [{scope_label}] "
                         f"(Δstrength {event.delta_strength:+0.2f})"
+                    ),
+                )
+            elif event.action == "scope_split":
+                new_scope_label = _format_scope_label(
+                    _scope_tuple_from_payload(event.related_signature),
+                )
+                target = event.related_claim_id or "new-claim"
+                action_note = f" ({event.related_action})" if event.related_action else ""
+                typer.echo(
+                    (
+                        f"  • scope split {event.claim_id} [{scope_label}] -> "
+                        f"{target} [{new_scope_label}]{action_note}"
                     ),
                 )
             elif event.action == "conflict" and event.conflict:

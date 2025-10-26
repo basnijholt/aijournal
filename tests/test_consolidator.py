@@ -41,6 +41,44 @@ def test_claim_consolidator_merges_strength_and_observation_count() -> None:
     assert updated["provenance"]["last_updated"] == "2025-10-26T03:00:00Z"
 
 
+def test_claim_consolidator_splits_scope_on_weekend_conflict() -> None:
+    existing_claim = make_claim_atom(
+        "preference.deep-work.window",
+        "Prefers deep work in the morning on weekdays.",
+        value="Morning focus weekdays",
+        strength=0.82,
+        status="accepted",
+        last_updated="2025-10-20T08:00:00Z",
+    )
+    incoming_claim = make_claim_atom(
+        "preference.deep-work.window",
+        "Prefers later focus blocks on weekends.",
+        value="Afternoon focus weekends",
+        strength=0.7,
+        status="accepted",
+        last_updated="2025-10-25T08:00:00Z",
+    )
+    claims = [deepcopy(existing_claim)]
+    consolidator = ClaimConsolidator(timestamp="2025-10-26T03:00:00Z")
+
+    outcome = consolidator.upsert(claims, incoming_claim)
+
+    assert outcome.action == "scope_split"
+    assert outcome.changed is True
+    assert outcome.related_claim_id
+    assert outcome.conflict is not None
+    assert outcome.related_action in {"created", "merged"}
+    assert len(claims) == 2
+
+    weekday_claim = claims[0]
+    assert "weekday" in [item.lower() for item in weekday_claim["scope"]["context"]]
+    assert weekday_claim["status"] == "accepted"
+    weekend_claim = next(claim for claim in claims if claim["id"] == outcome.related_claim_id)
+    assert "weekend" in [item.lower() for item in weekend_claim["scope"]["context"]]
+    assert weekend_claim["value"] == "Afternoon focus weekends"
+    assert weekend_claim["status"] == "accepted"
+
+
 def test_claim_consolidator_flags_conflicts_and_downgrades_strength() -> None:
     existing_claim = make_claim_atom(
         "preference.deep-work.window",
