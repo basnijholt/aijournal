@@ -54,6 +54,7 @@ def make_claim_atom(
             ],
             "first_seen": first_seen,
             "last_updated": timestamp,
+            "observation_count": 1,
         },
     }
 

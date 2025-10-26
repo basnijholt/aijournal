@@ -31,7 +31,13 @@ from aijournal.ingest_agent import (
     ingest_with_agent,
 )
 from aijournal.schema import SchemaValidationError, validate_schema
-from aijournal.services import LLMResponseError, OllamaConfig, OllamaTaskRunner
+from aijournal.services import (
+    ClaimConsolidator,
+    ClaimMergeOutcome,
+    LLMResponseError,
+    OllamaConfig,
+    OllamaTaskRunner,
+)
 from aijournal.services.embedding import EmbeddingBackend
 
 if TYPE_CHECKING:
@@ -871,6 +877,11 @@ def _ensure_provenance_dict(
         provenance["first_seen"] = _created_date(timestamp)
     last_updated = _coerce_timestamp(provenance.get("last_updated")) or timestamp
     provenance["last_updated"] = last_updated
+    count_raw = provenance.get("observation_count")
+    count = _coerce_int(count_raw)
+    if count is None or count <= 0:
+        count = len(normalized_sources) or 1
+    provenance["observation_count"] = max(1, count)
     return provenance
 
 
@@ -2298,17 +2309,19 @@ def review_updates(
         typer.echo(f"- facet {path}: {proposal.get('value')}")
 
     if not apply:
+        _preview_claim_consolidation(root, claim_proposals)
         return
 
     profile, claims_data = _load_profile_components(root)
     timestamp = _format_timestamp(_now())
     applied = 0
+    merge_events: list[ClaimMergeOutcome] = []
 
     for proposal in claim_proposals:
         claim = proposal.get("claim") if isinstance(proposal, dict) else None
         if not isinstance(claim, dict):
             continue
-        if _apply_claim_upsert(claims_data, claim, timestamp):
+        if _apply_claim_upsert(claims_data, claim, timestamp, events=merge_events):
             applied += 1
 
     for proposal in facet_proposals:
@@ -2334,6 +2347,7 @@ def review_updates(
         {"claims": claims_data},
         schema="claims",
     )
+    _emit_claim_merge_events(merge_events, "Applied claim consolidations:")
     typer.echo(f"Applied {applied} updates from {batch_path}")
 
 
@@ -2350,7 +2364,8 @@ def advise(
 
     config = _load_config(root)
     advice_content = _advice_payload(question, profile, claims, config)
-    advice_content["meta"] = _build_meta("prompts/advise.md")
+    model_name = "fake-ollama" if _use_fake_llm() else _resolve_model_name(config)
+    advice_content["meta"] = _build_meta("prompts/advise.md", model=model_name)
 
     day = _created_date(_format_timestamp(_now()))
     advice_path = _derived_advice_path(root, day, question)
@@ -2849,6 +2864,7 @@ def _apply_claim_upsert(
     claims: list[dict[str, Any]],
     value: dict[str, Any],
     timestamp: str,
+    events: list[ClaimMergeOutcome] | None = None,
 ) -> bool:
     try:
         normalized = _ensure_claim_atom_dict(
@@ -2859,21 +2875,96 @@ def _apply_claim_upsert(
     except ValueError:
         return False
 
-    for idx, claim in enumerate(claims):
-        if claim.get("id") == normalized.get("id"):
-            provenance = normalized.get("provenance", {})
-            prev_provenance = claim.get("provenance", {})
-            if prev_provenance.get("first_seen"):
-                provenance["first_seen"] = prev_provenance["first_seen"]
-            if not provenance.get("sources") and prev_provenance.get("sources"):
-                provenance["sources"] = prev_provenance["sources"]
-            normalized["provenance"] = provenance
-            if claim == normalized:
-                return False
-            claims[idx] = normalized
-            return True
-    claims.append(normalized)
-    return True
+    for existing in claims:
+        if existing.get("id") == normalized.get("id") and _claims_equivalent(existing, normalized):
+            if events is not None:
+                events.append(
+                    ClaimMergeOutcome(
+                        changed=False,
+                        action="noop",
+                        claim_id=str(existing.get("id")),
+                        delta_strength=0.0,
+                    ),
+                )
+            return False
+
+    consolidator = ClaimConsolidator(timestamp=timestamp)
+    outcome = consolidator.upsert(claims, normalized)
+    if events is not None:
+        events.append(outcome)
+    return outcome.changed
+
+
+def _claims_equivalent(existing: dict[str, Any], incoming: dict[str, Any]) -> bool:
+    def _sanitize(claim: dict[str, Any]) -> dict[str, Any]:
+        cleaned = copy.deepcopy(claim)
+        provenance = cleaned.get("provenance")
+        if isinstance(provenance, dict):
+            trimmed = dict(provenance)
+            trimmed.pop("last_updated", None)
+            trimmed.pop("observation_count", None)
+            cleaned["provenance"] = trimmed
+        return cleaned
+
+    return _sanitize(existing) == _sanitize(incoming)
+
+
+def _format_scope_label(scope: tuple[str | None, tuple[str, ...], tuple[str, ...]]) -> str:
+    domain, context, conditions = scope
+    parts: list[str] = []
+    if domain:
+        parts.append(str(domain))
+    if context:
+        parts.append("/".join(context))
+    if conditions:
+        parts.append("|".join(conditions))
+    return " :: ".join(parts) if parts else "global"
+
+
+def _emit_claim_merge_events(events: list[ClaimMergeOutcome], heading: str) -> None:
+    relevant = [event for event in events if event.action != "noop"]
+    if not relevant:
+        return
+    typer.echo(heading)
+    for event in relevant:
+        if event.action == "created":
+            typer.echo(f"  • new claim {event.claim_id}")
+        elif event.action == "merged":
+            typer.echo(f"  • merged {event.claim_id} (Δstrength {event.delta_strength:+0.2f})")
+        elif event.action == "conflict" and event.conflict:
+            conflict = event.conflict
+            scope_label = _format_scope_label(conflict.signature.scope)
+            typer.secho(
+                (
+                    f"  • conflict {event.claim_id} [{scope_label}]: "
+                    f"'{conflict.existing_value}' vs '{conflict.incoming_value}'"
+                ),
+                fg=typer.colors.YELLOW,
+            )
+
+
+def _preview_claim_consolidation(root: Path, claim_proposals: list[dict[str, Any]]) -> None:
+    if not claim_proposals:
+        return
+    _, claims_data = _load_profile_components(root)
+    if not claims_data:
+        return
+    timestamp = _format_timestamp(_now())
+    working_claims = copy.deepcopy(claims_data)
+    consolidator = ClaimConsolidator(timestamp=timestamp)
+    events: list[ClaimMergeOutcome] = []
+    for proposal in claim_proposals:
+        claim = proposal.get("claim") if isinstance(proposal, dict) else None
+        if not isinstance(claim, dict):
+            continue
+        try:
+            normalized = _ensure_claim_atom_dict(claim, timestamp=timestamp)
+        except ValueError:
+            continue
+        outcome = consolidator.upsert(working_claims, normalized)
+        if outcome.action != "noop":
+            events.append(outcome)
+    _emit_claim_merge_events(events, "Preview (claim consolidation):")
 
 
 def _apply_profile_update(profile: dict[str, Any], target: str, value: Any, timestamp: str) -> bool:

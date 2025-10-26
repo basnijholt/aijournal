@@ -46,7 +46,15 @@ class OllamaTaskRunner:
             prompt=prompt,
             options=options or None,
         )
-        text = response.get("response") if isinstance(response, dict) else str(response)
+        if isinstance(response, dict):
+            text = str(response.get("response") or "")
+        elif hasattr(response, "model_dump"):
+            data = response.model_dump()
+            text = str(data.get("response") or "")
+        elif hasattr(response, "response"):
+            text = str(getattr(response, "response") or "")
+        else:
+            text = str(response)
         if not text:
             msg = "Empty response from Ollama"
             raise LLMResponseError(msg)

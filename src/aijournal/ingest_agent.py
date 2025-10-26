@@ -3,15 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from datetime import datetime
+from pathlib import Path
 
 from agno.agent import Agent
 from agno.models.ollama import Ollama
 from pydantic import BaseModel, Field
-
-if TYPE_CHECKING:
-    from datetime import datetime
-    from pathlib import Path
 
 INGEST_SYSTEM_PROMPT = """
 You are part of a local journaling pipeline. Given a Markdown or Hugo document with optional

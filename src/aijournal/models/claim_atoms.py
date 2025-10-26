@@ -52,6 +52,7 @@ class Provenance(AijournalModel):
     sources: list[ClaimSource] = Field(default_factory=list)
     first_seen: str | None = None
     last_updated: str
+    observation_count: int = Field(default=1, ge=1)
 
 
 class ClaimAtom(AijournalModel):
