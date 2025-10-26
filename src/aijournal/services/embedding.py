@@ -7,12 +7,15 @@ from dataclasses import dataclass, field
 from hashlib import sha256
 from typing import TYPE_CHECKING
 
-from ollama import Client
+import httpx
+
+from aijournal.services.ollama import resolve_ollama_host
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
 DEFAULT_EMBED_DIM = 384
+_EMBED_TIMEOUT = 60.0
 
 
 @dataclass
@@ -23,12 +26,10 @@ class EmbeddingBackend:
     host: str | None = None
     fake_mode: bool = False
     dimension: int | None = None
-    _client: Client | None = field(init=False, default=None)
+    _base_host: str = field(init=False)
 
     def __post_init__(self) -> None:
-        if not self.fake_mode and self.dimension is None:
-            # Delay Ollama client creation until needed to keep tests fast
-            self._client = Client(host=self.host) if self.host else Client()
+        self._base_host = resolve_ollama_host(self.host)
 
     def embed(self, texts: Sequence[str]) -> list[list[float]]:
         vectors: list[list[float]] = []
@@ -37,23 +38,29 @@ class EmbeddingBackend:
         if self.fake_mode:
             return [self._fake_embed(text) for text in texts]
 
-        if self._client is None:  # pragma: no cover - real mode lazy init
-            self._client = Client(host=self.host) if self.host else Client()
-        for text in texts:
-            response = self._client.embeddings(model=self.model, prompt=text)
-            if isinstance(response, dict):
-                vector = response.get("embedding")
-            elif hasattr(response, "model_dump"):
-                data = response.model_dump()
-                vector = data.get("embedding")
-            else:
-                vector = getattr(response, "embedding", None)
-            if not isinstance(vector, list):
-                msg = "Ollama embedding response missing vector payload"
-                raise RuntimeError(msg)
-            if self.dimension is None:
-                self.dimension = len(vector)
-            vectors.append([float(value) for value in vector])
+        endpoint = f"{self._base_host}/api/embeddings"
+        try:
+            with httpx.Client(timeout=_EMBED_TIMEOUT) as session:
+                for text in texts:
+                    response = session.post(
+                        endpoint,
+                        json={
+                            "model": self.model,
+                            "prompt": text,
+                        },
+                    )
+                    response.raise_for_status()
+                    payload = response.json()
+                    vector = payload.get("embedding")
+                    if not isinstance(vector, list):
+                        msg = "Ollama embedding response missing vector payload"
+                        raise RuntimeError(msg)
+                    if self.dimension is None:
+                        self.dimension = len(vector)
+                    vectors.append([float(value) for value in vector])
+        except httpx.HTTPError as exc:
+            msg = f"Ollama embedding request failed: {exc}"
+            raise RuntimeError(msg) from exc
         return vectors
 
     def embed_one(self, text: str) -> list[float]:

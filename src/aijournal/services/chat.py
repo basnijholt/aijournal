@@ -13,7 +13,7 @@ from pydantic import ValidationError
 
 from aijournal.io.yaml_io import load_yaml_model
 from aijournal.models import PersonaCore, PersonaCoreFile
-from aijournal.services.ollama import LLMResponseError, OllamaConfig, OllamaTaskRunner
+from aijournal.services.ollama import LLMResponseError, OllamaConfig, run_ollama_agent
 from aijournal.services.retriever import RetrievalFilters, RetrievedChunk, Retriever
 
 
@@ -208,20 +208,10 @@ class ChatService:
                 prefix="(fallback)",
             )
 
-        runner = self._build_runner()
         prompt = self._render_prompt(question, persona, chunks)
         try:
-            payload = runner.generate_json(prompt)
+            payload: dict[str, Any] = run_ollama_agent(self._build_ollama_config(), prompt)
         except LLMResponseError:
-            return self._fake_answer(
-                question,
-                persona,
-                chunks,
-                prefix="(fallback)",
-            )
-        except Exception:
-            # The Ollama client can raise arbitrary exceptions if the daemon is
-            # not available; fall back silently to the deterministic path.
             return self._fake_answer(
                 question,
                 persona,
@@ -297,7 +287,7 @@ class ChatService:
             ],
         )
 
-    def _build_runner(self) -> OllamaTaskRunner:
+    def _build_ollama_config(self) -> OllamaConfig:
         model = os.getenv("AIJOURNAL_MODEL") or str(
             self._config.get("model") or "llama3.1:8b-instruct"
         )
@@ -305,14 +295,15 @@ class ChatService:
         temperature = _coerce_float(self._config.get("temperature"))
         seed = _coerce_int(self._config.get("seed"))
         max_tokens = _coerce_int(self._config.get("max_tokens"))
-        config = OllamaConfig(
+        timeout = _coerce_float(self._config.get("timeout"))
+        return OllamaConfig(
             model=model,
             host=host,
             temperature=temperature,
             seed=seed,
             max_tokens=max_tokens,
+            timeout=timeout,
         )
-        return OllamaTaskRunner(config)
 
 
 def _truncate_text(text: str, limit: int = 120) -> str:

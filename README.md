@@ -125,7 +125,7 @@ Calls `prompts/summarize_day.md` through Ollama and writes `derived/summaries/<D
 `AIJOURNAL_FAKE_OLLAMA=1` for deterministic fixtures.
 
 `summarize` (and the other LLM-backed commands) now streams responses through
-Agno's structured output layer. The CLI requests a `DailySummaryResponse`
+Pydantic AI’s structured output validation. The CLI requests a `DailySummaryResponse`
 Pydantic model from the model and retries schema failures up to `--retries`
 times (default 1). Use `--timeout` to extend the per-call budget (defaults to
 120s) and `--progress` to print each normalized entry before the request is
@@ -225,7 +225,7 @@ Runs `prompts/profile_suggest.md` with the current profile + claims and stores
 same typed structures (claim upserts + facet updates) to keep pipelines consistent.
 
 The live command asks the model for a simplified `suggestions` array (claims and
-facets) via Agno’s structured output support. Use `--progress`, `--timeout`, and
+facets) via Pydantic AI’s structured output support. Use `--progress`, `--timeout`, and
 `--retries` to mirror the ergonomics of the other pipelines; if schema validation
 fails after the configured retries, the CLI exits with an error so upstream
 prompt/debugging is explicit.

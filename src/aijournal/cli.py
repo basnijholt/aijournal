@@ -19,14 +19,14 @@ from string import Template
 from textwrap import dedent
 from typing import Any, Literal, cast
 
+import httpx
 import numpy as np
 import typer
 import yaml
-from agno.agent import Agent
-from agno.models.ollama import Ollama
 from annoy import AnnoyIndex
-from ollama import Client
 from pydantic import BaseModel, ValidationError
+from pydantic_ai import Agent, UnexpectedModelBehavior
+from pydantic_ai.exceptions import UserError
 
 from aijournal.ingest_agent import (
     AgentSettings,
@@ -92,7 +92,9 @@ from aijournal.services import (
     ClaimSignature,
     LLMResponseError,
     OllamaConfig,
-    OllamaTaskRunner,
+    build_ollama_agent,
+    resolve_ollama_host,
+    run_ollama_agent,
 )
 from aijournal.services.embedding import EmbeddingBackend
 from aijournal.services.retriever import RetrievalFilters, Retriever
@@ -659,14 +661,15 @@ def _simple_facet_to_update(suggestion: SimpleSuggestion) -> ProfileSuggestionUp
     )
 
 
-def _build_ollama_runner(config: dict[str, Any]) -> OllamaTaskRunner:
-    runner_config = OllamaConfig(
+def _build_ollama_config(config: dict[str, Any]) -> OllamaConfig:
+    return OllamaConfig(
         model=_resolve_model_name(config),
         host=os.getenv("AIJOURNAL_OLLAMA_HOST"),
         temperature=_coerce_float(config.get("temperature")),
         seed=_coerce_int(config.get("seed")),
+        max_tokens=_coerce_int(config.get("max_tokens")),
+        timeout=_coerce_float(config.get("timeout")),
     )
-    return OllamaTaskRunner(runner_config)
 
 
 _STRUCTURED_SYSTEM_PROMPT = (
@@ -684,29 +687,22 @@ def _build_structured_agent(
     timeout: float | None = None,
 ) -> Agent:
     settings = config or {}
-    options: dict[str, float | int] = {}
-    temperature = _coerce_float(settings.get("temperature"))
-    if temperature is not None:
-        options["temperature"] = float(temperature)
-    seed = _coerce_int(settings.get("seed"))
-    if seed is not None:
-        options["seed"] = int(seed)
-    max_tokens = _coerce_int(settings.get("max_tokens"))
-    if max_tokens is not None:
-        options["num_predict"] = int(max_tokens)
-
-    return Agent(
+    timeout_value = (
+        float(timeout) if timeout is not None else _coerce_float(settings.get("timeout"))
+    )
+    ollama_config = OllamaConfig(
+        model=_resolve_model_name(settings),
+        host=os.getenv("AIJOURNAL_OLLAMA_HOST"),
+        temperature=_coerce_float(settings.get("temperature")),
+        seed=_coerce_int(settings.get("seed")),
+        max_tokens=_coerce_int(settings.get("max_tokens")),
+        timeout=timeout_value,
+    )
+    return build_ollama_agent(
+        ollama_config,
+        system_prompt=_STRUCTURED_SYSTEM_PROMPT,
+        output_type=response_model,
         name=name,
-        instructions=_STRUCTURED_SYSTEM_PROMPT,
-        model=Ollama(
-            id=_resolve_model_name(settings),
-            host=os.getenv("AIJOURNAL_OLLAMA_HOST"),
-            options=options or None,
-            timeout=timeout,
-        ),
-        output_schema=response_model,
-        add_datetime_to_context=False,
-        telemetry=False,
     )
 
 
@@ -722,14 +718,20 @@ def _invoke_structured_llm(
     prompt = _render_prompt(prompt_path, variables)
     agent = _build_structured_agent(agent_name, response_model, config, timeout=timeout)
     try:
-        run = agent.run(prompt)
+        run = agent.run_sync(prompt)
+    except UnexpectedModelBehavior as exc:  # pragma: no cover - runtime dependent
+        msg = f"Structured output generation failed for {prompt_path}: {exc}"
+        raise LLMResponseError(msg) from exc
+    except UserError as exc:  # pragma: no cover - runtime dependent
+        msg = f"Structured output generation failed for {prompt_path}: {exc}"
+        raise LLMResponseError(msg) from exc
     except Exception as exc:  # pragma: no cover - runtime dependent
         msg = f"Structured output generation failed for {prompt_path}: {exc}"
         raise LLMResponseError(msg) from exc
 
-    content = getattr(run, "content", None)
-    if isinstance(content, response_model):
-        return content
+    output = run.output
+    if isinstance(output, response_model):
+        return output
     msg = f"Structured output generation for {prompt_path} did not return {response_model.__name__}"
     raise LLMResponseError(msg)
 
@@ -795,16 +797,13 @@ def _structured_call_with_retry(
 def _safe_llm_json(
     prompt_path: str,
     variables: dict[str, str],
-    runner: OllamaTaskRunner,
+    config: OllamaConfig,
 ) -> dict[str, Any]:
     prompt = _render_prompt(prompt_path, variables)
     try:
-        return runner.generate_json(prompt)
+        return run_ollama_agent(config, prompt)
     except LLMResponseError as exc:
         msg = f"Structured JSON parsing failed for {prompt_path}: {exc}"
-        raise LLMResponseError(msg) from exc
-    except Exception as exc:  # pragma: no cover - dependent on runtime env
-        msg = f"Ollama request failed for {prompt_path}: {exc}"
         raise LLMResponseError(msg) from exc
 
 
@@ -2460,10 +2459,10 @@ def _advice_payload(
         return fallback_model()
 
     try:
-        runner = _build_ollama_runner(config)
+        ollama_config = _build_ollama_config(config)
     except Exception as exc:  # pragma: no cover
         typer.secho(
-            f"Unable to initialize Ollama for advise: {exc}",
+            f"Unable to configure Ollama for advise: {exc}",
             fg=typer.colors.YELLOW,
             err=True,
         )
@@ -2480,7 +2479,7 @@ def _advice_payload(
                         {"claims": [claim.model_dump(mode="python") for claim in claims]}
                     ),
                 },
-                runner,
+                ollama_config,
             )
         except LLMResponseError as exc:
             typer.secho(
@@ -3273,30 +3272,20 @@ def ollama_health() -> None:
         return
 
     host = os.getenv("AIJOURNAL_OLLAMA_HOST")
+    base = resolve_ollama_host(host)
     try:
-        client = Client(host=host) if host else Client()
-        result = client.list()
-    except Exception as exc:  # pragma: no cover - depends on runtime host
+        response = httpx.get(f"{base}/api/tags", timeout=15.0)
+        response.raise_for_status()
+        data = response.json()
+    except httpx.HTTPError as exc:  # pragma: no cover - depends on runtime host
         typer.secho(f"Unable to query Ollama: {exc}", fg=typer.colors.RED, err=True)
         raise typer.Exit(1) from exc
-
-    if hasattr(result, "model_dump"):
-        data = result.model_dump()
-    elif isinstance(result, dict):
-        data = result
-    else:
-        data = {}
 
     models_raw = data.get("models") if isinstance(data, dict) else None
     models_payload: list[dict[str, Any]] = []
     if isinstance(models_raw, list):
         for item in models_raw:
-            if hasattr(item, "model_dump"):
-                item_data = item.model_dump()
-            elif isinstance(item, dict):
-                item_data = item
-            else:
-                continue
+            item_data = item if isinstance(item, dict) else {}
             models_payload.append(
                 {
                     "name": item_data.get("name") or item_data.get("model"),
@@ -3309,7 +3298,7 @@ def ollama_health() -> None:
     root = Path.cwd()
     config = _load_config(root)
     payload = {
-        "endpoint": host or "http://127.0.0.1:11434",
+        "endpoint": base,
         "default": _resolve_model_name(config),
         "models": models_payload,
     }

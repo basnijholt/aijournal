@@ -8,7 +8,15 @@ from .consolidator import (
     ClaimSignature,
 )
 from .embedding import DEFAULT_EMBED_DIM, EmbeddingBackend
-from .ollama import LLMResponseError, OllamaConfig, OllamaTaskRunner
+from .ollama import (
+    LLMResponseError,
+    OllamaConfig,
+    build_ollama_agent,
+    build_ollama_model,
+    resolve_ollama_base_url,
+    resolve_ollama_host,
+    run_ollama_agent,
+)
 from .retriever import (
     RetrievalFilters,
     RetrievalMeta,
@@ -29,7 +37,11 @@ __all__ = [
     "EmbeddingBackend",
     "LLMResponseError",
     "OllamaConfig",
-    "OllamaTaskRunner",
+    "build_ollama_agent",
+    "build_ollama_model",
+    "run_ollama_agent",
+    "resolve_ollama_base_url",
+    "resolve_ollama_host",
     "RetrievalFilters",
     "RetrievalMeta",
     "RetrievalResult",

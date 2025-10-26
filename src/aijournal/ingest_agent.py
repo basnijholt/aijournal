@@ -1,4 +1,4 @@
-"""Structured ingestion helpers backed by agno + Ollama."""
+"""Structured ingestion helpers powered by Pydantic AI."""
 
 from __future__ import annotations
 
@@ -6,9 +6,10 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
-from agno.agent import Agent
-from agno.models.ollama import Ollama
 from pydantic import BaseModel, Field
+from pydantic_ai import Agent
+
+from aijournal.services.ollama import OllamaConfig, build_ollama_agent
 
 INGEST_SYSTEM_PROMPT = """
 You are part of a local journaling pipeline. Given a Markdown or Hugo document with optional
@@ -63,24 +64,18 @@ class AgentSettings:
 
 
 def build_ingest_agent(settings: AgentSettings) -> Agent:
-    """Construct an agno Agent backed by Ollama with structured outputs."""
-    options: dict[str, float | int] = {}
-    if settings.temperature is not None:
-        options["temperature"] = float(settings.temperature)
-    if settings.seed is not None:
-        options["seed"] = int(settings.seed)
-
-    return Agent(
+    """Construct a Pydantic AI Agent backed by Ollama with structured outputs."""
+    config = OllamaConfig(
+        model=settings.model,
+        host=settings.host,
+        temperature=settings.temperature,
+        seed=settings.seed,
+    )
+    return build_ollama_agent(
+        config,
+        system_prompt=INGEST_SYSTEM_PROMPT,
+        output_type=IngestResult,
         name="aijournal-ingest",
-        instructions=INGEST_SYSTEM_PROMPT,
-        model=Ollama(
-            id=settings.model,
-            host=settings.host,
-            options=options or None,
-        ),
-        output_schema=IngestResult,
-        add_datetime_to_context=True,
-        telemetry=False,
     )
 
 
@@ -94,10 +89,10 @@ def ingest_with_agent(agent: Agent, *, source_path: Path, markdown: str) -> Inge
         f"{markdown}\n"
         "---END DOCUMENT---"
     )
-    run = agent.run(prompt)
-    content = run.content
-    if isinstance(content, IngestResult):
-        return content
+    run = agent.run_sync(prompt)
+    payload = run.output
+    if isinstance(payload, IngestResult):
+        return payload
     msg = "Agent did not return the expected structured payload"
     raise ValueError(msg)
 

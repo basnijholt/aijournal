@@ -141,7 +141,7 @@ normalized entries + manifest + profile ──▶ aijournal characterize ──�
 
 - **Manifest**: YAML list of `{hash, path, source_type, ingested_at, tags}`, stored under `data/manifest/`. Hashes (SHA‑256) gate ingestion so files are consumed once.
 - **Normalization adapters**: pluggable readers (Markdown, HTML, chat export) target the shared `NormalizedEntry` Pydantic model.
-- **Characterize**: uses the agno-driven model interface to infer traits/motivations/claims from aggregated entries, writing proposed edits with `evidence_hashes`, `method`, `confidence`, and `review_after_days` adjustments.
+- **Characterize**: uses the Pydantic AI model interface to infer traits/motivations/claims from aggregated entries, writing proposed edits with `evidence_hashes`, `method`, `confidence`, and `review_after_days` adjustments.
 - **Review**: staged updates land in `derived/pending/profile_updates/<timestamp>.yaml`; `aijournal review-updates --apply` merges them into `profile/self_profile.yaml` and `profile/claims.yaml` once approved.
 
 ---
