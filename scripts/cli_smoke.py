@@ -6,6 +6,7 @@ import argparse
 import json
 import os
 import shlex
+import shutil
 import subprocess
 import time
 from dataclasses import dataclass
@@ -24,13 +25,22 @@ class CommandSpec:
     description: str | None = None
 
 
-def _build_specs(base_day: str) -> list[CommandSpec]:
+DEFAULT_CHAT_QUESTION = "What did I focus on last week?"
+
+
+def _build_specs(base_day: str, *, real_mode: bool) -> list[CommandSpec]:
     return [
         CommandSpec(
             name="persona status (pre-build)",
             args=["aijournal", "persona", "status"],
             expect_success=False,
             description="Show the failure emitted when persona_core.yaml is absent.",
+        ),
+        CommandSpec(
+            name="chat (missing persona/index)",
+            args=["aijournal", "chat", DEFAULT_CHAT_QUESTION],
+            expect_success=False,
+            description="Chat should fail fast when persona and index artifacts are absent.",
         ),
         CommandSpec(
             name="persona build",
@@ -43,6 +53,12 @@ def _build_specs(base_day: str) -> list[CommandSpec]:
             description="Confirm persona core is now considered fresh.",
         ),
         CommandSpec(
+            name="chat (missing index)",
+            args=["aijournal", "chat", DEFAULT_CHAT_QUESTION],
+            expect_success=False,
+            description="Chat should fail fast when persona is present but the retrieval index is not.",
+        ),
+        CommandSpec(
             name="profile status",
             args=["aijournal", "profile", "status"],
             description="Rank facets/claims needing attention.",
@@ -50,7 +66,7 @@ def _build_specs(base_day: str) -> list[CommandSpec]:
         CommandSpec(
             name="ollama health",
             args=["aijournal", "ollama", "health"],
-            description="Validate the fake Ollama probe wiring.",
+            description="Inspect Ollama availability (fake or live).",
         ),
         CommandSpec(
             name="pack L1",
@@ -170,16 +186,20 @@ def _build_specs(base_day: str) -> list[CommandSpec]:
             description="Verify the tailer exits cleanly when nothing new is found.",
         ),
         CommandSpec(
+            name="chat (with index)",
+            args=["aijournal", "chat", DEFAULT_CHAT_QUESTION],
+            description="Chat streams citations once persona/index prerequisites exist.",
+        ),
+        CommandSpec(
             name="interview",
             args=["aijournal", "interview", "--date", base_day],
-            description="Run the fake interview probe generator for the base day.",
+            description="Run the interview probe generator using heuristic probes.",
         ),
     ]
 
 
-def _run_command(spec: CommandSpec, cwd: Path) -> dict[str, Any]:
-    env = os.environ.copy()
-    env.setdefault("AIJOURNAL_FAKE_OLLAMA", "1")
+def _run_command(spec: CommandSpec, cwd: Path, base_env: dict[str, str]) -> dict[str, Any]:
+    env = base_env.copy()
     full_args = ["uv", "run", *spec.args]
     start = time.perf_counter()
     proc = subprocess.run(  # noqa: S603 (trusted repo command)
@@ -261,6 +281,14 @@ def _reset_persona_core(repo_root: Path) -> bool:
     return False
 
 
+def _reset_index(repo_root: Path) -> bool:
+    target_dir = repo_root / "derived" / "index"
+    if not target_dir.exists():
+        return False
+    shutil.rmtree(target_dir)
+    return True
+
+
 def _detect_default_day(repo_root: Path) -> str:
     normalized_root = repo_root / "data" / "normalized"
     candidates = sorted(
@@ -284,6 +312,21 @@ def main() -> None:
         action="store_true",
         help="Keep any existing persona_core.yaml instead of forcing a rebuild scenario.",
     )
+    parser.add_argument(
+        "--skip-index-reset",
+        action="store_true",
+        help="Keep any existing derived/index artifacts instead of simulating a cold start.",
+    )
+    parser.add_argument(
+        "--ollama-host",
+        default=None,
+        help="Hostname or URL for the Ollama server (sets AIJOURNAL_OLLAMA_HOST and disables fake mode).",
+    )
+    parser.add_argument(
+        "--model",
+        default=None,
+        help="Override AIJOURNAL_MODEL for the smoke run (e.g., devstral:24b).",
+    )
     args = parser.parse_args()
     repo_root = Path(__file__).resolve().parents[1]
     if args.base_day:
@@ -291,12 +334,30 @@ def main() -> None:
     else:
         base_day = _detect_default_day(repo_root)
 
+    base_env = os.environ.copy()
+    real_mode = bool(args.ollama_host)
+    if args.ollama_host:
+        base_env["AIJOURNAL_OLLAMA_HOST"] = args.ollama_host
+        base_env.pop("AIJOURNAL_FAKE_OLLAMA", None)
+        print(f"Using Ollama host {args.ollama_host} (live mode).")
+    else:
+        base_env.setdefault("AIJOURNAL_FAKE_OLLAMA", "1")
+        base_env.pop("AIJOURNAL_OLLAMA_HOST", None)
+        print("Using fake Ollama mode.")
+
+    if args.model:
+        base_env["AIJOURNAL_MODEL"] = args.model
+        print(f"Overriding model to {args.model}.")
+
     if not args.skip_persona_reset and _reset_persona_core(repo_root):
         print("Reset persona_core.yaml to simulate fresh build scenario.")
 
+    if not args.skip_index_reset and _reset_index(repo_root):
+        print("Removed derived/index/ to simulate missing retrieval artifacts.")
+
     print(f"Using base day {base_day} for LLM-backed commands.")
-    specs = _build_specs(base_day)
-    results = [_run_command(spec, repo_root) for spec in specs]
+    specs = _build_specs(base_day, real_mode=real_mode)
+    results = [_run_command(spec, repo_root, base_env) for spec in specs]
     _persist_results(results, repo_root)
     _summarize(results)
 

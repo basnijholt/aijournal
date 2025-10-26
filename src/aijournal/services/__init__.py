@@ -1,5 +1,6 @@
 """Service utilities for aijournal."""
 
+from .chat import ChatCitation, ChatService, ChatTurn
 from .consolidator import (
     ClaimConflict,
     ClaimConsolidator,
@@ -17,6 +18,9 @@ from .retriever import (
 )
 
 __all__ = [
+    "ChatCitation",
+    "ChatService",
+    "ChatTurn",
     "ClaimConsolidator",
     "ClaimConflict",
     "ClaimMergeOutcome",

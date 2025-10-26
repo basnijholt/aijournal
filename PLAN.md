@@ -1017,20 +1017,22 @@ blocking on LLM availability.
 
 ### Later focus (mid-November 2025)
 
-6. **feat(chat + chatd): retrieval-backed conversation loop.**
-   - `aijournal index search` gives operators a deterministic retrieval probe; next integration step is to reuse its filters/output framing inside chat so QA/debug flows stay consistent.
-   - CLI `aijournal chat` orchestrates intent classification → retrieval (claims + journal chunks)
-     → response assembly with citations + optional clarifying question respecting
-     `coaching_prefs.probing`.
-   - FastAPI `chatd` exposes the same pipeline with streaming responses and writes
-     `derived/chat_sessions/<session_id>/{transcript.jsonl,summary.yaml,learnings.yaml}`.
-   - Wire in fake mode fixtures so CI can exercise the full flow offline.
+6. **feat(chat + chatd): retrieval-backed conversation loop.** 🚧 _CLI slice shipped 2025-10-28 (streamed answers + citations with fake-mode coverage); FastAPI service and learnings write-back remain._
+   - CLI `aijournal chat` now reuses the shared Retriever, requires fresh persona/index artifacts, and streams responses with `[entry:<id>#p<idx>]` citations plus scored snippets. Fake mode outputs deterministic fixtures for CI.
+   - Next: lift the orchestrator into FastAPI `chatd`, keeping the same service layer and streaming the transcript while persisting `derived/chat_sessions/<session_id>/{transcript.jsonl,summary.yaml,learnings.yaml}`.
+   - Next: add lightweight intent handling + optional clarifying question support (`coaching_prefs.probing`) once the chatd surface is wired.
+   - Existing fake-mode fixtures cover the CLI; extend them to the API surface so automation can exercise both flows offline.
 
 7. **feat(feedback + telemetry): learnings + strength nudges.**
    - Add thumbs up/down handling that adjusts cited claim strengths (+0.03 / −0.05 clamp 0..1) and
      queues learnings into `derived/pending/profile_updates/`.
    - Emit lightweight structured logs summarizing retrieval latency, chunk counts, and pack token
      budgets so regressions are visible without extra tooling.
+
+8. **feat(profile-structured-live): align prompts with live Ollama responses.**
+   - `aijournal profile suggest` currently falls back to the JSON runner and succeeds, but the structured-output path returns `invalid JSON schema` from devstral:24b. Tighten prompts/response parsing so live mode passes without retries/fallback warnings.
+   - `aijournal characterize` hits the same structured-output error and the JSON runner fails to emit valid payloads, so the CLI falls back to heuristic proposals. Update prompts or acceptance logic so live mode produces validated `CharacterizeResponse` payloads.
+   - `aijournal interview` still relies on heuristic probes; wire it to the shared LLM runner (with fake-mode guard rails) once structured outputs remain stable so live runs gain adaptive questioning.
 
 Document each milestone in CHANGELOG.md once merged so README and PLAN stay aligned with shipped
 surfaces.

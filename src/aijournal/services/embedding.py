@@ -37,10 +37,17 @@ class EmbeddingBackend:
         if self.fake_mode:
             return [self._fake_embed(text) for text in texts]
 
-        assert self._client is not None  # pragma: no cover - guarded by fake_mode flag
+        if self._client is None:  # pragma: no cover - real mode lazy init
+            self._client = Client(host=self.host) if self.host else Client()
         for text in texts:
             response = self._client.embeddings(model=self.model, prompt=text)
-            vector = response.get("embedding") if isinstance(response, dict) else None
+            if isinstance(response, dict):
+                vector = response.get("embedding")
+            elif hasattr(response, "model_dump"):
+                data = response.model_dump()
+                vector = data.get("embedding")
+            else:
+                vector = getattr(response, "embedding", None)
             if not isinstance(vector, list):
                 msg = "Ollama embedding response missing vector payload"
                 raise RuntimeError(msg)

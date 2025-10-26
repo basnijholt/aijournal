@@ -25,6 +25,7 @@ import yaml
 from agno.agent import Agent
 from agno.models.ollama import Ollama
 from annoy import AnnoyIndex
+from ollama import Client
 from pydantic import BaseModel, ValidationError
 
 from aijournal.ingest_agent import (
@@ -81,6 +82,8 @@ from aijournal.models import (
 )
 from aijournal.schema import SchemaValidationError, validate_schema
 from aijournal.services import (
+    ChatService,
+    ChatTurn,
     ClaimConflict,
     ClaimConsolidator,
     ClaimMergeOutcome,
@@ -94,7 +97,7 @@ from aijournal.services.retriever import RetrievalFilters, Retriever
 
 app = typer.Typer(help="Local-first personal journal utilities.")
 profile_app = typer.Typer(help="Profile utilities.")
-ollama_app = typer.Typer(help="Ollama helpers (fake mode only).")
+ollama_app = typer.Typer(help="Ollama helpers.")
 app.add_typer(profile_app, name="profile")
 app.add_typer(ollama_app, name="ollama")
 index_app = typer.Typer(help="Retrieval index utilities.")
@@ -2069,13 +2072,10 @@ def _profile_suggestions_payload(
     timeout: float | None = None,
     retries: int = DEFAULT_LLM_RETRIES,
 ) -> ProfileSuggestions:
-    def fallback_model() -> ProfileSuggestions:
-        return _fake_profile_suggestions(entries, profile, claims)
-
     if _use_fake_llm():
-        suggestions = fallback_model()
+        suggestions = _fake_profile_suggestions(entries, profile, claims)
     else:
-        response = cast(
+        suggestion_response = cast(
             ProfileSuggestionsResponse,
             _structured_call_with_retry(
                 lambda: _invoke_structured_llm(
@@ -2099,27 +2099,21 @@ def _profile_suggestions_payload(
         )
         timestamp = _format_timestamp(_now())
         normalized_upserts: list[ProfileSuggestionUpsert] = []
-        for upsert in response.upserts:
-            try:
-                normalized_model = _normalize_claim_atom(
-                    upsert.value,
-                    timestamp=timestamp,
-                )
-            except (ValidationError, ValueError):
-                continue
-            try:
-                normalized_upserts.append(
-                    ProfileSuggestionUpsert(
-                        target=str(upsert.target or "claims"),
-                        operation=str(upsert.operation or "upsert"),
-                        value=normalized_model,
-                        rationale=upsert.rationale,
-                    ),
-                )
-            except ValidationError:
-                continue
+        for upsert in suggestion_response.upserts:
+            normalized_model = _normalize_claim_atom(
+                upsert.value,
+                timestamp=timestamp,
+            )
+            normalized_upserts.append(
+                ProfileSuggestionUpsert(
+                    target=str(upsert.target or "claims"),
+                    operation=str(upsert.operation or "upsert"),
+                    value=normalized_model,
+                    rationale=upsert.rationale,
+                ),
+            )
 
-        update_models = [update.model_copy(deep=True) for update in response.updates]
+        update_models = [update.model_copy(deep=True) for update in suggestion_response.updates]
         suggestions = ProfileSuggestions(
             upserts=normalized_upserts,
             updates=update_models,
@@ -2293,16 +2287,10 @@ def _characterize_payload(
         default_sources,
     ) = _characterization_context(entries, manifest_index)
 
-    def fallback_model() -> ProfileUpdateProposals:
-        return _fake_characterize(entries, profile, claims)
-
     fake_mode = _use_fake_llm()
-    if fake_mode:
-        base = fallback_model()
-        raw_claims: Iterable[Any] = base.claims
-        raw_facets: Iterable[Any] = base.facets
-        response_prompts: list[str] = []
-    else:
+    raw_claims: list[Any]
+    raw_facets: list[Any]
+    if not fake_mode:
         manifest_payload = _json_block(
             {key: entry.model_dump(mode="python") for key, entry in manifest_index.items()},
         )
@@ -2332,8 +2320,12 @@ def _characterize_payload(
         )
         raw_claims = [proposal.model_dump(mode="python") for proposal in response.claims]
         raw_facets = [proposal.model_dump(mode="python") for proposal in response.facets]
-        response_prompts = [prompt for prompt in response.interview_prompts if prompt]
-    prompts = response_prompts if not fake_mode else []
+        prompts = [prompt for prompt in response.interview_prompts if prompt]
+    else:
+        base = _fake_characterize(entries, profile, claims)
+        raw_claims = base.claims
+        raw_facets = base.facets
+        prompts = []
 
     claims_payload = _normalize_claim_proposals(
         raw_claims,
@@ -3171,23 +3163,60 @@ def advise(
 
 @ollama_app.command("health")
 def ollama_health() -> None:
-    """Show fake Ollama model availability in offline mode."""
-    if os.getenv("AIJOURNAL_FAKE_OLLAMA") != "1":
-        typer.secho(
-            "Set AIJOURNAL_FAKE_OLLAMA=1 to use the offline health probe.",
-            fg=typer.colors.RED,
-            err=True,
-        )
-        raise typer.Exit(1)
+    """Inspect Ollama availability for both fake and live modes."""
+    if _use_fake_llm():
+        models = [
+            {"name": "llama3.1:8b-instruct", "size": "8B", "quant": "Q4_K_M"},
+            {"name": "llama3.1:70b-instruct", "size": "70B", "quant": "Q4_K_M"},
+        ]
+        payload = {
+            "endpoint": "fake://ollama",
+            "default": models[0]["name"],
+            "models": models,
+        }
+        typer.echo(yaml.safe_dump(payload, sort_keys=False).rstrip())
+        return
 
-    models = [
-        {"name": "llama3.1:8b-instruct", "size": "8B", "quant": "Q4_K_M"},
-        {"name": "llama3.1:70b-instruct", "size": "70B", "quant": "Q4_K_M"},
-    ]
+    host = os.getenv("AIJOURNAL_OLLAMA_HOST")
+    try:
+        client = Client(host=host) if host else Client()
+        result = client.list()
+    except Exception as exc:  # pragma: no cover - depends on runtime host
+        typer.secho(f"Unable to query Ollama: {exc}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(1) from exc
+
+    if hasattr(result, "model_dump"):
+        data = result.model_dump()
+    elif isinstance(result, dict):
+        data = result
+    else:
+        data = {}
+
+    models_raw = data.get("models") if isinstance(data, dict) else None
+    models_payload: list[dict[str, Any]] = []
+    if isinstance(models_raw, list):
+        for item in models_raw:
+            if hasattr(item, "model_dump"):
+                item_data = item.model_dump()
+            elif isinstance(item, dict):
+                item_data = item
+            else:
+                continue
+            models_payload.append(
+                {
+                    "name": item_data.get("name") or item_data.get("model"),
+                    "size": item_data.get("size"),
+                    "digest": item_data.get("digest"),
+                    "modified_at": item_data.get("modified_at") or item_data.get("last_modified"),
+                },
+            )
+
+    root = Path.cwd()
+    config = _load_config(root)
     payload = {
-        "endpoint": "fake://ollama",
-        "default": models[0]["name"],
-        "models": models,
+        "endpoint": host or "http://127.0.0.1:11434",
+        "default": _resolve_model_name(config),
+        "models": models_payload,
     }
     typer.echo(yaml.safe_dump(payload, sort_keys=False).rstrip())
 
@@ -4081,14 +4110,13 @@ def profile_status_alias() -> None:
 def interview(
     date: str = typer.Option(..., "--date", "-d", help="Date (YYYY-MM-DD) to review."),
 ) -> None:
-    """Surface targeted interview probes based on stale facets (fake LLM)."""
-    if os.getenv("AIJOURNAL_FAKE_OLLAMA") != "1":
+    """Surface targeted interview probes based on stale facets."""
+    if not _use_fake_llm():
         typer.secho(
-            "Only fake Ollama mode is implemented for interview.",
-            fg=typer.colors.RED,
+            "Interview probes currently use heuristic generation (no live LLM call).",
+            fg=typer.colors.YELLOW,
             err=True,
         )
-        raise typer.Exit(1)
 
     root = Path.cwd()
     profile_model, claim_models = _load_profile_components(root)
@@ -4702,6 +4730,65 @@ def index_search(
             typer.echo("")
 
 
+@app.command("chat")
+def chat(
+    question: str = typer.Argument(
+        ...,
+        help="Question to ask your journal assistant.",
+    ),
+    top: int = typer.Option(
+        6,
+        "--top",
+        "-k",
+        help="Maximum number of retrieval chunks to use.",
+    ),
+    tags: str | None = typer.Option(
+        None,
+        "--tags",
+        help="Optional tag filters (comma or space separated).",
+    ),
+    source: str | None = typer.Option(
+        None,
+        "--source",
+        help="Optional source-type filters (comma or space separated).",
+    ),
+    date_from: str | None = typer.Option(
+        None,
+        "--date-from",
+        help="Earliest chunk date (YYYY-MM-DD).",
+    ),
+    date_to: str | None = typer.Option(
+        None,
+        "--date-to",
+        help="Latest chunk date (YYYY-MM-DD).",
+    ),
+) -> None:
+    """Run a retrieval-augmented chat turn against your journal."""
+    if top <= 0:
+        typer.secho("--top must be positive.", fg=typer.colors.RED, err=True)
+        raise typer.Exit(1)
+
+    root = Path.cwd()
+    config = _load_config(root)
+    filters = RetrievalFilters(
+        tags=_split_filter_values(tags),
+        source_types=_split_filter_values(source),
+        date_from=_validate_date_option(date_from, "--date-from"),
+        date_to=_validate_date_option(date_to, "--date-to"),
+    )
+
+    service = ChatService(root, config)
+    try:
+        turn = service.run(question, top=top, filters=filters)
+    except (RuntimeError, ValueError) as exc:
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        raise typer.Exit(1) from exc
+    finally:
+        service.close()
+
+    _render_chat_turn(turn)
+
+
 def _index_dir(root: Path) -> Path:
     return root / "derived" / "index"
 
@@ -4775,6 +4862,42 @@ def _split_filter_values(raw: str | None) -> frozenset[str]:
         return frozenset()
     parts = [part.strip() for part in re.split(r"[,\s]+", raw) if part.strip()]
     return frozenset(parts)
+
+
+def _render_chat_turn(turn: ChatTurn) -> None:
+    mode_label = "fake mode" if turn.fake_mode else "live mode"
+    typer.echo(f"Chat response ({mode_label})")
+    typer.echo(f"Question: {turn.question}")
+    typer.echo("Answer:")
+    answer_lines = turn.answer.splitlines() or [turn.answer]
+    for line in answer_lines:
+        typer.echo(f"  {line}")
+
+    if not turn.citations:
+        if turn.retrieved_chunks:
+            typer.echo("")
+            typer.echo("Citations: none referenced.")
+        else:
+            typer.echo("")
+            typer.echo("No journal chunks were retrieved.")
+        return
+
+    typer.echo("")
+    typer.echo("Citations:")
+    chunk_map = {chunk.chunk_id: chunk for chunk in turn.retrieved_chunks}
+    for idx, citation in enumerate(turn.citations, start=1):
+        chunk = chunk_map.get(citation.chunk_id)
+        source_path = citation.source_path or citation.normalized_id
+        typer.echo(
+            f"{idx}. {citation.marker} {source_path} ({citation.date}) score {citation.score:.3f}",
+        )
+        if chunk:
+            snippet = _format_search_snippet(chunk.text)
+            tag_display = ", ".join(citation.tags) if citation.tags else "-"
+            typer.echo(f"   tags: {tag_display}")
+            typer.echo(f"   {snippet}")
+        if idx != len(turn.citations):
+            typer.echo("")
 
 
 def _format_search_snippet(text: str, limit: int = 200) -> str:

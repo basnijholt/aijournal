@@ -197,9 +197,21 @@ Builds an advice card under `derived/advice/<DATE>/<slug>.yaml` using `prompts/a
 facets/claims referenced in each recommendation. Fake mode remains available for CI by setting
 `AIJOURNAL_FAKE_OLLAMA=1`.
 
-### Retrieval-backed chat (CLI or FastAPI)
+### Retrieval-backed chat (CLI)
 
-> **Coming soon:** The retrieval-backed chat surfaces (`aijournal chat`, `aijournal chatd`) are on the roadmap but not shipped in this repository snapshot. See `PLAN.md` (“feat(chat + chatd)”) for the latest status. Once available, they will orchestrate intent classification, retrieval, citations, and learnings ingestion using the index built above.
+```sh
+aijournal chat "What did I focus on last week?"
+```
+
+Streams a short answer grounded in your persona core plus retrieved journal chunks. Each response
+includes inline `[entry:<normalized_id>#p<idx>]` citations and a footer listing the supporting
+snippets with scores/tags. The command exits early when prerequisites are missing—ensure
+`derived/persona/persona_core.yaml`, `derived/index/index.db`, and `derived/index/annoy.index`
+exist (rebuild them with `aijournal persona build` and `aijournal index rebuild`). Setting
+`AIJOURNAL_FAKE_OLLAMA=1` keeps the loop deterministic for tests/CI.
+
+> `aijournal chatd` remains on the roadmap; PLAN.md tracks progress toward the FastAPI service and
+downstream automation hooks.
 
 ### Profile suggestions
 
