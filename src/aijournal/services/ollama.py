@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, cast
 
@@ -12,6 +13,7 @@ from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.ollama import OllamaProvider
 
 DEFAULT_OLLAMA_HOST = "http://127.0.0.1:11434"
+DEFAULT_MODEL_NAME = "llama3.1:8b-instruct"
 _JSON_SYSTEM_PROMPT = (
     "You are part of the aijournal CLI. "
     "Respond with valid JSON only—no markdown fences, explanations, or trailing text."
@@ -66,6 +68,48 @@ def build_ollama_model(model_name: str, host: str | None = None) -> OpenAIChatMo
     """Create an OpenAIChatModel configured for the target Ollama endpoint."""
     provider = OllamaProvider(base_url=resolve_ollama_base_url(host))
     return OpenAIChatModel(model_name=model_name, provider=provider)
+
+
+def build_ollama_config_from_mapping(
+    config: Mapping[str, Any] | None = None,
+    *,
+    model: str | None = None,
+    host: str | None = None,
+    timeout: float | None = None,
+) -> OllamaConfig:
+    """Construct an OllamaConfig from a loose mapping of settings."""
+
+    settings = config or {}
+    resolved_model = (
+        model or os.getenv("AIJOURNAL_MODEL") or str(settings.get("model") or DEFAULT_MODEL_NAME)
+    )
+    resolved_host = host or os.getenv("AIJOURNAL_OLLAMA_HOST")
+    temperature = _maybe_float(settings.get("temperature"))
+    seed = _maybe_int(settings.get("seed"))
+    max_tokens = _maybe_int(settings.get("max_tokens"))
+    effective_timeout = timeout if timeout is not None else _maybe_float(settings.get("timeout"))
+    return OllamaConfig(
+        model=resolved_model,
+        host=resolved_host,
+        temperature=temperature,
+        seed=seed,
+        max_tokens=max_tokens,
+        timeout=effective_timeout,
+    )
+
+
+def _maybe_float(value: Any) -> float | None:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _maybe_int(value: Any) -> int | None:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _model_settings_from_config(config: OllamaConfig) -> ModelSettings | None:
@@ -145,6 +189,7 @@ __all__ = [
     "OllamaConfig",
     "build_ollama_model",
     "build_ollama_agent",
+    "build_ollama_config_from_mapping",
     "run_ollama_agent",
     "resolve_ollama_base_url",
     "resolve_ollama_host",

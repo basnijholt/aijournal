@@ -16,7 +16,7 @@ import yaml
 from pydantic import BaseModel, Field
 
 from aijournal.models import SimpleProfileSuggestionsResponse
-from aijournal.services.ollama import OllamaConfig, build_ollama_agent
+from aijournal.services.ollama import build_ollama_agent, build_ollama_config_from_mapping
 
 STRUCTURED_SYSTEM_PROMPT = (
     "You are part of the local aijournal CLI. "
@@ -166,9 +166,9 @@ def main() -> None:
 
     response_model, prompt = build_prompt(args.mode, args.date)
 
-    config = OllamaConfig(model=model, host=host)
+    ollama_config = build_ollama_config_from_mapping(model=model, host=host)
     agent = build_ollama_agent(
-        config,
+        ollama_config,
         system_prompt=STRUCTURED_SYSTEM_PROMPT,
         output_type=response_model,
         name="json-repro",

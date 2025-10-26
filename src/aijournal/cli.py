@@ -25,11 +25,9 @@ import typer
 import yaml
 from annoy import AnnoyIndex
 from pydantic import BaseModel, ValidationError
-from pydantic_ai import Agent, UnexpectedModelBehavior
-from pydantic_ai.exceptions import UserError
+from pydantic_ai import Agent
 
 from aijournal.ingest_agent import (
-    AgentSettings,
     IngestResult,
     IngestSection,
     build_ingest_agent,
@@ -91,8 +89,7 @@ from aijournal.services import (
     ClaimMergeOutcome,
     ClaimSignature,
     LLMResponseError,
-    OllamaConfig,
-    build_ollama_agent,
+    build_ollama_config_from_mapping,
     resolve_ollama_host,
     run_ollama_agent,
 )
@@ -661,49 +658,11 @@ def _simple_facet_to_update(suggestion: SimpleSuggestion) -> ProfileSuggestionUp
     )
 
 
-def _build_ollama_config(config: dict[str, Any]) -> OllamaConfig:
-    return OllamaConfig(
-        model=_resolve_model_name(config),
-        host=os.getenv("AIJOURNAL_OLLAMA_HOST"),
-        temperature=_coerce_float(config.get("temperature")),
-        seed=_coerce_int(config.get("seed")),
-        max_tokens=_coerce_int(config.get("max_tokens")),
-        timeout=_coerce_float(config.get("timeout")),
-    )
-
-
 _STRUCTURED_SYSTEM_PROMPT = (
     "You are part of the local aijournal CLI. "
     "Read the user's prompt carefully and respond with JSON that matches the declared response schema. "
     "Do not include markdown fences or commentary."
 )
-
-
-def _build_structured_agent(
-    name: str,
-    response_model: type[BaseModel],
-    config: dict[str, Any],
-    *,
-    timeout: float | None = None,
-) -> Agent:
-    settings = config or {}
-    timeout_value = (
-        float(timeout) if timeout is not None else _coerce_float(settings.get("timeout"))
-    )
-    ollama_config = OllamaConfig(
-        model=_resolve_model_name(settings),
-        host=os.getenv("AIJOURNAL_OLLAMA_HOST"),
-        temperature=_coerce_float(settings.get("temperature")),
-        seed=_coerce_int(settings.get("seed")),
-        max_tokens=_coerce_int(settings.get("max_tokens")),
-        timeout=timeout_value,
-    )
-    return build_ollama_agent(
-        ollama_config,
-        system_prompt=_STRUCTURED_SYSTEM_PROMPT,
-        output_type=response_model,
-        name=name,
-    )
 
 
 def _invoke_structured_llm(
@@ -716,20 +675,22 @@ def _invoke_structured_llm(
     timeout: float | None = None,
 ) -> BaseModel:
     prompt = _render_prompt(prompt_path, variables)
-    agent = _build_structured_agent(agent_name, response_model, config, timeout=timeout)
     try:
-        run = agent.run_sync(prompt)
-    except UnexpectedModelBehavior as exc:  # pragma: no cover - runtime dependent
-        msg = f"Structured output generation failed for {prompt_path}: {exc}"
-        raise LLMResponseError(msg) from exc
-    except UserError as exc:  # pragma: no cover - runtime dependent
-        msg = f"Structured output generation failed for {prompt_path}: {exc}"
-        raise LLMResponseError(msg) from exc
+        ollama_config = build_ollama_config_from_mapping(
+            config,
+            model=_resolve_model_name(config),
+            timeout=float(timeout) if timeout is not None else None,
+        )
+        output = run_ollama_agent(
+            ollama_config,
+            prompt,
+            system_prompt=_STRUCTURED_SYSTEM_PROMPT,
+            output_type=response_model,
+        )
     except Exception as exc:  # pragma: no cover - runtime dependent
         msg = f"Structured output generation failed for {prompt_path}: {exc}"
         raise LLMResponseError(msg) from exc
 
-    output = run.output
     if isinstance(output, response_model):
         return output
     msg = f"Structured output generation for {prompt_path} did not return {response_model.__name__}"
@@ -797,11 +758,18 @@ def _structured_call_with_retry(
 def _safe_llm_json(
     prompt_path: str,
     variables: dict[str, str],
-    config: OllamaConfig,
+    config: dict[str, Any],
+    *,
+    timeout: float | None = None,
 ) -> dict[str, Any]:
     prompt = _render_prompt(prompt_path, variables)
     try:
-        return run_ollama_agent(config, prompt)
+        resolved_config = build_ollama_config_from_mapping(
+            config,
+            model=_resolve_model_name(config),
+            timeout=timeout,
+        )
+        return run_ollama_agent(resolved_config, prompt)
     except LLMResponseError as exc:
         msg = f"Structured JSON parsing failed for {prompt_path}: {exc}"
         raise LLMResponseError(msg) from exc
@@ -2459,7 +2427,25 @@ def _advice_payload(
         return fallback_model()
 
     try:
-        ollama_config = _build_ollama_config(config)
+        payload = _safe_llm_json(
+            "prompts/advise.md",
+            {
+                "date": _created_date(_format_timestamp(_now())),
+                "question": question,
+                "profile_json": _json_block(profile),
+                "claims_json": _json_block(
+                    {"claims": [claim.model_dump(mode="python") for claim in claims]}
+                ),
+            },
+            config=config,
+        )
+    except LLMResponseError as exc:
+        typer.secho(
+            f"Advise schema mismatch ({exc}); using heuristic card.",
+            fg=typer.colors.YELLOW,
+            err=True,
+        )
+        payload = fallback_dict()
     except Exception as exc:  # pragma: no cover
         typer.secho(
             f"Unable to configure Ollama for advise: {exc}",
@@ -2467,27 +2453,6 @@ def _advice_payload(
             err=True,
         )
         payload = fallback_dict()
-    else:
-        try:
-            payload = _safe_llm_json(
-                "prompts/advise.md",
-                {
-                    "date": _created_date(_format_timestamp(_now())),
-                    "question": question,
-                    "profile_json": _json_block(profile),
-                    "claims_json": _json_block(
-                        {"claims": [claim.model_dump(mode="python") for claim in claims]}
-                    ),
-                },
-                ollama_config,
-            )
-        except LLMResponseError as exc:
-            typer.secho(
-                f"Advise schema mismatch ({exc}); using heuristic card.",
-                fg=typer.colors.YELLOW,
-                err=True,
-            )
-            payload = fallback_dict()
 
     fallback_defaults = fallback_model().model_dump(mode="python")
     advice_data = dict(payload)
@@ -2672,14 +2637,8 @@ def ingest(
     is_fake = _use_fake_llm()
     agent: Agent | None = None
     if not is_fake:
-        settings = AgentSettings(
-            model=model_name,
-            host=os.getenv("AIJOURNAL_OLLAMA_HOST"),
-            temperature=_coerce_float(config.get("temperature")),
-            seed=_coerce_int(config.get("seed")),
-        )
         try:
-            agent = build_ingest_agent(settings)
+            agent = build_ingest_agent(config, model=model_name)
         except Exception as exc:  # pragma: no cover - initialization errors are rare
             typer.secho(
                 f"Unable to initialize Ollama ingestion agent: {exc}",

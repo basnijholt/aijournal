@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from collections.abc import Mapping
 from datetime import datetime
 from pathlib import Path
 
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent
 
-from aijournal.services.ollama import OllamaConfig, build_ollama_agent
+from aijournal.services.ollama import build_ollama_agent, build_ollama_config_from_mapping
 
 INGEST_SYSTEM_PROMPT = """
 You are part of a local journaling pipeline. Given a Markdown or Hugo document with optional
@@ -53,26 +53,15 @@ class IngestResult(BaseModel):
     summary: str | None = Field(default=None, max_length=500)
 
 
-@dataclass(frozen=True)
-class AgentSettings:
-    """Runtime settings for the ingestion agent."""
-
-    model: str
-    host: str | None
-    temperature: float | None
-    seed: int | None
-
-
-def build_ingest_agent(settings: AgentSettings) -> Agent:
+def build_ingest_agent(
+    config: Mapping[str, object] | None,
+    *,
+    model: str | None = None,
+) -> Agent:
     """Construct a Pydantic AI Agent backed by Ollama with structured outputs."""
-    config = OllamaConfig(
-        model=settings.model,
-        host=settings.host,
-        temperature=settings.temperature,
-        seed=settings.seed,
-    )
+    ollama_config = build_ollama_config_from_mapping(config, model=model)
     return build_ollama_agent(
-        config,
+        ollama_config,
         system_prompt=INGEST_SYSTEM_PROMPT,
         output_type=IngestResult,
         name="aijournal-ingest",
@@ -98,7 +87,6 @@ def ingest_with_agent(agent: Agent, *, source_path: Path, markdown: str) -> Inge
 
 
 __all__ = [
-    "AgentSettings",
     "IngestResult",
     "IngestSection",
     "build_ingest_agent",

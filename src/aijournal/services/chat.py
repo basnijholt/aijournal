@@ -13,7 +13,12 @@ from pydantic import ValidationError
 
 from aijournal.io.yaml_io import load_yaml_model
 from aijournal.models import PersonaCore, PersonaCoreFile
-from aijournal.services.ollama import LLMResponseError, OllamaConfig, run_ollama_agent
+from aijournal.services.ollama import (
+    LLMResponseError,
+    OllamaConfig,
+    build_ollama_config_from_mapping,
+    run_ollama_agent,
+)
 from aijournal.services.retriever import RetrievalFilters, RetrievedChunk, Retriever
 
 
@@ -288,22 +293,7 @@ class ChatService:
         )
 
     def _build_ollama_config(self) -> OllamaConfig:
-        model = os.getenv("AIJOURNAL_MODEL") or str(
-            self._config.get("model") or "llama3.1:8b-instruct"
-        )
-        host = os.getenv("AIJOURNAL_OLLAMA_HOST")
-        temperature = _coerce_float(self._config.get("temperature"))
-        seed = _coerce_int(self._config.get("seed"))
-        max_tokens = _coerce_int(self._config.get("max_tokens"))
-        timeout = _coerce_float(self._config.get("timeout"))
-        return OllamaConfig(
-            model=model,
-            host=host,
-            temperature=temperature,
-            seed=seed,
-            max_tokens=max_tokens,
-            timeout=timeout,
-        )
+        return build_ollama_config_from_mapping(self._config)
 
 
 def _truncate_text(text: str, limit: int = 120) -> str:
