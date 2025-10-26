@@ -95,6 +95,7 @@ from aijournal.services import (
 )
 from aijournal.services.embedding import EmbeddingBackend
 from aijournal.services.retriever import RetrievalFilters, Retriever
+from aijournal.utils.coercion import coerce_float, coerce_int
 
 app = typer.Typer(help="Local-first personal journal utilities.")
 profile_app = typer.Typer(help="Profile utilities.")
@@ -1025,24 +1026,6 @@ def _use_fake_llm() -> bool:
     return os.getenv("AIJOURNAL_FAKE_OLLAMA") == "1"
 
 
-def _coerce_float(value: Any) -> float | None:
-    if value is None:
-        return None
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return None
-
-
-def _coerce_int(value: Any) -> int | None:
-    if value is None:
-        return None
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return None
-
-
 def _manifest_path(root: Path) -> Path:
     return root / "data" / "manifest" / "ingested.yaml"
 
@@ -1182,9 +1165,9 @@ def _normalize_sources(raw: Any) -> list[ClaimSource]:
                 spans.append(
                     ClaimSourceSpan(
                         type=str(span.get("type") or "excerpt"),
-                        index=_coerce_int(span.get("index")),
-                        start=_coerce_int(span.get("start")),
-                        end=_coerce_int(span.get("end")),
+                        index=coerce_int(span.get("index")),
+                        start=coerce_int(span.get("start")),
+                        end=coerce_int(span.get("end")),
                     ),
                 )
         sources.append(ClaimSource(entry_id=str(entry_id), spans=spans))
@@ -1217,7 +1200,7 @@ def _normalize_provenance(
     else:
         data = raw if isinstance(raw, dict) else {}
         sources = _normalize_sources(data.get("sources"))
-        observation_count = _coerce_int(data.get("observation_count"))
+        observation_count = coerce_int(data.get("observation_count"))
         first_seen_coerced = _coerce_timestamp(data.get("first_seen"))
         last_updated_coerced = _coerce_timestamp(data.get("last_updated")) or timestamp
         provenance = Provenance(
@@ -1297,7 +1280,7 @@ def _normalize_claim_atom(
     scope = _normalize_scope(base.get("scope"))
 
     strength_value = base.get("strength", base.get("confidence"))
-    strength_numeric = _coerce_float(strength_value)
+    strength_numeric = coerce_float(strength_value)
     strength = _clamp01(strength_numeric if strength_numeric is not None else 0.6)
 
     status_raw = str(base.get("status") or "tentative").strip().lower()
@@ -1309,7 +1292,7 @@ def _normalize_claim_atom(
     method = method_raw if method_raw in valid_methods else "inferred"
 
     user_verified = bool(base.get("user_verified", False))
-    review_after_days = _coerce_int(base.get("review_after_days")) or 120
+    review_after_days = coerce_int(base.get("review_after_days")) or 120
 
     provenance = _normalize_provenance(
         base.get("provenance"),
@@ -2317,8 +2300,8 @@ def _normalize_facet_proposals(
                 value=raw.get("value"),
                 operation=str(raw.get("operation") or "set"),
                 method=str(raw.get("method") or "inferred"),
-                confidence=_coerce_float(raw.get("confidence")) or 0.55,
-                review_after_days=_coerce_int(raw.get("review_after_days")) or 90,
+                confidence=coerce_float(raw.get("confidence")) or 0.55,
+                review_after_days=coerce_int(raw.get("review_after_days")) or 90,
                 user_verified=bool(raw.get("user_verified", False)),
                 normalized_ids=_merge_unique(raw.get("normalized_ids", []), normalized_ids),
                 evidence_hashes=_merge_unique(raw.get("evidence_hashes", []), evidence_hashes),
@@ -3361,11 +3344,11 @@ def _claim_weight(claim: ClaimAtom, weights: dict[str, Any]) -> float:
     claim_types_raw = weights.get("claim_types")
     claim_weights = claim_types_raw if isinstance(claim_types_raw, dict) else {}
     if claim_type in claim_weights:
-        return _coerce_float(claim_weights[claim_type]) or 1.0
+        return coerce_float(claim_weights[claim_type]) or 1.0
     if "default" in claim_weights:
-        return _coerce_float(claim_weights["default"]) or 1.0
+        return coerce_float(claim_weights["default"]) or 1.0
     if "claims" in weights:
-        return _coerce_float(weights["claims"]) or 1.0
+        return coerce_float(weights["claims"]) or 1.0
     return CLAIM_TYPE_IMPACT_DEFAULTS.get(claim_type, 1.0)
 
 
@@ -3502,7 +3485,7 @@ def _persona_state(root: Path) -> tuple[str, list[str]]:
     reasons: list[str] = []
     for rel, current_mtime in current_state.items():
         stored_value = stored_raw.get(rel)
-        stored_mtime = _coerce_float(stored_value)
+        stored_mtime = coerce_float(stored_value)
         if stored_mtime is None:
             reasons.append(f"New profile file detected: {rel}")
             continue
@@ -3586,7 +3569,7 @@ def _persona_build_impl(
 
     token_estimator_raw = config.get("token_estimator")
     token_estimator = token_estimator_raw if isinstance(token_estimator_raw, dict) else {}
-    char_per_token = _coerce_float(token_estimator.get("char_per_token")) or DEFAULT_CHAR_PER_TOKEN
+    char_per_token = coerce_float(token_estimator.get("char_per_token")) or DEFAULT_CHAR_PER_TOKEN
 
     profile_slice = _persona_profile_slice(profile)
     now_dt = _now()

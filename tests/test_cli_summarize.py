@@ -10,7 +10,7 @@ from typer.testing import CliRunner
 
 from aijournal.cli import app
 from aijournal.models import DailySummaryResponse, JournalSection, NormalizedEntry
-from aijournal.services import LLMResponseError
+from aijournal.services import LLMResponseError, OllamaConfig
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -181,3 +181,49 @@ def test_summarize_structured_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
 
     with pytest.raises(LLMResponseError):
         cli._summarize_day_payload([entry], DATE, {}, timeout=30.0, retries=0)
+
+
+def test_invoke_structured_llm_uses_shared_builder(monkeypatch: pytest.MonkeyPatch) -> None:
+    from aijournal import cli
+
+    captured: dict[str, object] = {}
+
+    def fake_builder(
+        config: dict[str, object], *, timeout: float | None = None, **_: object
+    ) -> OllamaConfig:
+        captured["config"] = dict(config)
+        captured["timeout"] = timeout
+        return OllamaConfig(model="builder-model")
+
+    def fake_runner(
+        config: OllamaConfig,
+        prompt: str,
+        *,
+        system_prompt: str,
+        output_type: type[DailySummaryResponse],
+    ) -> DailySummaryResponse:
+        assert config.model == "builder-model"
+        assert "summarize" in system_prompt.lower()
+        assert "entries" in prompt
+        return output_type(
+            day=DATE,
+            bullets=["bullet"],
+            highlights=["highlight"],
+            todo_candidates=["todo"],
+        )
+
+    monkeypatch.setattr(cli, "build_ollama_config_from_mapping", fake_builder)
+    monkeypatch.setattr(cli, "run_ollama_agent", fake_runner)
+
+    response = cli._invoke_structured_llm(
+        "prompts/summarize_day.md",
+        {"date": DATE, "entries_json": "[]"},
+        response_model=DailySummaryResponse,
+        agent_name="unit-test",
+        config={"temperature": "0.3"},
+        timeout=45.0,
+    )
+
+    assert isinstance(response, DailySummaryResponse)
+    assert captured["config"] == {"temperature": "0.3"}
+    assert captured["timeout"] == 45.0

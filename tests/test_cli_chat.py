@@ -118,3 +118,35 @@ def test_chat_service_requires_persona_core(
             service.run("Need a summary")
     finally:
         service.close()
+
+
+def test_chat_service_builds_config_with_overrides(tmp_path: Path) -> None:
+    class DummyRetriever:
+        def close(self) -> None:
+            pass
+
+    config = {
+        "model": "global-model",
+        "temperature": "0.1",
+        "chat": {
+            "model": "chat-model",
+            "temperature": "0.9",
+            "seed": "123",
+            "max_tokens": "500",
+            "timeout": "45.5",
+            "host": "http://chat-host:11434",
+        },
+    }
+
+    service = ChatService(tmp_path, config, retriever=DummyRetriever())
+    try:
+        cfg = service._build_ollama_config()
+    finally:
+        service.close()
+
+    assert cfg.model == "chat-model"
+    assert cfg.temperature == pytest.approx(0.9)
+    assert cfg.seed == 123
+    assert cfg.max_tokens == 500
+    assert cfg.timeout == pytest.approx(45.5)
+    assert cfg.host == "http://chat-host:11434"

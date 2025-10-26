@@ -2,7 +2,9 @@
 
 ## Unreleased
 
-- CLI commands `summarize`, `facts`, `profile suggest`, and `characterize` now request structured Agno responses (`DailySummaryResponse`, `ExtractedFactsResponse`, etc.) and surface errors when schemas fail validation instead of emitting heuristic fallbacks.
+- CLI commands `summarize`, `facts`, `profile suggest`, and `characterize` now run through the shared Pydantic AI agent pipeline (`run_ollama_agent` + structured response models) and surface errors when schemas fail validation instead of emitting heuristic fallbacks.
+- Centralized float/int coercion in `aijournal.utils.coercion` and extended the chat service to respect `config.chat` overrides (model, temperature, seed, timeout).
+- Expanded README/plan docs and tests to describe and exercise the unified Pydantic AI configuration helper.
 - Added shared `--progress`, `--timeout`, and `--retries` flags across long-running LLM calls to surface per-entry progress and control retry behaviour.
 - Added `aijournal new --fake N` (with `--seed`) to synthesize deterministic Markdown entries for fixtures, demos, and CI without hitting Ollama.
 - Added `aijournal index rebuild/tail` to generate Annoy + SQLite retrieval indexes (with chunk manifests + meta) using local or fake embeddings.

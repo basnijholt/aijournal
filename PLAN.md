@@ -572,7 +572,7 @@ meta:
   - Otherwise downgrade both to `status: tentative`, drop strengths by 0.15, and enqueue an interview question.
 - Decay applied at read time only: `effective_strength = strength * exp(-lambda * staleness)` with `lambda ≈ 0.2` and `staleness = min(2, days_since / review_after_days)`.
 - `review-updates` must surface conflicts + scopes so humans understand why merges occur before applying.
-- **Status (2025-02-03):** CLI surfaces typed responses for `facts`, `summarize`, `profile suggest`, and `characterize` via Agno response models. Retrying schema failures is now configurable (`--retries`, `--timeout`) and progress logging is exposed with `--progress`. Consolidation previews continue to include conflict scopes and interview prompts.
+- **Status (2025-02-03):** CLI surfaces typed responses for `facts`, `summarize`, `profile suggest`, and `characterize` via Pydantic AI response models. Retrying schema failures is now configurable (`--retries`, `--timeout`) and progress logging is exposed with `--progress`. Consolidation previews continue to include conflict scopes and interview prompts.
 
 ---
 

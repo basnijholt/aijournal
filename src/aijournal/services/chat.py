@@ -20,6 +20,7 @@ from aijournal.services.ollama import (
     run_ollama_agent,
 )
 from aijournal.services.retriever import RetrievalFilters, RetrievedChunk, Retriever
+from aijournal.utils.coercion import coerce_float, coerce_int
 
 
 @dataclass(frozen=True)
@@ -110,7 +111,7 @@ class ChatService:
         retriever_filters = filters or RetrievalFilters()
 
         requested_top = max(1, int(top))
-        cfg_limit = _coerce_int(self._chat_cfg.get("max_retrieved_chunks"))
+        cfg_limit = coerce_int(self._chat_cfg.get("max_retrieved_chunks"))
         effective_top = min(requested_top, cfg_limit) if cfg_limit else requested_top
 
         result = self._retriever.search(
@@ -293,7 +294,25 @@ class ChatService:
         )
 
     def _build_ollama_config(self) -> OllamaConfig:
-        return build_ollama_config_from_mapping(self._config)
+        overrides: dict[str, Any] = {}
+        for key in ("model", "temperature", "seed", "max_tokens"):
+            value = self._chat_cfg.get(key)
+            if value is not None:
+                overrides[key] = value
+
+        merged = dict(self._config)
+        merged.update(overrides)
+
+        model_override = self._chat_cfg.get("model")
+        host_override = self._chat_cfg.get("host")
+        timeout_override = coerce_float(self._chat_cfg.get("timeout"))
+
+        return build_ollama_config_from_mapping(
+            merged,
+            model=str(model_override) if isinstance(model_override, str) else None,
+            host=str(host_override).strip() if isinstance(host_override, str) else None,
+            timeout=timeout_override,
+        )
 
 
 def _truncate_text(text: str, limit: int = 120) -> str:
@@ -318,20 +337,6 @@ def _persona_summary(persona: PersonaCore, *, max_claims: int = 3) -> dict[str, 
         "profile": profile,
         "claims": claims,
     }
-
-
-def _coerce_float(value: Any) -> float | None:
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return None
-
-
-def _coerce_int(value: Any) -> int | None:
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return None
 
 
 __all__ = [

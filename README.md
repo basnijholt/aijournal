@@ -21,12 +21,14 @@ Run `aijournal init` inside a fresh directory to materialize `data/`, `derived/`
 
 ### LLM runtime modes
 
-- **Live mode (default):** calls your local Ollama server using the Python `ollama` client. Set
-  `AIJOURNAL_OLLAMA_HOST=http://localhost:11434` if you run Ollama elsewhere. Override the model with
-  `AIJOURNAL_MODEL="llama3.1:8b-instruct"` when needed.
-- **Fake mode (tests/CI):** `export AIJOURNAL_FAKE_OLLAMA=1` to bypass Ollama and return deterministic
-  fixtures. The code automatically falls back to the fake path if a live request fails, so scripts remain
-  robust even if the model is offline.
+- **Live mode (default):** uses Pydantic AI's Ollama provider via the shared `run_ollama_agent`
+  helper. `build_ollama_config_from_mapping` fuses `config/config.yaml`, environment overrides, and
+  per-command tweaks so every CLI surface hits the same configuration pipeline. Set
+  `AIJOURNAL_OLLAMA_HOST=http://localhost:11434` if you run Ollama elsewhere, or
+  `AIJOURNAL_MODEL="llama3.1:8b-instruct"` to pick a different model.
+- **Fake mode (tests/CI):** `export AIJOURNAL_FAKE_OLLAMA=1` to route every agent call through
+  deterministic fixtures. Commands automatically fall back to fake mode if a live request fails, so
+  scripts remain robust even when Ollama is offline.
 
 ### Claim atoms & persona core
 
@@ -99,12 +101,14 @@ Each ingested file is hashed (manifest stored at `data/manifest/ingested.yaml`),
 saved under `data/raw/<hash>.md`, and normalized YAML lands in `data/normalized/<DATE>/...`. If your
 Ollama daemon is listening on a non-default address, set `AIJOURNAL_OLLAMA_HOST` accordingly. Large
 directories can take a couple of minutes to process—let the command run to completion or increase
-your wrapper’s timeout if you’re invoking it from automation.
+your wrapper's timeout if you're invoking it from automation.
 
 Downstream LLM-backed commands (`summarize`, `facts`, `profile suggest`, `characterize`) now share a
 consistent ergonomics layer: `--progress` surfaces per-entry logging, `--timeout` tunes the per-call
-budget, and `--retries` controls structured-output retries before surfacing an explicit failure. Fake
-mode remains available for CI/tests by setting `AIJOURNAL_FAKE_OLLAMA=1`.
+budget, and `--retries` controls structured-output retries before surfacing an explicit failure. All
+of them resolve model/temperature/host via `build_ollama_config_from_mapping` before delegating to
+`run_ollama_agent`, so behavior stays aligned across CLI surfaces. Fake mode remains available for
+CI/tests by setting `AIJOURNAL_FAKE_OLLAMA=1`.
 
 ### Normalize Markdown into YAML
 
@@ -125,7 +129,7 @@ Calls `prompts/summarize_day.md` through Ollama and writes `derived/summaries/<D
 `AIJOURNAL_FAKE_OLLAMA=1` for deterministic fixtures.
 
 `summarize` (and the other LLM-backed commands) now streams responses through
-Pydantic AI’s structured output validation. The CLI requests a `DailySummaryResponse`
+Pydantic AI's structured output validation. The CLI requests a `DailySummaryResponse`
 Pydantic model from the model and retries schema failures up to `--retries`
 times (default 1). Use `--timeout` to extend the per-call budget (defaults to
 120s) and `--progress` to print each normalized entry before the request is
@@ -225,7 +229,7 @@ Runs `prompts/profile_suggest.md` with the current profile + claims and stores
 same typed structures (claim upserts + facet updates) to keep pipelines consistent.
 
 The live command asks the model for a simplified `suggestions` array (claims and
-facets) via Pydantic AI’s structured output support. Use `--progress`, `--timeout`, and
+facets) via Pydantic AI's structured output support. Use `--progress`, `--timeout`, and
 `--retries` to mirror the ergonomics of the other pipelines; if schema validation
 fails after the configured retries, the CLI exits with an error so upstream
 prompt/debugging is explicit.
@@ -314,7 +318,7 @@ aijournal pack --level L4 --date 2025-02-03 --history-days 1 --format json > /tm
 `pack` now follows the standardized layers:
 
 - **L1 (Persona Core):** `derived/persona/persona_core.yaml` + top accepted claim atoms.
-- **L2 (Recent Activity):** today’s normalized entries plus the most recent 7 summaries/micro-facts.
+- **L2 (Recent Activity):** today's normalized entries plus the most recent 7 summaries/micro-facts.
 - **L3 (Extended Profile):** complete claims + extended self_profile facets + optional advice/suggestions for the day.
 - **L4 (Background):** prompts, config, raw journals for base day ± `--history-days`.
 

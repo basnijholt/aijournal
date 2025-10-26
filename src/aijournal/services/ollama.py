@@ -12,6 +12,8 @@ from pydantic_ai.exceptions import UserError
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.ollama import OllamaProvider
 
+from aijournal.utils.coercion import coerce_float, coerce_int
+
 DEFAULT_OLLAMA_HOST = "http://127.0.0.1:11434"
 DEFAULT_MODEL_NAME = "llama3.1:8b-instruct"
 _JSON_SYSTEM_PROMPT = (
@@ -84,10 +86,10 @@ def build_ollama_config_from_mapping(
         settings.get("model") or os.getenv("AIJOURNAL_MODEL") or DEFAULT_MODEL_NAME
     )
     resolved_host = host or os.getenv("AIJOURNAL_OLLAMA_HOST")
-    temperature = _maybe_float(settings.get("temperature"))
-    seed = _maybe_int(settings.get("seed"))
-    max_tokens = _maybe_int(settings.get("max_tokens"))
-    effective_timeout = timeout if timeout is not None else _maybe_float(settings.get("timeout"))
+    temperature = coerce_float(settings.get("temperature"))
+    seed = coerce_int(settings.get("seed"))
+    max_tokens = coerce_int(settings.get("max_tokens"))
+    effective_timeout = timeout if timeout is not None else coerce_float(settings.get("timeout"))
     return OllamaConfig(
         model=resolved_model,
         host=resolved_host,
@@ -96,20 +98,6 @@ def build_ollama_config_from_mapping(
         max_tokens=max_tokens,
         timeout=effective_timeout,
     )
-
-
-def _maybe_float(value: Any) -> float | None:
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return None
-
-
-def _maybe_int(value: Any) -> int | None:
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return None
 
 
 def _model_settings_from_config(config: OllamaConfig) -> ModelSettings | None:
