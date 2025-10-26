@@ -198,7 +198,16 @@ Applies the derived suggestions into `profile/self_profile.yaml` and `profile/cl
 aijournal persona build
 ```
 
-Writes `derived/persona/persona_core.yaml` by ranking accepted claim atoms (`effective_strength × impact_weight`) and trimming under the configured token budget. This file is always included in packs and seeded into the chat orchestrator.
+Writes `derived/persona/persona_core.yaml` by ranking claim atoms with a
+`strength × impact × decay` score, then trimming under the configured token
+budget. The persona block keeps the most important facets from
+`profile/self_profile.yaml` (values/goals/boundaries/coaching prefs, etc.) plus
+the highest ranking claims, and records trimming metadata in
+`meta.trimmed`. Override the defaults with `--token-budget`, `--max-claims`, or
+`--min-claims` (all mirrored under `config/config.yaml` → `persona.*`). Token
+estimates respect `token_estimator.char_per_token` (default 4.2). The generated
+file is always included in packs/chat as the canonical L1 persona core and can
+be regenerated safely anytime.
 
 ### Characterize normalized entries
 
@@ -258,7 +267,7 @@ aijournal index tail
 - `derived/index/index.db` stores chunk metadata + FTS5 virtual table; `derived/index/annoy.index` stores embeddings; `meta.json` records embedding model/dim/build timestamp and whether fake mode ran.
 - Chunking is deterministic (700–1200 chars, sentence boundaries) and each chunk stores `{normalized_id, date, tags, source_type, chunk_index, tokens}`.
 - Prefer the ANN-backed path for speed, but you can opt out of databases: store chunk manifests under `derived/index/chunks/YYYY-MM-DD.yaml` (plus optional `.npy` vector shards) and run pure cosine/text search without SQLite—everything remains human-readable and reproducible.
-- `Retriever.search("question about deep work", k=12, filters=...)` powers chat/advice, combining Annoy cosine scores with a light recency boost; when Annoy/SQLite are unavailable the CLI streams the YAML chunk manifests instead and stamps `meta.mode: fake(fallback)`.
+- `Retriever.search("question about deep work", k=12, filters=...)` (see `src/aijournal/services/retriever.py`) powers chat/advice, combining Annoy cosine scores with a light recency boost; when Annoy/SQLite are unavailable the CLI streams the YAML chunk manifests instead and stamps `meta.mode: fake(fallback)`.
 
 ### Configuration quick reference
 
@@ -267,6 +276,7 @@ aijournal index tail
 - `embedding_model`, `token_estimator.char_per_token`, and `index.{rebuild_threshold,ann_trees,search_k_factor}`.
 - `chat.{max_retrieved_chunks,max_claims,follow_up_enabled,write_back_facts}` to tune the orchestrator.
 - Expanded `impact_weights` covering claim atom types (`value`, `goal`, `boundary`, `trait`, `preference`, `habit`, `skill`).
+- `persona.{token_budget,max_claims,min_claims}` for persona core sizing + minimum claim coverage.
 
 Trimming now prioritizes raw journal content first; when a pack exceeds `--max-tokens`, entries are zeroed in deterministic role order and `meta.trimmed` captures a list of `{role, path}` objects so you can inspect exactly what was removed. Dry-run output still lists every planned file with its token estimate, and both YAML/JSON payloads remain deterministic for caching or scripting.
 

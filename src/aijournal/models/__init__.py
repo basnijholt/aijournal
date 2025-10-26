@@ -239,14 +239,39 @@ class ProfileUpdateBatch(AijournalModel):
     meta: SummaryMeta = Field(default_factory=SummaryMeta)
 
 
+class PersonaCoreMeta(AijournalModel):
+    generated_at: str
+    token_budget: int
+    planned_tokens: int
+    char_per_token: float
+    selection_strategy: str | None = None
+    trimmed: list[dict[str, Any]] = Field(default_factory=list)
+    claim_pool: int | None = None
+    claim_count: int | None = None
+    max_claims: int | None = None
+    min_claims: int | None = None
+    budget_exceeded: bool = False
+    sources: dict[str, str] = Field(default_factory=dict)
+
+
+class PersonaCore(AijournalModel):
+    profile: dict[str, Any] = Field(default_factory=dict)
+    claims: list[ClaimAtom] = Field(default_factory=list)
+
+
+class PersonaCoreFile(AijournalModel):
+    persona: PersonaCore = Field(default_factory=PersonaCore)
+    meta: PersonaCoreMeta
+
+
 __all__ = [
-    "AijournalModel",
     "AdviceCard",
     "AdviceRecommendation",
     "AdviceReference",
+    "AijournalModel",
+    "Claim",
     "ClaimAtom",
     "ClaimAtomsFile",
-    "Claim",
     "ClaimMethod",
     "ClaimSource",
     "ClaimSourceSpan",
@@ -264,6 +289,9 @@ __all__ = [
     "MicroFactsFile",
     "NormalizedEntity",
     "NormalizedEntry",
+    "PersonaCore",
+    "PersonaCoreFile",
+    "PersonaCoreMeta",
     "ProfileSuggestionUpdate",
     "ProfileSuggestionUpsert",
     "ProfileSuggestions",
@@ -271,7 +299,7 @@ __all__ = [
     "ProfileUpdateInput",
     "ProfileUpdateProposals",
     "Provenance",
-    "SelfProfile",
     "Scope",
+    "SelfProfile",
     "SummaryMeta",
 ]

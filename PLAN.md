@@ -953,3 +953,70 @@ ci:          just fake_on test mypy
 - `aijournal index rebuild`
 - `aijournal persona build`
 - `aijournal chat "What should I focus on tomorrow?"`
+
+---
+
+## 25. Execution Roadmap (October 2025)
+
+As of 2025-10-26 the CLI already ships `init`, `new`, `ingest`, `normalize`, `summarize`,
+`facts`, `profile suggest/apply`, `characterize`, `review-updates`, `advise`, `profile-status`,
+`interview`, `pack`, `ollama health`, `index rebuild/tail`, `retriever`, and the new
+`persona build`. The remaining persona-first items now concentrate on consolidation/conflict
+handling plus the chat surfaces/feedback loop. The timeline below keeps those deliverables
+moving without blocking on LLM availability.
+
+### Immediate focus (week of 2025-10-27)
+
+1. **feat(index): `index rebuild` + `index tail`.** ✅ _Shipped 2025-10-25 via the new Typer group, chunk manifests, Annoy map commits, and CLI coverage in `tests/test_cli_index.py`._
+   - Implement chunker → SQLite (`fts5`) → Annoy writer with deterministic ordering.
+   - Add `derived/index/meta.json` capturing `{embedding_model, dim, build_time, mode}` plus
+     trimmed chunk stats.
+   - Expose `--since`/`--limit` knobs and write regression tests that rebuild from
+     fixtures and assert identical Annoy/SQLite digests across runs.
+   - Include YAML-only fallback path (writes `derived/index/chunks/YYYY-MM-DD.yaml` + optional
+     `.npy` vectors) and document it in README/PLAN.
+
+2. **feat(retriever): shared search service.** ✅ _Shipped 2025-10-25 via `aijournal.services.retriever.Retriever`, the shared `EmbeddingBackend`, and Pytests covering ANN + fallback modes (`tests/test_retriever.py`)._
+   - Build `Retriever` API that loads metadata, performs ANN search with `search_k_factor`
+     defaults, mixes cosine + recency scoring, and surfaces filter hooks (tags, date, source).
+   - Provide lightweight pure-FTS/regex fallback for environments without Annoy/SQLite and mark
+     responses with `meta.mode: fake(fallback)` so downstream commands can branch deterministically.
+   - Ship Pytest coverage that stubs embeddings, verifies deterministic ranking, and exercises both
+     ANN and fallback modes.
+
+### Next focus (week of 2025-11-03)
+
+3. **feat(persona-core): `persona build` + auto-regeneration.** ✅ _Shipped 2025-10-26 via the new `aijournal persona build` command, schema-backed payloads, trimming metadata, and Pytests. Lightweight change reminders/watchers still planned as an enhancement._
+   - Compose persona core from `self_profile` + accepted claim atoms sorted by
+     `effective_strength × impact_weight`, trim to ≤1200 tokens, and capture `meta` with
+     generator metadata.
+   - Integrate with packs: L1 always references the latest persona core; L2/L3 reuse it when
+     assembling bundles so context stays deterministic.
+   - Add file watchers (simple mtimes) so `profile/*.yaml` or `claims.yaml` edits trigger a
+     reminder to re-run `persona build`.
+
+4. **feat(consolidation): pending-update fusion.**
+   - Finish `ClaimConsolidator` so micro-facts, characterize batches, and chat learnings merge via
+     weighted averaging + decay-at-read semantics outlined in §4.9.
+   - Extend `review-updates` to show scope conflicts, downgrade contradictory atoms to
+     `status: tentative`, and enqueue interview prompts when ambiguity rises.
+   - Tests cover conflicting scope handling, decay math, and manifest/evidence propagation.
+
+### Later focus (mid-November 2025)
+
+5. **feat(chat + chatd): retrieval-backed conversation loop.**
+   - CLI `aijournal chat` orchestrates intent classification → retrieval (claims + journal chunks)
+     → response assembly with citations + optional clarifying question respecting
+     `coaching_prefs.probing`.
+   - FastAPI `chatd` exposes the same pipeline with streaming responses and writes
+     `derived/chat_sessions/<session_id>/{transcript.jsonl,summary.yaml,learnings.yaml}`.
+   - Wire in fake mode fixtures so CI can exercise the full flow offline.
+
+6. **feat(feedback + telemetry): learnings + strength nudges.**
+   - Add thumbs up/down handling that adjusts cited claim strengths (+0.03 / −0.05 clamp 0..1) and
+     queues learnings into `derived/pending/profile_updates/`.
+   - Emit lightweight structured logs summarizing retrieval latency, chunk counts, and pack token
+     budgets so regressions are visible without extra tooling.
+
+Document each milestone in CHANGELOG.md once merged so README and PLAN stay aligned with shipped
+surfaces.

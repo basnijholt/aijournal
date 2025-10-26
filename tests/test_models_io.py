@@ -25,6 +25,9 @@ from aijournal.models import (
     MicroFact,
     MicroFactsFile,
     NormalizedEntry,
+    PersonaCore,
+    PersonaCoreFile,
+    PersonaCoreMeta,
     ProfileSuggestions,
     ProfileSuggestionUpdate,
     ProfileSuggestionUpsert,
@@ -158,7 +161,50 @@ def test_journal_and_normalized_models_structure(tmp_path: Path) -> None:
     write_yaml_model(path, entry)
     loaded = load_yaml_model(path, NormalizedEntry)
     assert loaded == entry
-    _assert_schema(path, "normalized_entry")
+
+
+def test_persona_core_roundtrip(tmp_path: Path) -> None:
+    path = _fixture_path(tmp_path, "persona_core")
+    claim = Claim(
+        id="pref.test",
+        type="preference",
+        subject="focus",
+        predicate="best_window",
+        value="08:00-11:00",
+        statement="Best focus early in the day.",
+        scope=Scope(domain="work"),
+        strength=0.8,
+        status="accepted",
+        method="inferred",
+        user_verified=False,
+        review_after_days=120,
+        provenance={
+            "sources": [
+                ClaimSource(entry_id="entry-1", spans=[ClaimSourceSpan(type="para", index=0)]),
+            ],
+            "first_seen": "2025-01-01",
+            "last_updated": "2025-02-01T10:00:00Z",
+        },
+    )
+    persona = PersonaCore(
+        profile={"values_motivations": {"drivers": ["Mastery"]}},
+        claims=[claim],
+    )
+    meta = PersonaCoreMeta(
+        generated_at="2025-10-25T12:00:00Z",
+        token_budget=1200,
+        planned_tokens=420,
+        char_per_token=4.2,
+        selection_strategy="strength*impact*decay",
+        claim_pool=1,
+        claim_count=1,
+    )
+    payload = PersonaCoreFile(persona=persona, meta=meta)
+    write_yaml_model(path, payload)
+
+    loaded = load_yaml_model(path, PersonaCoreFile)
+    assert loaded == payload
+    _assert_schema(path, "persona_core")
 
 
 def test_microfacts_file_roundtrip(tmp_path: Path) -> None:

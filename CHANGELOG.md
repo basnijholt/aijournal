@@ -3,6 +3,9 @@
 ## Unreleased
 
 - Added `aijournal new --fake N` (with `--seed`) to synthesize deterministic Markdown entries for fixtures, demos, and CI without hitting Ollama.
+- Added `aijournal index rebuild/tail` to generate Annoy + SQLite retrieval indexes (with chunk manifests + meta) using local or fake embeddings.
+- Added `aijournal.services.retriever.Retriever` with ANN + fallback search plus Pytests for both modes.
+- Added `aijournal persona build` to generate `derived/persona/persona_core.yaml` with configurable token budgets, claim ranking, trimming metadata, and full schema/Pytest coverage.
 
 ## v0.2.0 — 2025-10-25
 

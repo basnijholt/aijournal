@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
+from pathlib import Path
+from typing import Any
+
+import yaml
 
 
 def make_claim_atom(
@@ -19,7 +24,6 @@ def make_claim_atom(
     last_updated: str | None = None,
 ) -> dict:
     """Return a claim atom dict that matches the new schema."""
-
     scope_context = []
     timestamp = last_updated or datetime.now(tz=UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     return {
@@ -50,3 +54,48 @@ def make_claim_atom(
             "last_updated": timestamp,
         },
     }
+
+
+def write_normalized_entry(
+    base: Path,
+    *,
+    date: str,
+    entry_id: str,
+    summary: str,
+    tags: list[str] | None = None,
+    source_hash: str | None = None,
+    source_type: str = "journal",
+) -> Path:
+    """Create a normalized entry YAML under data/normalized for tests."""
+    tags_list = tags or ["focus"]
+    path = base / "data" / "normalized" / date / f"{entry_id}.yaml"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload: dict[str, Any] = {
+        "id": entry_id,
+        "created_at": f"{date}T09:00:00Z",
+        "source_path": f"data/journal/{date.replace('-', '/')}/{entry_id}.md",
+        "title": summary.split()[0].capitalize(),
+        "tags": tags_list,
+        "summary": summary,
+        "sections": [
+            {"heading": "Context", "summary": summary},
+        ],
+        "source_hash": source_hash or f"hash-{entry_id}",
+        "source_type": source_type,
+    }
+    path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
+    return path
+
+
+def write_manifest(base: Path, entries: list[dict[str, Any]]) -> Path:
+    path = base / "data" / "manifest" / "ingested.yaml"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(yaml.safe_dump(entries, sort_keys=False), encoding="utf-8")
+    return path
+
+
+def read_index_meta(base: Path) -> dict[str, Any]:
+    meta_path = base / "derived" / "index" / "meta.json"
+    if not meta_path.exists():
+        return {}
+    return json.loads(meta_path.read_text(encoding="utf-8"))

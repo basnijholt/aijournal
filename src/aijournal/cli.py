@@ -2,19 +2,27 @@
 
 from __future__ import annotations
 
+import copy
 import json
 import os
 import random
 import re
+import sqlite3
+from array import array
+from collections.abc import Iterable, Sequence
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
+from math import ceil, exp
 from pathlib import Path
 from string import Template
 from textwrap import dedent
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
+import numpy as np
 import typer
 import yaml
+from annoy import AnnoyIndex
 
 from aijournal.ingest_agent import (
     AgentSettings,
@@ -25,9 +33,10 @@ from aijournal.ingest_agent import (
 )
 from aijournal.schema import SchemaValidationError, validate_schema
 from aijournal.services import LLMResponseError, OllamaConfig, OllamaTaskRunner
+from aijournal.services.embedding import EmbeddingBackend
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterable
+    from collections.abc import Callable
 
     from agno.agent import Agent
 
@@ -36,6 +45,10 @@ profile_app = typer.Typer(help="Profile utilities.")
 ollama_app = typer.Typer(help="Ollama helpers (fake mode only).")
 app.add_typer(profile_app, name="profile")
 app.add_typer(ollama_app, name="ollama")
+index_app = typer.Typer(help="Retrieval index utilities.")
+app.add_typer(index_app, name="index")
+persona_app = typer.Typer(help="Persona utilities.")
+app.add_typer(persona_app, name="persona")
 
 
 @app.callback()
@@ -63,6 +76,7 @@ DERIVED_DIRS = (
     "derived/profile_suggestions",
     "derived/interviews",
     "derived/advice",
+    "derived/persona",
     "derived/index",
     "derived/pending",
     "derived/pending/profile_updates",
@@ -85,10 +99,26 @@ SEED_FILES = {
           affect_energy: 1.2
           traits: 1.0
           social: 0.9
+          claims: 1.0
+          claim_types:
+            value: 1.4
+            goal: 1.4
+            boundary: 1.3
+            trait: 1.2
+            preference: 1.0
+            habit: 0.9
+            aversion: 1.1
+            skill: 1.0
         advisor:
           max_recos: 3
           include_risks: true
-        """
+        token_estimator:
+          char_per_token: 4.2
+        persona:
+          token_budget: 1200
+          max_claims: 24
+          min_claims: 8
+        """,
     ).strip()
     + "\n",
     "profile/self_profile.yaml": dedent(
@@ -159,7 +189,7 @@ SEED_FILES = {
           tone: "direct, warm"
           depth: "concrete first, theory second"
           probing: {max_questions: 2, prefer: "yes/no + one short open follow-up"}
-        """
+        """,
     ).strip()
     + "\n",
     "profile/claims.yaml": "claims: []\n",
@@ -191,6 +221,36 @@ TRIM_PRIORITY = [
     "profile",
 ]
 
+PERSONA_PROFILE_KEYS = (
+    "values_motivations",
+    "goals",
+    "boundaries_ethics",
+    "coaching_prefs",
+    "affect_energy",
+    "decision_style",
+    "traits",
+    "social",
+)
+
+CLAIM_TYPE_IMPACT_DEFAULTS: dict[str, float] = {
+    "value": 1.4,
+    "goal": 1.4,
+    "boundary": 1.3,
+    "trait": 1.2,
+    "preference": 1.0,
+    "habit": 0.9,
+    "aversion": 1.1,
+    "skill": 1.0,
+}
+
+PERSONA_DEFAULTS = {
+    "token_budget": 1200,
+    "max_claims": 24,
+    "min_claims": 8,
+}
+
+DEFAULT_CHAR_PER_TOKEN = 4.2
+
 HIGH_IMPACT_PROBES = [
     "- Top 3 values you refuse to trade off—rank them.",
     "- One long-term goal that matters most this year—and why now?",
@@ -201,6 +261,59 @@ HIGH_IMPACT_PROBES = [
     "- Feedback style you prefer when you’re wrong?",
     "- Three coping strategies that reliably help under stress.",
 ]
+
+CHUNK_TARGET_CHARS = 900
+CHUNK_MAX_CHARS = 1200
+ANN_METRIC: Literal["angular", "euclidean", "manhattan", "hamming", "dot"] = "angular"
+INDEX_DB_FILENAME = "index.db"
+ANNOY_FILENAME = "annoy.index"
+INDEX_META_FILENAME = "meta.json"
+
+
+@dataclass
+class ChunkRecord:
+    """Normalized chunk + embedding payload stored in SQLite."""
+
+    chunk_id: str
+    normalized_id: str
+    normalized_path: str
+    chunk_index: int
+    chunk_text: str
+    date: str
+    tags: list[str]
+    source_type: str | None
+    source_path: str
+    tokens: int
+    source_hash: str | None
+    manifest_hash: str | None
+    embedding: list[float] | None = None
+
+
+@dataclass
+class SourceRecord:
+    """Bookkeeping entry for indexed normalized files."""
+
+    normalized_path: str
+    normalized_id: str
+    date: str
+    source_hash: str | None
+    manifest_hash: str | None
+    chunk_count: int
+    updated_at: str
+
+
+@dataclass
+class IndexTask:
+    """Prepared normalized entry ready for chunking/indexing."""
+
+    day: str
+    path: Path
+    normalized_path: str
+    normalized_id: str
+    entry: dict[str, Any]
+    source_hash: str | None
+    manifest: dict[str, Any] | None
+
 
 FAKE_TIME_BLOCKS = [
     ("Morning focus", 9),
@@ -446,7 +559,7 @@ def _generate_fake_entries(
                 f"{label} block stayed on {project}: {action}.",
                 f"Felt {mood}; {reflection}.",
                 f"Next: {next_step}.",
-            ]
+            ],
         )
         _write_markdown_entry(entry_path, frontmatter, body)
         typer.echo(str(entry_path))
@@ -2313,6 +2426,241 @@ def _load_profile_components(root: Path) -> tuple[dict[str, Any], list[dict[str,
     return profile, claims_data
 
 
+def _persona_profile_slice(profile: dict[str, Any]) -> dict[str, Any]:
+    """Return the subset of profile facets that feed persona core."""
+    if not profile:
+        return {}
+    subset: dict[str, Any] = {}
+    for key in PERSONA_PROFILE_KEYS:
+        value = profile.get(key)
+        if value is None:
+            continue
+        subset[key] = copy.deepcopy(value)
+    if not subset:
+        return copy.deepcopy(profile)
+    return subset
+
+
+def _claim_weight(claim: dict[str, Any], weights: dict[str, Any]) -> float:
+    """Resolve the impact weight for a claim based on config overrides."""
+    claim_type = str(claim.get("type") or "preference")
+    claim_types_raw = weights.get("claim_types")
+    claim_weights = claim_types_raw if isinstance(claim_types_raw, dict) else {}
+    if claim_type in claim_weights:
+        return _coerce_float(claim_weights[claim_type]) or 1.0
+    if "default" in claim_weights:
+        return _coerce_float(claim_weights["default"]) or 1.0
+    if "claims" in weights:
+        return _coerce_float(weights["claims"]) or 1.0
+    return CLAIM_TYPE_IMPACT_DEFAULTS.get(claim_type, 1.0)
+
+
+def _claim_effective_strength(
+    claim: dict[str, Any],
+    *,
+    weights: dict[str, Any],
+    now: datetime,
+) -> float:
+    strength = _clamp01(claim.get("strength", 0.5))
+    weight = _claim_weight(claim, weights)
+    last_updated = _claim_last_updated(claim)
+    review_after = _coerce_int(claim.get("review_after_days")) or 120
+    days_since = _days_between(now, last_updated) or 0.0
+    staleness = min(2.0, max(0.0, days_since / max(review_after, 1)))
+    decay = exp(-0.2 * staleness)
+    status = str(claim.get("status") or "tentative").lower()
+    status_bonus = 0.05 if status == "accepted" else 0.0
+    return (strength * weight * decay) + status_bonus
+
+
+def _rank_claims_for_persona(
+    claims: list[dict[str, Any]],
+    weights: dict[str, Any],
+    now: datetime,
+) -> list[dict[str, Any]]:
+    if not claims:
+        return []
+    ranked: list[tuple[int, float, dict[str, Any]]] = []
+    status_priority = {"accepted": 0, "tentative": 1, "rejected": 2}
+    for claim in claims:
+        score = _claim_effective_strength(claim, weights=weights, now=now)
+        status = str(claim.get("status") or "tentative").lower()
+        priority = status_priority.get(status, 1)
+        ranked.append((priority, -score, copy.deepcopy(claim)))
+    ranked.sort(key=lambda item: (item[0], item[1], item[2].get("id", "")))
+    return [item[2] for item in ranked]
+
+
+def _estimate_persona_tokens(persona_block: dict[str, Any], char_per_token: float) -> int:
+    width = max(char_per_token, 0.01)
+    text = yaml.safe_dump(persona_block, sort_keys=False)
+    return max(1, ceil(len(text) / width))
+
+
+def _select_persona_claims(
+    claims: list[dict[str, Any]],
+    profile_slice: dict[str, Any],
+    *,
+    token_budget: int,
+    char_per_token: float,
+    min_claims: int,
+    max_claims: int,
+) -> tuple[list[dict[str, Any]], list[str], int, bool]:
+    selected = claims[:max_claims]
+    persona_block = {"profile": profile_slice, "claims": selected}
+    tokens = _estimate_persona_tokens(persona_block, char_per_token)
+    trimmed_ids: list[str] = []
+    while tokens > token_budget and len(selected) > min_claims and selected:
+        removed = selected.pop()
+        trimmed_ids.append(str(removed.get("id", f"claim-{len(trimmed_ids)}")))
+        persona_block = {"profile": profile_slice, "claims": selected}
+        tokens = _estimate_persona_tokens(persona_block, char_per_token)
+    budget_exceeded = tokens > token_budget
+    return selected, trimmed_ids, tokens, budget_exceeded
+
+
+def _relative_to_root(path: Path, root: Path) -> str:
+    try:
+        return str(path.relative_to(root))
+    except ValueError:
+        return str(path)
+
+
+def _persona_build_impl(
+    *,
+    token_budget_override: int | None = None,
+    max_claims_override: int | None = None,
+    min_claims_override: int | None = None,
+) -> tuple[Path, bool]:
+    root = Path.cwd()
+    profile, claims = _load_profile_components(root)
+    if not profile and not claims:
+        typer.secho(
+            "No profile data or claims available; run `aijournal init` or add entries first.",
+            fg=typer.colors.RED,
+            err=True,
+        )
+        raise typer.Exit(1)
+
+    config = _load_config(root)
+    persona_cfg_raw = config.get("persona")
+    persona_cfg = persona_cfg_raw if isinstance(persona_cfg_raw, dict) else {}
+    token_budget = int(
+        token_budget_override
+        if token_budget_override is not None
+        else persona_cfg.get("token_budget") or PERSONA_DEFAULTS["token_budget"],
+    )
+    max_claims = int(
+        max_claims_override
+        if max_claims_override is not None
+        else persona_cfg.get("max_claims") or PERSONA_DEFAULTS["max_claims"],
+    )
+    min_claims = int(
+        min_claims_override
+        if min_claims_override is not None
+        else persona_cfg.get("min_claims") or PERSONA_DEFAULTS["min_claims"],
+    )
+    if token_budget <= 0:
+        typer.secho("Token budget must be positive", fg=typer.colors.RED, err=True)
+        raise typer.Exit(1)
+    if max_claims <= 0:
+        typer.secho("max-claims must be positive", fg=typer.colors.RED, err=True)
+        raise typer.Exit(1)
+    if min_claims < 0 or min_claims > max_claims:
+        typer.secho("min-claims must be between 0 and max-claims", fg=typer.colors.RED, err=True)
+        raise typer.Exit(1)
+
+    token_estimator_raw = config.get("token_estimator")
+    token_estimator = token_estimator_raw if isinstance(token_estimator_raw, dict) else {}
+    char_per_token = _coerce_float(token_estimator.get("char_per_token")) or DEFAULT_CHAR_PER_TOKEN
+
+    profile_slice = _persona_profile_slice(profile)
+    now_dt = _now()
+    impact_weights_raw = config.get("impact_weights")
+    impact_weights = impact_weights_raw if isinstance(impact_weights_raw, dict) else {}
+    ranked_claims = _rank_claims_for_persona(claims, impact_weights, now_dt)
+
+    if not profile_slice and not ranked_claims:
+        typer.secho(
+            "Nothing to include in persona core; add profile facets or claims first.",
+            fg=typer.colors.RED,
+            err=True,
+        )
+        raise typer.Exit(1)
+
+    selected_claims, trimmed_ids, planned_tokens, budget_exceeded = _select_persona_claims(
+        ranked_claims,
+        profile_slice,
+        token_budget=token_budget,
+        char_per_token=char_per_token,
+        min_claims=min_claims,
+        max_claims=max_claims,
+    )
+
+    persona_block = {
+        "profile": profile_slice,
+        "claims": selected_claims,
+    }
+    now = _format_timestamp(now_dt)
+    meta: dict[str, Any] = {
+        "generated_at": now,
+        "token_budget": token_budget,
+        "planned_tokens": planned_tokens,
+        "char_per_token": char_per_token,
+        "selection_strategy": "strength*impact*decay",
+        "claim_pool": len(ranked_claims),
+        "claim_count": len(selected_claims),
+        "max_claims": max_claims,
+        "min_claims": min_claims,
+        "budget_exceeded": budget_exceeded,
+    }
+    if trimmed_ids:
+        meta["trimmed"] = [{"type": "claim", "id": cid} for cid in trimmed_ids]
+
+    sources: dict[str, str] = {}
+    profile_path = root / "profile" / "self_profile.yaml"
+    claims_path = root / "profile" / "claims.yaml"
+    if profile_path.exists():
+        sources["profile"] = _relative_to_root(profile_path, root)
+    if claims_path.exists():
+        sources["claims"] = _relative_to_root(claims_path, root)
+    if sources:
+        meta["sources"] = sources
+
+    payload = {
+        "persona": persona_block,
+        "meta": meta,
+    }
+    persona_path = root / "derived" / "persona" / "persona_core.yaml"
+    changed = _write_yaml_if_changed(persona_path, payload, schema="persona_core")
+    return persona_path, changed
+
+
+@persona_app.command("build")
+def persona_build(
+    token_budget: int | None = typer.Option(
+        None,
+        help="Override the persona_core token budget (default 1200).",
+    ),
+    max_claims: int | None = typer.Option(
+        None,
+        help="Limit the number of claims considered for persona core.",
+    ),
+    min_claims: int | None = typer.Option(
+        None,
+        help="Guarantee at least this many claims remain even if over budget.",
+    ),
+) -> None:
+    """Regenerate derived/persona/persona_core.yaml."""
+    path, changed = _persona_build_impl(
+        token_budget_override=token_budget,
+        max_claims_override=max_claims,
+        min_claims_override=min_claims,
+    )
+    status = "Wrote" if changed else "Persona core already up to date"
+    typer.echo(f"{status}: {path}")
+
+
 def _atomic_write(
     path: Path,
     payload: dict[str, Any],
@@ -2813,3 +3161,705 @@ def pack(
         typer.echo(json.dumps(payload, indent=2))
     else:
         typer.echo(yaml.safe_dump(payload, sort_keys=False))
+
+
+@index_app.command("rebuild")
+def index_rebuild(
+    since: str | None = typer.Option(
+        None,
+        "--since",
+        help="Earliest date (YYYY-MM-DD or Nd) to include when rebuilding.",
+    ),
+    limit: int | None = typer.Option(
+        None,
+        "--limit",
+        help="Maximum number of normalized files to index (debug/testing).",
+    ),
+) -> None:
+    """Rebuild the Annoy+SQLite retrieval index from normalized YAML."""
+    root = Path.cwd()
+    if limit is not None and limit <= 0:
+        typer.secho("--limit must be positive when provided.", fg=typer.colors.RED, err=True)
+        raise typer.Exit(1)
+
+    since_filter = _resolve_since_filter(since)
+    entries = _collect_normalized_files(root, since_filter)
+    if limit is not None:
+        entries = entries[:limit]
+    if not entries:
+        typer.secho(
+            "No normalized entries available for indexing.",
+            fg=typer.colors.RED,
+            err=True,
+        )
+        raise typer.Exit(1)
+
+    manifest_index = _manifest_by_id(_load_manifest(_manifest_path(root)))
+    tasks = _prepare_index_tasks(entries, root, manifest_index)
+    if not tasks:
+        typer.secho("No normalized entries with valid IDs found.", fg=typer.colors.RED, err=True)
+        raise typer.Exit(1)
+
+    config = _load_config(root)
+    embedder = _build_embedding_backend(config)
+    ann_trees, search_k_factor, char_per_token = _index_settings(config)
+
+    db_path = _index_db_path(root)
+    index_dir = _index_dir(root)
+    index_dir.mkdir(parents=True, exist_ok=True)
+    conn = _connect_index_db(db_path, overwrite=True)
+    with conn:
+        _prepare_index_schema(conn)
+        stats = _index_entries(conn, tasks, embedder, char_per_token)
+
+    chunk_total, entry_total = _gather_index_stats(conn)
+    _rebuild_annoy_index(conn, embedder.dim, ann_trees, _annoy_index_path(root))
+    conn.commit()
+    if stats["dates"]:
+        _write_chunk_manifests(conn, root, stats["dates"], embedder)
+    conn.close()
+
+    _write_index_meta(
+        root,
+        embedder=embedder,
+        chunk_total=chunk_total,
+        entry_total=entry_total,
+        mode="rebuild",
+        fake_mode=_use_fake_llm(),
+        ann_trees=ann_trees,
+        search_k_factor=search_k_factor,
+        char_per_token=char_per_token,
+        since=since_filter,
+        limit=limit,
+        touched_dates=stats["dates"],
+    )
+
+    typer.echo(
+        f"Indexed {chunk_total} chunks across {entry_total} entries (mode: rebuild).",
+    )
+
+
+@index_app.command("tail")
+def index_tail(
+    since: str | None = typer.Option(
+        None,
+        "--since",
+        help="Earliest date (YYYY-MM-DD or Nd) to scan for new normalized files.",
+    ),
+    days: int = typer.Option(
+        7,
+        "--days",
+        help="Rolling window (days) when --since is omitted.",
+    ),
+    limit: int | None = typer.Option(
+        None,
+        "--limit",
+        help="Maximum number of normalized files to inspect.",
+    ),
+) -> None:
+    """Incrementally ingest new normalized entries into the retrieval index."""
+    if days <= 0:
+        typer.secho("--days must be positive.", fg=typer.colors.RED, err=True)
+        raise typer.Exit(1)
+    if limit is not None and limit <= 0:
+        typer.secho("--limit must be positive when provided.", fg=typer.colors.RED, err=True)
+        raise typer.Exit(1)
+
+    root = Path.cwd()
+    db_path = _index_db_path(root)
+    if not db_path.exists():
+        typer.secho(
+            "Index database not found. Run `aijournal index rebuild` first.",
+            fg=typer.colors.RED,
+            err=True,
+        )
+        raise typer.Exit(1)
+
+    since_filter = _resolve_since_filter(since, fallback_days=days)
+    entries = _collect_normalized_files(root, since_filter)
+    if limit is not None:
+        entries = entries[:limit]
+    if not entries:
+        typer.secho(
+            "No normalized entries matched the requested window.",
+            fg=typer.colors.RED,
+            err=True,
+        )
+        raise typer.Exit(1)
+
+    manifest_index = _manifest_by_id(_load_manifest(_manifest_path(root)))
+    tasks = _prepare_index_tasks(entries, root, manifest_index)
+    conn = _connect_index_db(db_path)
+    try:
+        pending = _filter_tasks_for_tail(conn, tasks)
+        if not pending:
+            typer.echo("Index already up to date for requested window.")
+            return
+
+        config = _load_config(root)
+        embedder = _build_embedding_backend(config)
+        ann_trees, search_k_factor, char_per_token = _index_settings(config)
+
+        with conn:
+            _prepare_index_schema(conn)
+            stats = _index_entries(conn, pending, embedder, char_per_token)
+
+        chunk_total, entry_total = _gather_index_stats(conn)
+        _rebuild_annoy_index(conn, embedder.dim, ann_trees, _annoy_index_path(root))
+        conn.commit()
+        if stats["dates"]:
+            _write_chunk_manifests(conn, root, stats["dates"], embedder)
+
+        _write_index_meta(
+            root,
+            embedder=embedder,
+            chunk_total=chunk_total,
+            entry_total=entry_total,
+            mode="tail",
+            fake_mode=_use_fake_llm(),
+            ann_trees=ann_trees,
+            search_k_factor=search_k_factor,
+            char_per_token=char_per_token,
+            since=since_filter,
+            limit=limit,
+            touched_dates=stats["dates"],
+        )
+
+        typer.echo(
+            f"Indexed {stats['chunks']} chunks across {stats['entries']} entries (mode: tail).",
+        )
+    finally:
+        conn.close()
+
+
+def _index_dir(root: Path) -> Path:
+    return root / "derived" / "index"
+
+
+def _index_db_path(root: Path) -> Path:
+    return _index_dir(root) / INDEX_DB_FILENAME
+
+
+def _annoy_index_path(root: Path) -> Path:
+    return _index_dir(root) / ANNOY_FILENAME
+
+
+def _chunk_manifest_dir(root: Path) -> Path:
+    return _index_dir(root) / "chunks"
+
+
+def _index_meta_path(root: Path) -> Path:
+    return _index_dir(root) / INDEX_META_FILENAME
+
+
+def _collect_normalized_files(
+    root: Path,
+    since: str | None,
+) -> list[tuple[str, Path]]:
+    normalized_root = root / "data" / "normalized"
+    if not normalized_root.exists():
+        return []
+    entries: list[tuple[str, Path]] = []
+    for day_dir in sorted(p for p in normalized_root.iterdir() if p.is_dir()):
+        day = day_dir.name
+        if since and day < since:
+            continue
+        for file in sorted(day_dir.glob("*.yaml")):
+            entries.append((day, file))
+    return entries
+
+
+def _resolve_since_filter(value: str | None, fallback_days: int | None = None) -> str | None:
+    if value:
+        text = value.strip()
+        if re.fullmatch(r"\d{4}-\d{2}-\d{2}", text):
+            return text
+        if text.endswith("d") and text[:-1].isdigit():
+            window = int(text[:-1])
+            return (_now() - timedelta(days=window)).strftime("%Y-%m-%d")
+        typer.secho(
+            "--since must be YYYY-MM-DD or Nd (e.g., 7d)",
+            fg=typer.colors.RED,
+            err=True,
+        )
+        raise typer.Exit(1)
+    if fallback_days is not None:
+        return (_now() - timedelta(days=fallback_days)).strftime("%Y-%m-%d")
+    return None
+
+
+def _build_embedding_backend(config: dict[str, Any]) -> EmbeddingBackend:
+    model = str(config.get("embedding_model") or "nomic-embed-text")
+    host = os.getenv("AIJOURNAL_OLLAMA_HOST")
+    return EmbeddingBackend(model, host=host, fake_mode=_use_fake_llm())
+
+
+def _index_settings(config: dict[str, Any]) -> tuple[int, float, float]:
+    index_cfg_raw = config.get("index")
+    index_cfg = index_cfg_raw if isinstance(index_cfg_raw, dict) else {}
+    ann_trees = int(index_cfg.get("ann_trees") or 50)
+    search_k_factor = float(index_cfg.get("search_k_factor") or 3.0)
+    token_cfg_raw = config.get("token_estimator")
+    token_cfg = token_cfg_raw if isinstance(token_cfg_raw, dict) else {}
+    char_per_token = float(token_cfg.get("char_per_token") or 4.2)
+    return ann_trees, search_k_factor, char_per_token
+
+
+def _prepare_index_tasks(
+    entries: Sequence[tuple[str, Path]],
+    root: Path,
+    manifest_index: dict[str, dict[str, Any]],
+) -> list[IndexTask]:
+    tasks: list[IndexTask] = []
+    for day, path in entries:
+        entry = _load_yaml(path)
+        normalized_id = str(entry.get("id") or "").strip()
+        if not normalized_id:
+            continue
+        normalized_path = _relative_source_path(path, root)
+        manifest = manifest_index.get(normalized_id)
+        source_hash = _select_source_hash(entry, path)
+        if manifest and not source_hash:
+            manifest_hash = manifest.get("hash")
+            source_hash = str(manifest_hash) if manifest_hash else None
+        tasks.append(
+            IndexTask(
+                day=day,
+                path=path,
+                normalized_path=normalized_path,
+                normalized_id=normalized_id,
+                entry=entry,
+                source_hash=source_hash,
+                manifest=manifest,
+            ),
+        )
+    return tasks
+
+
+def _filter_tasks_for_tail(conn: sqlite3.Connection, tasks: Sequence[IndexTask]) -> list[IndexTask]:
+    pending: list[IndexTask] = []
+    for task in tasks:
+        stored = conn.execute(
+            "SELECT source_hash FROM sources WHERE normalized_path = ?",
+            (task.normalized_path,),
+        ).fetchone()
+        stored_hash = stored[0] if stored else None
+        if stored_hash and task.source_hash and stored_hash == task.source_hash:
+            continue
+        pending.append(task)
+    return pending
+
+
+def _select_source_hash(entry: dict[str, Any], path: Path) -> str | None:
+    source_hash = entry.get("source_hash")
+    if isinstance(source_hash, str) and source_hash.strip():
+        return source_hash.strip()
+    return _hash_file(path)
+
+
+def _hash_file(path: Path) -> str | None:
+    try:
+        return sha256(path.read_bytes()).hexdigest()
+    except OSError:
+        return None
+
+
+def _index_entries(
+    conn: sqlite3.Connection,
+    tasks: Sequence[IndexTask],
+    embedder: EmbeddingBackend,
+    char_per_token: float,
+) -> dict[str, Any]:
+    touched_dates: set[str] = set()
+    processed_entries = 0
+    processed_chunks = 0
+    timestamp = _format_timestamp(_now())
+
+    for task in tasks:
+        chunk_records = _build_chunk_records(
+            task.entry,
+            task.normalized_path,
+            char_per_token=char_per_token,
+            manifest=task.manifest,
+            source_hash=task.source_hash,
+        )
+        if not chunk_records:
+            continue
+        vectors = embedder.embed([chunk.chunk_text for chunk in chunk_records])
+        _delete_chunks_for_entry(conn, task.normalized_id)
+        for chunk, vector in zip(chunk_records, vectors, strict=False):
+            chunk.embedding = vector
+            _insert_chunk_record(conn, chunk)
+        _upsert_source_record(
+            conn,
+            SourceRecord(
+                normalized_path=task.normalized_path,
+                normalized_id=task.normalized_id,
+                date=chunk_records[0].date,
+                source_hash=task.source_hash,
+                manifest_hash=chunk_records[0].manifest_hash,
+                chunk_count=len(chunk_records),
+                updated_at=timestamp,
+            ),
+        )
+        touched_dates.add(task.day)
+        processed_entries += 1
+        processed_chunks += len(chunk_records)
+
+    return {"entries": processed_entries, "chunks": processed_chunks, "dates": touched_dates}
+
+
+def _build_chunk_records(
+    entry: dict[str, Any],
+    normalized_path: str,
+    *,
+    char_per_token: float,
+    manifest: dict[str, Any] | None,
+    source_hash: str | None,
+) -> list[ChunkRecord]:
+    entry_id = str(entry.get("id") or "").strip()
+    if not entry_id:
+        return []
+    created_at = _normalize_created_at(entry.get("created_at") or _format_timestamp(_now()))
+    date_value = _created_date(created_at)
+    tags = entry.get("tags") or []
+    scope_tags = [str(tag) for tag in tags]
+    paragraphs = _entry_paragraphs(entry)
+    chunk_texts = _chunk_paragraphs(paragraphs)
+    if not chunk_texts:
+        chunk_texts = [entry.get("title") or entry_id]
+
+    chunk_records: list[ChunkRecord] = []
+    manifest_hash = manifest.get("hash") if manifest else None
+    source_type = entry.get("source_type") or (manifest.get("source_type") if manifest else None)
+
+    for idx, text in enumerate(chunk_texts):
+        chunk_records.append(
+            ChunkRecord(
+                chunk_id=f"{entry_id}#c{idx}",
+                normalized_id=entry_id,
+                normalized_path=normalized_path,
+                chunk_index=idx,
+                chunk_text=text,
+                date=date_value,
+                tags=scope_tags,
+                source_type=source_type,
+                source_path=entry.get("source_path") or normalized_path,
+                tokens=_token_estimate(text, char_per_token),
+                source_hash=source_hash,
+                manifest_hash=str(manifest_hash) if manifest_hash else None,
+            ),
+        )
+
+    return chunk_records
+
+
+def _entry_paragraphs(entry: dict[str, Any]) -> list[str]:
+    paragraphs: list[str] = []
+    summary = entry.get("summary")
+    if isinstance(summary, str) and summary.strip():
+        paragraphs.append(summary.strip())
+    for section in entry.get("sections") or []:
+        heading = str(section.get("heading") or "").strip()
+        snippet = str(section.get("summary") or "").strip()
+        if heading and snippet:
+            paragraphs.append(f"{heading}: {snippet}")
+        elif heading:
+            paragraphs.append(heading)
+        elif snippet:
+            paragraphs.append(snippet)
+    if not paragraphs:
+        title = str(entry.get("title") or entry.get("id") or "entry").strip()
+        if title:
+            paragraphs.append(title)
+    return paragraphs
+
+
+def _chunk_paragraphs(paragraphs: Iterable[str]) -> list[str]:
+    chunks: list[str] = []
+    current: list[str] = []
+    length = 0
+    for paragraph in paragraphs:
+        text = paragraph.strip()
+        if not text:
+            continue
+        if current and length + len(text) + 2 > CHUNK_MAX_CHARS:
+            chunks.append("\n\n".join(current))
+            current = [text]
+            length = len(text)
+            continue
+        current.append(text)
+        length += len(text) + (2 if length else 0)
+        if length >= CHUNK_TARGET_CHARS:
+            chunks.append("\n\n".join(current))
+            current = []
+            length = 0
+    if current:
+        chunks.append("\n\n".join(current))
+    return chunks
+
+
+def _token_estimate(text: str, char_per_token: float) -> int:
+    divisor = char_per_token if char_per_token > 0 else 4.2
+    return max(1, ceil(len(text) / divisor))
+
+
+def _connect_index_db(path: Path, *, overwrite: bool = False) -> sqlite3.Connection:
+    if overwrite and path.exists():
+        path.unlink()
+    conn = sqlite3.connect(path)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL;")
+    conn.execute("PRAGMA foreign_keys=ON;")
+    return conn
+
+
+def _prepare_index_schema(conn: sqlite3.Connection) -> None:
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS chunks (
+            chunk_id TEXT PRIMARY KEY,
+            normalized_id TEXT NOT NULL,
+            normalized_path TEXT NOT NULL,
+            chunk_index INTEGER NOT NULL,
+            chunk_text TEXT NOT NULL,
+            date TEXT NOT NULL,
+            tags TEXT NOT NULL,
+            source_type TEXT,
+            source_path TEXT,
+            tokens INTEGER NOT NULL,
+            source_hash TEXT,
+            manifest_hash TEXT,
+            embedding BLOB NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS chunk_fts (
+            chunk_id TEXT PRIMARY KEY,
+            chunk_text TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS sources (
+            normalized_path TEXT PRIMARY KEY,
+            normalized_id TEXT NOT NULL,
+            date TEXT NOT NULL,
+            source_hash TEXT,
+            manifest_hash TEXT,
+            chunk_count INTEGER NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS annoy_map (
+            annoy_idx INTEGER PRIMARY KEY,
+            chunk_id TEXT NOT NULL
+        );
+        """,
+    )
+
+
+def _delete_chunks_for_entry(conn: sqlite3.Connection, normalized_id: str) -> None:
+    rows = conn.execute(
+        "SELECT chunk_id FROM chunks WHERE normalized_id = ?",
+        (normalized_id,),
+    ).fetchall()
+    if rows:
+        conn.executemany(
+            "DELETE FROM chunk_fts WHERE chunk_id = ?",
+            ((row[0],) for row in rows),
+        )
+    conn.execute("DELETE FROM chunks WHERE normalized_id = ?", (normalized_id,))
+
+
+def _insert_chunk_record(conn: sqlite3.Connection, chunk: ChunkRecord) -> None:
+    if chunk.embedding is None:
+        msg = "Chunk embedding missing"
+        raise RuntimeError(msg)
+    tags_json = json.dumps(chunk.tags, sort_keys=True)
+    conn.execute(
+        """
+        INSERT INTO chunks (
+            chunk_id, normalized_id, normalized_path, chunk_index, chunk_text,
+            date, tags, source_type, source_path, tokens, source_hash,
+            manifest_hash, embedding
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            chunk.chunk_id,
+            chunk.normalized_id,
+            chunk.normalized_path,
+            chunk.chunk_index,
+            chunk.chunk_text,
+            chunk.date,
+            tags_json,
+            chunk.source_type,
+            chunk.source_path,
+            chunk.tokens,
+            chunk.source_hash,
+            chunk.manifest_hash,
+            _vector_to_blob(chunk.embedding),
+        ),
+    )
+    conn.execute(
+        "INSERT INTO chunk_fts (chunk_id, chunk_text) VALUES (?, ?)",
+        (chunk.chunk_id, chunk.chunk_text),
+    )
+
+
+def _vector_to_blob(vector: Sequence[float]) -> memoryview:
+    arr = array("f", vector)
+    return memoryview(arr.tobytes())
+
+
+def _blob_to_vector(blob: bytes) -> list[float]:
+    arr = array("f")
+    arr.frombytes(blob)
+    return list(arr)
+
+
+def _upsert_source_record(conn: sqlite3.Connection, record: SourceRecord) -> None:
+    conn.execute(
+        """
+        INSERT INTO sources (
+            normalized_path, normalized_id, date, source_hash, manifest_hash,
+            chunk_count, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(normalized_path) DO UPDATE SET
+            normalized_id=excluded.normalized_id,
+            date=excluded.date,
+            source_hash=excluded.source_hash,
+            manifest_hash=excluded.manifest_hash,
+            chunk_count=excluded.chunk_count,
+            updated_at=excluded.updated_at
+        """,
+        (
+            record.normalized_path,
+            record.normalized_id,
+            record.date,
+            record.source_hash,
+            record.manifest_hash,
+            record.chunk_count,
+            record.updated_at,
+        ),
+    )
+
+
+def _rebuild_annoy_index(
+    conn: sqlite3.Connection,
+    dimension: int,
+    ann_trees: int,
+    output_path: Path,
+) -> None:
+    rows = conn.execute(
+        "SELECT chunk_id, embedding FROM chunks ORDER BY chunk_id",
+    ).fetchall()
+    if not rows:
+        if output_path.exists():
+            output_path.unlink()
+        conn.execute("DELETE FROM annoy_map")
+        return
+
+    index = AnnoyIndex(dimension, metric=ANN_METRIC)
+    for idx, row in enumerate(rows):
+        vector = _blob_to_vector(row["embedding"])
+        index.add_item(idx, vector)
+    index.build(ann_trees)
+    index.save(str(output_path))
+
+    conn.execute("DELETE FROM annoy_map")
+    conn.executemany(
+        "INSERT INTO annoy_map (annoy_idx, chunk_id) VALUES (?, ?)",
+        ((idx, row["chunk_id"]) for idx, row in enumerate(rows)),
+    )
+
+
+def _write_chunk_manifests(
+    conn: sqlite3.Connection,
+    root: Path,
+    days: Iterable[str],
+    embedder: EmbeddingBackend,
+) -> None:
+    chunk_dir = _chunk_manifest_dir(root)
+    chunk_dir.mkdir(parents=True, exist_ok=True)
+    for day in sorted(set(days)):
+        rows = conn.execute(
+            """
+            SELECT chunk_id, normalized_id, chunk_index, chunk_text, tags,
+                   source_type, source_path, tokens, source_hash, manifest_hash, embedding
+            FROM chunks
+            WHERE date = ?
+            ORDER BY normalized_id, chunk_index
+            """,
+            (day,),
+        ).fetchall()
+        chunks: list[dict[str, Any]] = []
+        payload = {
+            "day": day,
+            "chunks": chunks,
+            "meta": {
+                "embedding_model": embedder.model,
+                "vector_dimension": embedder.dim,
+                "generated_at": _format_timestamp(_now()),
+            },
+        }
+        vectors: list[list[float]] = []
+        for row in rows:
+            tags = json.loads(row["tags"] or "[]")
+            chunks.append(
+                {
+                    "chunk_id": row["chunk_id"],
+                    "normalized_id": row["normalized_id"],
+                    "chunk_index": row["chunk_index"],
+                    "chunk_text": row["chunk_text"],
+                    "tags": tags,
+                    "source_type": row["source_type"],
+                    "source_path": row["source_path"],
+                    "tokens": row["tokens"],
+                    "source_hash": row["source_hash"],
+                    "manifest_hash": row["manifest_hash"],
+                },
+            )
+            vectors.append(_blob_to_vector(row["embedding"]))
+
+        manifest_path = chunk_dir / f"{day}.yaml"
+        manifest_path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
+        vector_array = (
+            np.array(vectors, dtype="float32")
+            if vectors
+            else np.zeros((0, embedder.dim), dtype="float32")
+        )
+        np.save(chunk_dir / f"{day}.npy", vector_array)
+
+
+def _gather_index_stats(conn: sqlite3.Connection) -> tuple[int, int]:
+    chunk_total = conn.execute("SELECT COUNT(*) FROM chunks").fetchone()[0]
+    entry_total = conn.execute("SELECT COUNT(*) FROM sources").fetchone()[0]
+    return int(chunk_total), int(entry_total)
+
+
+def _write_index_meta(
+    root: Path,
+    *,
+    embedder: EmbeddingBackend,
+    chunk_total: int,
+    entry_total: int,
+    mode: str,
+    fake_mode: bool,
+    ann_trees: int,
+    search_k_factor: float,
+    char_per_token: float,
+    since: str | None,
+    limit: int | None,
+    touched_dates: Iterable[str],
+) -> None:
+    payload = {
+        "embedding_model": embedder.model,
+        "vector_dimension": embedder.dimension,
+        "chunk_count": chunk_total,
+        "entry_count": entry_total,
+        "mode": mode,
+        "fake_mode": fake_mode,
+        "annoy_trees": ann_trees,
+        "search_k_factor": search_k_factor,
+        "char_per_token": char_per_token,
+        "since": since,
+        "limit": limit,
+        "touched_dates": sorted(set(touched_dates)),
+        "updated_at": _format_timestamp(_now()),
+    }
+    _index_meta_path(root).write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
