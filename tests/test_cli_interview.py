@@ -58,6 +58,7 @@ def _seed_normalized(tmp_path) -> None:
     entry = {
         "id": "entry",
         "created_at": f"{DATE}T09:00:00Z",
+        "source_path": f"data/journal/{DATE}-entry.md",
         "title": "Daily Notes",
         "sections": [],
     }

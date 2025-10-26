@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import Field
+from pydantic import ConfigDict, Field
 
 from .base import AijournalModel
 from .claim_atoms import (
@@ -20,6 +20,26 @@ from .claim_atoms import (
 )
 
 Claim = ClaimAtom
+
+
+class ManifestEntry(AijournalModel):
+    """Manifest row describing an ingested Markdown source."""
+
+    model_config = ConfigDict(
+        extra="allow",
+        populate_by_name=True,
+        arbitrary_types_allowed=True,
+    )
+
+    hash: str
+    path: str
+    normalized: str
+    source_type: str | None = None
+    ingested_at: str
+    created_at: str
+    id: str
+    tags: list[str] = Field(default_factory=list)
+    model: str | None = None
 
 
 class JournalEntry(AijournalModel):
@@ -284,6 +304,7 @@ __all__ = [
     "FactEvidenceSpan",
     "InterviewQuestion",
     "InterviewSet",
+    "ManifestEntry",
     "JournalEntry",
     "JournalSection",
     "MicroFact",

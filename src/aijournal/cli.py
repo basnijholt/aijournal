@@ -9,6 +9,7 @@ import random
 import re
 import sqlite3
 from array import array
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
@@ -22,6 +23,7 @@ import numpy as np
 import typer
 import yaml
 from annoy import AnnoyIndex
+from pydantic import ValidationError
 
 from aijournal.ingest_agent import (
     AgentSettings,
@@ -30,6 +32,8 @@ from aijournal.ingest_agent import (
     build_ingest_agent,
     ingest_with_agent,
 )
+from aijournal.io.yaml_io import load_yaml_model
+from aijournal.models import ManifestEntry, NormalizedEntry
 from aijournal.schema import SchemaValidationError, validate_schema
 from aijournal.services import (
     ClaimConsolidator,
@@ -316,9 +320,9 @@ class IndexTask:
     path: Path
     normalized_path: str
     normalized_id: str
-    entry: dict[str, Any]
+    entry: NormalizedEntry
     source_hash: str | None
-    manifest: dict[str, Any] | None
+    manifest: ManifestEntry | None
 
 
 FAKE_TIME_BLOCKS = [
@@ -752,27 +756,36 @@ def _manifest_path(root: Path) -> Path:
     return root / "data" / "manifest" / "ingested.yaml"
 
 
-def _load_manifest(path: Path) -> list[dict[str, Any]]:
+def _load_manifest(path: Path) -> list[ManifestEntry]:
     if not path.exists():
         return []
     data = yaml.safe_load(path.read_text(encoding="utf-8")) or []
-    if isinstance(data, list):
-        return data
-    return []
+    entries: list[ManifestEntry] = []
+    if not isinstance(data, list):
+        return entries
+    for raw in data:
+        if not isinstance(raw, dict):
+            continue
+        try:
+            entries.append(ManifestEntry.model_validate(raw))
+        except ValidationError:
+            continue
+    return entries
 
 
-def _write_manifest(path: Path, entries: list[dict[str, Any]]) -> None:
+def _write_manifest(path: Path, entries: Iterable[ManifestEntry]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(yaml.safe_dump(entries, sort_keys=False), encoding="utf-8")
+    payload = [entry.model_dump(mode="python") for entry in entries]
+    path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
 
 
-def _manifest_by_id(entries: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
-    index: dict[str, dict[str, Any]] = {}
+def _manifest_by_id(entries: Iterable[ManifestEntry]) -> dict[str, ManifestEntry]:
+    index: dict[str, ManifestEntry] = {}
     for entry in entries:
-        entry_id = entry.get("id")
+        entry_id = entry.id
         if not entry_id:
             continue
-        index[str(entry_id)] = entry
+        index[entry_id] = entry
     return index
 
 
@@ -941,7 +954,7 @@ def _ensure_claim_atom_dict(
 
 
 def _build_claim_atom_from_entry(
-    entry: dict[str, Any],
+    entry: NormalizedEntry,
     *,
     claim_id: str,
     statement: str,
@@ -951,20 +964,20 @@ def _build_claim_atom_from_entry(
     timestamp = _format_timestamp(_now())
     default_sources = [
         {
-            "entry_id": str(entry.get("id") or claim_id),
+            "entry_id": entry.id or claim_id,
             "spans": [],
         },
     ]
     raw = {
         "id": claim_id,
         "type": "preference",
-        "subject": entry.get("title") or claim_id,
+        "subject": entry.title or claim_id,
         "predicate": "insight",
         "value": statement,
         "statement": statement,
         "scope": {
             "domain": None,
-            "context": entry.get("tags", [])[:2],
+            "context": list((entry.tags or [])[:2]),
             "conditions": [],
         },
         "strength": strength,
@@ -974,7 +987,7 @@ def _build_claim_atom_from_entry(
         "review_after_days": 120,
         "provenance": {
             "sources": default_sources,
-            "first_seen": entry.get("created_at") or timestamp,
+            "first_seen": entry.created_at or timestamp,
         },
     }
     return _ensure_claim_atom_dict(raw, timestamp=timestamp, default_sources=default_sources)
@@ -1155,24 +1168,28 @@ def _normalized_from_structured(
     return normalized, date_str
 
 
-def _load_normalized_entries(root: Path, day: str) -> list[dict[str, Any]]:
+def _load_normalized_entries(root: Path, day: str) -> list[NormalizedEntry]:
     folder = root / "data" / "normalized" / day
     if not folder.exists():
         return []
-    entries: list[dict[str, Any]] = []
+    entries: list[NormalizedEntry] = []
     for file in sorted(folder.glob("*.yaml")):
-        entries.append(_load_yaml(file))
+        entries.append(load_yaml_model(file, NormalizedEntry))
     return entries
 
 
-def _load_normalized_entries_with_paths(root: Path, day: str) -> list[tuple[dict[str, Any], Path]]:
+def _load_normalized_entries_with_paths(root: Path, day: str) -> list[tuple[NormalizedEntry, Path]]:
     folder = root / "data" / "normalized" / day
     if not folder.exists():
         return []
-    entries: list[tuple[dict[str, Any], Path]] = []
+    entries: list[tuple[NormalizedEntry, Path]] = []
     for file in sorted(folder.glob("*.yaml")):
-        entries.append((_load_yaml(file), file))
+        entries.append((load_yaml_model(file, NormalizedEntry), file))
     return entries
+
+
+def _entries_to_payload(entries: Iterable[NormalizedEntry]) -> list[dict[str, Any]]:
+    return [entry.model_dump(mode="python") for entry in entries]
 
 
 def _derived_summary_path(root: Path, day: str) -> Path:
@@ -1227,12 +1244,12 @@ def _build_meta(prompt_path: str, model: str = "fake-ollama") -> dict[str, Any]:
     }
 
 
-def _fake_summarize(entries: list[dict[str, Any]]) -> list[str]:
+def _fake_summarize(entries: Iterable[NormalizedEntry]) -> list[str]:
     bullets: list[str] = []
     for entry in entries:
-        title = entry.get("title", entry.get("id", "entry"))
-        sections = entry.get("sections") or []
-        section_titles = ", ".join(sec.get("heading", "") for sec in sections[:2] if sec)
+        title = entry.title or entry.id
+        sections = entry.sections or []
+        section_titles = ", ".join(section.heading for section in sections[:2] if section.heading)
         if section_titles:
             bullets.append(f"{title}: {section_titles}")
         else:
@@ -1240,12 +1257,12 @@ def _fake_summarize(entries: list[dict[str, Any]]) -> list[str]:
     return bullets or ["No content available"]
 
 
-def _fake_microfacts(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _fake_microfacts(entries: Iterable[NormalizedEntry]) -> list[dict[str, Any]]:
     facts: list[dict[str, Any]] = []
     for entry in entries:
-        entry_id = entry.get("id", "entry")
-        title = entry.get("title", entry_id)
-        sections = entry.get("sections") or []
+        entry_id = entry.id or "entry"
+        title = entry.title or entry_id
+        sections = entry.sections or []
         statement = f"{title} covers {len(sections)} sections"
         facts.append(
             {
@@ -1328,7 +1345,7 @@ def _fake_advise(
 
 
 def _fake_profile_suggestions(
-    entries: list[dict[str, Any]],
+    entries: Sequence[NormalizedEntry],
     profile: dict[str, Any],
     claims: list[dict[str, Any]],
 ) -> dict[str, Any]:
@@ -1336,8 +1353,8 @@ def _fake_profile_suggestions(
     updates = []
 
     for entry in entries[:1]:
-        statement = entry.get("title", "New observation")
-        claim_id = f"auto_{entry.get('id', 'entry')}"
+        statement = entry.title or "New observation"
+        claim_id = f"auto_{entry.id or 'entry'}"
         upserts.append(
             {
                 "target": "claims",
@@ -1365,7 +1382,7 @@ def _fake_profile_suggestions(
 
 
 def _fake_characterize(
-    entries: list[dict[str, Any]],
+    entries: Sequence[NormalizedEntry],
     profile: dict[str, Any],
     claims: list[dict[str, Any]],
 ) -> dict[str, Any]:
@@ -1373,14 +1390,14 @@ def _fake_characterize(
         return {"claims": [], "facets": []}
 
     seed = entries[0]
-    date = _created_date(str(seed.get("created_at") or _format_timestamp(_now())))
+    date = _created_date(seed.created_at or _format_timestamp(_now()))
     heading = ""
-    sections = seed.get("sections") or []
+    sections = seed.sections or []
     if sections:
-        heading = sections[0].get("heading") or ""
-    title = seed.get("title") or seed.get("id") or "entry"
+        heading = sections[0].heading or ""
+    title = seed.title or seed.id or "entry"
     theme = heading or title
-    tag = (seed.get("tags") or [theme])[0]
+    tag = (seed.tags or [theme])[0]
     claim_id = f"{_slugify_title(theme) or 'entry'}-{date.replace('-', '')}-claim"
     claim = _build_claim_atom_from_entry(
         seed,
@@ -1416,16 +1433,16 @@ def _coerce_str_list(value: Any) -> list[str]:
     return []
 
 
-def _todo_from_entries(entries: list[dict[str, Any]]) -> list[str]:
+def _todo_from_entries(entries: Sequence[NormalizedEntry]) -> list[str]:
     todos: list[str] = []
     for entry in entries[:3]:
-        title = entry.get("title") or entry.get("id") or "entry"
+        title = entry.title or entry.id or "entry"
         todos.append(f"Review follow-ups from {title}")
     return todos or ["Capture explicit next actions in tomorrow's entry."]
 
 
 def _summarize_day_payload(
-    entries: list[dict[str, Any]],
+    entries: Sequence[NormalizedEntry],
     date: str,
     config: dict[str, Any],
 ) -> dict[str, Any]:
@@ -1453,7 +1470,7 @@ def _summarize_day_payload(
 
     payload = _safe_llm_json(
         "prompts/summarize_day.md",
-        {"date": date, "entries_json": _json_block(entries)},
+        {"date": date, "entries_json": _json_block(_entries_to_payload(entries))},
         runner,
         fallback,
     )
@@ -1468,7 +1485,7 @@ def _summarize_day_payload(
 
 
 def _microfacts_payload(
-    entries: list[dict[str, Any]],
+    entries: Sequence[NormalizedEntry],
     date: str,
     config: dict[str, Any],
 ) -> dict[str, Any]:
@@ -1490,7 +1507,7 @@ def _microfacts_payload(
 
     payload = _safe_llm_json(
         "prompts/extract_facts.md",
-        {"date": date, "entries_json": _json_block(entries)},
+        {"date": date, "entries_json": _json_block(_entries_to_payload(entries))},
         runner,
         fallback,
     )
@@ -1501,7 +1518,7 @@ def _microfacts_payload(
 
 
 def _profile_suggestions_payload(
-    entries: list[dict[str, Any]],
+    entries: Sequence[NormalizedEntry],
     profile: dict[str, Any],
     claims: list[dict[str, Any]],
     date: str,
@@ -1527,7 +1544,7 @@ def _profile_suggestions_payload(
         "prompts/profile_suggest.md",
         {
             "date": date,
-            "entries_json": _json_block(entries),
+            "entries_json": _json_block(_entries_to_payload(entries)),
             "profile_json": _json_block(profile),
             "claims_json": _json_block({"claims": claims}),
         },
@@ -1559,8 +1576,8 @@ def _profile_suggestions_payload(
 
 
 def _characterization_context(
-    entries: list[dict[str, Any]],
-    manifest_index: dict[str, dict[str, Any]],
+    entries: Sequence[NormalizedEntry],
+    manifest_index: dict[str, ManifestEntry],
 ) -> tuple[list[str], list[str], list[str], list[dict[str, Any]]]:
     normalized_ids: list[str] = []
     source_hashes: set[str] = set()
@@ -1568,13 +1585,13 @@ def _characterization_context(
     default_sources: list[dict[str, Any]] = []
 
     for idx, entry in enumerate(entries):
-        entry_id = str(entry.get("id") or f"entry-{idx + 1}")
+        entry_id = entry.id or f"entry-{idx + 1}"
         normalized_ids.append(entry_id)
-        source_hash = entry.get("source_hash")
+        source_hash = entry.source_hash
         if isinstance(source_hash, str) and source_hash:
             source_hashes.add(source_hash)
         manifest_entry = manifest_index.get(entry_id)
-        manifest_hash = manifest_entry.get("hash") if isinstance(manifest_entry, dict) else None
+        manifest_hash = manifest_entry.hash if manifest_entry else None
         if manifest_hash:
             manifest_hashes.add(str(manifest_hash))
         default_sources.append({"entry_id": entry_id, "spans": []})
@@ -1654,10 +1671,10 @@ def _normalize_facet_proposals(
 
 
 def _characterize_payload(
-    entries: list[dict[str, Any]],
+    entries: Sequence[NormalizedEntry],
     profile: dict[str, Any],
     claims: list[dict[str, Any]],
-    manifest_index: dict[str, dict[str, Any]],
+    manifest_index: dict[str, ManifestEntry],
     config: dict[str, Any],
 ) -> dict[str, Any]:
     claim_timestamp = _format_timestamp(_now())
@@ -1684,12 +1701,14 @@ def _characterize_payload(
             )
             raw = fallback()
         else:
-            manifest_payload = _json_block(manifest_index)
+            manifest_payload = _json_block(
+                {key: entry.model_dump(mode="python") for key, entry in manifest_index.items()},
+            )
             raw = _safe_llm_json(
                 "prompts/characterize.md",
                 {
                     "date": _created_date(claim_timestamp),
-                    "entries_json": _json_block(entries),
+                    "entries_json": _json_block(_entries_to_payload(entries)),
                     "profile_json": _json_block(profile),
                     "claims_json": _json_block({"claims": claims}),
                     "manifest_json": manifest_payload,
@@ -1942,7 +1961,7 @@ def ingest(
 
     manifest_path = _manifest_path(root)
     manifest_entries = _load_manifest(manifest_path)
-    known_hashes = {entry.get("hash"): entry for entry in manifest_entries if entry.get("hash")}
+    known_hashes = {entry.hash: entry for entry in manifest_entries if entry.hash}
 
     ingested = 0
     skipped = 0
@@ -2012,17 +2031,17 @@ def ingest(
             raw_dir.mkdir(parents=True, exist_ok=True)
             (raw_dir / f"{digest}.md").write_bytes(raw_bytes)
 
-        manifest_entry = {
-            "hash": digest,
-            "path": _relative_source_path(file, root),
-            "normalized": _relative_source_path(normalized_path, root),
-            "source_type": source_type,
-            "ingested_at": _format_timestamp(_now()),
-            "created_at": normalized["created_at"],
-            "id": normalized["id"],
-            "tags": normalized.get("tags", []),
-            "model": model_name if not is_fake else "fake-ollama",
-        }
+        manifest_entry = ManifestEntry(
+            hash=digest,
+            path=_relative_source_path(file, root),
+            normalized=_relative_source_path(normalized_path, root),
+            source_type=source_type,
+            ingested_at=_format_timestamp(_now()),
+            created_at=str(normalized["created_at"]),
+            id=str(normalized["id"]),
+            tags=list(normalized.get("tags", [])),
+            model=model_name if not is_fake else "fake-ollama",
+        )
         manifest_entries.append(manifest_entry)
         known_hashes[digest] = manifest_entry
 
@@ -2231,15 +2250,16 @@ def characterize(
 
     inputs: list[dict[str, Any]] = []
     for data, path in entries_with_paths:
-        entry_id = str(data.get("id") or path.stem)
-        manifest_entry = manifest_index.get(entry_id, {})
+        entry_id = data.id or path.stem
+        manifest_entry = manifest_index.get(entry_id)
+        manifest_hash = manifest_entry.hash if manifest_entry else None
         inputs.append(
             {
                 "id": entry_id,
                 "normalized_path": _relative_source_path(path, root),
-                "source_hash": data.get("source_hash") or manifest_entry.get("hash"),
-                "manifest_hash": manifest_entry.get("hash"),
-                "tags": data.get("tags", []),
+                "source_hash": data.source_hash or manifest_hash,
+                "manifest_hash": manifest_hash,
+                "tags": list(data.tags or []),
             },
         )
 
@@ -2831,11 +2851,13 @@ def _compute_rankings(
 
 def _build_targeted_probes(
     rankings: list[tuple[str, float]],
-    entries: list[dict[str, Any]],
+    entries: Sequence[NormalizedEntry],
     *,
     max_items: int = 4,
 ) -> list[str]:
-    title = entries[0].get("title", "recent notes") if entries else "recent notes"
+    title = entries[0].title if entries else "recent notes"
+    if not title:
+        title = entries[0].id if entries else "recent notes"
     probes: list[str] = []
     for path, score in rankings:
         probes.append(
@@ -3612,20 +3634,19 @@ def _index_settings(config: dict[str, Any]) -> tuple[int, float, float]:
 def _prepare_index_tasks(
     entries: Sequence[tuple[str, Path]],
     root: Path,
-    manifest_index: dict[str, dict[str, Any]],
+    manifest_index: dict[str, ManifestEntry],
 ) -> list[IndexTask]:
     tasks: list[IndexTask] = []
     for day, path in entries:
-        entry = _load_yaml(path)
-        normalized_id = str(entry.get("id") or "").strip()
+        entry = load_yaml_model(path, NormalizedEntry)
+        normalized_id = entry.id.strip()
         if not normalized_id:
             continue
         normalized_path = _relative_source_path(path, root)
         manifest = manifest_index.get(normalized_id)
         source_hash = _select_source_hash(entry, path)
         if manifest and not source_hash:
-            manifest_hash = manifest.get("hash")
-            source_hash = str(manifest_hash) if manifest_hash else None
+            source_hash = manifest.hash
         tasks.append(
             IndexTask(
                 day=day,
@@ -3654,8 +3675,8 @@ def _filter_tasks_for_tail(conn: sqlite3.Connection, tasks: Sequence[IndexTask])
     return pending
 
 
-def _select_source_hash(entry: dict[str, Any], path: Path) -> str | None:
-    source_hash = entry.get("source_hash")
+def _select_source_hash(entry: NormalizedEntry, path: Path) -> str | None:
+    source_hash = entry.source_hash
     if isinstance(source_hash, str) and source_hash.strip():
         return source_hash.strip()
     return _hash_file(path)
@@ -3714,28 +3735,28 @@ def _index_entries(
 
 
 def _build_chunk_records(
-    entry: dict[str, Any],
+    entry: NormalizedEntry,
     normalized_path: str,
     *,
     char_per_token: float,
-    manifest: dict[str, Any] | None,
+    manifest: ManifestEntry | None,
     source_hash: str | None,
 ) -> list[ChunkRecord]:
-    entry_id = str(entry.get("id") or "").strip()
+    entry_id = entry.id.strip()
     if not entry_id:
         return []
-    created_at = _normalize_created_at(entry.get("created_at") or _format_timestamp(_now()))
+    created_at = _normalize_created_at(entry.created_at or _format_timestamp(_now()))
     date_value = _created_date(created_at)
-    tags = entry.get("tags") or []
+    tags = entry.tags or []
     scope_tags = [str(tag) for tag in tags]
     paragraphs = _entry_paragraphs(entry)
     chunk_texts = _chunk_paragraphs(paragraphs)
     if not chunk_texts:
-        chunk_texts = [entry.get("title") or entry_id]
+        chunk_texts = [entry.title or entry_id]
 
     chunk_records: list[ChunkRecord] = []
-    manifest_hash = manifest.get("hash") if manifest else None
-    source_type = entry.get("source_type") or (manifest.get("source_type") if manifest else None)
+    manifest_hash = manifest.hash if manifest else None
+    source_type = entry.source_type or (manifest.source_type if manifest else None)
 
     for idx, text in enumerate(chunk_texts):
         chunk_records.append(
@@ -3748,7 +3769,7 @@ def _build_chunk_records(
                 date=date_value,
                 tags=scope_tags,
                 source_type=source_type,
-                source_path=entry.get("source_path") or normalized_path,
+                source_path=entry.source_path or normalized_path,
                 tokens=_token_estimate(text, char_per_token),
                 source_hash=source_hash,
                 manifest_hash=str(manifest_hash) if manifest_hash else None,
@@ -3758,14 +3779,14 @@ def _build_chunk_records(
     return chunk_records
 
 
-def _entry_paragraphs(entry: dict[str, Any]) -> list[str]:
+def _entry_paragraphs(entry: NormalizedEntry) -> list[str]:
     paragraphs: list[str] = []
-    summary = entry.get("summary")
+    summary = entry.summary
     if isinstance(summary, str) and summary.strip():
         paragraphs.append(summary.strip())
-    for section in entry.get("sections") or []:
-        heading = str(section.get("heading") or "").strip()
-        snippet = str(section.get("summary") or "").strip()
+    for section in entry.sections or []:
+        heading = str(section.heading or "").strip()
+        snippet = str(section.summary or "").strip()
         if heading and snippet:
             paragraphs.append(f"{heading}: {snippet}")
         elif heading:
@@ -3773,7 +3794,7 @@ def _entry_paragraphs(entry: dict[str, Any]) -> list[str]:
         elif snippet:
             paragraphs.append(snippet)
     if not paragraphs:
-        title = str(entry.get("title") or entry.get("id") or "entry").strip()
+        title = str(entry.title or entry.id or "entry").strip()
         if title:
             paragraphs.append(title)
     return paragraphs
