@@ -38,7 +38,11 @@ from aijournal.models import (
     ClaimsFile,
     ManifestEntry,
     NormalizedEntry,
+    ProfileUpdateBatch,
+    ProfileUpdateInput,
+    ProfileUpdateProposals,
     SelfProfile,
+    SummaryMeta,
 )
 from aijournal.schema import SchemaValidationError, validate_schema
 from aijournal.services import (
@@ -2269,34 +2273,34 @@ def characterize(
     timestamp = _format_timestamp(_now())
     batch_id = f"{date}-{timestamp}"
 
-    inputs: list[dict[str, Any]] = []
+    inputs: list[ProfileUpdateInput] = []
     for data, path in entries_with_paths:
         entry_id = data.id or path.stem
         manifest_entry = manifest_index.get(entry_id)
         manifest_hash = manifest_entry.hash if manifest_entry else None
         inputs.append(
-            {
-                "id": entry_id,
-                "normalized_path": _relative_source_path(path, root),
-                "source_hash": data.source_hash or manifest_hash,
-                "manifest_hash": manifest_hash,
-                "tags": list(data.tags or []),
-            },
+            ProfileUpdateInput(
+                id=entry_id,
+                normalized_path=_relative_source_path(path, root),
+                source_hash=data.source_hash or manifest_hash,
+                manifest_hash=manifest_hash,
+                tags=list(data.tags or []),
+            ),
         )
-
-    batch = {
-        "batch_id": batch_id,
-        "created_at": timestamp,
-        "date": date,
-        "inputs": inputs,
-        "proposals": proposals,
-        "meta": _build_meta("prompts/characterize.md"),
-    }
-
+    proposals_model = ProfileUpdateProposals.model_validate(proposals)
+    meta_model = SummaryMeta.model_validate(_build_meta("prompts/characterize.md"))
+    batch_model = ProfileUpdateBatch(
+        batch_id=batch_id,
+        created_at=timestamp,
+        date=date,
+        inputs=inputs,
+        proposals=proposals_model,
+        meta=meta_model,
+    )
     pending_dir = _pending_updates_dir(root)
     pending_dir.mkdir(parents=True, exist_ok=True)
     batch_path = _pending_updates_path(root, batch_id)
-    _write_yaml_if_changed(batch_path, batch, schema="profile_updates")
+    write_yaml_model(batch_path, batch_model)
     typer.echo(str(batch_path))
 
 
@@ -2319,18 +2323,11 @@ def review_updates(
         typer.secho(f"Batch file not found: {batch_path}", fg=typer.colors.RED, err=True)
         raise typer.Exit(1)
 
-    batch = _load_yaml(batch_path)
-    try:
-        validate_schema("profile_updates", batch)
-    except SchemaValidationError as exc:
-        typer.secho(str(exc), fg=typer.colors.RED, err=True)
-        raise typer.Exit(1)
+    batch = load_yaml_model(batch_path, ProfileUpdateBatch)
+    claim_proposals = [proposal.model_dump(mode="python") for proposal in batch.proposals.claims]
+    facet_proposals = [proposal.model_dump(mode="python") for proposal in batch.proposals.facets]
 
-    proposals = batch.get("proposals", {})
-    claim_proposals = proposals.get("claims", []) or []
-    facet_proposals = proposals.get("facets", []) or []
-
-    batch_id = batch.get("batch_id") or batch_path.stem
+    batch_id = batch.batch_id or batch_path.stem
     typer.echo(
         f"Batch {batch_id}: {len(claim_proposals)} claim(s), {len(facet_proposals)} facet(s)",
     )
