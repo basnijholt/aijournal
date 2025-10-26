@@ -32,8 +32,14 @@ from aijournal.ingest_agent import (
     build_ingest_agent,
     ingest_with_agent,
 )
-from aijournal.io.yaml_io import load_yaml_model
-from aijournal.models import ManifestEntry, NormalizedEntry
+from aijournal.io.yaml_io import load_yaml_model, write_yaml_model
+from aijournal.models import (
+    ClaimAtom,
+    ClaimsFile,
+    ManifestEntry,
+    NormalizedEntry,
+    SelfProfile,
+)
 from aijournal.schema import SchemaValidationError, validate_schema
 from aijournal.services import (
     ClaimConsolidator,
@@ -945,12 +951,27 @@ def _ensure_claim_atom_dict(
     atom["user_verified"] = bool(atom.get("user_verified", False))
     atom["review_after_days"] = _coerce_int(atom.get("review_after_days")) or 120
 
-    atom["provenance"] = _ensure_provenance_dict(
+    provenance = _ensure_provenance_dict(
         atom.get("provenance"),
         timestamp,
         default_sources,
     )
-    return atom
+    allowed = {
+        "id": atom["id"],
+        "type": atom["type"],
+        "subject": atom["subject"],
+        "predicate": atom["predicate"],
+        "value": atom["value"],
+        "statement": atom["statement"],
+        "scope": atom["scope"],
+        "strength": atom["strength"],
+        "status": atom["status"],
+        "method": atom["method"],
+        "user_verified": atom["user_verified"],
+        "review_after_days": atom["review_after_days"],
+        "provenance": provenance,
+    }
+    return allowed
 
 
 def _build_claim_atom_from_entry(
@@ -2160,7 +2181,9 @@ def profile_suggest(
         typer.secho(f"No normalized entries for {date}", fg=typer.colors.RED, err=True)
         raise typer.Exit(1)
 
-    profile, claims = _load_profile_components(root)
+    profile_model, claim_models = _load_profile_components(root)
+    profile = _profile_to_dict(profile_model)
+    claims = _claims_to_list(claim_models)
     if not profile and not claims:
         typer.secho("No profile data", fg=typer.colors.RED, err=True)
         raise typer.Exit(1)
@@ -2193,7 +2216,9 @@ def profile_apply(
         raise typer.Exit(1)
 
     suggestions = _load_yaml(suggestions_path)
-    profile, claims = _load_profile_components(root)
+    profile_model, claim_models = _load_profile_components(root)
+    profile = _profile_to_dict(profile_model)
+    claims = _claims_to_list(claim_models)
     timestamp = _format_timestamp(_now())
     changed = False
 
@@ -2213,16 +2238,10 @@ def profile_apply(
         typer.echo("No changes to apply")
         raise typer.Exit(0)
 
-    _atomic_write(
-        root / "profile" / "self_profile.yaml",
-        profile,
-        schema="self_profile",
-    )
-    _atomic_write(
-        root / "profile" / "claims.yaml",
-        {"claims": claims},
-        schema="claims",
-    )
+    updated_profile = SelfProfile.model_validate(profile)
+    updated_claims = _claims_to_models(claims)
+    write_yaml_model(root / "profile" / "self_profile.yaml", updated_profile)
+    write_yaml_model(root / "profile" / "claims.yaml", ClaimsFile(claims=updated_claims))
     typer.echo("Applied 1 suggestions file")
 
 
@@ -2239,7 +2258,9 @@ def characterize(
 
     manifest_entries = _load_manifest(_manifest_path(root))
     manifest_index = _manifest_by_id(manifest_entries)
-    profile, claims = _load_profile_components(root)
+    profile_model, claim_models = _load_profile_components(root)
+    profile = _profile_to_dict(profile_model)
+    claims = _claims_to_list(claim_models)
     config = _load_config(root)
 
     entries = [entry for entry, _ in entries_with_paths]
@@ -2332,7 +2353,9 @@ def review_updates(
         _preview_claim_consolidation(root, claim_proposals)
         return
 
-    profile, claims_data = _load_profile_components(root)
+    profile_model, claim_models = _load_profile_components(root)
+    profile = _profile_to_dict(profile_model)
+    claims_data = _claims_to_list(claim_models)
     timestamp = _format_timestamp(_now())
     applied = 0
     merge_events: list[ClaimMergeOutcome] = []
@@ -2357,16 +2380,10 @@ def review_updates(
         typer.echo("No changes applied")
         return
 
-    _atomic_write(
-        root / "profile" / "self_profile.yaml",
-        profile,
-        schema="self_profile",
-    )
-    _atomic_write(
-        root / "profile" / "claims.yaml",
-        {"claims": claims_data},
-        schema="claims",
-    )
+    updated_profile = SelfProfile.model_validate(profile)
+    updated_claims = _claims_to_models(claims_data)
+    write_yaml_model(root / "profile" / "self_profile.yaml", updated_profile)
+    write_yaml_model(root / "profile" / "claims.yaml", ClaimsFile(claims=updated_claims))
     _emit_claim_merge_events(merge_events, "Applied claim consolidations:")
     typer.echo(f"Applied {applied} updates from {batch_path}")
 
@@ -2377,7 +2394,9 @@ def advise(
 ) -> None:
     """Generate advice from the current profile."""
     root = Path.cwd()
-    profile, claims = _load_profile_components(root)
+    profile_model, claim_models = _load_profile_components(root)
+    profile = _profile_to_dict(profile_model)
+    claims = _claims_to_list(claim_models)
     if not profile and not claims:
         typer.secho("No profile data", fg=typer.colors.RED, err=True)
         raise typer.Exit(1)
@@ -2452,13 +2471,62 @@ def _flatten_facets(node: Any, prefix: str = "") -> list[tuple[str, dict[str, An
     return items
 
 
-def _load_profile_components(root: Path) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+def _load_profile_components(root: Path) -> tuple[SelfProfile | None, list[ClaimAtom]]:
     profile_path = root / "profile" / "self_profile.yaml"
     claims_path = root / "profile" / "claims.yaml"
 
-    profile = _load_yaml(profile_path) if profile_path.exists() else {}
-    claims_data = _load_yaml(claims_path).get("claims", []) if claims_path.exists() else []
-    return profile, claims_data
+    profile = (
+        load_yaml_model(profile_path, SelfProfile)
+        if profile_path.exists()
+        else None
+    )
+    if claims_path.exists():
+        try:
+            claims_file = load_yaml_model(claims_path, ClaimsFile)
+            claim_models = list(claims_file.claims)
+        except ValidationError:
+            raw = _load_yaml(claims_path).get("claims", [])
+            claim_models = _claims_to_models(raw if isinstance(raw, list) else [])
+    else:
+        claim_models = []
+    return profile, claim_models
+
+
+def _profile_to_dict(profile: SelfProfile | None) -> dict[str, Any]:
+    return profile.model_dump(mode="python") if profile else {}
+
+
+def _claims_to_list(claims: Sequence[ClaimAtom]) -> list[dict[str, Any]]:
+    return [claim.model_dump(mode="python") for claim in claims]
+
+
+def _claims_to_models(claims: Sequence[dict[str, Any]]) -> list[ClaimAtom]:
+    normalized: list[ClaimAtom] = []
+    timestamp = _format_timestamp(_now())
+    for raw in claims:
+        if not isinstance(raw, dict):
+            continue
+        try:
+            normalized.append(ClaimAtom.model_validate(raw))
+            continue
+        except ValidationError:
+            pass
+        default_sources = [
+            {
+                "entry_id": str(raw.get("id") or "claim"),
+                "spans": [],
+            },
+        ]
+        try:
+            normalized_dict = _ensure_claim_atom_dict(
+                raw,
+                timestamp=timestamp,
+                default_sources=default_sources,
+            )
+        except ValueError:
+            continue
+        normalized.append(ClaimAtom.model_validate(normalized_dict))
+    return normalized
 
 
 def _persona_profile_slice(profile: dict[str, Any]) -> dict[str, Any]:
@@ -2651,7 +2719,9 @@ def _persona_build_impl(
     min_claims_override: int | None = None,
 ) -> tuple[Path, bool]:
     root = Path.cwd()
-    profile, claims = _load_profile_components(root)
+    profile_model, claim_models = _load_profile_components(root)
+    profile = _profile_to_dict(profile_model)
+    claims = _claims_to_list(claim_models)
     if not profile and not claims:
         typer.secho(
             "No profile data or claims available; run `aijournal init` or add entries first.",
@@ -2968,7 +3038,8 @@ def _emit_claim_merge_events(events: list[ClaimMergeOutcome], heading: str) -> N
 def _preview_claim_consolidation(root: Path, claim_proposals: list[dict[str, Any]]) -> None:
     if not claim_proposals:
         return
-    _, claims_data = _load_profile_components(root)
+    _, claim_models = _load_profile_components(root)
+    claims_data = _claims_to_list(claim_models)
     if not claims_data:
         return
     timestamp = _format_timestamp(_now())
@@ -3012,7 +3083,9 @@ def _claim_last_updated(claim: dict[str, Any]) -> str | None:
 
 def _profile_status_impl() -> None:
     root = Path.cwd()
-    profile, claims = _load_profile_components(root)
+    profile_model, claim_models = _load_profile_components(root)
+    profile = _profile_to_dict(profile_model)
+    claims = _claims_to_list(claim_models)
     config_path = root / "config" / "config.yaml"
     config = _load_yaml(config_path) if config_path.exists() else {}
     weights = config.get("impact_weights", {})
@@ -3054,7 +3127,9 @@ def interview(
         raise typer.Exit(1)
 
     root = Path.cwd()
-    profile, claims = _load_profile_components(root)
+    profile_model, claim_models = _load_profile_components(root)
+    profile = _profile_to_dict(profile_model)
+    claims = _claims_to_list(claim_models)
     if not profile and not claims:
         typer.secho("No profile data", fg=typer.colors.RED, err=True)
         raise typer.Exit(1)
