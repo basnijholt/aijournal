@@ -3,12 +3,14 @@
 **aijournal** is a local-first, AI-powered journal designed to build a deep, evolving understanding of who you are. Imagine a diary that not only stores your thoughts but actively learns from them to maintain a detailed, evidence-linked model of your character—your motivations, goals, values, and ambitions.
 
 Everything is transparent and owned by you, stored in plain text Markdown and YAML files. As you add entries, `aijournal`:
-*   **Builds a Living Self-Model:** It continuously distills your writings into a structured "persona core" and a network of typed "claim atoms" about yourself.
-*   **Asks Probing Questions:** The `interview` and `chat` features are tailored to you, helping you reflect, close gaps in self-knowledge, and move toward your goals.
-*   **Provides Personalized Advice:** It can generate recommendations that are explicitly aligned with your stated values, goals, and boundaries.
-*   **Grows With You:** A scoring algorithm prioritizes recent events, ensuring your self-model is always an accurate, current description of you.
 
-Because your entire history is backed by Git, you can literally go back in time to ask questions of your younger self. This is more than a journal; it's a private, transparent, and reproducible model of you.
+*   **Builds a Living Self-Model:** It continuously distills your writings into a structured "persona core" and a network of typed "claim atoms" about yourself.
+*   **Organizes Knowledge in Four Layers (L1→L4):** From a compact persona core to your extended profile, recent activity, and background context, your self-model is organized for any use case.
+*   **Grows With You & Stays Current:** A recency-aware scoring algorithm (`strength × impact × decay`) ensures your self-model always reflects the person you are today.
+*   **Asks Probing Questions:** The `interview` and `chat` features are tailored to you, helping you reflect, close gaps in self-knowledge, and move toward your goals.
+*   **Enables Time Travel:** Because your entire history is backed by Git, you can check out any past commit, regenerate your self-model, and literally ask questions of your younger self.
+
+Runs entirely on your local machine with Ollama. No clouds, no black boxes—just a private, transparent, and reproducible model of you.
 
 ## Roadmap
 
