@@ -228,6 +228,10 @@ tests/CI.
 - Structured telemetry for every turn is emitted to stderr as a compact JSON line (`event:
   chat.telemetry`) so you can tail logs during automation.
 
+> Tip: transcripts, summaries, and learnings are just YAML/JSONL files—keep them under version
+> control or ship them into other tooling for audits. The telemetry log makes it easy to aggregate
+> response latency and chunk counts in shell pipelines.
+
 ### Chat daemon (FastAPI)
 
 ```sh
@@ -239,6 +243,17 @@ shape (`question`, `top`, optional filters, `session_id`, `feedback`, `save`) an
 NDJSON frames: a metadata header (telemetry, session, feedback adjustments) followed by the answer
 payload. Responses persist to `derived/chat_sessions/` when `save` is true, and claim-feedback
 nudges are applied automatically just like the CLI.
+
+Example `curl`:
+
+```sh
+curl -N \
+  -H 'Content-Type: application/json' \
+  -d '{"question": "How did I guard focus yesterday?", "session_id": "focus"}' \
+  http://127.0.0.1:8080/chat
+```
+
+Use `jq --unbuffered` or similar to stream each NDJSON frame.
 
 ### Profile suggestions
 

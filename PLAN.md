@@ -1053,5 +1053,11 @@ documentation parity, and live-mode polish moving without blocking on LLM availa
    - Advisor Mode also ingests the same ranking + pending prompts, weaving top information gaps into
      assumptions, steps, and alignment metadata.
 
+10. **docs: README/PLAN refresh + glossary alignment.** ✅ _Shipped 2025-10-29 with chat/advisor documentation updates._
+    - README now documents chat session persistence, feedback nudges, telemetry logging, FastAPI `chatd`
+      streaming usage, and Advisor Mode’s new ranking insights.
+    - PLAN.md and CHANGELOG.md were refreshed so roadmap status matches shipped surfaces, keeping
+      engineering and operator docs in sync.
+
 Document each milestone in CHANGELOG.md once merged so README and PLAN stay aligned with shipped
 surfaces.
