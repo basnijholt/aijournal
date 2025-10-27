@@ -1,4 +1,10 @@
-"""Typer CLI entrypoint for aijournal."""
+"""Typer CLI entrypoint for aijournal.
+
+This module intentionally keeps only Typer glue and lightweight interactive
+helpers. Command orchestration now lives under ``aijournal.commands``; any
+remaining utilities here support interactive previews that still require direct
+terminal IO.
+"""
 
 from __future__ import annotations
 
