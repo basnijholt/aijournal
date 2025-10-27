@@ -1092,10 +1092,7 @@ documentation parity, and live-mode polish moving without blocking on LLM availa
         persona core regenerated; chat session telemetry captured; pack outputs within token
         budgets.
     - **Focused production to-dos (live mode only).**
-      1. **Structured-output hardening.**  
-         - Strip markdown fences and trailing commentary before Pydantic validation.  
-         - Log the final JSON payload (or diff) whenever schema parsing fails so we can debug quickly.  
-         - Keep failure hard (no silent fallbacks); make sure errors surface clear remediation hints when the model does not honor the schema.
+      1. **Structured-output hardening.** ✅ _2025-10-29: `run_ollama_agent` now sanitizes fenced JSON and logs the cleaned payload on validation errors (`src/aijournal/services/ollama.py`, tests in `tests/test_ollama_services.py`). Chat/advise flows now require dedicated Pydantic response models with no heuristic fallbacks (see `src/aijournal/services/chat.py`, `src/aijournal/cli.py`)._
       2. **Prompt calibration for gpt-oss:20b.**  
          - Iterate on `extract_facts.md`, `profile_suggest.md`, and `characterize.md` so the model produces non-empty facts/suggestions on the seeded journal data.  
          - Add regression scripts (no fake mode) that run these prompts against `/tmp/aijournal_live_run_*` and save exemplar outputs.

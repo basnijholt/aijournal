@@ -37,6 +37,7 @@ from aijournal.io.chat_sessions import ChatSessionRecorder
 from aijournal.io.yaml_io import load_yaml_model, write_yaml_model
 from aijournal.models import (
     AdviceCard,
+    AdviceLLMResponse,
     AdviceRecommendation,
     AdviceReference,
     CharacterizeResponse,
@@ -775,25 +776,6 @@ def _structured_call_with_retry(
                 fg=typer.colors.YELLOW,
                 err=True,
             )
-
-
-def _safe_llm_json(
-    prompt_path: str,
-    variables: dict[str, str],
-    config: dict[str, Any],
-    *,
-    timeout: float | None = None,
-) -> dict[str, Any]:
-    prompt = _render_prompt(prompt_path, variables)
-    try:
-        resolved_config = build_ollama_config_from_mapping(
-            config,
-            timeout=timeout,
-        )
-        return run_ollama_agent(resolved_config, prompt)
-    except LLMResponseError as exc:
-        msg = f"Structured JSON parsing failed for {prompt_path}: {exc}"
-        raise LLMResponseError(msg) from exc
 
 
 def _journal_path(base: Path, dt: datetime, slug: str) -> Path:
@@ -2458,7 +2440,7 @@ def _advice_payload(
     rankings: Sequence[InterviewTarget],
     pending_prompts: Sequence[str],
 ) -> AdviceCard:
-    def fallback_model() -> AdviceCard:
+    if _use_fake_llm():
         return _fake_advise(
             question,
             profile,
@@ -2466,12 +2448,6 @@ def _advice_payload(
             rankings=rankings,
             pending_prompts=pending_prompts,
         )
-
-    def fallback_dict() -> dict[str, Any]:
-        return fallback_model().model_dump(mode="python")
-
-    if _use_fake_llm():
-        return fallback_model()
 
     rankings_payload = [
         {
@@ -2485,66 +2461,24 @@ def _advice_payload(
         for target in rankings[:8]
     ]
 
-    try:
-        payload = _safe_llm_json(
-            "prompts/advise.md",
-            {
-                "date": _created_date(_format_timestamp(_now())),
-                "question": question,
-                "profile_json": _json_block(profile),
-                "claims_json": _json_block(
-                    {"claims": [claim.model_dump(mode="python") for claim in claims]}
-                ),
-                "rankings_json": _json_block(rankings_payload),
-                "pending_prompts_json": _json_block(list(pending_prompts)),
-            },
-            config=config,
-        )
-    except LLMResponseError as exc:
-        typer.secho(
-            f"Advise schema mismatch ({exc}); using heuristic card.",
-            fg=typer.colors.YELLOW,
-            err=True,
-        )
-        payload = fallback_dict()
-    except Exception as exc:  # pragma: no cover
-        typer.secho(
-            f"Unable to configure Ollama for advise: {exc}",
-            fg=typer.colors.YELLOW,
-            err=True,
-        )
-        payload = fallback_dict()
+    response = _invoke_structured_llm(
+        "prompts/advise.md",
+        {
+            "date": _created_date(_format_timestamp(_now())),
+            "question": question,
+            "profile_json": _json_block(profile),
+            "claims_json": _json_block(
+                {"claims": [claim.model_dump(mode="python") for claim in claims]}
+            ),
+            "rankings_json": _json_block(rankings_payload),
+            "pending_prompts_json": _json_block(list(pending_prompts)),
+        },
+        response_model=AdviceLLMResponse,
+        agent_name="aijournal-advise",
+        config=config,
+    )
 
-    fallback_defaults = fallback_model().model_dump(mode="python")
-    advice_data = dict(payload)
-    advice_data.setdefault("id", _advice_identifier(question))
-    advice_data.setdefault("query", question)
-
-    assumptions = advice_data.get("assumptions")
-    if not isinstance(assumptions, list) or not assumptions:
-        advice_data["assumptions"] = fallback_defaults.get("assumptions", [])
-
-    recommendations = advice_data.get("recommendations")
-    if not isinstance(recommendations, list) or not recommendations:
-        advice_data["recommendations"] = fallback_defaults.get("recommendations", [])
-
-    advice_data.setdefault("tradeoffs", fallback_defaults.get("tradeoffs", []))
-    advice_data.setdefault("next_actions", fallback_defaults.get("next_actions", []))
-    advice_data.setdefault("confidence", fallback_defaults.get("confidence", 0.6))
-
-    alignment = advice_data.get("alignment")
-    if not isinstance(alignment, dict):
-        advice_data["alignment"] = fallback_defaults.get("alignment", {"facets": [], "claims": []})
-
-    style = advice_data.get("style")
-    if not isinstance(style, dict):
-        advice_data["style"] = profile.get("coaching_prefs", {})
-
-    try:
-        return AdviceCard.model_validate(advice_data)
-    except ValidationError:
-        # Fall back to the deterministic fake advice if validation fails.
-        return fallback_model()
+    return AdviceCard.model_validate(response.model_dump(mode="python"))
 
 
 @app.command()
