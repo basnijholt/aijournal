@@ -111,7 +111,7 @@ _For each pipeline: (1) add the new module + unit test, commit; (2) update the C
 17. [x] Add `pipelines/normalization.py`; move `_normalize_*`, `_simple_claim_to_upsert`, `_clean_summary`, etc., from `cli.py`; add unit tests (e.g., `_normalize_claim_atom`).  
     → `uv run pytest`
 
-18. Add `pipelines/summarize.py` (`generate_summary`), refactor CLI to call it, add `tests/pipelines/test_summarize.py`.  
+18. [x] Add `pipelines/summarize.py` (`generate_summary`), refactor CLI to call it, add `tests/pipelines/test_summarize.py`.  
     → `uv run pytest`
 
 19. Add `pipelines/facts.py` (`generate_microfacts`), update CLI/tests.  
