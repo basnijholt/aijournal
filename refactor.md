@@ -105,7 +105,7 @@ Decompose the 5.8k LOC `cli.py` and 700 LOC `models/__init__.py` into modular pa
 
 _For each pipeline: (1) add the new module + unit test, commit; (2) update the CLI to call it, commit (re-run `uv run pytest` after each). Include module docstrings clarifying that pipelines orchestrate services and I/O for a single use case._
 
-16. Create `pipelines/__init__.py` with a docstring distinguishing pipelines from services (pipelines orchestrate; services provide reusable capabilities).  
+16. [x] Create `pipelines/__init__.py` with a docstring distinguishing pipelines from services (pipelines orchestrate; services provide reusable capabilities).  
     → `uv run pytest`
 
 17. Add `pipelines/normalization.py`; move `_normalize_*`, `_simple_claim_to_upsert`, `_clean_summary`, etc., from `cli.py`; add unit tests (e.g., `_normalize_claim_atom`).  
