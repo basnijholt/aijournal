@@ -120,7 +120,7 @@ _For each pipeline: (1) add the new module + unit test, commit; (2) update the C
 20. [x] Add `pipelines/persona.py`, update CLI/tests.  
     → `uv run pytest`
 
-21. Add `pipelines/characterize.py`, update CLI/tests.  
+21. [x] Add `pipelines/characterize.py`, update CLI/tests.  
     → `uv run pytest`
 
 22. Add `pipelines/advise.py`, update CLI/tests.  
