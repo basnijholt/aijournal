@@ -80,7 +80,7 @@ Decompose the 5.8k LOC `cli.py` and 700 LOC `models/__init__.py` into modular pa
 10. [x] Create `models/authoritative.py` (ManifestEntry, JournalEntry, NormalizedEntry, ClaimsFile, SelfProfile, etc.) and re-export in `models/__init__.py` (keep `claim_atoms.py`/`base.py` imports consistent).  
     → `uv run pytest`
 
-11. Create `models/derived.py` (DailySummary, MicroFactsFile, AdviceCard, PersonaCore*, IndexMeta, …) and re-export.  
+11. [x] Create `models/derived.py` (DailySummary, MicroFactsFile, AdviceCard, PersonaCore*, IndexMeta, …) and re-export.  
     → `uv run pytest`
 
 12. Create `models/responses.py` (DailySummaryResponse, ExtractedFactsResponse, CharacterizeResponse, SimpleProfileSuggestionsResponse, …); update imports.  
