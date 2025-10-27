@@ -95,6 +95,7 @@ from aijournal.services import (
     apply_chat_feedback,
     build_chat_app,
     build_ollama_config_from_mapping,
+    extract_claim_markers,
     resolve_ollama_host,
     run_ollama_agent,
 )
@@ -5249,6 +5250,7 @@ def _render_chat_turn(
 
 
 def _log_chat_telemetry(turn: ChatTurn, *, session_id: str | None) -> None:
+    claim_markers = extract_claim_markers(turn.answer)
     payload = {
         "event": "chat.telemetry",
         "session_id": session_id,
@@ -5257,7 +5259,14 @@ def _log_chat_telemetry(turn: ChatTurn, *, session_id: str | None) -> None:
         "chunks": turn.telemetry.chunk_count,
         "model": turn.telemetry.model,
         "clarifying": bool(turn.clarifying_question),
+        "claim_markers": claim_markers,
     }
+    if not claim_markers and session_id is not None and turn.persona.claims:
+        typer.secho(
+            "No persona claim markers were referenced; thumbs up/down cannot adjust claim strengths.",
+            fg=typer.colors.YELLOW,
+            err=True,
+        )
     typer.echo(json.dumps(payload, ensure_ascii=False), err=True)
 
 
