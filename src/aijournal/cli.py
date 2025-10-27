@@ -8,7 +8,7 @@ import random
 import re
 import sqlite3
 from collections.abc import Callable, Iterable, Sequence
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from pathlib import Path
@@ -72,6 +72,7 @@ from aijournal.pipelines import characterize as characterize_pipeline
 from aijournal.pipelines import facts as facts_pipeline
 from aijournal.pipelines import index as index_pipeline
 from aijournal.pipelines import normalization
+from aijournal.pipelines import pack as pack_pipeline
 from aijournal.pipelines import persona as persona_pipeline
 from aijournal.pipelines import summarize as summarize_pipeline
 from aijournal.schema import SchemaValidationError, validate_schema
@@ -123,53 +124,6 @@ def main() -> None:
     return
 
 
-ROLE_ORDER = [
-    "persona_core",
-    "profile",
-    "claims",
-    "config",
-    "prompt",
-    "normalized",
-    "summaries",
-    "microfacts",
-    "advice",
-    "profile_suggestions",
-    "journal_raw",
-]
-
-TRIM_PRIORITY = [
-    "journal_raw",
-    "prompt",
-    "config",
-    "advice",
-    "profile_suggestions",
-    "microfacts",
-    "summaries",
-    "normalized",
-    "claims",
-    "profile",
-]
-
-PERSONA_DEFAULTS = {
-    "token_budget": 1200,
-    "max_claims": 24,
-    "min_claims": 8,
-}
-
-DEFAULT_CHAR_PER_TOKEN = 4.2
-
-HIGH_IMPACT_PROBES = [
-    "- Top 3 values you refuse to trade off—rank them.",
-    "- One long-term goal that matters most this year—and why now?",
-    "- When speed and quality conflict, what do you choose by default?",
-    "- List 2 anti-goals (things you want to avoid) and the reasons.",
-    "- Your risk posture in career moves: low / medium / high—why?",
-    "- Energy map: when are you best for deep work vs admin?",
-    "- Feedback style you prefer when you’re wrong?",
-    "- Three coping strategies that reliably help under stress.",
-]
-
-
 @dataclass(frozen=True)
 class InterviewTarget:
     """Candidate facet/claim/prompt ranked for interview follow-ups."""
@@ -185,47 +139,6 @@ class InterviewTarget:
 INDEX_DB_FILENAME = "index.db"
 ANNOY_FILENAME = "annoy.index"
 INDEX_META_FILENAME = "meta.json"
-
-
-@dataclass
-class PackEntry:
-    """Context file included in a pack."""
-
-    role: str
-    path: str
-    tokens: int
-    content: str
-
-
-@dataclass
-class TrimmedFile:
-    """Metadata describing a trimmed pack entry."""
-
-    role: str
-    path: str
-
-
-@dataclass
-class PackMeta:
-    """Pack-level metadata."""
-
-    total_tokens: int
-    max_tokens: int
-    trimmed: list[TrimmedFile]
-    generated_at: str
-
-
-@dataclass
-class PackBundle:
-    """Structured bundle for pack output."""
-
-    level: str
-    date: str
-    files: list[PackEntry]
-    meta: PackMeta
-
-    def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
 
 
 FAKE_TIME_BLOCKS = [
@@ -305,6 +218,25 @@ DEFAULT_PROMPTS = {
     "advise.md": "Return an advice card JSON with recommendations citing facets and claims.",
     "characterize.md": ("Return JSON with claims and facets describing pending profile updates."),
 }
+
+HIGH_IMPACT_PROBES = [
+    "- Top 3 values you refuse to trade off—rank them.",
+    "- One long-term goal that matters most this year—and why now?",
+    "- When speed and quality conflict, what do you choose by default?",
+    "- List 2 anti-goals (things you want to avoid) and the reasons.",
+    "- Your risk posture in career moves: low / medium / high—why?",
+    "- Energy map: when are you best for deep work vs admin?",
+    "- Feedback style you prefer when you’re wrong?",
+    "- Three coping strategies that reliably help under stress.",
+]
+
+PERSONA_DEFAULTS = {
+    "token_budget": 1200,
+    "max_claims": 24,
+    "min_claims": 8,
+}
+
+DEFAULT_CHAR_PER_TOKEN = 4.2
 
 
 def _load_prompt_template(prompt_path: str) -> str:
@@ -3164,177 +3096,6 @@ def _write_json_if_changed(path: Path, payload: dict[str, Any]) -> bool:
     return True
 
 
-def _pack_trim_entries(
-    entries: list[PackEntry],
-    budget: int,
-    trimmed: list[TrimmedFile],
-) -> None:
-    priority_roles = TRIM_PRIORITY
-
-    def total_tokens() -> int:
-        return sum(entry.tokens for entry in entries)
-
-    if total_tokens() <= budget:
-        return
-
-    for role in priority_roles:
-        for entry in entries:
-            if entry.role == role and entry.tokens > 0:
-                trimmed.append(TrimmedFile(role=role, path=entry.path))
-                entry.content = "(trimmed due to token budget)"
-                entry.tokens = 0
-                if total_tokens() <= budget:
-                    return
-
-
-def _collect_pack_entries(
-    root: Path,
-    level: str,
-    date: str,
-    history_days: int,
-) -> list[tuple[str, Path]]:
-    level = level.upper()
-    entries: list[tuple[str, Path, int]] = []
-
-    def add_path(
-        role: str,
-        path: Path,
-        *,
-        required: bool = False,
-        day_index: int = 0,
-    ) -> None:
-        if path.is_file():
-            entries.append((role, path, day_index))
-        elif required:
-            msg = f"Missing required file {path}"
-            typer.secho(msg, fg=typer.colors.RED, err=True)
-            raise typer.Exit(1)
-
-    def add_dir(
-        role: str,
-        directory: Path,
-        *,
-        required: bool = False,
-        pattern: str | None = None,
-        recursive: bool = False,
-        day_index: int = 0,
-    ) -> None:
-        if not directory.exists():
-            if required:
-                msg = f"Missing required files under {directory}"
-                typer.secho(msg, fg=typer.colors.RED, err=True)
-                raise typer.Exit(1)
-            return
-        if recursive:
-            files = sorted(p for p in directory.rglob("*") if p.is_file())
-        elif pattern:
-            files = sorted(directory.glob(pattern))
-        else:
-            files = sorted(p for p in directory.iterdir() if p.is_file())
-        if not files and required:
-            msg = f"Missing required files under {directory}"
-            typer.secho(msg, fg=typer.colors.RED, err=True)
-            raise typer.Exit(1)
-        for file in files:
-            entries.append((role, file, day_index))
-
-    def add_day_artifacts(
-        day: str,
-        day_index: int,
-        *,
-        include_normalized: bool,
-        include_summary: bool,
-        include_microfacts: bool,
-        include_raw: bool,
-        required_core: bool,
-    ) -> None:
-        if include_normalized:
-            normalized_dir = root / "data" / "normalized" / day
-            add_dir(
-                "normalized",
-                normalized_dir,
-                required=required_core,
-                pattern="*.yaml",
-                day_index=day_index,
-            )
-        if include_summary:
-            summary_path = root / "derived" / "summaries" / f"{day}.yaml"
-            add_path("summaries", summary_path, day_index=day_index)
-        if include_microfacts:
-            microfacts_path = root / "derived" / "microfacts" / f"{day}.yaml"
-            add_path("microfacts", microfacts_path, day_index=day_index)
-        if include_raw:
-            year, month, day_part = day.split("-")
-            journal_dir = root / "data" / "journal" / year / month / day_part
-            add_dir("journal_raw", journal_dir, pattern="*.md", day_index=day_index)
-
-    if level not in {"L1", "L2", "L3", "L4"}:
-        msg = f"Unsupported level {level}"
-        typer.secho(msg, fg=typer.colors.RED, err=True)
-        raise typer.Exit(1)
-
-    persona_core_path = root / "derived" / "persona" / "persona_core.yaml"
-    add_path("persona_core", persona_core_path, required=True)
-
-    if level == "L1":
-        role_rank = {role: idx for idx, role in enumerate(ROLE_ORDER)}
-        entries.sort(
-            key=lambda item: (role_rank.get(item[0], len(ROLE_ORDER)), item[2], str(item[1])),
-        )
-        return [(role, path) for role, path, _ in entries]
-
-    add_path("profile", root / "profile" / "self_profile.yaml", required=True)
-    add_path("claims", root / "profile" / "claims.yaml", required=True)
-
-    include_history = level == "L4"
-    if level in {"L2", "L3", "L4"}:
-        anchor = datetime.fromisoformat(date)
-        day_offsets: list[tuple[str, int]] = [(date, 0)]
-        if include_history and history_days > 0:
-            for offset in range(1, history_days + 1):
-                prior = (anchor - timedelta(days=offset)).strftime("%Y-%m-%d")
-                day_offsets.append((prior, offset))
-
-        for day_value, idx in day_offsets:
-            add_day_artifacts(
-                day_value,
-                idx,
-                include_normalized=True,
-                include_summary=True,
-                include_microfacts=True,
-                include_raw=include_history,
-                required_core=idx == 0,
-            )
-
-        if level == "L2":
-            for offset in range(1, 7):
-                prior = (anchor - timedelta(days=offset)).strftime("%Y-%m-%d")
-                add_day_artifacts(
-                    prior,
-                    offset,
-                    include_normalized=False,
-                    include_summary=True,
-                    include_microfacts=True,
-                    include_raw=False,
-                    required_core=False,
-                )
-
-    if level in {"L3", "L4"}:
-        advice_dir = root / "derived" / "advice" / date
-        add_dir("advice", advice_dir, pattern="*.yaml")
-        profile_suggestions = root / "derived" / "profile_suggestions" / f"{date}.yaml"
-        add_path("profile_suggestions", profile_suggestions)
-
-    if level == "L4":
-        prompts_dir = root / "prompts"
-        add_dir("prompt", prompts_dir, pattern="*.md", recursive=True)
-        add_path("config", root / "config" / "config.yaml")
-
-    role_rank = {role: idx for idx, role in enumerate(ROLE_ORDER)}
-    entries.sort(key=lambda item: (role_rank.get(item[0], len(ROLE_ORDER)), item[2], str(item[1])))
-    return [(role, path) for role, path, _ in entries]
-
-
 def _latest_normalized_day(root: Path) -> str | None:
     base = root / "data" / "normalized"
     if not base.exists():
@@ -3353,23 +3114,6 @@ def _resolve_pack_date(level: str, requested: str | None, root: Path) -> str:
         return latest
     typer.secho("No normalized entries available; provide --date.", fg=typer.colors.RED, err=True)
     raise typer.Exit(1)
-
-
-def _build_pack_payload(
-    entries: list[PackEntry],
-    level: str,
-    date: str,
-    trimmed: list[TrimmedFile],
-    total_tokens: int,
-    max_tokens: int,
-) -> PackBundle:
-    meta = PackMeta(
-        total_tokens=total_tokens,
-        max_tokens=max_tokens,
-        trimmed=trimmed,
-        generated_at=time_utils.format_timestamp(time_utils.now()),
-    )
-    return PackBundle(level=level, date=date, files=entries, meta=meta)
 
 
 @app.command("pack")
@@ -3413,20 +3157,24 @@ def pack(
     _, _, char_per_token = _index_settings(config)
     _ensure_persona_ready_for_pack(root)
     resolved_date = _resolve_pack_date(level, date, root)
-    entries_info = _collect_pack_entries(
-        root,
-        level,
-        resolved_date,
-        history_days if level == "L4" else 0,
-    )
+    try:
+        entries_info = pack_pipeline.collect_pack_entries(
+            root,
+            level,
+            resolved_date,
+            history_days if level == "L4" else 0,
+        )
+    except pack_pipeline.PackAssemblyError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        raise typer.Exit(1)
 
-    entries_payload: list[PackEntry] = []
+    entries_payload: list[pack_pipeline.PackEntry] = []
     for role, path in entries_info:
         text = path.read_text(encoding="utf-8")
         rel = _relative_source_path(path, root)
         tokens = index_pipeline.token_estimate(text, char_per_token)
         entries_payload.append(
-            PackEntry(
+            pack_pipeline.PackEntry(
                 role=role,
                 path=rel,
                 tokens=tokens,
@@ -3435,12 +3183,12 @@ def pack(
         )
 
     total_tokens = sum(entry.tokens for entry in entries_payload)
-    trimmed: list[TrimmedFile] = []
+    trimmed: list[pack_pipeline.TrimmedFile] = []
     if total_tokens > budget:
-        _pack_trim_entries(entries_payload, budget, trimmed)
+        pack_pipeline.trim_entries(entries_payload, budget, trimmed)
         total_tokens = sum(entry.tokens for entry in entries_payload)
 
-    payload = _build_pack_payload(
+    payload = pack_pipeline.build_pack_payload(
         entries_payload,
         level,
         resolved_date,
