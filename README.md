@@ -42,6 +42,8 @@ Use the following flow to keep your journal, profile, and retrieval artifacts in
    - `aijournal pack --level L1 --format yaml`
 6. Use conversational surfaces (`aijournal chat`, `chatd`, `advise`) and apply queued feedback with `aijournal feedback-apply`.
 
+A quick reminder for live mode: export `AIJOURNAL_OLLAMA_HOST` to the remote Ollama address before running the pipeline so chat, summarize, and retrieval calls don't fall back to localhost.
+
 A more detailed walkthrough lives in [docs/workflow.md](docs/workflow.md).
 
 ```sh
@@ -66,7 +68,7 @@ Run `aijournal init` inside a fresh directory to materialize `data/`, `derived/`
   per-command tweaks so every CLI surface hits the same configuration pipeline. Set
   `AIJOURNAL_OLLAMA_HOST=http://localhost:11434` if you run Ollama elsewhere, or
   `AIJOURNAL_MODEL="llama3.1:8b-instruct"` to pick a different chat/advice model.
-  Commands retry schema/timeout issues once (`--retries`) and then fail loudly with an error.
+  Commands retry schema issues once (`--retries`) and then fail loudly with an error.
 - **Fake mode (tests/CI):** `export AIJOURNAL_FAKE_OLLAMA=1` to route every agent call through
   deterministic fixtures. This mode must be set explicitly; the CLI never auto-falls back from live mode.
 
@@ -144,8 +146,8 @@ directories can take a couple of minutes to process—let the command run to com
 your wrapper's timeout if you're invoking it from automation.
 
 Downstream LLM-backed commands (`summarize`, `facts`, `profile suggest`, `characterize`) now share a
-consistent ergonomics layer: `--progress` surfaces per-entry logging, `--timeout` tunes the per-call
-budget, and `--retries` controls structured-output retries before surfacing an explicit failure. All
+consistent ergonomics layer: `--progress` surfaces per-entry logging and `--retries` controls
+structured-output retries before surfacing an explicit failure. All
 of them resolve model/temperature/host via `build_ollama_config_from_mapping` before delegating to
 `run_ollama_agent`, so behavior stays aligned across CLI surfaces. Fake mode remains available for
 CI/tests by setting `AIJOURNAL_FAKE_OLLAMA=1`.
@@ -171,8 +173,7 @@ Calls `prompts/summarize_day.md` through Ollama and writes `derived/summaries/<D
 `summarize` (and the other LLM-backed commands) now streams responses through
 Pydantic AI's structured output validation. The CLI requests a `DailySummaryResponse`
 Pydantic model from the model and retries schema failures up to `--retries`
-times (default 1). Use `--timeout` to extend the per-call budget (defaults to
-120s) and `--progress` to print each normalized entry before the request is
+times (default 1). Use `--progress` to print each normalized entry before the request is
 sent. If the model keeps returning invalid JSON after the configured retries, the
 command aborts with an actionable error so you can inspect the upstream output.
 
@@ -193,8 +194,7 @@ Any conflicts are scope-split (weekday vs. weekend, solo vs. team) before fallin
 back to tentative downgrades, and queued follow-up prompts surface in the CLI so
 you can jump straight into `aijournal interview`.
 
-Pass `--progress` to watch the entry-by-entry feed, `--timeout` to adjust the
-per-call budget, and `--retries` to control how many schema failures trigger a
+Pass `--progress` to watch the entry-by-entry feed and `--retries` to control how many schema failures trigger a
 retry. Responses are validated against the `ExtractedFactsResponse` schema; if
 validation still fails after the configured retries, the command stops with an
 error instead of silently emitting heuristics.
@@ -315,7 +315,7 @@ Runs `prompts/profile_suggest.md` with the current profile + claims and stores
 same typed structures (claim upserts + facet updates) to keep pipelines consistent.
 
 The live command asks the model for a simplified `suggestions` array (claims and
-facets) via Pydantic AI's structured output support. Use `--progress`, `--timeout`, and
+facets) via Pydantic AI's structured output support. Use `--progress` and
 `--retries` to mirror the ergonomics of the other pipelines; if schema validation
 fails after the configured retries, the CLI exits with an error so upstream
 prompt/debugging is explicit.
@@ -365,8 +365,7 @@ aijournal characterize --date 2025-02-03
 Runs the characterization agent (or deterministic fake mode) and emits a batch
 under `derived/pending/profile_updates/<DATE>-<TIMESTAMP>.yaml`. Each batch
 captures claim/facet proposals plus the manifest hashes that justify them.
-`--progress`, `--timeout`, and `--retries` mirror the other commands. The
-structured response must satisfy the `CharacterizeResponse` schema; otherwise
+`--progress` and `--retries` mirror the other commands. The structured response must satisfy the `CharacterizeResponse` schema; otherwise
 the CLI prints a warning, retries if configured, and finally falls back to the
 deterministic profile-updater when schema validation keeps failing. Interview
 prompts returned by the model are merged with the consolidation preview so they

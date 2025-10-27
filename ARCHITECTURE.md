@@ -205,7 +205,7 @@ All structured prompts go through `run_ollama_agent`, which sanitizes JSON, retr
 ## 9. Performance Considerations
 
 - Journals are small and YAML parsing is fast. Retrieval performance hinges on the Annoy index; rebuilding remains quick even with tens of thousands of chunks.
-- Structured-output commands (summaries, facts, characterize, advise) run sequentially and typically complete within seconds under `gpt-oss:20b`. Increase `--timeout` when working with slower models.
+- Structured-output commands (summaries, facts, characterize, advise) run sequentially and typically complete within seconds under `gpt-oss:20b`.
 - Caching hooks (`derived/cache/`) can capture prompt outputs keyed by `(model, prompt_hash, inputs_hash)` if future workloads demand reuse.
 - Keep an eye on retrieval latency via chat telemetry; maintaining `index.meta.json` helps correlate ANN parameters (`ann_trees`, `search_k_factor`) with observed timings.
 
