@@ -96,7 +96,7 @@ Decompose the 5.8k LOC `cli.py` and 700 LOC `models/__init__.py` into modular pa
 14. [x] Create `src/aijournal/fakes.py` (or `fakes/__init__.py`) and move `_fake_*` generators from `cli.py`; update CLI/tests.  
     → `uv run pytest`
 
-15. Confirm fake outputs remain deterministic; tweak tests if needed.  
+15. [x] Confirm fake outputs remain deterministic; tweak tests if needed.  
     → `uv run pytest`
 
 ---
