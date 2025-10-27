@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from aijournal.cli import _simple_suggestions_to_profile
+from aijournal.commands.profile import _simple_suggestions_to_profile
 from aijournal.models import (
     ProfileSuggestionUpdate,
     SimpleProfileSuggestionsResponse,
