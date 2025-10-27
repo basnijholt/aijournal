@@ -8,6 +8,20 @@ A complete, self‑contained blueprint to implement a private, offline, reproduc
 
 ---
 
+# How I explain it to others
+
+I've been working on a project, `aijournal`, inspired by a simple idea: What if a diary could completely know you?
+
+Imagine a journal that learns from your entries to continuously maintain a detailed description of your character—your motivations, goals, ambitions, and values—and links every insight to the real artifacts you've provided. In `aijournal`, everything is stored in plain text, so it’s completely transparent and under your control.
+
+As it grows with you, it asks probing questions tailored specifically to you, helping you reflect and achieve your goals. Over time, it condenses the totality of who you are into a rich, structured self-model.
+
+And here’s why that’s so powerful: We all know that getting useful advice from an LLM requires providing the right context. **Context is everything.** `aijournal` builds that context for you, so you can easily share your self-model with any AI to brainstorm decisions without starting from scratch every single time.
+
+Because all descriptions are just plain text files managed by Git, you can even go back to any point in time and ask questions of your younger self. This is my take on what an AI journal is meant to be.
+
+---
+
 ## 1. Vision and Principles
 
 - Private and offline: runs entirely on localhost with Ollama.
@@ -1054,10 +1068,18 @@ documentation parity, and live-mode polish moving without blocking on LLM availa
      assumptions, steps, and alignment metadata.
 
 10. **docs: README/PLAN refresh + glossary alignment.** ✅ _Shipped 2025-10-29 with chat/advisor documentation updates._
-    - README now documents chat session persistence, feedback nudges, telemetry logging, FastAPI `chatd`
-      streaming usage, and Advisor Mode’s new ranking insights.
-    - PLAN.md and CHANGELOG.md were refreshed so roadmap status matches shipped surfaces, keeping
-      engineering and operator docs in sync.
+   - README now documents chat session persistence, feedback nudges, telemetry logging, FastAPI `chatd`
+     streaming usage, and Advisor Mode’s new ranking insights.
+   - PLAN.md and CHANGELOG.md were refreshed so roadmap status matches shipped surfaces, keeping
+     engineering and operator docs in sync.
+
+11. **ops: strengthen end-to-end ergonomics.** 🚧
+    - Add smoke-test helpers that automatically export `AIJOURNAL_FAKE_OLLAMA=1` (or detect missing
+      live models) before running summarize/facts/index search so CI/user runs avoid 404s.
+    - Improve command scoring/reporting discipline in the runbook: treat missing model/network
+      failures as 0/10 until automatically mitigated, and surface follow-up remediation steps.
+    - Enhance health checks to distinguish fake payloads vs. live Ollama availability, annotating
+      results to avoid overconfidence when working offline.
 
 Document each milestone in CHANGELOG.md once merged so README and PLAN stay aligned with shipped
 surfaces.
