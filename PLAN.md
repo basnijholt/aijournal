@@ -1043,14 +1043,15 @@ documentation parity, and live-mode polish moving without blocking on LLM availa
      honouring `coaching_prefs.probing.max_questions` and falling back gracefully to heuristics in
      fake mode. Tests cover both fake and live-mode flows.
 
-9. **feat(interview+advisor): information-gain ranking & scope-aware prompts.** ✅ _Shipped 2025-10-29 with richer interview targeting; advisor upgrades to follow._
+9. **feat(interview+advisor): information-gain ranking & scope-aware prompts.** ✅ _Shipped 2025-10-29 with richer interview targeting and advisor alignment._
    - Interview ranking now blends staleness, strength, claim status, scope coverage, and recent
      entry tags to prioritise high-impact follow-ups, while pending review prompts are surfaced as
      top-priority questions.
    - CLI fallback questions reference the new metadata (missing contexts, reasons), and the live LLM
      prompt (`prompts/interview.md`) receives the structured payload (`kind`, `reasons`,
      `missing_context`) so generated probes stay scope-aware.
-   - Advisor-mode changes will build on this richer signal in a follow-up milestone.
+   - Advisor Mode also ingests the same ranking + pending prompts, weaving top information gaps into
+     assumptions, steps, and alignment metadata.
 
 Document each milestone in CHANGELOG.md once merged so README and PLAN stay aligned with shipped
 surfaces.

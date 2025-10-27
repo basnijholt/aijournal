@@ -1714,6 +1714,9 @@ def _fake_advise(
     question: str,
     profile: dict[str, Any],
     claims: Sequence[ClaimAtom],
+    *,
+    rankings: Sequence[InterviewTarget] | None = None,
+    pending_prompts: Sequence[str] | None = None,
 ) -> AdviceCard:
     primary_claim = claims[0] if claims else None
     advice_id = _advice_identifier(question)
@@ -1728,14 +1731,19 @@ def _fake_advise(
     if profile.get("values_motivations"):
         facets.append("values_motivations.schwartz_top5")
 
-    alignment = AdviceReference(
-        facets=facets,
-        claims=[claim_id] if claim_id else [],
-    )
+    alignment = AdviceReference(facets=facets, claims=[claim_id] if claim_id else [])
 
-    assumption = (
-        f"Reference claim: {claim_statement}" if claim_statement else "No verified claims available"
-    )
+    top_priority = rankings[0] if rankings else None
+    assumption_lines = []
+    if claim_statement:
+        assumption_lines.append(f"Reference claim: {claim_statement}")
+    if top_priority:
+        reason = "; ".join(top_priority.reasons[:1]) if top_priority.reasons else "needs review"
+        assumption_lines.append(f"Follow-up focus: {top_priority.path} ({reason}).")
+        if top_priority.kind == "claim" and top_priority.claim_id:
+            alignment.claims = list({top_priority.claim_id, *alignment.claims})
+        elif top_priority.kind == "facet":
+            alignment.facets = list({top_priority.path, *alignment.facets})
 
     recommendation = AdviceRecommendation(
         title=claim_statement,
@@ -1754,12 +1762,15 @@ def _fake_advise(
         ],
     )
 
+    if pending_prompts:
+        recommendation.steps.append(f"Journal on pending prompt: {pending_prompts[0]}")
+
     style = profile.get("coaching_prefs") or {"tone": "direct", "depth": "concrete-first"}
 
     return AdviceCard(
         id=advice_id,
         query=question,
-        assumptions=[assumption],
+        assumptions=assumption_lines or ["No verified claims available"],
         recommendations=[recommendation],
         tradeoffs=["Shipping speed may dip slightly while routines stabilize."],
         next_actions=[
@@ -2443,15 +2454,36 @@ def _advice_payload(
     profile: dict[str, Any],
     claims: Sequence[ClaimAtom],
     config: dict[str, Any],
+    *,
+    rankings: Sequence[InterviewTarget],
+    pending_prompts: Sequence[str],
 ) -> AdviceCard:
     def fallback_model() -> AdviceCard:
-        return _fake_advise(question, profile, claims)
+        return _fake_advise(
+            question,
+            profile,
+            claims,
+            rankings=rankings,
+            pending_prompts=pending_prompts,
+        )
 
     def fallback_dict() -> dict[str, Any]:
         return fallback_model().model_dump(mode="python")
 
     if _use_fake_llm():
         return fallback_model()
+
+    rankings_payload = [
+        {
+            "path": target.path,
+            "score": target.score,
+            "kind": target.kind,
+            "reasons": list(target.reasons),
+            "claim_id": target.claim_id,
+            "missing_context": list(target.missing_context),
+        }
+        for target in rankings[:8]
+    ]
 
     try:
         payload = _safe_llm_json(
@@ -2463,6 +2495,8 @@ def _advice_payload(
                 "claims_json": _json_block(
                     {"claims": [claim.model_dump(mode="python") for claim in claims]}
                 ),
+                "rankings_json": _json_block(rankings_payload),
+                "pending_prompts_json": _json_block(list(pending_prompts)),
             },
             config=config,
         )
@@ -3232,7 +3266,26 @@ def advise(
         raise typer.Exit(1)
 
     config = _load_config(root)
-    advice_card = _advice_payload(question, profile, claims, config)
+    weights = config.get("impact_weights", {})
+    latest_day = _latest_normalized_day(root)
+    entries = _load_normalized_entries(root, latest_day) if latest_day else []
+    pending_prompts = _collect_pending_interview_prompts(root)
+    rankings = _compute_rankings(
+        profile,
+        claims,
+        weights,
+        _now(),
+        entries=entries,
+        pending_prompts=pending_prompts,
+    )
+    advice_card = _advice_payload(
+        question,
+        profile,
+        claims,
+        config,
+        rankings=rankings,
+        pending_prompts=pending_prompts,
+    )
     model_name = (
         "fake-ollama" if _use_fake_llm() else build_ollama_config_from_mapping(config).model
     )

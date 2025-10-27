@@ -201,6 +201,9 @@ Builds an advice card under `derived/advice/<DATE>/<slug>.yaml` using `prompts/a
 facets/claims referenced in each recommendation. Fake mode remains available for CI by setting
 `AIJOURNAL_FAKE_OLLAMA=1`.
 
+- Advisor Mode now consumes the same interview ranking signal used by `aijournal interview`, so
+  follow-up prompts and scope gaps surface in the assumptions/steps without extra prompting.
+
 ### Retrieval-backed chat (CLI)
 
 ```sh

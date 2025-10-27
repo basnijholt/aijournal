@@ -70,6 +70,17 @@ boundaries_ethics:
     _write_yaml(tmp_path / "profile" / "claims.yaml", claims)
 
 
+def _seed_pending_prompt(tmp_path: Path) -> None:
+    payload = {
+        "preview": {
+            "interview_prompts": ["Where do morning routines break down during travel weeks?"],
+        }
+    }
+    path = tmp_path / "derived" / "pending" / "profile_updates" / "pending.yaml"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
+
+
 def _invoke(tmp_path: Path) -> tuple[str, Path, int]:
     env = {"AIJOURNAL_FAKE_OLLAMA": "1"}
     result = runner.invoke(app, ["advise", "How to plan next week?"], env=env)
@@ -83,6 +94,7 @@ def _invoke(tmp_path: Path) -> tuple[str, Path, int]:
 def test_advise_generates_advice(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.chdir(tmp_path)
     _seed_profile(tmp_path)
+    _seed_pending_prompt(tmp_path)
 
     output, advice_file, _count = _invoke(tmp_path)
     assert str(advice_file) in output
@@ -90,6 +102,10 @@ def test_advise_generates_advice(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     data = yaml.safe_load(advice_file.read_text(encoding="utf-8"))
     assert isinstance(data.get("recommendations"), list)
     assert data.get("alignment")
+    assumptions = data.get("assumptions") or []
+    assert any("pending" in entry.lower() for entry in assumptions)
+    steps = data.get("recommendations", [{}])[0].get("steps") or []
+    assert any("travel weeks" in step.lower() for step in steps)
     meta = data.get("meta", {})
     for key in ("llm_model", "prompt_path", "prompt_hash", "created_at"):
         assert meta.get(key)
@@ -98,6 +114,7 @@ def test_advise_generates_advice(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 def test_advise_is_idempotent(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.chdir(tmp_path)
     _seed_profile(tmp_path)
+    _seed_pending_prompt(tmp_path)
 
     output1, advice_file, count1 = _invoke(tmp_path)
     before = advice_file.stat().st_mtime

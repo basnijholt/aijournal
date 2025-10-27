@@ -15,7 +15,7 @@
 - Introduced `aijournal chatd` (FastAPI) which streams NDJSON responses, mirrors the CLI orchestrator, and reuses the transcript/feedback plumbing; accompanying tests exercise the API in fake mode.
 - Reworked `prompts/characterize.md` and live-mode handlers so structured responses validate cleanly; added coverage that patches the structured runner. `aijournal interview` now calls a new `prompts/interview.md` workflow in live mode while respecting `coaching_prefs.probing` limits.
 - Added Python telemetry hooks for `aijournal pack` (token budgets) and chat (retrieval latency) so automation can tail structured logs.
-- Interview ranking now applies information-gain heuristics (staleness, strength, scope gaps, pending prompts) with richer metadata for prompts, giving both the CLI fallback and live LLM path context-aware, scope-specific questions.
+- Interview ranking now applies information-gain heuristics (staleness, strength, scope gaps, pending prompts) with richer metadata for prompts; both the CLI fallback and live LLM paths (and Advisor Mode) now consume these hints for context-aware follow-ups.
 
 ## v0.2.0 — 2025-10-25
 

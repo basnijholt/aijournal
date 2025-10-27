@@ -36,6 +36,8 @@ Guidelines:
 - Honor `coaching_prefs` tone/depth when crafting steps.
 - Respect `boundaries_ethics.red_lines`; if the question violates them, steer away politely.
 - Tie every recommendation back to at least one facet or claim.
+- Incorporate `RANKINGS_JSON` (top interview targets) and `PENDING_PROMPTS_JSON` when prioritising
+  assumptions, risks, or next actions—surface follow-ups that close the biggest information gaps.
 - Keep steps specific and time-bound where possible.
 - Return **only** valid JSON.
 
@@ -47,3 +49,9 @@ $profile_json
 
 CLAIMS_JSON:
 $claims_json
+
+RANKINGS_JSON:
+$rankings_json
+
+PENDING_PROMPTS_JSON:
+$pending_prompts_json
