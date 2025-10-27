@@ -165,10 +165,10 @@ _Pattern for each command group: first create `commands/<name>.py` with a thin `
 33. [x] Add `commands/index.py`.  
     → `uv run pytest`
 
-34. [ ] Add `commands/pack.py`.  
+34. [x] Add `commands/pack.py`.  
     → `uv run pytest`
 
-35. [ ] Add `commands/chat.py`/`chatd.py` wrappers.  
+35. [x] Add `commands/chat.py`/`chatd.py` wrappers.  
     → `uv run pytest`
 
 36. [ ] Add `commands/advise.py`.  

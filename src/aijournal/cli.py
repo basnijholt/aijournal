@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import os
 from collections.abc import Iterable, Sequence
 from hashlib import sha256
@@ -14,6 +13,8 @@ import typer
 import yaml
 from pydantic import ValidationError
 
+from aijournal.commands.chat import run_chat
+from aijournal.commands.chatd import run_chatd
 from aijournal.commands.facts import (
     _characterization_context,
     _manifest_by_id,
@@ -22,9 +23,6 @@ from aijournal.commands.facts import (
     run_facts as run_facts_command,
 )
 from aijournal.commands.index import (
-    _format_search_snippet,
-    _split_filter_values,
-    _validate_date_option,
     run_index_rebuild,
     run_index_search,
     run_index_tail,
@@ -73,7 +71,6 @@ from aijournal.commands.summarize import (
 from aijournal.commands.summarize import (
     run_summarize as run_summarize_command,
 )
-from aijournal.io.chat_sessions import ChatSessionRecorder
 from aijournal.io.yaml_io import load_yaml_model, write_yaml_model
 from aijournal.models import (
     AdviceCard,
@@ -103,21 +100,14 @@ from aijournal.pipelines import characterize as characterize_pipeline
 from aijournal.pipelines import facts as facts_pipeline
 from aijournal.pipelines import normalization
 from aijournal.services import (
-    ChatService,
-    ChatTurn,
     ClaimConflict,
     ClaimConsolidator,
     ClaimMergeOutcome,
     ClaimSignature,
-    FeedbackAdjustment,
     LLMResponseError,
-    apply_chat_feedback,
-    build_chat_app,
     build_ollama_config_from_mapping,
-    extract_claim_markers,
     resolve_ollama_host,
 )
-from aijournal.services.retriever import RetrievalFilters
 from aijournal.utils import time as time_utils
 from aijournal.utils.coercion import coerce_int
 from aijournal.utils.paths import (
@@ -1503,58 +1493,17 @@ def chat(
     ),
 ) -> None:
     """Run a retrieval-augmented chat turn against your journal."""
-    if top <= 0:
-        typer.secho("--top must be positive.", fg=typer.colors.RED, err=True)
-        raise typer.Exit(1)
-
-    root = Path.cwd()
-    config = _load_config(root)
-    filters = RetrievalFilters(
-        tags=_split_filter_values(tags),
-        source_types=_split_filter_values(source),
-        date_from=_validate_date_option(date_from, "--date-from"),
-        date_to=_validate_date_option(date_to, "--date-to"),
+    run_chat(
+        question,
+        top=top,
+        tags=tags,
+        source=source,
+        date_from=date_from,
+        date_to=date_to,
+        session=session,
+        save=save,
+        feedback=feedback,
     )
-
-    service = ChatService(root, config)
-    try:
-        turn = service.run(question, top=top, filters=filters)
-    except (RuntimeError, ValueError) as exc:
-        typer.secho(str(exc), fg=typer.colors.RED, err=True)
-        raise typer.Exit(1) from exc
-    finally:
-        service.close()
-
-    feedback_value = _normalize_feedback_option(feedback)
-    session_id = session.strip() if isinstance(session, str) and session.strip() else None
-    saved_dir: Path | None = None
-    if save:
-        session_id = session_id or time_utils.generate_session_id()
-        recorder = ChatSessionRecorder(root, session_id)
-        recorder.append(turn, feedback=feedback_value)
-        saved_dir = recorder.session_dir
-    else:
-        session_id = session_id or time_utils.generate_session_id()
-
-    _render_chat_turn(
-        turn,
-        session_id=session_id,
-        saved_dir=saved_dir,
-        persisted=save,
-    )
-
-    _log_chat_telemetry(turn, session_id=session_id)
-
-    if feedback_value:
-        adjustments, feedback_path = apply_chat_feedback(
-            root,
-            turn_answer=turn.answer,
-            question=turn.question,
-            session_id=session_id,
-            timestamp=turn.timestamp,
-            feedback=feedback_value,
-        )
-        _render_feedback_summary(adjustments, feedback_path, feedback_value)
 
 
 @app.command("chatd")
@@ -1563,25 +1512,7 @@ def chatd(
     port: int = typer.Option(8080, "--port", help="Port to listen on."),
 ) -> None:
     """Start the FastAPI chat daemon (chatd)."""
-    if port <= 0 or port > 65535:
-        typer.secho("--port must be between 1 and 65535.", fg=typer.colors.RED, err=True)
-        raise typer.Exit(1)
-
-    try:
-        import uvicorn
-    except ImportError as exc:  # pragma: no cover - depends on optional deps
-        typer.secho(
-            f"uvicorn is required for chatd: {exc}. Install with `uv add uvicorn fastapi`.",
-            fg=typer.colors.RED,
-            err=True,
-        )
-        raise typer.Exit(1)
-
-    root = Path.cwd()
-    config = _load_config(root)
-    app_instance = build_chat_app(root, config)
-    typer.echo(f"chatd starting on http://{host}:{port}")
-    uvicorn.run(app_instance, host=host, port=port, log_level="info")
+    run_chatd(host, port)
 
 
 @app.command("feedback-apply")
@@ -1706,16 +1637,6 @@ def _unique_archive_path(target: Path) -> Path:
         counter += 1
 
 
-def _normalize_feedback_option(value: str | None) -> str | None:
-    if value is None:
-        return None
-    normalized = value.strip().lower()
-    if normalized in {"up", "down"}:
-        return normalized
-    typer.secho("--feedback must be 'up' or 'down'.", fg=typer.colors.RED, err=True)
-    raise typer.Exit(1)
-
-
 def _coaching_max_questions(profile: dict[str, Any]) -> int:
     prefs = profile.get("coaching_prefs") if isinstance(profile, dict) else {}
     probing = prefs.get("probing") if isinstance(prefs, dict) else None
@@ -1723,105 +1644,3 @@ def _coaching_max_questions(profile: dict[str, Any]) -> int:
     if max_questions is None or max_questions < 0:
         return 3
     return int(max_questions)
-
-
-def _render_chat_turn(
-    turn: ChatTurn,
-    *,
-    session_id: str | None,
-    saved_dir: Path | None,
-    persisted: bool,
-) -> None:
-    mode_label = "fake mode" if turn.fake_mode else "live mode"
-    typer.echo(f"Chat response ({mode_label})")
-    if session_id:
-        typer.echo(f"Session: {session_id}")
-    typer.echo(f"Question: {turn.question}")
-    typer.echo(f"Intent: {turn.intent}")
-    typer.echo("Answer:")
-    answer_lines = turn.answer.splitlines() or [turn.answer]
-    for line in answer_lines:
-        typer.echo(f"  {line}")
-
-    if turn.clarifying_question:
-        typer.echo("")
-        typer.echo(f"Clarifying question: {turn.clarifying_question}")
-
-    typer.echo("")
-    typer.echo(
-        f"Telemetry: retrieval={turn.telemetry.retrieval_ms:.1f}ms chunks={turn.telemetry.chunk_count} source={turn.telemetry.retriever_source} model={turn.telemetry.model}",
-    )
-
-    if not turn.citations:
-        if turn.retrieved_chunks:
-            typer.echo("")
-            typer.echo("Citations: none referenced.")
-        else:
-            typer.echo("")
-            typer.echo("No journal chunks were retrieved.")
-    else:
-        typer.echo("")
-        typer.echo("Citations:")
-        chunk_map = {chunk.chunk_id: chunk for chunk in turn.retrieved_chunks}
-        for idx, citation in enumerate(turn.citations, start=1):
-            chunk = chunk_map.get(citation.chunk_id)
-            source_path = citation.source_path or citation.normalized_id
-            typer.echo(
-                f"{idx}. {citation.marker} {source_path} ({citation.date}) score {citation.score:.3f}",
-            )
-            if chunk:
-                snippet = _format_search_snippet(chunk.text)
-                tag_display = ", ".join(citation.tags) if citation.tags else "-"
-                typer.echo(f"   tags: {tag_display}")
-                typer.echo(f"   {snippet}")
-            if idx != len(turn.citations):
-                typer.echo("")
-
-    if persisted and saved_dir is not None:
-        typer.echo("")
-        typer.echo(f"Saved transcript: {saved_dir}")
-
-
-def _log_chat_telemetry(turn: ChatTurn, *, session_id: str | None) -> None:
-    claim_markers = extract_claim_markers(turn.answer)
-    payload = {
-        "event": "chat.telemetry",
-        "session_id": session_id,
-        "intent": turn.intent,
-        "retrieval_ms": round(turn.telemetry.retrieval_ms, 2),
-        "chunks": turn.telemetry.chunk_count,
-        "model": turn.telemetry.model,
-        "clarifying": bool(turn.clarifying_question),
-        "claim_markers": claim_markers,
-    }
-    if not claim_markers and session_id is not None and turn.persona.claims:
-        typer.secho(
-            "No persona claim markers were referenced; thumbs up/down cannot adjust claim strengths.",
-            fg=typer.colors.YELLOW,
-            err=True,
-        )
-    typer.echo(json.dumps(payload, ensure_ascii=False), err=True)
-
-
-def _render_feedback_summary(
-    adjustments: Sequence[FeedbackAdjustment],
-    feedback_path: Path | None,
-    feedback: str,
-) -> None:
-    if not adjustments:
-        typer.secho(
-            "Feedback provided but no claim citations were found to adjust.",
-            fg=typer.colors.YELLOW,
-            err=True,
-        )
-        return
-
-    typer.echo("")
-    typer.echo(f"Recorded {feedback} feedback for {len(adjustments)} claim(s):")
-    for adj in adjustments:
-        sign = "+" if adj.delta >= 0 else ""
-        typer.echo(
-            f"- {adj.claim_id}: {adj.old_strength:.2f} -> {adj.new_strength:.2f} ({sign}{adj.delta:.2f})",
-        )
-    if feedback_path is not None:
-        typer.echo(f"Queued feedback batch: {feedback_path}")
