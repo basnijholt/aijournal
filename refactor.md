@@ -114,7 +114,7 @@ _For each pipeline: (1) add the new module + unit test, commit; (2) update the C
 18. [x] Add `pipelines/summarize.py` (`generate_summary`), refactor CLI to call it, add `tests/pipelines/test_summarize.py`.  
     → `uv run pytest`
 
-19. Add `pipelines/facts.py` (`generate_microfacts`), update CLI/tests.  
+19. [x] Add `pipelines/facts.py` (`generate_microfacts`), update CLI/tests.  
     → `uv run pytest`
 
 20. Add `pipelines/persona.py`, update CLI/tests.  

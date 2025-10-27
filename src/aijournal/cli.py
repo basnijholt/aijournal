@@ -29,7 +29,6 @@ from pydantic_ai import Agent
 from aijournal.fakes import (
     fake_advise,
     fake_characterize,
-    fake_microfacts,
     fake_profile_suggestions,
 )
 from aijournal.ingest_agent import (
@@ -54,7 +53,6 @@ from aijournal.models import (
     ClaimsFile,
     ClaimSignaturePayload,
     ClaimSource,
-    ClaimSourceSpan,
     ClaimStatus,
     DailySummaryResponse,
     ExtractedFactsResponse,
@@ -63,8 +61,6 @@ from aijournal.models import (
     InterviewQuestion,
     InterviewSet,
     ManifestEntry,
-    MicroFact,
-    MicroFactsFile,
     NormalizedEntry,
     PersonaCore,
     PersonaCoreFile,
@@ -83,6 +79,7 @@ from aijournal.models import (
     SimpleSuggestion,
     SummaryMeta,
 )
+from aijournal.pipelines import facts as facts_pipeline
 from aijournal.pipelines import normalization
 from aijournal.pipelines import summarize as summarize_pipeline
 from aijournal.schema import SchemaValidationError, validate_schema
@@ -1145,242 +1142,6 @@ def _build_meta(
     )
 
 
-def _fact_sources_from_evidence(fact: MicroFact) -> list[ClaimSource]:
-    evidence = fact.evidence
-    if evidence is None:
-        return []
-    spans: list[ClaimSourceSpan] = []
-    for span in evidence.spans or []:
-        spans.append(
-            ClaimSourceSpan(
-                type=span.type,
-                index=span.index,
-                start=span.start,
-                end=span.end,
-            )
-        )
-    if not evidence.entry_id:
-        return []
-    return [ClaimSource(entry_id=evidence.entry_id, spans=spans)]
-
-
-def _scope_from_fact(
-    fact: MicroFact,
-    entry: NormalizedEntry | None,
-) -> Scope:
-    domain = entry.source_type if entry and entry.source_type else None
-    context_candidates: list[str] = []
-    if entry and entry.tags:
-        context_candidates.extend(tag for tag in entry.tags if tag)
-
-    statement_lower = fact.statement.lower()
-    keyword_pairs = {
-        "weekday": ("weekday", "weekdays", "workday", "workdays"),
-        "weekend": ("weekend", "weekends"),
-        "solo": ("solo", "independent", "alone"),
-        "team": ("team", "collaborative", "pairing", "group"),
-    }
-    for label, keywords in keyword_pairs.items():
-        if any(word in statement_lower for word in keywords):
-            context_candidates.append(label)
-
-    unique_context = _merge_unique(context_candidates, [])
-    return Scope(
-        domain=domain,
-        context=unique_context,
-        conditions=[],
-    )
-
-
-def _microfact_claim_proposals(
-    facts: Sequence[MicroFact],
-    *,
-    entries: Sequence[NormalizedEntry],
-    manifest_index: dict[str, ManifestEntry],
-    timestamp: str,
-) -> list[ClaimProposal]:
-    entry_by_id: dict[str, NormalizedEntry] = {}
-    for entry_model in entries:
-        if entry_model.id:
-            entry_by_id[entry_model.id] = entry_model
-
-    proposals: list[ClaimProposal] = []
-    for fact in facts:
-        if not fact.statement.strip():
-            continue
-        evidence_sources = _fact_sources_from_evidence(fact)
-        entry_id = fact.evidence.entry_id if fact.evidence else None
-        entry: NormalizedEntry | None = entry_by_id.get(entry_id) if entry_id else None
-        scope = _scope_from_fact(fact, entry)
-
-        provenance_sources = (
-            evidence_sources
-            if evidence_sources
-            else (
-                [ClaimSource(entry_id=entry_id, spans=[])]
-                if entry_id
-                else [ClaimSource(entry_id=f"microfact-{fact.id}", spans=[])]
-            )
-        )
-
-        manifest_entry = manifest_index.get(entry_id) if entry_id else None
-        source_hash = entry.source_hash if entry and entry.source_hash else None
-
-        normalized_ids: list[str] = []
-        if entry_id:
-            normalized_ids = [entry_id]
-        elif entry_by_id:
-            normalized_ids = [next(iter(entry_by_id.keys()))]
-
-        evidence_hashes = [source_hash] if source_hash else []
-        manifest_hashes = [manifest_entry.hash] if manifest_entry else []
-
-        raw_claim = {
-            "id": f"microfact.{fact.id}",
-            "type": "preference",
-            "subject": fact.id,
-            "predicate": "insight",
-            "value": fact.statement,
-            "statement": fact.statement,
-            "scope": scope.model_dump(mode="python"),
-            "strength": fact.confidence,
-            "status": "tentative",
-            "method": "inferred",
-            "review_after_days": 90,
-            "provenance": {
-                "sources": [source.model_dump(mode="python") for source in provenance_sources],
-                "first_seen": fact.first_seen or time_utils.created_date(timestamp),
-                "last_updated": fact.last_seen or timestamp,
-                "observation_count": 1,
-            },
-        }
-
-        try:
-            claim_model = _normalize_claim_atom(
-                raw_claim,
-                timestamp=timestamp,
-                default_sources=provenance_sources,
-            )
-        except (ValidationError, ValueError):
-            continue
-
-        proposals.append(
-            ClaimProposal(
-                claim=claim_model,
-                normalized_ids=normalized_ids,
-                evidence_hashes=evidence_hashes,
-                manifest_hashes=manifest_hashes,
-                rationale=f"Derived from micro-fact {fact.id}",
-            )
-        )
-    return proposals
-
-
-def _microfacts_payload(
-    entries: Sequence[NormalizedEntry],
-    date: str,
-    config: dict[str, Any],
-    *,
-    manifest_index: dict[str, ManifestEntry] | None = None,
-    existing_claims: Sequence[ClaimAtom] | None = None,
-    timeout: float | None = None,
-    retries: int = DEFAULT_LLM_RETRIES,
-) -> MicroFactsFile:
-    def fallback_model() -> MicroFactsFile:
-        return MicroFactsFile(facts=fake_microfacts(entries))
-
-    manifest_index = manifest_index or {}
-    existing_claims = tuple(existing_claims or ())
-    claim_timestamp = time_utils.format_timestamp(time_utils.now())
-    (
-        normalized_ids,
-        evidence_hashes,
-        manifest_hashes,
-        default_sources,
-    ) = _characterization_context(entries, manifest_index)
-
-    raw_claim_candidates: Iterable[Any] = []
-    facts_model: MicroFactsFile
-    if _use_fake_llm():
-        facts_model = fallback_model()
-        if facts_model.claim_proposals:
-            raw_claim_candidates = [
-                proposal.model_dump(mode="python") for proposal in facts_model.claim_proposals
-            ]
-    else:
-        response = cast(
-            ExtractedFactsResponse,
-            _structured_call_with_retry(
-                lambda: _invoke_structured_llm(
-                    "prompts/extract_facts.md",
-                    {"date": date, "entries_json": _json_block(_entries_to_payload(entries))},
-                    response_model=ExtractedFactsResponse,
-                    agent_name="aijournal-facts",
-                    config=config,
-                    timeout=timeout,
-                ),
-                retries=retries,
-                label=f"facts {date}",
-            ),
-        )
-        facts_model = MicroFactsFile(
-            facts=[
-                MicroFact(
-                    id=fact.id,
-                    statement=fact.statement,
-                    confidence=float(fact.confidence),
-                    evidence=fact.evidence.model_copy(deep=True),
-                    first_seen=fact.first_seen,
-                    last_seen=fact.last_seen,
-                )
-                for fact in response.facts
-            ],
-        )
-        raw_claim_candidates = [
-            proposal.model_dump(mode="python") for proposal in response.claim_proposals
-        ]
-
-    llm_claims = _normalize_claim_proposals(
-        raw_claims=raw_claim_candidates,
-        normalized_ids=normalized_ids,
-        evidence_hashes=evidence_hashes,
-        manifest_hashes=manifest_hashes,
-        default_sources=default_sources,
-        timestamp=claim_timestamp,
-    )
-
-    derived_claims = _microfact_claim_proposals(
-        facts_model.facts,
-        entries=entries,
-        manifest_index=manifest_index,
-        timestamp=claim_timestamp,
-    )
-
-    combined: list[ClaimProposal] = []
-    seen_ids: set[str] = set()
-    for proposal in llm_claims:
-        claim_id = proposal.claim.id
-        if claim_id in seen_ids:
-            continue
-        combined.append(proposal)
-        seen_ids.add(claim_id)
-
-    for proposal in derived_claims:
-        claim_id = proposal.claim.id
-        if claim_id in seen_ids:
-            continue
-        combined.append(proposal)
-        seen_ids.add(claim_id)
-
-    facts_model.claim_proposals = combined
-    facts_model.preview = _build_claim_preview(
-        combined,
-        [claim.model_copy(deep=True) for claim in existing_claims],
-        timestamp=claim_timestamp,
-    )
-    return facts_model
-
-
 def _profile_suggestions_payload(
     entries: Sequence[NormalizedEntry],
     profile: dict[str, Any],
@@ -1457,28 +1218,6 @@ def _characterization_context(
     )
 
 
-def _merge_unique(existing: Iterable[str], extras: Iterable[str]) -> list[str]:
-    seen: set[str] = set()
-    merged: list[str] = []
-    for value in existing:
-        if not value:
-            continue
-        key = str(value)
-        if key in seen:
-            continue
-        seen.add(key)
-        merged.append(key)
-    for value in extras:
-        if not value:
-            continue
-        key = str(value)
-        if key in seen:
-            continue
-        seen.add(key)
-        merged.append(key)
-    return merged
-
-
 def _normalize_claim_proposals(
     raw_claims: Iterable[Any],
     *,
@@ -1488,45 +1227,14 @@ def _normalize_claim_proposals(
     default_sources: Sequence[ClaimSource],
     timestamp: str,
 ) -> list[ClaimProposal]:
-    proposals: list[ClaimProposal] = []
-    for raw in raw_claims:
-        if isinstance(raw, ClaimProposal):
-            claim_model = raw.claim.model_copy(deep=True)
-            proposals.append(
-                ClaimProposal(
-                    claim=claim_model,
-                    normalized_ids=_merge_unique(raw.normalized_ids, normalized_ids),
-                    evidence_hashes=_merge_unique(raw.evidence_hashes, evidence_hashes),
-                    manifest_hashes=_merge_unique(raw.manifest_hashes, manifest_hashes),
-                    rationale=raw.rationale,
-                ),
-            )
-            continue
-        payload = raw.model_dump(mode="python") if hasattr(raw, "model_dump") else raw
-        if not isinstance(payload, dict):
-            continue
-        raw_claim = payload.get("claim")
-        candidate = raw_claim if raw_claim is not None else payload
-        try:
-            claim_model = _normalize_claim_atom(
-                candidate,
-                timestamp=timestamp,
-                default_sources=default_sources,
-            )
-        except (ValidationError, ValueError):
-            continue
-
-        proposals.append(
-            ClaimProposal(
-                claim=claim_model,
-                normalized_ids=list(normalized_ids),
-                evidence_hashes=list(evidence_hashes),
-                manifest_hashes=list(manifest_hashes),
-                rationale=str(payload.get("rationale") or payload.get("reason") or "").strip()
-                or None,
-            ),
-        )
-    return proposals
+    return facts_pipeline.normalize_claim_proposals(
+        raw_claims,
+        normalized_ids=normalized_ids,
+        evidence_hashes=evidence_hashes,
+        manifest_hashes=manifest_hashes,
+        default_sources=default_sources,
+        timestamp=timestamp,
+    )
 
 
 def _normalize_facet_proposals(
@@ -1547,8 +1255,10 @@ def _normalize_facet_proposals(
                     confidence=raw.confidence,
                     review_after_days=raw.review_after_days,
                     user_verified=raw.user_verified,
-                    normalized_ids=_merge_unique(raw.normalized_ids, normalized_ids),
-                    evidence_hashes=_merge_unique(raw.evidence_hashes, evidence_hashes),
+                    normalized_ids=facts_pipeline.merge_unique(raw.normalized_ids, normalized_ids),
+                    evidence_hashes=facts_pipeline.merge_unique(
+                        raw.evidence_hashes, evidence_hashes
+                    ),
                     rationale=raw.rationale,
                 ),
             )
@@ -1559,21 +1269,25 @@ def _normalize_facet_proposals(
         path = payload.get("path") or payload.get("target")
         if not path:
             continue
-        proposals.append(
-            FacetProposal(
-                path=str(path),
-                value=payload.get("value"),
-                operation=str(payload.get("operation") or "set"),
-                method=str(payload.get("method") or "inferred"),
-                confidence=coerce_float(payload.get("confidence")) or 0.55,
-                review_after_days=coerce_int(payload.get("review_after_days")) or 90,
-                user_verified=bool(payload.get("user_verified", False)),
-                normalized_ids=_merge_unique(payload.get("normalized_ids", []), normalized_ids),
-                evidence_hashes=_merge_unique(payload.get("evidence_hashes", []), evidence_hashes),
-                rationale=str(payload.get("rationale") or payload.get("reason") or "").strip()
-                or None,
-            ),
-        )
+            proposals.append(
+                FacetProposal(
+                    path=str(path),
+                    value=payload.get("value"),
+                    operation=str(payload.get("operation") or "set"),
+                    method=str(payload.get("method") or "inferred"),
+                    confidence=coerce_float(payload.get("confidence")) or 0.55,
+                    review_after_days=coerce_int(payload.get("review_after_days")) or 90,
+                    user_verified=bool(payload.get("user_verified", False)),
+                    normalized_ids=facts_pipeline.merge_unique(
+                        payload.get("normalized_ids", []), normalized_ids
+                    ),
+                    evidence_hashes=facts_pipeline.merge_unique(
+                        payload.get("evidence_hashes", []), evidence_hashes
+                    ),
+                    rationale=str(payload.get("rationale") or payload.get("reason") or "").strip()
+                    or None,
+                ),
+            )
     return proposals
 
 
@@ -2128,20 +1842,42 @@ def facts(
     manifest_entries = _load_manifest(_manifest_path(root))
     manifest_index = _manifest_by_id(manifest_entries)
     _, claim_models = _load_profile_components(root)
+    context = _characterization_context(entries, manifest_index)
+    use_fake_llm = _use_fake_llm()
+
+    def request_microfacts() -> ExtractedFactsResponse:
+        return cast(
+            ExtractedFactsResponse,
+            _invoke_structured_llm(
+                "prompts/extract_facts.md",
+                {"date": date, "entries_json": _json_block(_entries_to_payload(entries))},
+                response_model=ExtractedFactsResponse,
+                agent_name="aijournal-facts",
+                config=config,
+                timeout=timeout_value,
+            ),
+        )
+
     try:
-        facts_data = _microfacts_payload(
+        facts_data = facts_pipeline.generate_microfacts(
             entries,
             date,
-            config,
-            manifest_index=manifest_index,
-            existing_claims=claim_models,
-            timeout=timeout_value,
+            use_fake_llm=use_fake_llm,
+            structured_call=_structured_call_with_retry,
+            request_factory=request_microfacts,
             retries=retries,
+            context=context,
+            manifest_index=manifest_index,
         )
     except LLMResponseError as exc:
         typer.secho(f"Facts extraction failed: {exc}", fg=typer.colors.RED, err=True)
         raise typer.Exit(1)
     facts_data.meta = _build_meta("prompts/extract_facts.md", config=config)
+    facts_data.preview = _build_claim_preview(
+        facts_data.claim_proposals,
+        [claim.model_copy(deep=True) for claim in claim_models],
+        timestamp=time_utils.format_timestamp(time_utils.now()),
+    )
     facts_path = _derived_microfacts_path(root, date)
     write_yaml_model(facts_path, facts_data)
     if facts_data.preview:
@@ -2320,9 +2056,11 @@ def characterize(
         prompts = [prompt for prompt in interview_prompts if prompt]
         if prompts:
             if preview_model is None:
-                preview_model = ProfileUpdatePreview(interview_prompts=_merge_unique([], prompts))
+                preview_model = ProfileUpdatePreview(
+                    interview_prompts=facts_pipeline.merge_unique([], prompts)
+                )
             else:
-                preview_model.interview_prompts = _merge_unique(
+                preview_model.interview_prompts = facts_pipeline.merge_unique(
                     preview_model.interview_prompts,
                     prompts,
                 )
