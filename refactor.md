@@ -153,7 +153,7 @@ _Pattern for each command group: first create `commands/<name>.py` with a thin `
 29. [x] Add `commands/summarize.py` to orchestrate IO + pipeline; thin CLI wrapper.  
     → `uv run pytest`
 
-30. [ ] Add `commands/facts.py`.  
+30. [x] Add `commands/facts.py`.  
     → `uv run pytest`
 
 31. [ ] Add `commands/persona.py`.  
