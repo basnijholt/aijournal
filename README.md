@@ -18,6 +18,28 @@ See `PLAN.md` for the full persona-first roadmap (typed claim atoms, retrieval-b
 
 ## Getting Started
 
+### Quick Workflow Overview
+
+Use the following flow to keep your journal, profile, and retrieval artifacts in sync:
+
+1. `aijournal init` — create a workspace.  
+2. Write Markdown entries under `data/journal/YYYY/MM/DD/`.  
+3. `aijournal normalize` each entry (check that summaries exist).  
+4. Daily pipeline (per entry date):
+   - `aijournal summarize`
+   - `aijournal facts`
+   - `aijournal profile suggest`
+   - `aijournal profile apply`
+   - `aijournal characterize`
+   - `aijournal review-updates --apply`
+5. Update derived artifacts:
+   - `aijournal index rebuild`
+   - `aijournal persona build`
+   - `aijournal pack --level L1 --format yaml`
+6. Use conversational surfaces (`aijournal chat`, `chatd`, `advise`) and apply queued feedback with `aijournal feedback-apply`.
+
+A more detailed walkthrough lives in [docs/workflow.md](docs/workflow.md).
+
 ```sh
 uv sync
 uv run pytest -q
