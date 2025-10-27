@@ -50,7 +50,7 @@ uv run pytest -q
 ```
 
 - Runtime deps beyond Typer/PyYAML/httpx/pydantic/dateutil: `numpy`, `annoy`, `fastapi`, `uvicorn`, `orjson`. Install once via `uv add ...`; everything stays local-first.
-- Default embedding model: `nomic-embed-text` via Ollama; configurable through `config/config.yaml` or `AIJOURNAL_MODEL`.
+- Retrieval uses Ollama’s `nomic-embed-text` embeddings by default. Override it by setting `embedding_model` in `config/config.yaml`; the `AIJOURNAL_MODEL` env var only affects chat/advice, not embeddings.
 
 - `config/config.yaml` stores runtime defaults (model, temperature, advisor settings).
 - `src/aijournal/models/` defines the Pydantic schemas the CLI enforces on every write.
@@ -65,10 +65,10 @@ Run `aijournal init` inside a fresh directory to materialize `data/`, `derived/`
   helper. `build_ollama_config_from_mapping` fuses `config/config.yaml`, environment overrides, and
   per-command tweaks so every CLI surface hits the same configuration pipeline. Set
   `AIJOURNAL_OLLAMA_HOST=http://localhost:11434` if you run Ollama elsewhere, or
-  `AIJOURNAL_MODEL="llama3.1:8b-instruct"` to pick a different model.
+  `AIJOURNAL_MODEL="llama3.1:8b-instruct"` to pick a different chat/advice model.
+  Commands retry schema/timeout issues once (`--retries`) and then fail loudly with an error.
 - **Fake mode (tests/CI):** `export AIJOURNAL_FAKE_OLLAMA=1` to route every agent call through
-  deterministic fixtures. Commands automatically fall back to fake mode if a live request fails, so
-  scripts remain robust even when Ollama is offline.
+  deterministic fixtures. This mode must be set explicitly; the CLI never auto-falls back from live mode.
 
 ### Claim atoms & persona core
 
@@ -438,12 +438,13 @@ aijournal index tail
 
 ### Configuration quick reference
 
-`config/config.yaml` now includes:
+`config/config.yaml` ships with defaults for the chat/advice model, temperature, seed, impact weights, token estimator, and persona budgets. You can optionally add:
 
-- `embedding_model`, `token_estimator.char_per_token`, and `index.{rebuild_threshold,ann_trees,search_k_factor}`.
-- `chat.{max_retrieved_chunks,max_claims,follow_up_enabled,write_back_facts}` to tune the orchestrator.
-- Expanded `impact_weights` covering claim atom types (`value`, `goal`, `boundary`, `trait`, `preference`, `habit`, `skill`).
-- `persona.{token_budget,max_claims,min_claims}` for persona core sizing + minimum claim coverage.
+- `embedding_model: "<model-name>"` to change the embedding model (defaults to `nomic-embed-text` when omitted).
+- `index: {ann_trees: 50, search_k_factor: 3.0}` to tweak ANN settings.
+- `chat: {max_retrieved_chunks: 12, max_claims: 16, follow_up_enabled: true, write_back_facts: true}` for retrieval/chat behaviour.
+- Custom `impact_weights.claim_types` if certain claim types should rank higher.
+- Adjusted `persona.{token_budget,max_claims,min_claims}` if you need a larger or smaller persona core.
 
 Trimming now prioritizes raw journal content first; when a pack exceeds `--max-tokens`, entries are zeroed in deterministic role order and `meta.trimmed` captures a list of `{role, path}` objects so you can inspect exactly what was removed. Dry-run output still lists every planned file with its token estimate, and both YAML/JSON payloads remain deterministic for caching or scripting.
 
