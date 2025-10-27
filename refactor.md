@@ -159,10 +159,10 @@ _Pattern for each command group: first create `commands/<name>.py` with a thin `
 31. [x] Add `commands/persona.py`.  
     → `uv run pytest`
 
-32. [ ] Add `commands/profile.py` (suggest/apply/status).  
+32. [x] Add `commands/profile.py` (suggest/apply/status).  
     → `uv run pytest`
 
-33. [ ] Add `commands/index.py`.  
+33. [x] Add `commands/index.py`.  
     → `uv run pytest`
 
 34. [ ] Add `commands/pack.py`.  
