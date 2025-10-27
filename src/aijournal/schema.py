@@ -6,18 +6,20 @@ from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, ValidationError
 
-from aijournal.models import (
-    AdviceCard,
+from aijournal.models.authoritative import (
     ClaimsFile,
+    JournalEntry,
+    NormalizedEntry,
+    SelfProfile,
+)
+from aijournal.models.derived import (
+    AdviceCard,
     DailySummary,
     InterviewSet,
-    JournalEntry,
     MicroFactsFile,
-    NormalizedEntry,
     PersonaCoreFile,
     ProfileSuggestions,
     ProfileUpdateBatch,
-    SelfProfile,
 )
 
 if TYPE_CHECKING:
