@@ -1,4 +1,4 @@
-"""Utility helpers used across CLI and services."""
+"""Stateless helpers shared across CLI, services, and pipelines."""
 
 from .coercion import coerce_float, coerce_int
 

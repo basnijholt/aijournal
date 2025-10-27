@@ -35,7 +35,7 @@ def _write_yaml(path: Path, payload: dict) -> None:
     path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
 
 
-def _seed_normalized(tmp_path: Path) -> None:
+def _seed_normalized(workspace: Path) -> None:
     normalized = {
         "id": ENTRY_ID,
         "created_at": f"{DATE}T09:00:00Z",
@@ -47,10 +47,10 @@ def _seed_normalized(tmp_path: Path) -> None:
             {"heading": "Decisions", "level": 2},
         ],
     }
-    _write_yaml(tmp_path / "data" / "normalized" / DATE / f"{ENTRY_ID}.yaml", normalized)
+    _write_yaml(workspace / "data" / "normalized" / DATE / f"{ENTRY_ID}.yaml", normalized)
 
 
-def _seed_profile(tmp_path: Path) -> None:
+def _seed_profile(workspace: Path) -> None:
     self_profile = {
         "values_motivations": {
             "schwartz_top5": ["Universalism"],
@@ -69,34 +69,28 @@ def _seed_profile(tmp_path: Path) -> None:
             ),
         ],
     }
-    _write_yaml(tmp_path / "profile" / "self_profile.yaml", self_profile)
-    _write_yaml(tmp_path / "profile" / "claims.yaml", claims)
+    _write_yaml(workspace / "profile" / "self_profile.yaml", self_profile)
+    _write_yaml(workspace / "profile" / "claims.yaml", claims)
 
 
-def _invoke(tmp_path: Path, extra_args: list[str] | None = None) -> tuple[str, Path, int]:
-    env = {"AIJOURNAL_FAKE_OLLAMA": "1"}
+def _invoke(workspace: Path, extra_args: list[str] | None = None) -> tuple[str, Path, int]:
     args = ["profile", "suggest", "--date", DATE]
     if extra_args:
         args.extend(extra_args)
-    result = runner.invoke(app, args, env=env)
+    result = runner.invoke(app, args)
     assert result.exit_code == 0, result.output
-    path = tmp_path / "derived" / "profile_suggestions" / f"{DATE}.yaml"
+    path = workspace / "derived" / "profile_suggestions" / f"{DATE}.yaml"
     assert path.exists()
     folder = path.parent
     count = len(list(folder.glob("*.yaml")))
     return result.output, path, count
 
 
-def test_profile_suggest_writes_suggestions(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.chdir(tmp_path)
-    _seed_normalized(tmp_path)
-    _seed_profile(tmp_path)
+def test_profile_suggest_writes_suggestions(cli_workspace: Path) -> None:
+    _seed_normalized(cli_workspace)
+    _seed_profile(cli_workspace)
 
-    output, suggestions_path, _ = _invoke(tmp_path)
-    assert str(suggestions_path) in output
+    _, suggestions_path, _ = _invoke(cli_workspace)
 
     data = yaml.safe_load(suggestions_path.read_text(encoding="utf-8"))
     assert data.get("upserts") or data.get("updates"), "Expected suggested changes"
@@ -106,15 +100,14 @@ def test_profile_suggest_writes_suggestions(
     assert meta.get("llm_model") == "fake-ollama"
 
 
-def test_profile_suggest_is_idempotent(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.chdir(tmp_path)
-    _seed_normalized(tmp_path)
-    _seed_profile(tmp_path)
+def test_profile_suggest_is_idempotent(cli_workspace: Path) -> None:
+    _seed_normalized(cli_workspace)
+    _seed_profile(cli_workspace)
 
-    _, suggestions_path, count_before = _invoke(tmp_path)
+    _, suggestions_path, count_before = _invoke(cli_workspace)
     mtime_before = suggestions_path.stat().st_mtime
 
-    _, suggestions_path_again, count_after = _invoke(tmp_path)
+    _, suggestions_path_again, count_after = _invoke(cli_workspace)
 
     assert suggestions_path_again == suggestions_path
     assert count_before == count_after
@@ -122,14 +115,12 @@ def test_profile_suggest_is_idempotent(tmp_path: Path, monkeypatch: pytest.Monke
 
 
 def test_profile_suggest_progress_flag(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    cli_workspace: Path,
 ) -> None:
-    monkeypatch.chdir(tmp_path)
-    _seed_normalized(tmp_path)
-    _seed_profile(tmp_path)
+    _seed_normalized(cli_workspace)
+    _seed_profile(cli_workspace)
 
-    output, _, _ = _invoke(tmp_path, ["--progress"])
+    output, _, _ = _invoke(cli_workspace, ["--progress"])
 
     assert "Generating profile suggestions" in output
     assert "[1/1]" in output

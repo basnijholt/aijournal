@@ -13,13 +13,12 @@ from tests.helpers import make_claim_atom
 if TYPE_CHECKING:
     from pathlib import Path
 
-    import pytest
 
 runner = CliRunner()
 
 
-def _seed_claims(tmp_path: Path) -> None:
-    path = tmp_path / "profile" / "claims.yaml"
+def _seed_claims(workspace: Path) -> None:
+    path = workspace / "profile" / "claims.yaml"
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = {
         "claims": [
@@ -58,16 +57,13 @@ def _seed_claims(tmp_path: Path) -> None:
     path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
 
 
-def test_persona_build_generates_core(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.chdir(tmp_path)
-    init_result = runner.invoke(app, ["init"])
-    assert init_result.exit_code == 0, init_result.stdout
-    _seed_claims(tmp_path)
+def test_persona_build_generates_core(cli_workspace: Path) -> None:
+    _seed_claims(cli_workspace)
 
     result = runner.invoke(app, ["persona", "build"])
     assert result.exit_code == 0, result.stdout
 
-    persona_path = tmp_path / "derived" / "persona" / "persona_core.yaml"
+    persona_path = cli_workspace / "derived" / "persona" / "persona_core.yaml"
     assert persona_path.exists()
     payload = yaml.safe_load(persona_path.read_text(encoding="utf-8"))
     assert payload["persona"]["claims"], "claims should be present"
@@ -79,13 +75,9 @@ def test_persona_build_generates_core(tmp_path: Path, monkeypatch: pytest.Monkey
 
 
 def test_persona_build_trims_when_budget_forced(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    cli_workspace: Path,
 ) -> None:
-    monkeypatch.chdir(tmp_path)
-    init_result = runner.invoke(app, ["init"])
-    assert init_result.exit_code == 0, init_result.stdout
-    _seed_claims(tmp_path)
+    _seed_claims(cli_workspace)
 
     result = runner.invoke(
         app,
@@ -102,7 +94,7 @@ def test_persona_build_trims_when_budget_forced(
     )
     assert result.exit_code == 0, result.stdout
 
-    persona_path = tmp_path / "derived" / "persona" / "persona_core.yaml"
+    persona_path = cli_workspace / "derived" / "persona" / "persona_core.yaml"
     payload = yaml.safe_load(persona_path.read_text(encoding="utf-8"))
     trimmed = payload["meta"].get("trimmed", [])
     assert trimmed, "expect at least one trimmed claim when forcing small budget"
@@ -112,32 +104,24 @@ def test_persona_build_trims_when_budget_forced(
 
 
 def test_persona_build_handles_empty_claims(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    cli_workspace: Path,
 ) -> None:
-    monkeypatch.chdir(tmp_path)
-    init_result = runner.invoke(app, ["init"])
-    assert init_result.exit_code == 0, init_result.stdout
-    claims_path = tmp_path / "profile" / "claims.yaml"
+    claims_path = cli_workspace / "profile" / "claims.yaml"
     claims_path.write_text("claims: []\n", encoding="utf-8")
 
     result = runner.invoke(app, ["persona", "build"])
     assert result.exit_code == 0, result.stdout
     payload = yaml.safe_load(
-        (tmp_path / "derived" / "persona" / "persona_core.yaml").read_text(encoding="utf-8"),
+        (cli_workspace / "derived" / "persona" / "persona_core.yaml").read_text(encoding="utf-8"),
     )
     assert payload["persona"]["claims"] == []
     assert payload["persona"]["profile"], "profile slice should be included when available"
 
 
 def test_persona_build_respects_min_claims(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    cli_workspace: Path,
 ) -> None:
-    monkeypatch.chdir(tmp_path)
-    init_result = runner.invoke(app, ["init"])
-    assert init_result.exit_code == 0, init_result.stdout
-    _seed_claims(tmp_path)
+    _seed_claims(cli_workspace)
 
     result = runner.invoke(
         app,
@@ -154,20 +138,16 @@ def test_persona_build_respects_min_claims(
     )
     assert result.exit_code == 0, result.stdout
     payload = yaml.safe_load(
-        (tmp_path / "derived" / "persona" / "persona_core.yaml").read_text(encoding="utf-8"),
+        (cli_workspace / "derived" / "persona" / "persona_core.yaml").read_text(encoding="utf-8"),
     )
     assert payload["meta"]["claim_count"] == 2
     assert payload["meta"].get("budget_exceeded") is True
 
 
 def test_persona_status_reports_fresh(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    cli_workspace: Path,
 ) -> None:
-    monkeypatch.chdir(tmp_path)
-    init_result = runner.invoke(app, ["init"])
-    assert init_result.exit_code == 0, init_result.stdout
-    _seed_claims(tmp_path)
+    _seed_claims(cli_workspace)
     build_result = runner.invoke(app, ["persona", "build"])
     assert build_result.exit_code == 0, build_result.stdout
 
@@ -177,17 +157,13 @@ def test_persona_status_reports_fresh(
 
 
 def test_persona_status_detects_stale_profile(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    cli_workspace: Path,
 ) -> None:
-    monkeypatch.chdir(tmp_path)
-    init_result = runner.invoke(app, ["init"])
-    assert init_result.exit_code == 0, init_result.stdout
-    _seed_claims(tmp_path)
+    _seed_claims(cli_workspace)
     build_result = runner.invoke(app, ["persona", "build"])
     assert build_result.exit_code == 0, build_result.stdout
 
-    claims_path = tmp_path / "profile" / "claims.yaml"
+    claims_path = cli_workspace / "profile" / "claims.yaml"
     claims_payload = yaml.safe_load(claims_path.read_text(encoding="utf-8"))
     claims_payload["claims"].append(
         make_claim_atom(

@@ -29,7 +29,7 @@ def skip_if_missing() -> None:
 
 @pytest.fixture(autouse=True)
 def freeze_now(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("aijournal.cli._now", lambda: FIXED_NOW, raising=False)
+    monkeypatch.setattr("aijournal.utils.time.now", lambda: FIXED_NOW, raising=False)
 
 
 def _write_yaml(path: Path, content: str) -> None:
@@ -37,7 +37,7 @@ def _write_yaml(path: Path, content: str) -> None:
     path.write_text(content.strip() + "\n", encoding="utf-8")
 
 
-def _seed_profile(tmp_path: Path) -> None:
+def _seed_profile(workspace: Path) -> None:
     # Two facets and one claim with different staleness to test ordering
     now = FIXED_NOW
     stale = (now - timedelta(days=180)).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -84,11 +84,11 @@ claims:
       last_updated: {stale}
 """
 
-    _write_yaml(tmp_path / "profile" / "self_profile.yaml", self_profile)
-    _write_yaml(tmp_path / "profile" / "claims.yaml", claims)
+    _write_yaml(workspace / "profile" / "self_profile.yaml", self_profile)
+    _write_yaml(workspace / "profile" / "claims.yaml", claims)
 
 
-def _write_config(tmp_path: Path) -> None:
+def _write_config(workspace: Path) -> None:
     config = """
 impact_weights:
   values_goals: 2.0
@@ -98,21 +98,20 @@ impact_weights:
   social: 0.5
 """
 
-    _write_yaml(tmp_path / "config" / "config.yaml", config)
+    _write_yaml(workspace / "config" / "config.yaml", config)
 
 
-def _invoke(tmp_path: Path, args: list[str]) -> str:
+def _invoke(args: list[str]) -> str:
     result = runner.invoke(app, args)
     assert result.exit_code == 0, result.output
     return result.output
 
 
-def test_profile_status_ranks_items(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.chdir(tmp_path)
-    _seed_profile(tmp_path)
-    _write_config(tmp_path)
+def test_profile_status_ranks_items(cli_workspace: Path) -> None:
+    _seed_profile(cli_workspace)
+    _write_config(cli_workspace)
 
-    output = _invoke(tmp_path, ["profile", "status"])
+    output = _invoke(["profile", "status"])
 
     assert "values_motivations" in output
     assert "pref_mornings" in output
@@ -120,10 +119,12 @@ def test_profile_status_ranks_items(tmp_path: Path, monkeypatch: pytest.MonkeyPa
 
 
 def test_profile_status_handles_missing_files(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    cli_workspace: Path,
 ) -> None:
-    monkeypatch.chdir(tmp_path)
+    for rel_path in ("profile/self_profile.yaml", "profile/claims.yaml"):
+        target = cli_workspace / rel_path
+        if target.exists():
+            target.unlink()
 
     result = runner.invoke(app, ["profile", "status"])
 
@@ -131,12 +132,11 @@ def test_profile_status_handles_missing_files(
     assert "No profile data" in result.output
 
 
-def test_profile_status_idempotent(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.chdir(tmp_path)
-    _seed_profile(tmp_path)
-    _write_config(tmp_path)
+def test_profile_status_idempotent(cli_workspace: Path) -> None:
+    _seed_profile(cli_workspace)
+    _write_config(cli_workspace)
 
-    first = _invoke(tmp_path, ["profile", "status"])
-    second = _invoke(tmp_path, ["profile", "status"])
+    first = _invoke(["profile", "status"])
+    second = _invoke(["profile", "status"])
 
     assert first == second

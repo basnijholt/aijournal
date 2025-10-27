@@ -16,7 +16,6 @@ from hashlib import sha256
 from math import ceil, exp
 from pathlib import Path
 from string import Template
-from textwrap import dedent
 from typing import Any, Literal, cast
 
 import httpx
@@ -101,7 +100,17 @@ from aijournal.services import (
 )
 from aijournal.services.embedding import EmbeddingBackend
 from aijournal.services.retriever import RetrievalFilters, Retriever
+from aijournal.utils import time as time_utils
 from aijournal.utils.coercion import coerce_float, coerce_int
+from aijournal.utils.paths import (
+    AUTHORITATIVE_DIRS,
+    DERIVED_DIRS,
+    ensure_directories,
+    ensure_seed_files,
+    find_data_root,
+    normalized_entry_path,
+    resolve_prompt_path,
+)
 
 app = typer.Typer(help="Local-first personal journal utilities.")
 profile_app = typer.Typer(help="Profile utilities.")
@@ -120,144 +129,6 @@ def main() -> None:
     # Intentionally empty; commands provide functionality.
     return
 
-
-AUTHORITATIVE_DIRS = (
-    "config",
-    "profile",
-    "data",
-    "data/journal",
-    "data/normalized",
-    "data/raw",
-    "data/manifest",
-    "prompts",
-)
-
-DERIVED_DIRS = (
-    "derived",
-    "derived/summaries",
-    "derived/microfacts",
-    "derived/profile_suggestions",
-    "derived/interviews",
-    "derived/advice",
-    "derived/persona",
-    "derived/index",
-    "derived/chat_sessions",
-    "derived/pending",
-    "derived/pending/profile_updates",
-)
-
-SEED_FILES = {
-    "config/config.yaml": dedent(
-        """
-        model: "llama3.1:8b-instruct"
-        temperature: 0.2
-        seed: 42
-        paths:
-          data: "data"
-          profile: "profile"
-          derived: "derived"
-          prompts: "prompts"
-        impact_weights:
-          values_goals: 1.5
-          decision_style: 1.3
-          affect_energy: 1.2
-          traits: 1.0
-          social: 0.9
-          claims: 1.0
-          claim_types:
-            value: 1.4
-            goal: 1.4
-            boundary: 1.3
-            trait: 1.2
-            preference: 1.0
-            habit: 0.9
-            aversion: 1.1
-            skill: 1.0
-        advisor:
-          max_recos: 3
-          include_risks: true
-        token_estimator:
-          char_per_token: 4.2
-        persona:
-          token_budget: 1200
-          max_claims: 24
-          min_claims: 8
-        """,
-    ).strip()
-    + "\n",
-    "profile/self_profile.yaml": dedent(
-        """
-        traits:
-          big_five:
-            openness: {score: 0.74, method: self_report, user_verified: true}
-            conscientiousness: {score: 0.68, method: inferred}
-            extraversion: {score: 0.42, method: self_report}
-            agreeableness: {score: 0.61, method: inferred}
-            neuroticism: {score: 0.33, method: self_report}
-          regulatory_focus: {promotion: 0.7, prevention: 0.3}
-          risk_tolerance: {domain: "career", level: "medium-high"}
-          time_horizon: {preferred: "long", evidence: ["2024_l2_..."]}
-          review_after_days: 180
-
-        values_motivations:
-          schwartz_top5:
-            - "Self-Direction"
-            - "Achievement"
-            - "Universalism"
-            - "Benevolence"
-            - "Security"
-          sdt: {autonomy: 0.8, competence: 0.7, relatedness: 0.6}
-          drivers:
-            - value: "Mastery over tools & systems"
-              method: inferred
-              confidence: 0.8
-          review_after_days: 120
-
-        goals:
-          short_term:
-            - value: "Ship personal agent MVP"
-              why: "reduce friction"
-              krs: ["CLI usable", "context pack <1800t"]
-              review_after_days: 30
-          long_term:
-            - value: "Work-life consistency with twins"
-              krs: ["2 evenings/week protected"]
-              review_after_days: 90
-          anti_goals:
-            - value: "No late-night production firefighting as a norm"
-              reason: "family/health"
-
-        decision_style:
-          default: {speed_vs_quality: "quality", satisficer_vs_maximizer: "bounded_maximizer"}
-          implementation_intentions:
-            - if: "Feeling anxious before presentations"
-              then: "Run checklist + 10-min rehearsal"
-              evidence: ["2021-04-12_l1"]
-
-        affect_energy:
-          energy_map: {morning: "high", afternoon: "medium", evening: "low"}
-          stressors: ["ambiguous deadlines", "noisy environment"]
-          coping_strategies: ["walks", "time-boxing", "no email after 18:00"]
-
-        social:
-          relationships:
-            - person: "Jess"
-              role: "coworker"
-              notes: "great feedback partner"
-              boundary: "no pings after 18:00"
-
-        boundaries_ethics:
-          red_lines: ["No sharing private family data", "No health advice beyond guidelines"]
-
-        coaching_prefs:
-          tone: "direct, warm"
-          depth: "concrete first, theory second"
-          probing: {max_questions: 2, prefer: "yes/no + one short open follow-up"}
-        """,
-    ).strip()
-    + "\n",
-    "profile/claims.yaml": "claims: []\n",
-}
 
 ROLE_ORDER = [
     "persona_core",
@@ -508,8 +379,6 @@ FAKE_TAG_SETS = [
 FAKE_MINUTES = [0, 5, 10, 15, 20, 30, 35, 40, 45, 50]
 
 MARKDOWN_SUFFIXES = {".md", ".markdown"}
-
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
 PENDING_UPDATES_SUBDIR = "derived/pending/profile_updates"
 
 DEFAULT_PROMPTS = {
@@ -526,36 +395,8 @@ DEFAULT_PROMPTS = {
 }
 
 
-def _now() -> datetime:
-    """Return the current UTC time; separated for easy monkeypatching in tests."""
-    return datetime.now(tz=UTC)
-
-
-def _slugify_title(title: str) -> str:
-    slug = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")
-    return slug or "entry"
-
-
-def _format_timestamp(dt: datetime) -> str:
-    return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
-
-
-def _generate_session_id() -> str:
-    return f"chat-{_now().strftime('%Y%m%d-%H%M%S')}"
-
-
-def _resolve_prompt_path(prompt_path: str) -> Path:
-    candidate = Path(prompt_path)
-    if candidate.is_absolute():
-        return candidate
-    cwd_candidate = Path.cwd() / prompt_path
-    if cwd_candidate.exists():
-        return cwd_candidate
-    return PROJECT_ROOT / prompt_path
-
-
 def _load_prompt_template(prompt_path: str) -> str:
-    path = _resolve_prompt_path(prompt_path)
+    path = resolve_prompt_path(prompt_path)
     if path.exists():
         return path.read_text(encoding="utf-8")
     key = Path(prompt_path).name
@@ -626,7 +467,7 @@ def _simple_claim_to_upsert(
         # If missing statement, skip.
         return None
 
-    claim_id = (suggestion.id or _slugify_title(statement))[:96]
+    claim_id = (suggestion.id or time_utils.slugify_title(statement))[:96]
     sources = [
         ClaimSource(entry_id=str(entry).strip(), spans=[]) for entry in suggestion.evidence if entry
     ]
@@ -811,9 +652,9 @@ def _generate_fake_entries(
     if count <= 0:
         return (0, 0)
 
-    rng_seed = seed if seed is not None else int(_now().timestamp())
+    rng_seed = seed if seed is not None else int(time_utils.now().timestamp())
     rng = random.Random(rng_seed)
-    base_dt = _now()
+    base_dt = time_utils.now()
     base_day = base_dt.date()
     enforced_tags = list(override_tags or [])
 
@@ -838,9 +679,7 @@ def _generate_fake_entries(
         action = rng.choice(FAKE_ACTIONS)
         reflection = rng.choice(FAKE_REFLECTIONS)
         next_step = rng.choice(FAKE_NEXT_STEPS)
-        slug = (
-            f"{created_dt.strftime('%Y-%m-%d')}-{_slugify_title(theme)}-{_slugify_title(project)}"
-        )
+        slug = f"{created_dt.strftime('%Y-%m-%d')}-{time_utils.slugify_title(theme)}-{time_utils.slugify_title(project)}"
         title = f"{label}: {theme.title()} ({project})"
 
         entry_path = _journal_path(base, created_dt, slug)
@@ -859,7 +698,7 @@ def _generate_fake_entries(
 
         frontmatter = {
             "id": slug,
-            "created_at": _format_timestamp(created_dt),
+            "created_at": time_utils.format_timestamp(created_dt),
             "title": title,
             "tags": tags,
             "mood": mood,
@@ -877,42 +716,6 @@ def _generate_fake_entries(
         created += 1
 
     return created, skipped
-
-
-def _find_data_root(entry: Path) -> Path:
-    for parent in entry.parents:
-        if parent.name == "data":
-            return parent.parent
-    return Path.cwd()
-
-
-def _normalized_path(root: Path, date_str: str, entry_id: str) -> Path:
-    return root / "data" / "normalized" / date_str / f"{entry_id}.yaml"
-
-
-def _ensure_dirs(base: Path, rel_paths: Iterable[str]) -> tuple[int, int]:
-    paths = tuple(rel_paths)
-    created = 0
-    for rel in paths:
-        target = base / rel
-        if not target.exists():
-            target.mkdir(parents=True, exist_ok=True)
-            created += 1
-        else:
-            target.mkdir(parents=True, exist_ok=True)
-    return created, len(paths)
-
-
-def _ensure_files(base: Path) -> tuple[int, int]:
-    created = 0
-    for rel, content in SEED_FILES.items():
-        target = base / rel
-        if target.exists():
-            continue
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(content.rstrip() + "\n", encoding="utf-8")
-        created += 1
-    return created, len(SEED_FILES)
 
 
 def _split_frontmatter(text: str) -> tuple[str, str]:
@@ -995,7 +798,7 @@ def _write_yaml_if_changed(
 def _normalize_created_at(value: Any) -> str:
     if isinstance(value, datetime):
         dt = value.astimezone(UTC)
-        return _format_timestamp(dt)
+        return time_utils.format_timestamp(dt)
 
     if isinstance(value, str):
         candidate = value.replace("Z", "+00:00") if value.endswith("Z") else value
@@ -1003,17 +806,11 @@ def _normalize_created_at(value: Any) -> str:
             dt = datetime.fromisoformat(candidate)
             if dt.tzinfo is None:
                 dt = dt.replace(tzinfo=UTC)
-            return _format_timestamp(dt)
+            return time_utils.format_timestamp(dt)
         except ValueError:
             return value
 
     return str(value)
-
-
-def _created_date(created_at: str) -> str:
-    if "T" in created_at:
-        return created_at.split("T", 1)[0]
-    return created_at
 
 
 def _load_yaml(path: Path) -> dict[str, Any]:
@@ -1097,7 +894,7 @@ def _normalize_tags(raw: Iterable[Any]) -> list[str]:
         text = str(value).strip()
         if not text:
             continue
-        slug = _slugify_title(text)
+        slug = time_utils.slugify_title(text)
         if slug and slug not in seen:
             seen.add(slug)
             tags.append(slug)
@@ -1210,7 +1007,7 @@ def _normalize_provenance(
         last_updated_coerced = _coerce_timestamp(data.get("last_updated")) or timestamp
         provenance = Provenance(
             sources=sources,
-            first_seen=_created_date(first_seen_coerced or timestamp),
+            first_seen=time_utils.created_date(first_seen_coerced or timestamp),
             last_updated=last_updated_coerced,
             observation_count=observation_count
             if observation_count and observation_count > 0
@@ -1222,7 +1019,9 @@ def _normalize_provenance(
 
     first_seen_ts = _coerce_timestamp(provenance.first_seen)
     provenance.first_seen = (
-        _created_date(first_seen_ts) if first_seen_ts else _created_date(timestamp)
+        time_utils.created_date(first_seen_ts)
+        if first_seen_ts
+        else time_utils.created_date(timestamp)
     )
     provenance.last_updated = _coerce_timestamp(provenance.last_updated) or timestamp
     if provenance.observation_count <= 0:
@@ -1260,7 +1059,10 @@ def _normalize_claim_atom(
     claim_type = claim_type_raw if claim_type_raw in valid_types else "preference"
 
     subject_candidate = (
-        base.get("subject") or base.get("id") or _slugify_title(statement) or "observation"
+        base.get("subject")
+        or base.get("id")
+        or time_utils.slugify_title(statement)
+        or "observation"
     )
     subject = str(subject_candidate).strip() or "observation"
 
@@ -1277,8 +1079,8 @@ def _normalize_claim_atom(
     else:
         claim_id = None
     if not claim_id:
-        subject_slug = _slugify_title(subject) or "subject"
-        predicate_slug = _slugify_title(predicate) or "predicate"
+        subject_slug = time_utils.slugify_title(subject) or "subject"
+        predicate_slug = time_utils.slugify_title(predicate) or "predicate"
         claim_id = f"{claim_type}.{subject_slug}.{predicate_slug}"
     claim_id = claim_id[:96]
 
@@ -1330,7 +1132,7 @@ def _build_claim_atom_from_entry(
     strength: float,
     status: str,
 ) -> ClaimAtom:
-    timestamp = _format_timestamp(_now())
+    timestamp = time_utils.format_timestamp(time_utils.now())
     default_sources = [ClaimSource(entry_id=entry.id or claim_id, spans=[])]
     raw = {
         "id": claim_id,
@@ -1422,9 +1224,9 @@ def _merge_sections(
 def _sanitize_entry_id(candidate: str | None, title: str, date_str: str, digest: str) -> str:
     slug = ""
     if candidate and candidate.strip():
-        slug = _slugify_title(candidate)
+        slug = time_utils.slugify_title(candidate)
     elif title.strip():
-        slug = _slugify_title(title)
+        slug = time_utils.slugify_title(title)
 
     if slug:
         if not slug.startswith(date_str):
@@ -1460,9 +1262,9 @@ def _fake_structured_entry(entry_path: Path) -> IngestResult:
         frontmatter.get("created_at")
         or frontmatter.get("date")
         or frontmatter.get("published")
-        or _format_timestamp(_now())
+        or time_utils.format_timestamp(time_utils.now())
     )
-    created_dt = _parse_datetime(str(created_value)) or _now()
+    created_dt = _parse_datetime(str(created_value)) or time_utils.now()
     title = str(frontmatter.get("title") or entry_path.stem)
     section_models = [
         IngestSection(
@@ -1501,11 +1303,11 @@ def _normalized_from_structured(
 ) -> tuple[dict[str, Any], str]:
     created_at = structured.created_at
     if isinstance(created_at, datetime):
-        created_str = _format_timestamp(created_at.astimezone(UTC))
+        created_str = time_utils.format_timestamp(created_at.astimezone(UTC))
     else:
         created_str = _normalize_created_at(created_at)
 
-    date_str = _created_date(created_str)
+    date_str = time_utils.created_date(created_str)
     entry_id = _sanitize_entry_id(structured.entry_id, structured.title, date_str, digest)
     tags = _normalize_tags(list(structured.tags or []) + list(fallback_tags or []))
 
@@ -1565,7 +1367,7 @@ def _derived_microfacts_path(root: Path, day: str) -> Path:
 
 
 def _derived_advice_path(root: Path, day: str, question: str) -> Path:
-    slug = _slugify_title(question)
+    slug = time_utils.slugify_title(question)
     return root / "derived" / "advice" / day / f"{slug}.yaml"
 
 
@@ -1611,7 +1413,7 @@ def _collect_pending_interview_prompts(root: Path, limit: int = 5) -> list[str]:
 
 
 def _hash_prompt(prompt_path: str) -> str | None:
-    path = _resolve_prompt_path(prompt_path)
+    path = resolve_prompt_path(prompt_path)
     try:
         data = path.read_bytes()
     except FileNotFoundError:
@@ -1639,7 +1441,7 @@ def _build_meta(
         llm_model=resolved_model,
         prompt_path=prompt_path,
         prompt_hash=_hash_prompt(prompt_path),
-        created_at=_format_timestamp(_now()),
+        created_at=time_utils.format_timestamp(time_utils.now()),
     )
 
 
@@ -1813,7 +1615,7 @@ def _fake_characterize(
         return ProfileUpdateProposals()
 
     seed = entries[0]
-    date = _created_date(seed.created_at or _format_timestamp(_now()))
+    date = time_utils.created_date(seed.created_at or time_utils.format_timestamp(time_utils.now()))
     heading = ""
     sections = seed.sections or []
     if sections:
@@ -1821,7 +1623,7 @@ def _fake_characterize(
     title = seed.title or seed.id or "entry"
     theme = heading or title
     tag = (seed.tags or [theme])[0]
-    claim_id = f"{_slugify_title(theme) or 'entry'}-{date.replace('-', '')}-claim"
+    claim_id = f"{time_utils.slugify_title(theme) or 'entry'}-{date.replace('-', '')}-claim"
     claim = _build_claim_atom_from_entry(
         seed,
         claim_id=claim_id[:64],
@@ -2028,7 +1830,7 @@ def _microfact_claim_proposals(
             "review_after_days": 90,
             "provenance": {
                 "sources": [source.model_dump(mode="python") for source in provenance_sources],
-                "first_seen": fact.first_seen or _created_date(timestamp),
+                "first_seen": fact.first_seen or time_utils.created_date(timestamp),
                 "last_updated": fact.last_seen or timestamp,
                 "observation_count": 1,
             },
@@ -2070,7 +1872,7 @@ def _microfacts_payload(
 
     manifest_index = manifest_index or {}
     existing_claims = tuple(existing_claims or ())
-    claim_timestamp = _format_timestamp(_now())
+    claim_timestamp = time_utils.format_timestamp(time_utils.now())
     (
         normalized_ids,
         evidence_hashes,
@@ -2195,7 +1997,7 @@ def _profile_suggestions_payload(
                 label=f"profile suggest {date}",
             ),
         )
-        timestamp = _format_timestamp(_now())
+        timestamp = time_utils.format_timestamp(time_utils.now())
         suggestions = _simple_suggestions_to_profile(simple_response, timestamp=timestamp)
 
     suggestions.meta = _build_meta("prompts/profile_suggest.md", config=config)
@@ -2362,7 +2164,7 @@ def _characterize_payload(
     timeout: float | None = None,
     retries: int = DEFAULT_LLM_RETRIES,
 ) -> tuple[ProfileUpdateProposals, list[str]]:
-    claim_timestamp = _format_timestamp(_now())
+    claim_timestamp = time_utils.format_timestamp(time_utils.now())
     (
         normalized_ids,
         evidence_hashes,
@@ -2377,7 +2179,7 @@ def _characterize_payload(
         manifest_payload = _json_block(
             {key: entry.model_dump(mode="python") for key, entry in manifest_index.items()},
         )
-        target_date = date or _created_date(claim_timestamp)
+        target_date = date or time_utils.created_date(claim_timestamp)
         response = cast(
             CharacterizeResponse,
             _structured_call_with_retry(
@@ -2427,7 +2229,7 @@ def _characterize_payload(
 
 
 def _advice_identifier(question: str) -> str:
-    day = _created_date(_format_timestamp(_now()))
+    day = time_utils.created_date(time_utils.format_timestamp(time_utils.now()))
     digest = sha256(question.encode("utf-8")).hexdigest()[:8]
     return f"adv_{day}_{digest}"
 
@@ -2465,7 +2267,7 @@ def _advice_payload(
     response = _invoke_structured_llm(
         "prompts/advise.md",
         {
-            "date": _created_date(_format_timestamp(_now())),
+            "date": time_utils.created_date(time_utils.format_timestamp(time_utils.now())),
             "question": question,
             "profile_json": _json_block(profile),
             "claims_json": _json_block(
@@ -2499,11 +2301,11 @@ def init(
     created_dirs = 0
     total_dirs = 0
     for rels in dir_sets:
-        created, total = _ensure_dirs(base, rels)
+        created, total = ensure_directories(base, rels)
         created_dirs += created
         total_dirs += total
 
-    created_files, total_files = _ensure_files(base)
+    created_files, total_files = ensure_seed_files(base)
 
     already_dirs = total_dirs - created_dirs
     already_files = total_files - created_files
@@ -2565,9 +2367,9 @@ def new(
         typer.secho("Title is required unless --fake is provided.", fg=typer.colors.RED, err=True)
         raise typer.Exit(1)
 
-    now = _now()
-    slug = f"{now.strftime('%Y-%m-%d')}-{_slugify_title(title)}"
-    entry_path = _journal_path(base, now, slug)
+    current_time = time_utils.now()
+    slug = f"{current_time.strftime('%Y-%m-%d')}-{time_utils.slugify_title(title)}"
+    entry_path = _journal_path(base, current_time, slug)
 
     if entry_path.exists():
         typer.echo(f"Entry exists: {entry_path}")
@@ -2575,7 +2377,7 @@ def new(
 
     frontmatter = {
         "id": slug,
-        "created_at": _format_timestamp(now),
+        "created_at": time_utils.format_timestamp(current_time),
         "title": title,
         "tags": tags or [],
     }
@@ -2705,7 +2507,7 @@ def ingest(
             typer.secho(f"Failed to ingest {file}: {exc}", fg=typer.colors.RED, err=True)
             continue
 
-        normalized_path = _normalized_path(root, date_str, normalized["id"])
+        normalized_path = normalized_entry_path(root, date_str, normalized["id"])
         _write_yaml_if_changed(
             normalized_path,
             normalized,
@@ -2721,7 +2523,7 @@ def ingest(
             path=_relative_source_path(file, root),
             normalized=_relative_source_path(normalized_path, root),
             source_type=source_type,
-            ingested_at=_format_timestamp(_now()),
+            ingested_at=time_utils.format_timestamp(time_utils.now()),
             created_at=str(normalized["created_at"]),
             id=str(normalized["id"]),
             tags=list(normalized.get("tags", [])),
@@ -2774,8 +2576,8 @@ def normalize(
     entry_id = str(entry_id_value)
     title = str(title_value)
     created_str = _normalize_created_at(created_value)
-    date_str = _created_date(created_str)
-    root = _find_data_root(entry)
+    date_str = time_utils.created_date(created_str)
+    root = find_data_root(entry)
     normalized_data = {
         "id": entry_id,
         "created_at": created_str,
@@ -2785,7 +2587,7 @@ def normalize(
         "sections": sections,
     }
 
-    output_path = _normalized_path(root, date_str, entry_id)
+    output_path = normalized_entry_path(root, date_str, entry_id)
     _write_yaml_if_changed(
         output_path,
         normalized_data,
@@ -2981,7 +2783,7 @@ def profile_apply(
     profile_model, claim_models = _load_profile_components(root)
     profile = _profile_to_dict(profile_model)
     claims = [claim.model_copy(deep=True) for claim in claim_models]
-    timestamp = _format_timestamp(_now())
+    timestamp = time_utils.format_timestamp(time_utils.now())
     changed = False
 
     for upsert in suggestions_model.upserts:
@@ -3060,7 +2862,7 @@ def characterize(
         typer.secho(f"Characterize failed: {exc}", fg=typer.colors.RED, err=True)
         raise typer.Exit(1)
 
-    timestamp = _format_timestamp(_now())
+    timestamp = time_utils.format_timestamp(time_utils.now())
     batch_id = f"{date}-{timestamp}"
 
     preview_model = _build_claim_preview(
@@ -3161,7 +2963,7 @@ def review_updates(
     profile_model, claim_models = _load_profile_components(root)
     profile = _profile_to_dict(profile_model)
     claims_data = [claim.model_copy(deep=True) for claim in claim_models]
-    timestamp = _format_timestamp(_now())
+    timestamp = time_utils.format_timestamp(time_utils.now())
     applied = 0
     merge_events: list[ClaimMergeOutcome] = []
 
@@ -3209,7 +3011,7 @@ def advise(
         profile,
         claims,
         weights,
-        _now(),
+        time_utils.now(),
         entries=entries,
         pending_prompts=pending_prompts,
     )
@@ -3226,7 +3028,7 @@ def advise(
     )
     advice_card.meta = _build_meta("prompts/advise.md", model=model_name)
 
-    day = _created_date(_format_timestamp(_now()))
+    day = time_utils.created_date(time_utils.format_timestamp(time_utils.now()))
     advice_path = _derived_advice_path(root, day, question)
     write_yaml_model(advice_path, advice_card)
     typer.echo(str(advice_path))
@@ -3341,7 +3143,7 @@ def _profile_to_dict(profile: SelfProfile | None) -> dict[str, Any]:
 
 def _claims_to_models(claims: Sequence[Any]) -> list[ClaimAtom]:
     normalized: list[ClaimAtom] = []
-    timestamp = _format_timestamp(_now())
+    timestamp = time_utils.format_timestamp(time_utils.now())
     for raw in claims:
         if not isinstance(raw, (dict, ClaimAtom)):
             continue
@@ -3606,7 +3408,7 @@ def _persona_build_impl(
     char_per_token = coerce_float(token_estimator.get("char_per_token")) or DEFAULT_CHAR_PER_TOKEN
 
     profile_slice = _persona_profile_slice(profile)
-    now_dt = _now()
+    now_dt = time_utils.now()
     impact_weights_raw = config.get("impact_weights")
     impact_weights = impact_weights_raw if isinstance(impact_weights_raw, dict) else {}
     ranked_claims = _rank_claims_for_persona(claim_models, impact_weights, now_dt)
@@ -3628,7 +3430,7 @@ def _persona_build_impl(
         max_claims=max_claims,
     )
 
-    now = _format_timestamp(now_dt)
+    generated_at = time_utils.format_timestamp(now_dt)
     persona_claim_models = [claim.model_copy(deep=True) for claim in selection.claims]
 
     persona_core = PersonaCore(
@@ -3646,7 +3448,7 @@ def _persona_build_impl(
     source_mtimes = _persona_source_mtimes(root)
 
     meta_model = PersonaCoreMeta(
-        generated_at=now,
+        generated_at=generated_at,
         token_budget=token_budget,
         planned_tokens=selection.planned_tokens,
         char_per_token=char_per_token,
@@ -4084,7 +3886,7 @@ def _preview_claim_consolidation(
     _, claim_models = _load_profile_components(root)
     if not claim_models:
         return
-    timestamp = _format_timestamp(_now())
+    timestamp = time_utils.format_timestamp(time_utils.now())
     working_claims = [claim.model_copy(deep=True) for claim in claim_models]
     consolidator = ClaimConsolidator(timestamp=timestamp)
     events: list[ClaimMergeOutcome] = []
@@ -4259,7 +4061,7 @@ def _profile_status_impl() -> None:
         typer.echo("No profile data")
         raise typer.Exit(0)
 
-    rankings = _compute_rankings(profile, claim_models, weights, _now())
+    rankings = _compute_rankings(profile, claim_models, weights, time_utils.now())
     if not rankings:
         typer.echo("No profile data")
         raise typer.Exit(0)
@@ -4305,7 +4107,7 @@ def interview(
         profile,
         claims,
         weights,
-        _now(),
+        time_utils.now(),
         entries=entries,
         pending_prompts=pending_prompts,
     )
@@ -4580,7 +4382,7 @@ def _resolve_pack_date(level: str, requested: str | None, root: Path) -> str:
     if requested:
         return requested
     if level == "L1":
-        return _now().strftime("%Y-%m-%d")
+        return time_utils.now().strftime("%Y-%m-%d")
     latest = _latest_normalized_day(root)
     if latest:
         return latest
@@ -4600,7 +4402,7 @@ def _build_pack_payload(
         total_tokens=total_tokens,
         max_tokens=max_tokens,
         trimmed=trimmed,
-        generated_at=_format_timestamp(_now()),
+        generated_at=time_utils.format_timestamp(time_utils.now()),
     )
     return PackBundle(level=level, date=date, files=entries, meta=meta)
 
@@ -5043,12 +4845,12 @@ def chat(
     session_id = session.strip() if isinstance(session, str) and session.strip() else None
     saved_dir: Path | None = None
     if save:
-        session_id = session_id or _generate_session_id()
+        session_id = session_id or time_utils.generate_session_id()
         recorder = ChatSessionRecorder(root, session_id)
         recorder.append(turn, feedback=feedback_value)
         saved_dir = recorder.session_dir
     else:
-        session_id = session_id or _generate_session_id()
+        session_id = session_id or time_utils.generate_session_id()
 
     _render_chat_turn(
         turn,
@@ -5264,7 +5066,7 @@ def _resolve_since_filter(value: str | None, fallback_days: int | None = None) -
             return text
         if text.endswith("d") and text[:-1].isdigit():
             window = int(text[:-1])
-            return (_now() - timedelta(days=window)).strftime("%Y-%m-%d")
+            return (time_utils.now() - timedelta(days=window)).strftime("%Y-%m-%d")
         typer.secho(
             "--since must be YYYY-MM-DD or Nd (e.g., 7d)",
             fg=typer.colors.RED,
@@ -5272,7 +5074,7 @@ def _resolve_since_filter(value: str | None, fallback_days: int | None = None) -
         )
         raise typer.Exit(1)
     if fallback_days is not None:
-        return (_now() - timedelta(days=fallback_days)).strftime("%Y-%m-%d")
+        return (time_utils.now() - timedelta(days=fallback_days)).strftime("%Y-%m-%d")
     return None
 
 
@@ -5528,7 +5330,7 @@ def _index_entries(
     touched_dates: set[str] = set()
     processed_entries = 0
     processed_chunks = 0
-    timestamp = _format_timestamp(_now())
+    timestamp = time_utils.format_timestamp(time_utils.now())
 
     for task in tasks:
         chunk_records = _build_chunk_records(
@@ -5575,8 +5377,10 @@ def _build_chunk_records(
     entry_id = entry.id.strip()
     if not entry_id:
         return []
-    created_at = _normalize_created_at(entry.created_at or _format_timestamp(_now()))
-    date_value = _created_date(created_at)
+    created_at = _normalize_created_at(
+        entry.created_at or time_utils.format_timestamp(time_utils.now())
+    )
+    date_value = time_utils.created_date(created_at)
     tags = entry.tags or []
     scope_tags = [str(tag) for tag in tags]
     paragraphs = _entry_paragraphs(entry)
@@ -5882,7 +5686,7 @@ def _write_chunk_manifests(
             meta=ChunkManifestMeta(
                 embedding_model=embedder.model,
                 vector_dimension=embedder.dim,
-                generated_at=_format_timestamp(_now()),
+                generated_at=time_utils.format_timestamp(time_utils.now()),
             ),
         )
         write_yaml_model(manifest_path, manifest)
@@ -5928,7 +5732,7 @@ def _write_index_meta(
         since=since,
         limit=limit,
         touched_dates=sorted(set(touched_dates)),
-        updated_at=_format_timestamp(_now()),
+        updated_at=time_utils.format_timestamp(time_utils.now()),
     )
     payload = index_meta.model_dump(mode="python", exclude_none=True)
     _index_meta_path(root).write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
