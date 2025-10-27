@@ -190,7 +190,7 @@ _Pattern for each command group: first create `commands/<name>.py` with a thin `
 40. [x] Update docs (README/PLAN) to describe the new module layout (include distinction between services vs. pipe[ ] lines).  
     → `uv run pytest`
 
-41. [ ] Confirm CLI smoke/integration tests remain in place to guard end-to-end behaviour.  
+41. [x] Confirm CLI smoke/integration tests remain in place to guard end-to-end behaviour (full `tests/test_cli_*` suite still green).  
     → `uv run pytest`
 
 ---
