@@ -1080,6 +1080,34 @@ documentation parity, and live-mode polish moving without blocking on LLM availa
       failures as 0/10 until automatically mitigated, and surface follow-up remediation steps.
     - Enhance health checks to distinguish fake payloads vs. live Ollama availability, annotating
       results to avoid overconfidence when working offline.
+    - **Live verification 2025-10-27.**
+      - Initial run (devstral:24b @ 192.168.1.143): 166/220 (avg 7.55). Failures all came from
+        `facts`, `profile suggest`, `characterize` returning fenced JSON that Pydantic AI rejected.
+      - Follow-up run after switching workspace config to `gpt-oss:20b`: reran those commands plus
+        `review-updates`; all now succeed (no schema errors) though the returned payloads were empty
+        or merge-no-ops. Updated score: 196/220 (avg 8.91).
+      - Remaining partials: `profile apply` (nothing to change), `chatd` shutdown still hits
+        SQLite cross-thread close, ingest required initial model swap.
+      - Artefact audit: normalized journals dated 2025-10-20..26, summary/advice YAML validated,
+        persona core regenerated; chat session telemetry captured; pack outputs within token
+        budgets.
+    - **Focused production to-dos (live mode only).**
+      1. **Structured-output hardening.**  
+         - Strip markdown fences and trailing commentary before Pydantic validation.  
+         - Log the final JSON payload (or diff) whenever schema parsing fails so we can debug quickly.  
+         - Keep failure hard (no silent fallbacks); make sure errors surface clear remediation hints when the model does not honor the schema.
+      2. **Prompt calibration for gpt-oss:20b.**  
+         - Iterate on `extract_facts.md`, `profile_suggest.md`, and `characterize.md` so the model produces non-empty facts/suggestions on the seeded journal data.  
+         - Add regression scripts (no fake mode) that run these prompts against `/tmp/aijournal_live_run_*` and save exemplar outputs.
+      3. **chatd shutdown fix.**  
+         - Rework `Retriever` connections (`check_same_thread=False` or open/close per request) so the FastAPI app exits cleanly without `sqlite3.ProgrammingError`.  
+         - Add a CLI/API smoke test that starts `chatd`, hits `/chat`, and shuts down, asserting no stack traces.
+      4. **Chat feedback improvements.**  
+         - Tune the chat prompt so responses include claim citations when evidence exists, ensuring thumbs-up/down actually adjusts strengths.  
+         - Capture telemetry when no citations are found and surface guidance to the user.
+      5. **Live runbook + model checks.**  
+         - Detect missing models before command execution; prompt the operator to pull or switch to a known-good model (currently `gpt-oss:20b @ 192.168.1.143`).  
+         - Document the full live rehearsal procedure, including how to rerun the command checklist and update the scoreboard.
 
 Document each milestone in CHANGELOG.md once merged so README and PLAN stay aligned with shipped
 surfaces.
