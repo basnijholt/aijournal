@@ -1080,17 +1080,11 @@ documentation parity, and live-mode polish moving without blocking on LLM availa
       failures as 0/10 until automatically mitigated, and surface follow-up remediation steps.
     - Enhance health checks to distinguish fake payloads vs. live Ollama availability, annotating
       results to avoid overconfidence when working offline.
-    - **Live verification 2025-10-27.**
-      - Initial run (devstral:24b @ 192.168.1.143): 166/220 (avg 7.55). Failures all came from
-        `facts`, `profile suggest`, `characterize` returning fenced JSON that Pydantic AI rejected.
-      - Follow-up run after switching workspace config to `gpt-oss:20b`: reran those commands plus
-        `review-updates`; all now succeed (no schema errors) though the returned payloads were empty
-        or merge-no-ops. Updated score: 196/220 (avg 8.91).
-      - Remaining partials: `profile apply` (nothing to change), `chatd` shutdown still hits
-        SQLite cross-thread close, ingest required initial model swap.
-      - Artefact audit: normalized journals dated 2025-10-20..26, summary/advice YAML validated,
-        persona core regenerated; chat session telemetry captured; pack outputs within token
-        budgets.
+    - **Live verification 2025-10-27 (gpt-oss:20b @ 192.168.1.143).**
+      - Re-ran summarize → ollama health on `/tmp/aijournal_live_run_202510262035`; score 179/190 (avg 9.42).
+      - Structured calls (facts, suggestions, characterize, advise, chat) all validated against updated schemas; `review-updates` applied after adding a `planning` facet to `SelfProfile`.
+      - Remaining issues: facts/suggestions still return empty payloads, chat feedback lacks claim-level references, and `chatd` shutdown continues to raise the SQLite cross-thread error.
+      - Artefacts: refreshed summaries/microfacts, regenerated persona core + advice card, updated profile planning facet, packs within budget, chat transcripts recorded under `derived/chat_sessions/live-verify/`.
     - **Focused production to-dos (live mode only).**
       1. **Structured-output hardening.** ✅ _2025-10-29: `run_ollama_agent` now sanitizes fenced JSON and logs the cleaned payload on validation errors (`src/aijournal/services/ollama.py`, tests in `tests/test_ollama_services.py`). Chat/advise flows now require dedicated Pydantic response models with no heuristic fallbacks (see `src/aijournal/services/chat.py`, `src/aijournal/cli.py`)._
       2. **Prompt calibration for gpt-oss:20b.**  
