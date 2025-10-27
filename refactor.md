@@ -18,6 +18,14 @@
 
 Decompose the 5.8k LOC `cli.py` and 700 LOC `models/__init__.py` into modular packages (`core`, `pipelines`, `commands`). Preserve behavior via strengthened tests so we can iterate without a monolith.
 
+## Safety & Commit Discipline
+
+- Treat each checklist item as a **series of micro-steps**. When in doubt, split further (e.g., move one helper at a time, then swap the caller in the next commit).
+- After every micro-step, run `uv run pytest`. Only proceed when the suite is green.
+- Keep diffs focused: no drive-by edits, no unrelated cleanup. The code must remain functional after every commit.
+- Leave explanatory TODO comments out of the code—capture follow-ups in issues or in this document instead.
+- If a refactor uncovers a behavior bug, note it inline (e.g., in `@testing-coverage-plan.md`) and continue structuring the code without “fixing” logic mid-step unless the plan calls for it.
+
 ---
 
 ## Refactor Checklist
@@ -31,9 +39,9 @@ Decompose the 5.8k LOC `cli.py` and 700 LOC `models/__init__.py` into modular pa
 1. Add `tests/conftest.py` fixture `cli_workspace(tmp_path, monkeypatch)`:
    - `monkeypatch.chdir(tmp_path)` so commands run inside the temporary workspace
    - set `AIJOURNAL_FAKE_OLLAMA=1`
-  - run `aijournal init` to seed the directory structure
-  - monkeypatch time helpers (e.g., `core/time.now`) to a fixed datetime
-  - `yield tmp_path` for callers  
+   - run `aijournal init` to seed the directory structure
+   - monkeypatch time helpers (e.g., `core/time.now`) to a fixed datetime
+   - `yield tmp_path` for callers  
    → `uv run pytest`
 
 2. Update `tests/test_cli_summarize.py` to use `cli_workspace`, drop duplicated setup, and assert key fields instead of full snapshots.  
@@ -100,6 +108,8 @@ Decompose the 5.8k LOC `cli.py` and 700 LOC `models/__init__.py` into modular pa
 
 ## Phase 4 · Pipeline Modules
 
+_For each pipeline: (1) add the new module + unit test, commit; (2) update the CLI to call it, commit; re-run `uv run pytest` after each._
+
 18. Create `pipelines/__init__.py`.  
     → `uv run pytest`
 
@@ -127,6 +137,8 @@ Decompose the 5.8k LOC `cli.py` and 700 LOC `models/__init__.py` into modular pa
 ---
 
 ## Phase 5 · Commands Package
+
+_Pattern for each command group: first create `commands/<name>.py` with a thin `run_*` wrapper replicated from `cli.py`, commit; then switch the Typer command to call it, commit._
 
 26. Create `commands/__init__.py`.  
     → `uv run pytest`
