@@ -2,15 +2,13 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from pathlib import Path
 
 import yaml
 from typer.testing import CliRunner
 
 from aijournal.cli import app
-
-if TYPE_CHECKING:
-    from pathlib import Path
+from aijournal.models import CharacterizeResponse
 
 runner = CliRunner()
 DATE = "2025-02-03"
@@ -93,8 +91,14 @@ def _seed_conflicting_claim(tmp_path: Path) -> None:
     _write_yaml(tmp_path / "profile" / "claims.yaml", {"claims": [conflict_claim]})
 
 
-def _run_characterize(tmp_path: Path, extra_args: list[str] | None = None) -> tuple[Path, str]:
+def _run_characterize(
+    tmp_path: Path,
+    extra_args: list[str] | None = None,
+    env_override: dict[str, str] | None = None,
+) -> tuple[Path, str]:
     env = {"AIJOURNAL_FAKE_OLLAMA": "1"}
+    if env_override:
+        env.update(env_override)
     args = ["characterize", "--date", DATE]
     if extra_args:
         args.extend(extra_args)
@@ -180,3 +184,79 @@ def test_characterize_progress_flag(tmp_path: Path, monkeypatch) -> None:
 
     assert "Characterizing entries" in output
     assert "[1/1]" in output
+
+
+def test_characterize_live_mode_structured(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    _seed_normalized(tmp_path)
+    _seed_manifest(tmp_path)
+    _seed_profile(tmp_path)
+    monkeypatch.setenv("AIJOURNAL_FAKE_OLLAMA", "0")
+
+    claim_payload = {
+        "id": "focus-claim",
+        "type": "preference",
+        "subject": "Focus routines",
+        "predicate": "affinity",
+        "value": "Focus routines hold",
+        "statement": "Focus routines hold",
+        "scope": {"domain": None, "context": ["focus"], "conditions": []},
+        "strength": 0.6,
+        "status": "tentative",
+        "method": "inferred",
+        "user_verified": False,
+        "review_after_days": 120,
+        "provenance": {
+            "sources": [{"entry_id": ENTRY_ID, "spans": []}],
+            "first_seen": DATE,
+            "last_updated": f"{DATE}T00:00:00Z",
+            "observation_count": 1,
+        },
+    }
+
+    def _fake_structured(*_args, **_kwargs) -> CharacterizeResponse:
+        return CharacterizeResponse.model_validate(
+            {
+                "claims": [
+                    {
+                        "claim": claim_payload,
+                        "normalized_ids": [ENTRY_ID],
+                        "evidence_hashes": [SOURCE_HASH],
+                        "manifest_hashes": [SOURCE_HASH],
+                        "rationale": "Recent entry reinforces the pattern.",
+                    }
+                ],
+                "facets": [],
+                "interview_prompts": ["How do mornings vary on travel days?"],
+            },
+        )
+
+    captured: dict[str, list] = {}
+
+    import aijournal.cli as cli_module  # type: ignore[import-deprecated]
+
+    original_normalize = cli_module._normalize_claim_proposals
+
+    def _capture_claims(raw_claims, **kwargs):  # type: ignore[override]
+        raw_list = list(raw_claims)
+        captured["raw_claims"] = raw_list
+        return original_normalize(raw_list, **kwargs)
+
+    monkeypatch.setattr("aijournal.cli._normalize_claim_proposals", _capture_claims)
+    monkeypatch.setattr(
+        "aijournal.cli._invoke_structured_llm",
+        lambda *a, **k: _fake_structured(),
+    )
+
+    batch_path, _ = _run_characterize(
+        tmp_path,
+        env_override={"AIJOURNAL_FAKE_OLLAMA": "0"},
+    )
+    data = yaml.safe_load(batch_path.read_text(encoding="utf-8"))
+    assert captured.get("raw_claims"), "Expected structured claims to flow into normalization"
+    claim_ids = [item["claim"]["id"] for item in data["proposals"]["claims"]]
+    assert "focus-claim" in claim_ids
+    statements = [item["claim"]["statement"] for item in data["proposals"]["claims"]]
+    assert any("Focus routines hold" in stmt for stmt in statements)
+    prompts = data.get("preview", {}).get("interview_prompts") or []
+    assert "travel" in prompts[0]

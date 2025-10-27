@@ -961,13 +961,12 @@ ci:          just fake_on test mypy
 
 ## 25. Execution Roadmap (October 2025)
 
-As of 2025-10-26 the CLI ships `init`, `new`, `ingest`, `normalize`, `summarize`, `facts`,
+As of 2025-10-29 the CLI ships `init`, `new`, `ingest`, `normalize`, `summarize`, `facts`,
 `profile suggest/apply`, `characterize`, `review-updates`, `advise`, `profile-status`,
-`interview`, `pack`, `ollama health`, `index rebuild/tail`, `retriever`, and `persona build`.
-We just landed the first pass of `ClaimConsolidator` + preview wiring inside `review-updates`,
-but chat/chatd remain unimplemented despite being mentioned in README/PLAN snippets. The roadmap
-below keeps consolidation, documentation parity, and the chat/advisor loop moving without
-blocking on LLM availability.
+`interview`, `pack`, `ollama health`, `index rebuild/tail`, `retriever`, `persona build`, `chat`,
+and `chatd`. Chat now persists transcripts/summary/learnings, supports session reuse, emits JSON
+telemetry, and `chatd` exposes the same loop via FastAPI. The roadmap below keeps consolidation,
+documentation parity, and live-mode polish moving without blocking on LLM availability.
 
 ### Immediate focus (week of 2025-10-27)
 
@@ -1018,22 +1017,40 @@ blocking on LLM availability.
 
 ### Later focus (mid-November 2025)
 
-6. **feat(chat + chatd): retrieval-backed conversation loop.** 🚧 _CLI slice shipped 2025-10-28 (streamed answers + citations with fake-mode coverage); FastAPI service and learnings write-back remain._
-   - CLI `aijournal chat` now reuses the shared Retriever, requires fresh persona/index artifacts, and streams responses with `[entry:<id>#p<idx>]` citations plus scored snippets. Fake mode outputs deterministic fixtures for CI.
-   - Next: lift the orchestrator into FastAPI `chatd`, keeping the same service layer and streaming the transcript while persisting `derived/chat_sessions/<session_id>/{transcript.jsonl,summary.yaml,learnings.yaml}`.
-   - Next: add lightweight intent handling + optional clarifying question support (`coaching_prefs.probing`) once the chatd surface is wired.
-   - Existing fake-mode fixtures cover the CLI; extend them to the API surface so automation can exercise both flows offline.
+6. **feat(chat + chatd): retrieval-backed conversation loop.** ✅ _Shipped 2025-10-29 with session-aware transcripts, clarifying questions, FastAPI streaming, and telemetry fixtures._
+   - CLI `aijournal chat` now supports `--session/--save` for appendable transcripts under
+     `derived/chat_sessions/<session>/`, emits structured telemetry (`event: chat.telemetry`), and
+     accepts `--feedback up|down` to nudge cited claims while queuing feedback batches.
+   - Live runs surface at most one clarifying question based on `coaching_prefs.probing` and respect
+     fake mode for deterministic CI runs. Tests cover session persistence, feedback nudges, and the
+     new options.
+   - FastAPI `aijournal chatd` mirrors the orchestrator, streaming NDJSON frames, persisting
+     transcripts when requested, and sharing the feedback/telemetry plumbing across CLI + API
+     surfaces.
 
-7. **feat(feedback + telemetry): learnings + strength nudges.**
-   - Add thumbs up/down handling that adjusts cited claim strengths (+0.03 / −0.05 clamp 0..1) and
-     queues learnings into `derived/pending/profile_updates/`.
-   - Emit lightweight structured logs summarizing retrieval latency, chunk counts, and pack token
-     budgets so regressions are visible without extra tooling.
+7. **feat(feedback + telemetry): learnings + strength nudges.** ✅ _Shipped 2025-10-29 alongside the chat updates._
+   - `--feedback up|down` adjusts cited claim strengths (+0.03 / −0.05 clamped 0..1), logs the delta,
+     and records learnings in both the chat session bundle and
+     `derived/pending/profile_updates/feedback_*.yaml`.
+   - Chat and pack now emit JSON telemetry summarising retrieval latency, chunk counts, and token
+     budgets so regressions are script-friendly without extra tooling.
 
-8. **feat(profile-structured-live): align prompts with live Ollama responses.**
-   - `aijournal profile suggest` now uses the simplified `suggestions` array and converts it into rich internal updates (shipped 2025-10-26). Live runs succeed against devstral:24b without fallbacks.
-   - `aijournal characterize` still triggers `invalid JSON schema`; restructure the response shape (or split the workflow) so live mode produces validated payloads instead of falling back to heuristics.
-   - `aijournal interview` still relies on heuristic probes; wire it to the shared LLM runner (with fake-mode guard rails) once structured outputs remain stable so live runs gain adaptive questioning.
+8. **feat(profile-structured-live): align prompts with live Ollama responses.** ✅ _Shipped 2025-10-29 via prompt/schema refresh and interview orchestration._
+   - `prompts/characterize.md` now matches the `CharacterizeResponse` schema (nested `claim`
+     payloads, provenance arrays, interview prompts). Live runs validate successfully instead of
+     dropping back to heuristics, with new Pytests covering the structured path.
+   - `aijournal interview` uses the shared structured LLM helper when live mode is available,
+     honouring `coaching_prefs.probing.max_questions` and falling back gracefully to heuristics in
+     fake mode. Tests cover both fake and live-mode flows.
+
+9. **feat(interview+advisor): information-gain ranking & scope-aware prompts.** ✅ _Shipped 2025-10-29 with richer interview targeting; advisor upgrades to follow._
+   - Interview ranking now blends staleness, strength, claim status, scope coverage, and recent
+     entry tags to prioritise high-impact follow-ups, while pending review prompts are surfaced as
+     top-priority questions.
+   - CLI fallback questions reference the new metadata (missing contexts, reasons), and the live LLM
+     prompt (`prompts/interview.md`) receives the structured payload (`kind`, `reasons`,
+     `missing_context`) so generated probes stay scope-aware.
+   - Advisor-mode changes will build on this richer signal in a follow-up milestone.
 
 Document each milestone in CHANGELOG.md once merged so README and PLAN stay aligned with shipped
 surfaces.

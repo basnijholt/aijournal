@@ -1,6 +1,7 @@
 """Service utilities for aijournal."""
 
-from .chat import ChatCitation, ChatService, ChatTurn
+from .chat import ChatCitation, ChatService, ChatTelemetry, ChatTurn
+from .chat_api import build_chat_app
 from .consolidator import (
     ClaimConflict,
     ClaimConsolidator,
@@ -8,6 +9,7 @@ from .consolidator import (
     ClaimSignature,
 )
 from .embedding import DEFAULT_EMBED_DIM, EmbeddingBackend
+from .feedback import FeedbackAdjustment, apply_chat_feedback, extract_claim_markers
 from .ollama import (
     LLMResponseError,
     OllamaConfig,
@@ -30,6 +32,11 @@ __all__ = [
     "ChatCitation",
     "ChatService",
     "ChatTurn",
+    "ChatTelemetry",
+    "build_chat_app",
+    "FeedbackAdjustment",
+    "apply_chat_feedback",
+    "extract_claim_markers",
     "ClaimConsolidator",
     "ClaimConflict",
     "ClaimMergeOutcome",

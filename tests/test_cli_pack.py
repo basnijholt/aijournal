@@ -197,7 +197,7 @@ def test_pack_l1_uses_persona_core(
 
     result = runner.invoke(app, ["pack", "--level", "L1", "--format", "yaml"])
     assert result.exit_code == 0, result.output
-    payload = yaml.safe_load(result.output)
+    payload = yaml.safe_load(result.stdout)
     files = payload.get("files", [])
     assert len(files) == 1
     assert files[0]["path"] == str(persona_path.relative_to(tmp_path))
@@ -212,7 +212,7 @@ def test_pack_l2_includes_daily_artifacts(tmp_path: Path, monkeypatch: pytest.Mo
 
     result = runner.invoke(app, ["pack", "--level", "L2", "--date", DATE])
     assert result.exit_code == 0
-    payload = yaml.safe_load(result.output)
+    payload = yaml.safe_load(result.stdout)
     paths = {entry["path"] for entry in payload.get("files", [])}
     assert "derived/persona/persona_core.yaml" in paths
     assert f"data/normalized/{DATE}/{entry_slug}.yaml" in paths
@@ -328,7 +328,7 @@ def test_pack_json_format(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> No
 
     result = runner.invoke(app, ["pack", "--level", "L1", "--format", "json"])
     assert result.exit_code == 0
-    payload = json.loads(result.output)
+    payload = json.loads(result.stdout)
     assert payload["level"] == "L1"
 
 
@@ -345,7 +345,7 @@ def test_pack_l3_includes_advice_and_profile_suggestions(
 
     result = runner.invoke(app, ["pack", "--level", "L3", "--date", DATE])
     assert result.exit_code == 0
-    payload = yaml.safe_load(result.output)
+    payload = yaml.safe_load(result.stdout)
     files = [entry["path"] for entry in payload.get("files", [])]
     assert str(advice_path.relative_to(tmp_path)) in files
     assert str(suggestions_path.relative_to(tmp_path)) in files
@@ -369,7 +369,7 @@ def test_pack_l4_history_days_includes_prior_context(
         ["pack", "--level", "L4", "--date", DATE, "--history-days", "1"],
     )
     assert result.exit_code == 0
-    payload = yaml.safe_load(result.output)
+    payload = yaml.safe_load(result.stdout)
     paths = {entry["path"] for entry in payload.get("files", [])}
     assert f"data/normalized/{PRIOR_DATE}/{prior_entry}.yaml" in paths
     assert f"derived/summaries/{PRIOR_DATE}.yaml" in paths
@@ -391,7 +391,7 @@ def test_pack_respects_token_estimator_config(
 
     result = runner.invoke(app, ["pack", "--level", "L2", "--date", DATE])
     assert result.exit_code == 0
-    payload = yaml.safe_load(result.output)
+    payload = yaml.safe_load(result.stdout)
     files = payload.get("files", [])
     normalized_path = f"data/normalized/{DATE}/{ENTRY_ID}.yaml"
 
@@ -435,7 +435,7 @@ def test_pack_l4_trimming_prioritizes_raw_journal_entries(
         ],
     )
     assert result.exit_code == 0
-    payload = yaml.safe_load(result.output)
+    payload = yaml.safe_load(result.stdout)
     trimmed = payload.get("meta", {}).get("trimmed", [])
     assert trimmed, "expected trimming metadata"
     first_trimmed = trimmed[0]
@@ -458,7 +458,7 @@ def test_pack_l4_handles_missing_optional_artifacts(
         ["pack", "--level", "L4", "--date", DATE, "--history-days", "2"],
     )
     assert result.exit_code == 0
-    payload = yaml.safe_load(result.output)
+    payload = yaml.safe_load(result.stdout)
     paths = [entry["path"] for entry in payload.get("files", [])]
     assert all("profile_suggestions" not in path for path in paths)
 
@@ -486,7 +486,7 @@ def test_pack_l4_supports_json_output(tmp_path: Path, monkeypatch: pytest.Monkey
         ],
     )
     assert result.exit_code == 0
-    payload = json.loads(result.output)
+    payload = json.loads(result.stdout)
     assert payload["level"] == "L4"
     json_paths = [entry["path"] for entry in payload.get("files", [])]
     expected_normalized = f"data/normalized/{DATE}/{normalized_entry}.yaml"

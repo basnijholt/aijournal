@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 import yaml
 from typer.testing import CliRunner
 
 from aijournal.cli import app
+from aijournal.models import InterviewQuestion, InterviewSet
 
 runner = CliRunner()
 DATE = "2025-02-03"
@@ -92,7 +95,7 @@ def test_interview_fallback_when_no_stale(tmp_path, monkeypatch) -> None:
     result = runner.invoke(app, ["interview", "--date", DATE])
     assert result.exit_code == 0
     probes = [line for line in result.output.splitlines() if line.startswith("- ")]
-    assert len(probes) == 8
+    assert len(probes) == 3
 
 
 def test_interview_missing_profile(tmp_path, monkeypatch) -> None:
@@ -111,3 +114,28 @@ def test_interview_missing_entries(tmp_path, monkeypatch) -> None:
     result = runner.invoke(app, ["interview", "--date", DATE])
     assert result.exit_code != 0
     assert "No normalized entries" in result.output
+
+
+def test_interview_live_mode_structured(monkeypatch, tmp_path: Path) -> None:  # type: ignore[name-defined]
+    monkeypatch.chdir(tmp_path)
+    _seed_profile(tmp_path)
+    _seed_normalized(tmp_path)
+    monkeypatch.setenv("AIJOURNAL_FAKE_OLLAMA", "0")
+
+    def _fake_structured(*_args, **_kwargs) -> InterviewSet:
+        return InterviewSet(
+            questions=[
+                InterviewQuestion(
+                    id="focus-check",
+                    text="What changed about morning focus routines?",
+                    target_facet="claim:claim_a",
+                    priority="high",
+                ),
+            ],
+        )
+
+    monkeypatch.setattr("aijournal.cli._invoke_structured_llm", lambda *a, **k: _fake_structured())
+
+    result = runner.invoke(app, ["interview", "--date", DATE])
+    assert result.exit_code == 0, result.output
+    assert "focus routines" in result.output

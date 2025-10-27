@@ -33,6 +33,7 @@ from aijournal.ingest_agent import (
     build_ingest_agent,
     ingest_with_agent,
 )
+from aijournal.io.chat_sessions import ChatSessionRecorder
 from aijournal.io.yaml_io import load_yaml_model, write_yaml_model
 from aijournal.models import (
     AdviceCard,
@@ -88,7 +89,10 @@ from aijournal.services import (
     ClaimConsolidator,
     ClaimMergeOutcome,
     ClaimSignature,
+    FeedbackAdjustment,
     LLMResponseError,
+    apply_chat_feedback,
+    build_chat_app,
     build_ollama_config_from_mapping,
     resolve_ollama_host,
     run_ollama_agent,
@@ -135,6 +139,7 @@ DERIVED_DIRS = (
     "derived/advice",
     "derived/persona",
     "derived/index",
+    "derived/chat_sessions",
     "derived/pending",
     "derived/pending/profile_updates",
 )
@@ -331,6 +336,19 @@ HIGH_IMPACT_PROBES = [
     "- Three coping strategies that reliably help under stress.",
 ]
 
+
+@dataclass(frozen=True)
+class InterviewTarget:
+    """Candidate facet/claim/prompt ranked for interview follow-ups."""
+
+    path: str
+    score: float
+    kind: Literal["facet", "claim", "pending"]
+    reasons: tuple[str, ...] = ()
+    claim_id: str | None = None
+    missing_context: tuple[str, ...] = ()
+
+
 CHUNK_TARGET_CHARS = 900
 CHUNK_MAX_CHARS = 1200
 ANN_METRIC: Literal["angular", "euclidean", "manhattan", "hamming", "dot"] = "angular"
@@ -518,6 +536,10 @@ def _slugify_title(title: str) -> str:
 
 def _format_timestamp(dt: datetime) -> str:
     return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _generate_session_id() -> str:
+    return f"chat-{_now().strftime('%Y%m%d-%H%M%S')}"
 
 
 def _resolve_prompt_path(prompt_path: str) -> Path:
@@ -1585,6 +1607,26 @@ def _latest_pending_batch(root: Path) -> Path | None:
     return files[-1] if files else None
 
 
+def _collect_pending_interview_prompts(root: Path, limit: int = 5) -> list[str]:
+    directory = _pending_updates_dir(root)
+    if not directory.exists():
+        return []
+    prompts: list[str] = []
+    for path in sorted((p for p in directory.glob("*.yaml") if p.is_file()), reverse=True):
+        try:
+            payload = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        except yaml.YAMLError:
+            continue
+        preview = payload.get("preview") or {}
+        for prompt in preview.get("interview_prompts") or []:
+            text = str(prompt).strip()
+            if text and text not in prompts:
+                prompts.append(text)
+        if len(prompts) >= limit:
+            break
+    return prompts[:limit]
+
+
 def _hash_prompt(prompt_path: str) -> str | None:
     path = _resolve_prompt_path(prompt_path)
     try:
@@ -2240,10 +2282,11 @@ def _normalize_claim_proposals(
                 ),
             )
             continue
-        if not isinstance(raw, dict):
+        payload = raw.model_dump(mode="python") if hasattr(raw, "model_dump") else raw
+        if not isinstance(payload, dict):
             continue
-        raw_claim = raw.get("claim")
-        candidate = raw_claim if raw_claim is not None else raw
+        raw_claim = payload.get("claim")
+        candidate = raw_claim if raw_claim is not None else payload
         try:
             claim_model = _normalize_claim_atom(
                 candidate,
@@ -2259,7 +2302,8 @@ def _normalize_claim_proposals(
                 normalized_ids=list(normalized_ids),
                 evidence_hashes=list(evidence_hashes),
                 manifest_hashes=list(manifest_hashes),
-                rationale=str(raw.get("rationale") or raw.get("reason") or "").strip() or None,
+                rationale=str(payload.get("rationale") or payload.get("reason") or "").strip()
+                or None,
             ),
         )
     return proposals
@@ -2289,23 +2333,25 @@ def _normalize_facet_proposals(
                 ),
             )
             continue
-        if not isinstance(raw, dict):
+        payload = raw.model_dump(mode="python") if hasattr(raw, "model_dump") else raw
+        if not isinstance(payload, dict):
             continue
-        path = raw.get("path") or raw.get("target")
+        path = payload.get("path") or payload.get("target")
         if not path:
             continue
         proposals.append(
             FacetProposal(
                 path=str(path),
-                value=raw.get("value"),
-                operation=str(raw.get("operation") or "set"),
-                method=str(raw.get("method") or "inferred"),
-                confidence=coerce_float(raw.get("confidence")) or 0.55,
-                review_after_days=coerce_int(raw.get("review_after_days")) or 90,
-                user_verified=bool(raw.get("user_verified", False)),
-                normalized_ids=_merge_unique(raw.get("normalized_ids", []), normalized_ids),
-                evidence_hashes=_merge_unique(raw.get("evidence_hashes", []), evidence_hashes),
-                rationale=str(raw.get("rationale") or raw.get("reason") or "").strip() or None,
+                value=payload.get("value"),
+                operation=str(payload.get("operation") or "set"),
+                method=str(payload.get("method") or "inferred"),
+                confidence=coerce_float(payload.get("confidence")) or 0.55,
+                review_after_days=coerce_int(payload.get("review_after_days")) or 90,
+                user_verified=bool(payload.get("user_verified", False)),
+                normalized_ids=_merge_unique(payload.get("normalized_ids", []), normalized_ids),
+                evidence_hashes=_merge_unique(payload.get("evidence_hashes", []), evidence_hashes),
+                rationale=str(payload.get("rationale") or payload.get("reason") or "").strip()
+                or None,
             ),
         )
     return proposals
@@ -3708,37 +3754,116 @@ def _impact_for(path: str, weights: dict[str, float]) -> float:
     return float(weights.get(key, 1.0))
 
 
+def _collect_entry_tags(entries: Sequence[NormalizedEntry]) -> frozenset[str]:
+    tags: set[str] = set()
+    for entry in entries:
+        for tag in entry.tags or []:
+            text = str(tag).strip()
+            if text:
+                tags.add(text.lower())
+    return frozenset(tags)
+
+
 def _compute_rankings(
     profile: dict[str, Any],
     claims: Sequence[ClaimAtom],
     weights: dict[str, float],
     now: datetime,
-) -> list[tuple[str, float]]:
-    ranked: list[tuple[str, float]] = []
+    *,
+    entries: Sequence[NormalizedEntry] = (),
+    pending_prompts: Sequence[str] = (),
+) -> list[InterviewTarget]:
+    entry_tags = _collect_entry_tags(entries)
+    ranked: list[InterviewTarget] = []
 
     for path, facet in _flatten_facets(profile):
         days = _days_between(now, str(facet.get("last_updated", "")))
         review = facet.get("review_after_days") or 90
-        if days is None:
+        if days is None or review <= 0:
             continue
         staleness = days / float(review)
-        ranked.append((path, staleness * _impact_for(path, weights)))
+        base = staleness * _impact_for(path, weights)
+        if base <= 0:
+            continue
+        facet_reasons = [f"staleness={staleness:.2f}×impact"]
+        ranked.append(
+            InterviewTarget(
+                path=path,
+                score=base,
+                kind="facet",
+                reasons=tuple(facet_reasons),
+            ),
+        )
 
+    claim_weight = float(weights.get("claims", 1.0))
     for claim in claims:
-        path = claim.id or "claim"
+        claim_id = claim.id or "claim"
         days = _days_between(now, _claim_last_updated(claim))
         review = claim.review_after_days or 90
-        if days is None:
-            continue
-        staleness = days / float(review)
-        ranked.append((f"claim:{path}", staleness * float(weights.get("claims", 1.0))))
+        score = 0.0
+        claim_reasons: list[str] = []
+        if days is not None and review > 0:
+            staleness = days / float(review)
+            staleness_score = staleness * claim_weight
+            if staleness_score > 0:
+                score += staleness_score
+                claim_reasons.append(f"staleness={staleness:.2f}")
 
-    ranked.sort(key=lambda item: (-item[1], item[0]))
+        status = (claim.status or "tentative").lower()
+        if status != "accepted":
+            score += 0.4
+            claim_reasons.append(f"status={status}")
+
+        strength = float(claim.strength or 0.0)
+        if strength < 0.6:
+            delta = 0.6 - strength
+            score += delta
+            claim_reasons.append(f"strength={strength:.2f}")
+
+        scope = claim.scope or Scope()
+        scope_tags = {tag.strip().lower() for tag in scope.context if tag.strip()}
+        if not scope_tags:
+            score += 0.25
+            claim_reasons.append("scope missing")
+
+        missing_context = sorted(tag for tag in entry_tags if tag not in scope_tags)
+        if missing_context:
+            score += min(0.2 * len(missing_context), 0.6)
+            claim_reasons.append(f"new_context={', '.join(missing_context[:3])}")
+
+        if score <= 0:
+            continue
+
+        ranked.append(
+            InterviewTarget(
+                path=f"claim:{claim_id}",
+                score=score,
+                kind="claim",
+                reasons=tuple(claim_reasons),
+                claim_id=claim.id,
+                missing_context=tuple(missing_context[:3]),
+            ),
+        )
+
+    for idx, prompt in enumerate(pending_prompts, start=1):
+        text = str(prompt).strip()
+        if not text:
+            continue
+        ranked.append(
+            InterviewTarget(
+                path=f"pending:{idx}",
+                score=3.0,
+                kind="pending",
+                reasons=(text,),
+            ),
+        )
+
+    ranked.sort(key=lambda item: (-item.score, item.path))
     return ranked
 
 
 def _build_targeted_probes(
-    rankings: Sequence[tuple[str, float]],
+    targets: Sequence[InterviewTarget],
     entries: Sequence[NormalizedEntry],
     *,
     max_items: int = 4,
@@ -3749,14 +3874,40 @@ def _build_targeted_probes(
         title = first.title or first.id or title
 
     questions: list[InterviewQuestion] = []
-    for idx, (path, score) in enumerate(rankings, start=1):
-        prompt = f"What new observations from {title} should update {path}? (score {score:.2f})"
+    for idx, target in enumerate(targets, start=1):
+        if len(questions) >= max_items:
+            break
+        if target.kind == "pending" and target.reasons:
+            prompt_text = target.reasons[0]
+            questions.append(
+                InterviewQuestion(
+                    id=f"pending-{idx}",
+                    text=prompt_text,
+                    target_facet=target.path,
+                    priority="high",
+                ),
+            )
+            continue
+
+        if target.kind == "claim":
+            label = target.claim_id or target.path
+            if target.missing_context:
+                context_label = target.missing_context[0]
+                text = f"How does {label} hold when context includes '{context_label}'?"
+            else:
+                text = f"What new evidence from {title} should update {label}?"
+        else:
+            text = f"What fresh detail from {title} should refine {target.path}?"
+
+        if target.reasons:
+            text += f" ({'; '.join(target.reasons[:2])})"
+
         questions.append(
             InterviewQuestion(
                 id=f"ranked-{idx}",
-                text=prompt,
-                target_facet=path,
-                priority=f"{score:.2f}",
+                text=text,
+                target_facet=target.path,
+                priority="high" if target.score >= 1.5 else "medium",
             ),
         )
         if len(questions) >= max_items:
@@ -3767,13 +3918,19 @@ def _build_targeted_probes(
     return InterviewSet(questions=questions)
 
 
-def _print_rankings(ranked: list[tuple[str, float]]) -> None:
+def _print_rankings(ranked: Sequence[InterviewTarget]) -> None:
     if not ranked:
         typer.echo("No profile data")
         return
     typer.echo("Profile review priority:")
-    for idx, (path, score) in enumerate(ranked, start=1):
-        typer.echo(f"{idx}. {path} (score {score:.2f})")
+    for idx, target in enumerate(ranked, start=1):
+        if target.kind == "pending" and target.reasons:
+            label = f"pending prompt: {target.reasons[0]}"
+        else:
+            label = target.path
+        typer.echo(f"{idx}. {label} (score {target.score:.2f})")
+        for reason in target.reasons:
+            typer.echo(f"   - {reason}")
 
 
 def _apply_claim_upsert(
@@ -4138,13 +4295,6 @@ def interview(
     date: str = typer.Option(..., "--date", "-d", help="Date (YYYY-MM-DD) to review."),
 ) -> None:
     """Surface targeted interview probes based on stale facets."""
-    if not _use_fake_llm():
-        typer.secho(
-            "Interview probes currently use heuristic generation (no live LLM call).",
-            fg=typer.colors.YELLOW,
-            err=True,
-        )
-
     root = Path.cwd()
     profile_model, claim_models = _load_profile_components(root)
     profile = _profile_to_dict(profile_model)
@@ -4158,12 +4308,76 @@ def interview(
         typer.secho(f"No normalized entries for {date}", fg=typer.colors.RED, err=True)
         raise typer.Exit(1)
 
-    config_path = root / "config" / "config.yaml"
-    config = _load_yaml(config_path) if config_path.exists() else {}
+    config = _load_config(root)
     weights = config.get("impact_weights", {})
 
-    rankings = _compute_rankings(profile, claims, weights, _now())
-    interview_set = _build_targeted_probes(rankings, entries)
+    max_questions = _coaching_max_questions(profile)
+    pending_prompts = _collect_pending_interview_prompts(root)
+    rankings = _compute_rankings(
+        profile,
+        claims,
+        weights,
+        _now(),
+        entries=entries,
+        pending_prompts=pending_prompts,
+    )
+
+    if max_questions == 0:
+        typer.echo("Interview probes:")
+        typer.echo("- Coaching preferences disable probing right now.")
+        return
+
+    if _use_fake_llm():
+        interview_set = _build_targeted_probes(rankings, entries, max_items=max_questions)
+    else:
+        rankings_payload = [
+            {
+                "path": target.path,
+                "score": target.score,
+                "kind": target.kind,
+                "reasons": list(target.reasons),
+                "claim_id": target.claim_id,
+                "missing_context": list(target.missing_context),
+            }
+            for target in rankings[: max(max_questions * 2, 6)]
+        ]
+        try:
+            interview_set = cast(
+                InterviewSet,
+                _structured_call_with_retry(
+                    lambda: _invoke_structured_llm(
+                        "prompts/interview.md",
+                        {
+                            "date": date,
+                            "profile_json": _json_block(profile),
+                            "claims_json": _json_block(
+                                {"claims": [claim.model_dump(mode="python") for claim in claims]}
+                            ),
+                            "entries_json": _json_block(_entries_to_payload(entries)),
+                            "rankings_json": _json_block(rankings_payload),
+                            "coaching_prefs_json": _json_block(profile.get("coaching_prefs", {})),
+                        },
+                        response_model=InterviewSet,
+                        agent_name="aijournal-interview",
+                        config=config,
+                    ),
+                    retries=0,
+                    label="interview",
+                ),
+            )
+        except LLMResponseError as exc:
+            typer.secho(
+                f"Interview generation failed ({exc}); falling back to heuristic probes.",
+                fg=typer.colors.YELLOW,
+                err=True,
+            )
+            interview_set = InterviewSet()
+        if interview_set.questions:
+            interview_set.questions = interview_set.questions[:max_questions]
+
+    if not interview_set.questions:
+        interview_set = _build_targeted_probes(rankings, entries, max_items=max_questions)
+
     if not interview_set.questions:
         fallback_questions = [
             InterviewQuestion(
@@ -4173,7 +4387,7 @@ def interview(
             )
             for idx, probe in enumerate(HIGH_IMPACT_PROBES)
         ]
-        interview_set = InterviewSet(questions=fallback_questions)
+        interview_set = InterviewSet(questions=fallback_questions[:max_questions])
 
     typer.echo("Interview probes:")
     for question in interview_set.questions:
@@ -4478,6 +4692,15 @@ def pack(
         trimmed,
         total_tokens,
         budget,
+    )
+
+    _log_pack_metrics(
+        level,
+        total_tokens,
+        budget,
+        len(trimmed),
+        dry_run=dry_run,
+        output=output,
     )
 
     if dry_run:
@@ -4789,6 +5012,21 @@ def chat(
         "--date-to",
         help="Latest chunk date (YYYY-MM-DD).",
     ),
+    session: str | None = typer.Option(
+        None,
+        "--session",
+        help="Session identifier (defaults to chat-YYYYMMDD-HHMMSS).",
+    ),
+    save: bool = typer.Option(
+        True,
+        "--save/--no-save",
+        help="Persist the turn under derived/chat_sessions/<session>.",
+    ),
+    feedback: str | None = typer.Option(
+        None,
+        "--feedback",
+        help="Provide 'up' or 'down' to nudge cited claim strengths.",
+    ),
 ) -> None:
     """Run a retrieval-augmented chat turn against your journal."""
     if top <= 0:
@@ -4813,7 +5051,63 @@ def chat(
     finally:
         service.close()
 
-    _render_chat_turn(turn)
+    feedback_value = _normalize_feedback_option(feedback)
+    session_id = session.strip() if isinstance(session, str) and session.strip() else None
+    saved_dir: Path | None = None
+    if save:
+        session_id = session_id or _generate_session_id()
+        recorder = ChatSessionRecorder(root, session_id)
+        recorder.append(turn, feedback=feedback_value)
+        saved_dir = recorder.session_dir
+    else:
+        session_id = session_id or _generate_session_id()
+
+    _render_chat_turn(
+        turn,
+        session_id=session_id,
+        saved_dir=saved_dir,
+        persisted=save,
+    )
+
+    _log_chat_telemetry(turn, session_id=session_id)
+
+    if feedback_value:
+        adjustments, feedback_path = apply_chat_feedback(
+            root,
+            turn_answer=turn.answer,
+            question=turn.question,
+            session_id=session_id,
+            timestamp=turn.timestamp,
+            feedback=feedback_value,
+        )
+        _render_feedback_summary(adjustments, feedback_path, feedback_value)
+
+
+@app.command("chatd")
+def chatd(
+    host: str = typer.Option("127.0.0.1", "--host", help="Host interface to bind."),
+    port: int = typer.Option(8080, "--port", help="Port to listen on."),
+) -> None:
+    """Start the FastAPI chat daemon (chatd)."""
+    if port <= 0 or port > 65535:
+        typer.secho("--port must be between 1 and 65535.", fg=typer.colors.RED, err=True)
+        raise typer.Exit(1)
+
+    try:
+        import uvicorn
+    except ImportError as exc:  # pragma: no cover - depends on optional deps
+        typer.secho(
+            f"uvicorn is required for chatd: {exc}. Install with `uv add uvicorn fastapi`.",
+            fg=typer.colors.RED,
+            err=True,
+        )
+        raise typer.Exit(1)
+
+    root = Path.cwd()
+    config = _load_config(root)
+    app_instance = build_chat_app(root, config)
+    typer.echo(f"chatd starting on http://{host}:{port}")
+    uvicorn.run(app_instance, host=host, port=port, log_level="info")
 
 
 def _index_dir(root: Path) -> Path:
@@ -4891,14 +5185,51 @@ def _split_filter_values(raw: str | None) -> frozenset[str]:
     return frozenset(parts)
 
 
-def _render_chat_turn(turn: ChatTurn) -> None:
+def _normalize_feedback_option(value: str | None) -> str | None:
+    if value is None:
+        return None
+    normalized = value.strip().lower()
+    if normalized in {"up", "down"}:
+        return normalized
+    typer.secho("--feedback must be 'up' or 'down'.", fg=typer.colors.RED, err=True)
+    raise typer.Exit(1)
+
+
+def _coaching_max_questions(profile: dict[str, Any]) -> int:
+    prefs = profile.get("coaching_prefs") if isinstance(profile, dict) else {}
+    probing = prefs.get("probing") if isinstance(prefs, dict) else None
+    max_questions = coerce_int(probing.get("max_questions")) if isinstance(probing, dict) else None
+    if max_questions is None or max_questions < 0:
+        return 3
+    return int(max_questions)
+
+
+def _render_chat_turn(
+    turn: ChatTurn,
+    *,
+    session_id: str | None,
+    saved_dir: Path | None,
+    persisted: bool,
+) -> None:
     mode_label = "fake mode" if turn.fake_mode else "live mode"
     typer.echo(f"Chat response ({mode_label})")
+    if session_id:
+        typer.echo(f"Session: {session_id}")
     typer.echo(f"Question: {turn.question}")
+    typer.echo(f"Intent: {turn.intent}")
     typer.echo("Answer:")
     answer_lines = turn.answer.splitlines() or [turn.answer]
     for line in answer_lines:
         typer.echo(f"  {line}")
+
+    if turn.clarifying_question:
+        typer.echo("")
+        typer.echo(f"Clarifying question: {turn.clarifying_question}")
+
+    typer.echo("")
+    typer.echo(
+        f"Telemetry: retrieval={turn.telemetry.retrieval_ms:.1f}ms chunks={turn.telemetry.chunk_count} source={turn.telemetry.retriever_source} model={turn.telemetry.model}",
+    )
 
     if not turn.citations:
         if turn.retrieved_chunks:
@@ -4907,24 +5238,85 @@ def _render_chat_turn(turn: ChatTurn) -> None:
         else:
             typer.echo("")
             typer.echo("No journal chunks were retrieved.")
+    else:
+        typer.echo("")
+        typer.echo("Citations:")
+        chunk_map = {chunk.chunk_id: chunk for chunk in turn.retrieved_chunks}
+        for idx, citation in enumerate(turn.citations, start=1):
+            chunk = chunk_map.get(citation.chunk_id)
+            source_path = citation.source_path or citation.normalized_id
+            typer.echo(
+                f"{idx}. {citation.marker} {source_path} ({citation.date}) score {citation.score:.3f}",
+            )
+            if chunk:
+                snippet = _format_search_snippet(chunk.text)
+                tag_display = ", ".join(citation.tags) if citation.tags else "-"
+                typer.echo(f"   tags: {tag_display}")
+                typer.echo(f"   {snippet}")
+            if idx != len(turn.citations):
+                typer.echo("")
+
+    if persisted and saved_dir is not None:
+        typer.echo("")
+        typer.echo(f"Saved transcript: {saved_dir}")
+
+
+def _log_chat_telemetry(turn: ChatTurn, *, session_id: str | None) -> None:
+    payload = {
+        "event": "chat.telemetry",
+        "session_id": session_id,
+        "intent": turn.intent,
+        "retrieval_ms": round(turn.telemetry.retrieval_ms, 2),
+        "chunks": turn.telemetry.chunk_count,
+        "model": turn.telemetry.model,
+        "clarifying": bool(turn.clarifying_question),
+    }
+    typer.echo(json.dumps(payload, ensure_ascii=False), err=True)
+
+
+def _render_feedback_summary(
+    adjustments: Sequence[FeedbackAdjustment],
+    feedback_path: Path | None,
+    feedback: str,
+) -> None:
+    if not adjustments:
+        typer.secho(
+            "Feedback provided but no claim citations were found to adjust.",
+            fg=typer.colors.YELLOW,
+            err=True,
+        )
         return
 
     typer.echo("")
-    typer.echo("Citations:")
-    chunk_map = {chunk.chunk_id: chunk for chunk in turn.retrieved_chunks}
-    for idx, citation in enumerate(turn.citations, start=1):
-        chunk = chunk_map.get(citation.chunk_id)
-        source_path = citation.source_path or citation.normalized_id
+    typer.echo(f"Recorded {feedback} feedback for {len(adjustments)} claim(s):")
+    for adj in adjustments:
+        sign = "+" if adj.delta >= 0 else ""
         typer.echo(
-            f"{idx}. {citation.marker} {source_path} ({citation.date}) score {citation.score:.3f}",
+            f"- {adj.claim_id}: {adj.old_strength:.2f} -> {adj.new_strength:.2f} ({sign}{adj.delta:.2f})",
         )
-        if chunk:
-            snippet = _format_search_snippet(chunk.text)
-            tag_display = ", ".join(citation.tags) if citation.tags else "-"
-            typer.echo(f"   tags: {tag_display}")
-            typer.echo(f"   {snippet}")
-        if idx != len(turn.citations):
-            typer.echo("")
+    if feedback_path is not None:
+        typer.echo(f"Queued feedback batch: {feedback_path}")
+
+
+def _log_pack_metrics(
+    level: str,
+    total_tokens: int,
+    budget: int,
+    trimmed_count: int,
+    *,
+    dry_run: bool,
+    output: Path | None,
+) -> None:
+    payload = {
+        "event": "pack.telemetry",
+        "level": level,
+        "total_tokens": total_tokens,
+        "budget": budget,
+        "trimmed": trimmed_count,
+        "dry_run": dry_run,
+        "output": str(output) if output else None,
+    }
+    typer.echo(json.dumps(payload, ensure_ascii=False), err=True)
 
 
 def _format_search_snippet(text: str, limit: int = 200) -> str:
