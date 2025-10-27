@@ -181,13 +181,13 @@ _Pattern for each command group: first create `commands/<name>.py` with a thin `
 
 ## Phase 6 · Final Polish
 
-38. [ ] Run `ruff --select F401,F841 --fix` (commit resulting cleanup).  
+38. [x] Run `ruff --select F401,F841 --fix` (commit resulting cleanup).  
     → `uv run pytest`
 
-39. [ ] Review `cli.py` to ensure it’s mostly Typer glue + docstrings; adjust comments.  
+39. [x] Review `cli.py` to ensure it’s mostly Typer glue + docstrings; adjust comments.  
     → `uv run pytest`
 
-40. Update docs (README/PLAN) to describe the new module layout (include distinction between services vs. pipe[ ] lines).  
+40. [x] Update docs (README/PLAN) to describe the new module layout (include distinction between services vs. pipe[ ] lines).  
     → `uv run pytest`
 
 41. [ ] Confirm CLI smoke/integration tests remain in place to guard end-to-end behaviour.  

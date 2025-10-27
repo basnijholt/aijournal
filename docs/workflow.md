@@ -142,4 +142,16 @@ Running commands in this order ensures downstream surfaces (chat, packs, advice)
 
 ---
 
+## 8. Developer Notes
+
+The runtime is now split between small, testable modules:
+
+- `src/aijournal/commands/` handles orchestration for each Typer command—file system inputs/outputs, retries, and user messaging live here.
+- `src/aijournal/pipelines/` contains deterministic workflows that combine services and prompts (summaries, facts, persona, packs, characterize, advise). Pipelines never touch Typer directly, making them easy to unit test.
+- `src/aijournal/services/` keeps reusable integrations (Ollama client, retriever, chat API, feedback).
+
+If you need to extend a command, start with the relevant `commands/*.py` module and only dip into pipelines/services when you need new orchestration steps. Keep CLI changes limited to wiring so the high-level flow in this guide stays stable.
+
+---
+
 Keep this workflow handy whenever you add new entries or revisit older notes. Once you’re comfortable with the ordering, you can automate sections (e.g., a daily script) or integrate the commands into your own tooling. Happy journaling!

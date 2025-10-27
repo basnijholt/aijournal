@@ -28,8 +28,9 @@ Read these in order to understand the surfaces you will exercise. Each document 
 5. `docs/archive/PLAN-v0.3.md` — historical roadmap reference (skim only if you need context on past milestones).
 6. `CHANGELOG.md` — review “Unreleased” for behaviour changes since the last tagged run.
 7. `prompts/characterize.md`, `prompts/interview.md`, `prompts/advise.md` — structured-output contracts.
-8. `src/aijournal/cli.py` — Typer entry points: `init`, `normalize`, `summarize`, `facts`, `profile ...`, `persona ...`, `index ...`, `pack`, `chat`, `chatd`, `advise`, `feedback-apply`.
-9. `src/aijournal/services/{chat.py, chat_api.py, feedback.py}` — chat orchestration, API streaming, feedback adjustments, telemetry.
+8. `src/aijournal/commands/` & `src/aijournal/cli.py` — command runners now live under `commands/`, with `cli.py` providing thin Typer glue for `init`, `normalize`, `summarize`, `facts`, `profile ...`, `persona ...`, `index ...`, `pack`, `chat`, `chatd`, `advise`, `feedback-apply`.
+9. `src/aijournal/pipelines/` — deterministic workflows backing summaries, facts, persona, characterize, packs, and advise.
+10. `src/aijournal/services/{chat.py, chat_api.py, feedback.py}` — chat orchestration, API streaming, feedback adjustments, telemetry.
 
 Read these first to avoid surprises mid-run.
 
