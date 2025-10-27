@@ -1,0 +1,188 @@
+# aijournal Refactor Playbook (Coding Agent Entry Point)
+
+## Before You Start
+
+- **Read & absorb the project charter.** Begin with `PLAN.md` (full roadmap, guardrails) and `README.md` (usage + runtime modes).
+- **Review key modules.**
+  - `src/aijournal/cli.py`: the monolith coordinating all commands.
+  - `src/aijournal/models/__init__.py`: the large Pydantic registry (authoritative + derived + LLM response schemas).
+  - `tests/test_cli_*.py`: high-level CLI regression tests exercising fake Ollama mode.
+- **Understand runtime conventions.**
+  - Use fake LLM mode (`AIJOURNAL_FAKE_OLLAMA=1`) for deterministic runs.
+  - Tests run via `uv run pytest` (≈2 seconds for the full suite).
+- **Git etiquette.**
+  - Never rewrite history (per PLAN). Small, reviewable commits only.
+  - Respect existing formatting/linting (Ruff, mypy) before committing.
+
+## Overall Objective
+
+Decompose the 5.8k LOC `cli.py` and 700 LOC `models/__init__.py` into modular packages (`core`, `pipelines`, `commands`). Preserve behavior via strengthened tests so we can iterate without a monolith.
+
+---
+
+## Refactor Checklist
+
+> **Rule:** After every numbered task, run the full suite (`uv run pytest`). Commit only when the suite is green.
+
+---
+
+## Phase 0 · Harden CLI Tests
+
+1. Add `tests/conftest.py` fixture `cli_workspace(tmp_path, monkeypatch)`:
+   - `monkeypatch.chdir(tmp_path)` so commands run inside the temporary workspace
+   - set `AIJOURNAL_FAKE_OLLAMA=1`
+  - run `aijournal init` to seed the directory structure
+  - monkeypatch time helpers (e.g., `core/time.now`) to a fixed datetime
+  - `yield tmp_path` for callers  
+   → `uv run pytest`
+
+2. Update `tests/test_cli_summarize.py` to use `cli_workspace`, drop duplicated setup, and assert key fields instead of full snapshots.  
+   → `uv run pytest`
+
+3. Update `tests/test_cli_facts.py` to use `cli_workspace`; assert claim proposals and preview events deterministically.  
+   → `uv run pytest`
+
+4. Update `tests/test_cli_advise.py` to use `cli_workspace`; assert assumptions/steps instead of filename checks.  
+   → `uv run pytest`
+
+5. Repeat deterministic setup/assertions for remaining CLI suites that spin workspaces (`test_cli_pack`, `test_cli_persona`, `test_cli_profile_*`, etc.).  
+   → `uv run pytest`
+
+---
+
+## Phase 1 · Core Modules (No Behavior Change)
+
+6. Create `src/aijournal/core/__init__.py`.  
+   → `uv run pytest`
+
+7. Move path constants from `cli.py` into `core/paths.py`; update imports.  
+   → `uv run pytest`
+
+8. Move time/format helpers (`now()`, `format_timestamp`, slug helpers, session id) into `core/time.py`; update code/tests.  
+   → `uv run pytest`
+
+9. Adjust fixtures/tests to patch the new location (`core/time`).  
+   → `uv run pytest`
+
+---
+
+## Phase 2 · Models Decomposition
+
+10. Create `models/authoritative.py` (ManifestEntry, JournalEntry, NormalizedEntry, ClaimsFile, SelfProfile, etc.) and re-export in `models/__init__.py`.  
+    → `uv run pytest`
+
+11. Create `models/derived.py` (DailySummary, MicroFactsFile, AdviceCard, PersonaCore*, IndexMeta, …) and re-export.  
+    → `uv run pytest`
+
+12. Create `models/responses.py` (DailySummaryResponse, ExtractedFactsResponse, CharacterizeResponse, SimpleProfileSuggestionsResponse, …); update imports.  
+    → `uv run pytest`
+
+13. Update `aijournal/schema.py` registry to use new modules.  
+    → `uv run pytest`
+
+---
+
+## Phase 3 · Shared Utilities
+
+14. Create `core/normalization.py`; move `_normalize_*`, `_simple_claim_to_upsert`, `_clean_summary`, etc.; update CLI.  
+    → `uv run pytest`
+
+15. Add `tests/core/test_normalization.py` covering critical helpers.  
+    → `uv run pytest`
+
+16. Create `core/fake.py`; move `_fake_*` generators; update CLI/tests.  
+    → `uv run pytest`
+
+17. Confirm fake outputs remain deterministic; tweak tests if needed.  
+    → `uv run pytest`
+
+---
+
+## Phase 4 · Pipeline Modules
+
+18. Create `pipelines/__init__.py`.  
+    → `uv run pytest`
+
+19. Add `pipelines/summarize.py` (`generate_summary`), refactor CLI to call it, add `tests/pipelines/test_summarize.py`.  
+    → `uv run pytest`
+
+20. Add `pipelines/facts.py` (`generate_microfacts`), update CLI/tests.  
+    → `uv run pytest`
+
+21. Add `pipelines/persona.py`, update CLI/tests.  
+    → `uv run pytest`
+
+22. Add `pipelines/characterize.py`, update CLI/tests.  
+    → `uv run pytest`
+
+23. Add `pipelines/advise.py`, update CLI/tests.  
+    → `uv run pytest`
+
+24. Add `pipelines/index.py`, update CLI/tests.  
+    → `uv run pytest`
+
+25. Add `pipelines/pack.py`, update CLI/tests.  
+    → `uv run pytest`
+
+---
+
+## Phase 5 · Commands Package
+
+26. Create `commands/__init__.py`.  
+    → `uv run pytest`
+
+27. Add `commands/init.py` with `run_init(...)`; Typer wrapper calls it.  
+    → `uv run pytest`
+
+28. Add `commands/new.py` with `run_new(...)`; update tests.  
+    → `uv run pytest`
+
+29. Add `commands/ingest.py`; move ingest orchestration and ensure dependent tests use the new path.  
+    → `uv run pytest`
+
+30. Add `commands/summarize.py` to orchestrate IO + pipeline; thin CLI wrapper.  
+    → `uv run pytest`
+
+31. Add `commands/facts.py`.  
+    → `uv run pytest`
+
+32. Add `commands/persona.py`.  
+    → `uv run pytest`
+
+33. Add `commands/profile.py` (suggest/apply/status).  
+    → `uv run pytest`
+
+34. Add `commands/index.py`.  
+    → `uv run pytest`
+
+35. Add `commands/pack.py`.  
+    → `uv run pytest`
+
+36. Add `commands/chat.py`/`chatd.py` wrappers.  
+    → `uv run pytest`
+
+37. Add `commands/advise.py`.  
+    → `uv run pytest`
+
+38. Add `commands/characterize.py`.  
+    → `uv run pytest`
+
+---
+
+## Phase 6 · Final Polish
+
+39. Run `ruff --select F401,F841 --fix` (commit resulting cleanup).  
+    → `uv run pytest`
+
+40. Review `cli.py` to ensure it’s mostly Typer glue + docstrings; adjust comments.  
+    → `uv run pytest`
+
+41. Update docs (README/PLAN) to describe the new module layout.  
+    → `uv run pytest`
+
+42. Confirm CLI smoke/integration tests remain in place to guard end-to-end behaviour.  
+    → `uv run pytest`
+
+---
+
+👏 Follow the steps sequentially, keep commits small, and ensure `uv run pytest` stays green after every change.
