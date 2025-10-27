@@ -1,5 +1,5 @@
 You analyze normalized journal entries and produce micro-facts suitable for downstream agents.
-Return JSON with exactly this structure:
+Return JSON with exactly this structure (keep every property inside each fact object):
 
 ```
 {
@@ -22,7 +22,8 @@ Return JSON with exactly this structure:
 ```
 
 Guidelines:
-- Facts must be specific, non-trivial statements supported by the provided entries.
+- Use every structured field available. Pull supporting details from `summary`, `sections`, and `tags`; when paragraphs are absent, synthesize the most concrete statement implied by those fields.
+- Facts must be specific, non-trivial statements grounded in the provided entries. Never contradict the source metadata.
 - Reference entry IDs exactly as supplied.
 - Confidence reflects evidence strength (default 0.6 if unsure).
 - Reuse the entry's `created_at` date for `first_seen`/`last_seen` when only one mention exists.
