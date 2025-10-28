@@ -154,6 +154,34 @@ app.add_typer(export_app, name="export")
 app.add_typer(serve_app, name="serve")
 
 
+@app.command(help="Placeholder for the upcoming capture workflow.")
+def capture() -> None:
+    """Temporary stub until capture orchestration lands."""
+
+    typer.echo("capture is not implemented yet; see refactor2 Phase 1.")
+    raise typer.Exit(code=2)
+
+
+@app.command(help="Placeholder for the consolidated status report.")
+def status() -> None:
+    """Temporary stub until status wiring lands."""
+
+    typer.echo("status is not implemented yet; see refactor2 Phase 1.")
+    raise typer.Exit(code=2)
+
+
+@serve_app.command("chat", help="Placeholder for chat service daemon.")
+def serve_chat_placeholder() -> None:
+    typer.echo("serve chat is not implemented yet; see refactor2 Phase 1.")
+    raise typer.Exit(code=2)
+
+
+@export_app.command("pack", help="Placeholder for pack export flow.")
+def export_pack_placeholder() -> None:
+    typer.echo("export pack is not implemented yet; see refactor2 Phase 1.")
+    raise typer.Exit(code=2)
+
+
 @app.callback()
 def main() -> None:
     """Aijournal command-line interface."""
