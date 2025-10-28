@@ -19,7 +19,7 @@ from aijournal.models import (
     NormalizedEntry,
 )
 from aijournal.pipelines import normalization
-from aijournal.types.results import OperationResult, StageResult
+from aijournal.services.capture.results import OperationResult, StageResult
 from aijournal.utils import time as time_utils
 from aijournal.utils.paths import normalized_entry_path
 

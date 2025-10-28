@@ -26,7 +26,7 @@ from aijournal.models import (
     ProfileUpdateBatch,
     SelfProfile,
 )
-from aijournal.types.results import OperationResult
+from aijournal.services.capture.results import OperationResult
 from aijournal.utils import time as time_utils
 
 MARKDOWN_SUFFIXES = {".md", ".markdown"}
