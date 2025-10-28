@@ -126,7 +126,7 @@ _For each pipeline: (1) add the new module + unit test, commit; (2) update the C
 22. [x] Add `pipelines/advise.py`, update CLI/tests.  
     → `uv run pytest`
 
-23. Add `pipelines/index.py`, update CLI/tests.  
+23. [x] Add `pipelines/index.py`, update CLI/tests.  
     → `uv run pytest`
 
 24. Add `pipelines/pack.py`, update CLI/tests.  
