@@ -38,9 +38,35 @@ def test_entry_result_defaults() -> None:
     assert entry.warnings == []
 
 
-def test_run_capture_stub_raises() -> None:
+def test_run_capture_records_telemetry(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "aijournal.utils.time.now",
+        lambda: datetime(2025, 10, 28, 9, 0, tzinfo=UTC),
+    )
+    monkeypatch.chdir(tmp_path)
+
+    inputs = CaptureInput(source="stdin", text="Hello capture", title="Capture")
+    result = run_capture(inputs)
+
+    assert result.run_id.startswith("capture-")
+    assert "persist" in result.durations_ms
+    assert "normalize" in result.durations_ms
+    assert result.durations_ms["persist"] >= 0
+    assert result.durations_ms["normalize"] >= 0
+    assert len(result.entries) == 1
+    entry = result.entries[0]
+    assert entry.markdown_path is not None
+    assert (tmp_path / entry.markdown_path).exists()
+    assert entry.normalized_path is not None
+    assert (tmp_path / entry.normalized_path).exists()
+    manifest_path = tmp_path / "data" / "manifest" / "ingested.yaml"
+    assert manifest_path.exists()
+
+
+def test_run_capture_requires_text(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.chdir(tmp_path)
     inputs = CaptureInput(source="stdin")
-    with pytest.raises(NotImplementedError):
+    with pytest.raises(ValueError):
         run_capture(inputs)
 
 

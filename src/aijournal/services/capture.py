@@ -6,6 +6,7 @@ from collections.abc import Iterable
 from datetime import UTC, datetime
 from hashlib import sha256
 from pathlib import Path
+from time import perf_counter
 from typing import Literal
 
 import yaml
@@ -107,6 +108,12 @@ def _digest_bytes(data: bytes) -> str:
 
 def _digest_text(text: str) -> str:
     return _digest_bytes(text.encode("utf-8"))
+
+
+def _generate_run_id() -> str:
+    """Return a monotonic-ish identifier for a capture run."""
+
+    return f"capture-{time_utils.now().strftime('%Y%m%d%H%M%S')}"
 
 
 def _ensure_manifest(entries: list[ManifestEntry], root: Path) -> None:
@@ -599,10 +606,57 @@ class CaptureResult(BaseModel):
     )
 
 
-def run_capture(_input: CaptureInput) -> CaptureResult:
-    """Execute the capture workflow (stub for Phase 2)."""
+def run_capture(inputs: CaptureInput) -> CaptureResult:
+    """Execute the Phase 2 capture workflow (persist + normalize + telemetry)."""
 
-    raise NotImplementedError("capture service not implemented yet")
+    if inputs.dry_run:
+        msg = "capture dry-run is not implemented yet"
+        raise ValueError(msg)
+
+    if inputs.source not in {"stdin", "editor", "file"}:
+        msg = f"Unsupported capture source: {inputs.source}"
+        raise ValueError(msg)
+
+    root = Path.cwd()
+    run_id = _generate_run_id()
+    manifest_entries: list[ManifestEntry] = []
+    entry_results: list[EntryResult] = []
+    durations_ms: dict[str, float] = {}
+
+    persist_start = perf_counter()
+    if inputs.source in {"stdin", "editor"}:
+        if not inputs.text:
+            msg = "capture text input requires non-empty text"
+            raise ValueError(msg)
+        entry_results.append(_persist_text_entry(inputs, root, manifest_entries))
+    elif inputs.source == "file":
+        if not inputs.paths:
+            msg = "capture file input requires at least one path"
+            raise ValueError(msg)
+        if len(inputs.paths) != 1:
+            msg = "capture --from currently supports a single file"
+            raise ValueError(msg)
+        entry_results.append(_persist_file_entry(inputs, root, manifest_entries))
+    durations_ms["persist"] = (perf_counter() - persist_start) * 1000.0
+
+    normalize_start = perf_counter()
+    artifact_counts = normalize_entries(entry_results, root) if entry_results else {}
+    durations_ms["normalize"] = (perf_counter() - normalize_start) * 1000.0
+
+    artifacts_changed = {key: value for key, value in artifact_counts.items() if value}
+    entries_changed = sum(1 for entry in entry_results if entry.changed and not entry.deduped)
+    if entries_changed:
+        artifacts_changed.setdefault("entries", entries_changed)
+
+    return CaptureResult(
+        run_id=run_id,
+        entries=entry_results,
+        artifacts_changed=artifacts_changed,
+        persona_stale_before=False,
+        persona_stale_after=False,
+        index_rebuilt=False,
+        durations_ms={key: round(value, 3) for key, value in durations_ms.items()},
+    )
 
 
 def normalize_entries(entries: list[EntryResult], root: Path) -> dict[str, int]:
