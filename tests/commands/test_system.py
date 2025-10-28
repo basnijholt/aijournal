@@ -14,7 +14,6 @@ def test_run_system_doctor_happy_path(tmp_path: Path, monkeypatch: pytest.Monkey
     monkeypatch.setenv("AIJOURNAL_FAKE_OLLAMA", "1")
 
     monkeypatch.setattr(system, "_check_sqlite_fts5", lambda: (True, None))
-    monkeypatch.setattr(system, "_check_annoy_module", lambda: (True, None))
     monkeypatch.setattr(
         system,
         "_check_index_artifacts",

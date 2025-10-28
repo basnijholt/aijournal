@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import importlib.util
 import os
 import sqlite3
 from pathlib import Path
@@ -32,20 +31,6 @@ def _check_sqlite_fts5() -> tuple[bool, str | None]:
             conn.close()
         except Exception:  # pragma: no cover - defensive
             pass
-    return True, None
-
-
-def _check_annoy_module() -> tuple[bool, str | None]:
-    """Return (ok, hint) indicating whether the Annoy module is importable."""
-
-    spec = importlib.util.find_spec("annoy")
-    if spec is None:
-        return False, "annoy module not importable"
-    try:
-        # Import to ensure it loads without runtime errors.
-        import annoy  # noqa: F401  # pragma: no cover - import side effect only
-    except Exception as exc:  # pragma: no cover - defensive
-        return False, str(exc)
     return True, None
 
 
@@ -137,10 +122,6 @@ def run_system_doctor(root: Path) -> dict[str, Any]:
     fts_ok, fts_hint = _check_sqlite_fts5()
     checks.append({"name": "sqlite_fts5", "ok": fts_ok, "hint": fts_hint})
     overall_ok &= fts_ok
-
-    annoy_mod_ok, annoy_mod_hint = _check_annoy_module()
-    checks.append({"name": "annoy_module", "ok": annoy_mod_ok, "hint": annoy_mod_hint})
-    overall_ok &= annoy_mod_ok
 
     index_info = _check_index_artifacts(root)
     index_ok = bool(index_info["index_db_exists"] and index_info["annoy_index_exists"])
