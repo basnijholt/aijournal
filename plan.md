@@ -127,5 +127,6 @@ This builds on items 1 & 2 but isn’t strictly required once automatic detectio
 ### To-Do F — Trim `CaptureState`
 - After helpers return typed outputs, remove redundant fields from `CaptureState` (e.g., `index_rebuilt_flag`, `changed_dates` if no longer needed) and pass data through return values instead.
 - Re-run tests, confirm orchestrator still composes, and **commit**.
+- ✅ 2025-10-28: Deleted the unused `CaptureState` dataclass and associated imports; `run_capture` now runs on local state only. `uv run pytest` remains green.
 
 > Remember: six commits, tests green every time. Document progress in this file (append short notes under each bullet) as tasks are completed.

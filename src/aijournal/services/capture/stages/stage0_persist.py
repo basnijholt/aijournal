@@ -21,11 +21,15 @@ def run_persist_stage_0(
         EntryResult,
         OperationResult,
         PersistStage0Outputs,
-        _discover_markdown_files,
-        _ensure_manifest,
-        _manifest_index,
         _persist_file_entry,
         _persist_text_entry,
+    )
+    from ..utils import (
+        discover_markdown_files,
+        ensure_manifest,
+    )
+    from ..utils import (
+        manifest_index as _manifest_index,
     )
 
     entry_results: list[EntryResult] = []
@@ -45,12 +49,12 @@ def run_persist_stage_0(
             msg = "capture --from requires at least one path"
             log_event({"event": "persist", "status": "error", "error": msg})
             raise ValueError(msg)
-        files = _discover_markdown_files(inputs.paths)
+        files = discover_markdown_files(inputs.paths)
         if not files:
             msg = "capture --from found no Markdown files"
             log_event({"event": "persist", "status": "error", "error": msg})
             raise ValueError(msg)
-        _ensure_manifest(manifest_entries, root)
+        ensure_manifest(manifest_entries, root)
         manifest_idx = _manifest_index(manifest_entries)
         for file_path in files:
             entry = _persist_file_entry(
@@ -59,7 +63,7 @@ def run_persist_stage_0(
                 manifest_entries,
                 source_path=file_path,
                 snapshot=inputs.snapshot,
-                manifest_index=manifest_idx,
+                manifest_index_cache=manifest_idx,
             )
             stage_entry_warnings.extend(entry.warnings)
             entry_results.append(entry)

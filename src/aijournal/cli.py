@@ -33,9 +33,7 @@ from aijournal.commands.characterize import (
 )
 from aijournal.commands.chat import run_chat
 from aijournal.commands.chatd import run_chatd
-from aijournal.commands.facts import (
-    run_facts as run_facts_command,
-)
+from aijournal.commands.facts import run_facts
 from aijournal.commands.index import (
     run_index_rebuild,
     run_index_search,
@@ -47,17 +45,12 @@ from aijournal.commands.ingest import (
     _relative_source_path,
     _use_fake_llm,
     _write_yaml_if_changed,
+    run_ingest,
 )
-from aijournal.commands.ingest import (
-    run_ingest as run_ingest_command,
-)
-from aijournal.commands.init import run_init as run_init_command
-from aijournal.commands.new import run_new as run_new_command
+from aijournal.commands.init import run_init
+from aijournal.commands.new import run_new
 from aijournal.commands.pack import run_pack
-from aijournal.commands.persona import (
-    persona_state,
-    run_persona_build,
-)
+from aijournal.commands.persona import persona_state, run_persona_build
 from aijournal.commands.profile import (
     InterviewTarget,
     _apply_claim_upsert,
@@ -73,15 +66,13 @@ from aijournal.commands.summarize import (
     _entries_to_payload,
     _json_block,
     _load_normalized_entries,
+    run_summarize,
 )
 from aijournal.commands.summarize import (
     _invoke_structured_llm as _commands_invoke_structured_llm,
 )
 from aijournal.commands.summarize import (
     _structured_call_with_retry as _commands_structured_call_with_retry,
-)
-from aijournal.commands.summarize import (
-    run_summarize as run_summarize_command,
 )
 from aijournal.commands.system import run_status_summary, run_system_doctor
 from aijournal.io.yaml_io import load_yaml_model, write_yaml_model
@@ -652,7 +643,7 @@ def init(
     ),
 ) -> None:
     """Initialize the local aijournal layout."""
-    summary = run_init_command(path)
+    summary = run_init(path)
     typer.echo(summary)
 
 
@@ -682,7 +673,7 @@ def new(
 ) -> None:
     """Create a new journal entry or synthesize fake entries for testing."""
     _emit_deprecation("aijournal ops dev new", "aijournal capture --text")
-    run_new_command(title, tags, fake, seed)
+    run_new(title, tags, fake, seed)
 
 
 @ops_pipeline_app.command("ingest", hidden=True)
@@ -717,7 +708,7 @@ def ingest(
 ) -> None:
     """Ingest Markdown posts into normalized YAML via Ollama."""
     _emit_deprecation("aijournal ops pipeline ingest", "aijournal capture --from")
-    run_ingest_command(
+    run_ingest(
         sources,
         source_type=source_type,
         limit=limit,
@@ -811,7 +802,7 @@ def summarize(
 ) -> None:
     """Generate a daily summary from normalized entries."""
     _emit_deprecation("aijournal ops pipeline summarize", "aijournal capture --from/--text")
-    summary_path = run_summarize_command(
+    summary_path = run_summarize(
         date,
         timeout=timeout,
         retries=retries,
@@ -855,7 +846,7 @@ def facts(
     _emit_deprecation("aijournal ops pipeline extract-facts", "aijournal capture --from/--text")
     root = Path.cwd()
     _, claim_models = _load_profile_components(root)
-    preview, facts_path = run_facts_command(
+    preview, facts_path = run_facts(
         date,
         timeout=timeout,
         retries=retries,

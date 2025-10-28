@@ -16,16 +16,18 @@ def run_persona_stage_7(
     root: Path,
     artifacts_changed: dict[str, int],
 ) -> PersonaStage7Outputs:
-    from .. import (
-        OperationResult,
-        PersonaStage7Outputs,
-        _load_config,
-        _load_profile_components,
-        _profile_to_dict,
-        _relative_path,
+    from aijournal.commands.ingest import _load_config
+    from aijournal.commands.persona import (
         persona_state,
         run_persona_build,
     )
+    from aijournal.commands.profile import (
+        _load_profile_components,
+        _profile_to_dict,
+    )
+
+    from .. import OperationResult, PersonaStage7Outputs
+    from ..utils import relative_path
 
     stage_start = perf_counter()
     should_build = False
@@ -60,7 +62,7 @@ def run_persona_stage_7(
     persona_artifacts = []
     if persona_changed:
         persona_artifacts.append(
-            _relative_path(root / "derived" / "persona" / "persona_core.yaml", root)
+            relative_path(root / "derived" / "persona" / "persona_core.yaml", root)
         )
     persona_details: dict[str, object] = {
         "before_fresh": not persona_stale_before,

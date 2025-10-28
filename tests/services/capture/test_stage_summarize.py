@@ -23,10 +23,7 @@ def test_stage2_summarize_success(tmp_path: Path, monkeypatch) -> None:
         summary_path.write_text("summary", encoding="utf-8")
         return summary_path
 
-    monkeypatch.setattr(
-        "aijournal.services.capture.run_summarize_command",
-        fake_run,
-    )
+    monkeypatch.setattr("aijournal.commands.summarize.run_summarize", fake_run)
 
     outputs = stage2_summarize.run_summarize_stage_2(["2025-10-27"], _make_inputs(), tmp_path)
 
@@ -40,10 +37,7 @@ def test_stage2_summarize_handles_failure(tmp_path: Path, monkeypatch) -> None:
     def failing_run(*args, **kwargs):
         raise typer.Exit(1)
 
-    monkeypatch.setattr(
-        "aijournal.services.capture.run_summarize_command",
-        failing_run,
-    )
+    monkeypatch.setattr("aijournal.commands.summarize.run_summarize", failing_run)
 
     outputs = stage2_summarize.run_summarize_stage_2(["2025-10-27"], _make_inputs(), tmp_path)
 

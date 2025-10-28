@@ -16,7 +16,10 @@ def run_pack_stage_8(
     run_id: str,
     persona_changed: bool,
 ) -> PackStage8Outputs:
-    from .. import OperationResult, PackStage8Outputs, _relative_path, run_pack
+    from aijournal.commands.pack import run_pack
+
+    from .. import OperationResult, PackStage8Outputs
+    from ..utils import relative_path
 
     if not inputs.pack:
         return PackStage8Outputs(OperationResult.noop("no pack requested"), 0.0)
@@ -54,7 +57,7 @@ def run_pack_stage_8(
             details=pack_details,
         )
     else:
-        rel_output = _relative_path(pack_output, root)
+        rel_output = relative_path(pack_output, root)
         op_result = OperationResult.wrote(
             [rel_output],
             message="pack generated",

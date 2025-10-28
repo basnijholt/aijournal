@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable, Iterable, Sequence
-from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal, NamedTuple
@@ -12,19 +11,7 @@ from typing import Any, Literal, NamedTuple
 import yaml
 from pydantic import BaseModel, Field
 
-from aijournal.commands.characterize import run_characterize
-from aijournal.commands.facts import run_facts
-from aijournal.commands.index import run_index_rebuild, run_index_tail
 from aijournal.commands.ingest import _fake_structured_entry, _load_config
-from aijournal.commands.pack import run_pack
-from aijournal.commands.persona import persona_state, run_persona_build
-from aijournal.commands.profile import (
-    _load_profile_components,
-    _profile_to_dict,
-    run_profile_apply,
-    run_profile_suggest,
-)
-from aijournal.commands.summarize import run_summarize as run_summarize_command
 from aijournal.ingest_agent import IngestResult, build_ingest_agent, ingest_with_agent
 from aijournal.models import (
     JournalSection,
@@ -46,93 +33,21 @@ from .stages.stage6_index import run_index_stage_6
 from .stages.stage7_persona import run_persona_stage_7
 from .stages.stage8_pack import run_pack_stage_8
 from .utils import (
-    apply_profile_update_batch as _apply_profile_update_batch,
+    digest_bytes,
+    digest_text,
+    emit_operation_event,
+    ensure_manifest,
+    ensure_unique_slug,
+    journal_path,
+    relative_path,
+    use_fake_llm,
+    write_manifest,
+    write_markdown_entry,
+    write_snapshot,
+    write_yaml_if_changed,
 )
-from .utils import (
-    digest_bytes as _digest_bytes,
-)
-from .utils import (
-    digest_text as _digest_text,
-)
-from .utils import (
-    discover_markdown_files as _discover_markdown_files,
-)
-from .utils import (
-    emit_operation_event as _emit_operation_event,
-)
-from .utils import (
-    ensure_manifest as _ensure_manifest,
-)
-from .utils import (
-    ensure_unique_slug as _ensure_unique_slug,
-)
-from .utils import (
-    journal_path as _journal_path,
-)
-from .utils import (
-    manifest_index as _manifest_index,
-)
-from .utils import (
-    manifest_path as _manifest_path,
-)
-from .utils import (
-    noop_preview as _noop_preview,
-)
-from .utils import (
-    pending_batches as _pending_batches,
-)
-from .utils import (
-    relative_path as _relative_path,
-)
-from .utils import (
-    use_fake_llm as _use_fake_llm,
-)
-from .utils import (
-    write_manifest as _write_manifest,
-)
-from .utils import (
-    write_markdown_entry as _write_markdown_entry,
-)
-from .utils import (
-    write_snapshot as _write_snapshot,
-)
-from .utils import (
-    write_yaml_if_changed as _write_yaml_if_changed,
-)
-
-__all__ = [
-    "run_capture",
-    "run_characterize",
-    "run_facts",
-    "run_index_rebuild",
-    "run_index_tail",
-    "run_pack",
-    "persona_state",
-    "run_persona_build",
-    "run_profile_apply",
-    "run_profile_suggest",
-    "run_summarize_command",
-    "_apply_profile_update_batch",
-    "_emit_operation_event",
-    "_discover_markdown_files",
-    "_ensure_manifest",
-    "_ensure_unique_slug",
-    "_journal_path",
-    "_manifest_index",
-    "_manifest_path",
-    "_noop_preview",
-    "_pending_batches",
-    "_relative_path",
-    "_write_manifest",
-    "_write_markdown_entry",
-    "_write_snapshot",
-    "_write_yaml_if_changed",
-    "_use_fake_llm",
-    "_digest_bytes",
-    "_digest_text",
-    "_load_profile_components",
-    "_profile_to_dict",
-]
+from .utils import manifest_index as _manifest_index
+from .utils import manifest_path as _manifest_path
 
 
 class CaptureStage(NamedTuple):
@@ -234,65 +149,6 @@ def _emit_stage_event(
     if stage_result.result.warnings:
         payload["warnings"] = stage_result.result.warnings
     log_event(payload)
-
-
-@dataclass
-class CaptureState:
-    """Mutable state shared across capture stages."""
-
-    root: Path
-    inputs: CaptureInput
-    log_event: Callable[[dict[str, object]], None]
-    requested_min_stage: int
-    requested_max_stage: int
-    run_id: str
-    manifest_entries: list[ManifestEntry] = field(default_factory=list)
-    entry_results: list[EntryResult] = field(default_factory=list)
-    artifacts_changed: dict[str, int] = field(default_factory=dict)
-    durations_ms: dict[str, float] = field(default_factory=dict)
-    warnings: list[str] = field(default_factory=list)
-    review_candidates: list[str] = field(default_factory=list)
-    stage_results: list[StageResult] = field(default_factory=list)
-    stages_completed: set[int] = field(default_factory=set)
-    stages_skipped: set[int] = field(default_factory=set)
-    changed_dates: list[str] = field(default_factory=list)
-    persona_stale_before: bool = False
-    persona_stale_after: bool = False
-    persona_changed: bool = False
-    index_rebuilt: bool = False
-    index_rebuilt_flag: bool = False
-
-    def stage_enabled(self, stage_index: int) -> bool:
-        """Return True if the stage is inside the requested min/max window."""
-
-        if stage_index <= 1:
-            return stage_index <= self.requested_max_stage
-        return self.requested_min_stage <= stage_index <= self.requested_max_stage
-
-    def record_stage(
-        self,
-        *,
-        stage_id: int,
-        stage_name: str,
-        op_result: OperationResult,
-        duration_ms: float,
-    ) -> None:
-        """Record the outcome of a stage with shared telemetry helpers."""
-
-        _record_stage(
-            stage_results=self.stage_results,
-            stages_completed=self.stages_completed,
-            stages_skipped=self.stages_skipped,
-            warnings_accumulator=self.warnings,
-            log_event=self.log_event,
-            stage_id=stage_id,
-            stage_name=stage_name,
-            op_result=op_result,
-            duration_ms=duration_ms,
-        )
-
-    def increment_artifact(self, key: str) -> None:
-        self.artifacts_changed[key] = self.artifacts_changed.get(key, 0) + 1
 
 
 class CharacterizeStage5Outputs(NamedTuple):
@@ -490,15 +346,15 @@ def _build_manifest_entry(
     aliases: Sequence[str] | None = None,
 ) -> ManifestEntry:
     canonical_rel = (
-        _relative_path(canonical_path, root)
+        relative_path(canonical_path, root)
         if canonical_path is not None
-        else _relative_path(markdown_path, root)
+        else relative_path(markdown_path, root)
     )
-    snapshot_rel = _relative_path(snapshot_path, root) if snapshot_path is not None else None
+    snapshot_rel = relative_path(snapshot_path, root) if snapshot_path is not None else None
     return ManifestEntry(
         hash=digest,
-        path=_relative_path(markdown_path, root),
-        normalized=_relative_path(normalized_path, root),
+        path=relative_path(markdown_path, root),
+        normalized=relative_path(normalized_path, root),
         source_type=source_type,
         ingested_at=time_utils.format_timestamp(time_utils.now()),
         created_at=created_at,
@@ -634,7 +490,7 @@ def _normalize_markdown(
     normalized_entry = NormalizedEntry(
         id=entry_id,
         created_at=created_str,
-        source_path=_relative_path(markdown_path, root),
+        source_path=relative_path(markdown_path, root),
         title=title,
         tags=tags,
         sections=sections_models,
@@ -643,7 +499,7 @@ def _normalize_markdown(
         source_type=source_type,
     )
     normalized_path = normalized_entry_path(root, date_str, entry_id)
-    changed = _write_yaml_if_changed(
+    changed = write_yaml_if_changed(
         normalized_path,
         normalized_entry.model_dump(mode="python"),
     )
@@ -655,7 +511,7 @@ def _persist_text_entry(
     root: Path,
     manifest_entries: list[ManifestEntry],
 ) -> EntryResult:
-    _ensure_manifest(manifest_entries, root)
+    ensure_manifest(manifest_entries, root)
     manifest_path = _manifest_path(root)
     manifest_index = _manifest_index(manifest_entries)
 
@@ -666,14 +522,14 @@ def _persist_text_entry(
     body_text = (inputs.text or "").strip()
     title = _resolve_title(inputs, body_text)
     base_slug = inputs.slug or f"{date_str}-{time_utils.slugify_title(title)}"
-    slug = _ensure_unique_slug(root, date_str, base_slug)
+    slug = ensure_unique_slug(root, date_str, base_slug)
     aliases: list[str] = []
     entry_warnings: list[str] = []
     if slug != base_slug:
         aliases.append(base_slug)
         entry_warnings.append(f'slug "{base_slug}" already exists; stored as "{slug}"')
 
-    markdown_path = _journal_path(root, date_str, slug)
+    markdown_path = journal_path(root, date_str, slug)
     frontmatter_tags = _coalesce_tags(inputs.tags)
     projects = _coalesce_tags(inputs.projects)
 
@@ -685,7 +541,7 @@ def _persist_text_entry(
         "source_type": inputs.source_type,
         "origin": {"kind": "capture"},
     }
-    frontmatter["origin"]["canonical_path"] = _relative_path(markdown_path, root)
+    frontmatter["origin"]["canonical_path"] = relative_path(markdown_path, root)
     if projects:
         frontmatter["projects"] = projects
     if inputs.mood:
@@ -700,7 +556,7 @@ def _persist_text_entry(
         markdown_content += f"\n{body_text}\n"
     else:
         markdown_content += "\n"
-    digest = _digest_text(markdown_content)
+    digest = digest_text(markdown_content)
     if digest in manifest_index:
         # Entry already exists with identical content.
         existing = manifest_index[digest]
@@ -716,7 +572,7 @@ def _persist_text_entry(
             source_type=existing.source_type,
         )
 
-    _write_markdown_entry(markdown_path, frontmatter, body_text)
+    write_markdown_entry(markdown_path, frontmatter, body_text)
 
     normalized_path, normalized_changed = _normalize_markdown(
         markdown_path,
@@ -738,12 +594,12 @@ def _persist_text_entry(
         aliases=aliases,
     )
     manifest_entries.append(entry)
-    _write_manifest(manifest_path, manifest_entries)
+    write_manifest(manifest_path, manifest_entries)
     manifest_index[digest] = entry
 
     return EntryResult(
-        markdown_path=_relative_path(markdown_path, root),
-        normalized_path=_relative_path(normalized_path, root),
+        markdown_path=relative_path(markdown_path, root),
+        normalized_path=relative_path(normalized_path, root),
         date=date_str,
         slug=slug,
         deduped=False,
@@ -809,7 +665,7 @@ def _ingest_frontmatter(
     fallback_sections = _scan_headings(raw_text)
     warnings: list[str] = []
 
-    if _use_fake_llm():
+    if use_fake_llm():
         structured: IngestResult = _fake_structured_entry(source_path)
     else:
         agent = build_ingest_agent(
@@ -819,7 +675,7 @@ def _ingest_frontmatter(
 
     normalized_dict, _ = normalization.normalized_from_structured(
         structured,
-        source_path=_relative_path(source_path, root),
+        source_path=relative_path(source_path, root),
         root=root,
         digest=digest,
         source_type=inputs.source_type,
@@ -849,7 +705,7 @@ def _persist_file_entry(
     *,
     source_path: Path | None = None,
     snapshot: bool = True,
-    manifest_index: dict[str, ManifestEntry] | None = None,
+    manifest_index_cache: dict[str, ManifestEntry] | None = None,
 ) -> EntryResult:
     if source_path is None:
         if not inputs.paths:
@@ -858,14 +714,16 @@ def _persist_file_entry(
     else:
         source_path = source_path.expanduser().resolve()
 
-    _ensure_manifest(manifest_entries, root)
+    ensure_manifest(manifest_entries, root)
     manifest_path = _manifest_path(root)
     local_index = (
-        manifest_index if manifest_index is not None else _manifest_index(manifest_entries)
+        manifest_index_cache
+        if manifest_index_cache is not None
+        else _manifest_index(manifest_entries)
     )
 
     raw_bytes = source_path.read_bytes()
-    digest = _digest_bytes(raw_bytes)
+    digest = digest_bytes(raw_bytes)
 
     if digest in local_index:
         existing = local_index[digest]
@@ -909,7 +767,7 @@ def _persist_file_entry(
         slug_source = str(slug_source)
     else:
         slug_source = f"{date_str}-{time_utils.slugify_title(title)}"
-    slug = _ensure_unique_slug(root, date_str, slug_source)
+    slug = ensure_unique_slug(root, date_str, slug_source)
 
     aliases: list[str] = []
     entry_warnings: list[str] = list(ingest_warnings)
@@ -926,8 +784,8 @@ def _persist_file_entry(
         inputs.projects,
     )
 
-    markdown_path = _journal_path(root, date_str, slug)
-    canonical_rel = _relative_path(markdown_path, root)
+    markdown_path = journal_path(root, date_str, slug)
+    canonical_rel = relative_path(markdown_path, root)
     frontmatter_out: dict[str, Any] = {
         "id": slug,
         "created_at": time_utils.format_timestamp(created_dt),
@@ -962,23 +820,23 @@ def _persist_file_entry(
 
     snapshot_path_obj: Path | None = None
     if snapshot:
-        snapshot_path_obj = _write_snapshot(raw_bytes, root, digest)
-        frontmatter_out["origin"]["snapshot_path"] = _relative_path(snapshot_path_obj, root)
+        snapshot_path_obj = write_snapshot(raw_bytes, root, digest)
+        frontmatter_out["origin"]["snapshot_path"] = relative_path(snapshot_path_obj, root)
 
-    _write_markdown_entry(markdown_path, frontmatter_out, body)
+    write_markdown_entry(markdown_path, frontmatter_out, body)
 
     normalized_path = normalized_entry_path(root, date_str, slug)
     if normalized_seed is not None:
         normalized_seed.id = slug
         normalized_seed.created_at = time_utils.format_timestamp(created_dt)
-        normalized_seed.source_path = _relative_path(markdown_path, root)
+        normalized_seed.source_path = relative_path(markdown_path, root)
         normalized_seed.source_hash = digest
         normalized_seed.source_type = inputs.source_type
         normalized_seed.tags = tags
         if summary_text:
             normalized_seed.summary = summary_text
         normalized_payload = normalized_seed.model_dump(mode="python")
-        normalized_changed = _write_yaml_if_changed(normalized_path, normalized_payload)
+        normalized_changed = write_yaml_if_changed(normalized_path, normalized_payload)
     else:
         normalized_path, normalized_changed = _normalize_markdown(
             markdown_path,
@@ -1001,12 +859,12 @@ def _persist_file_entry(
         aliases=aliases,
     )
     manifest_entries.append(entry)
-    _write_manifest(manifest_path, manifest_entries)
+    write_manifest(manifest_path, manifest_entries)
     local_index[digest] = entry
 
     return EntryResult(
-        markdown_path=_relative_path(markdown_path, root),
-        normalized_path=_relative_path(normalized_path, root),
+        markdown_path=relative_path(markdown_path, root),
+        normalized_path=relative_path(normalized_path, root),
         date=date_str,
         slug=slug,
         deduped=False,
@@ -1498,7 +1356,7 @@ def run_capture(
                 result=index_result,
                 duration=0.0,
             )
-    _emit_operation_event(
+    emit_operation_event(
         log_event,
         event="index.rebuild",
         status=_stage_status(index_result),
@@ -1533,7 +1391,7 @@ def run_capture(
             "status_after": status_after,
         }
     )
-    _emit_operation_event(
+    emit_operation_event(
         log_event,
         event="persona.status",
         status=_stage_status(persona_result),
@@ -1563,7 +1421,7 @@ def run_capture(
     else:
         pack_result = record_skipped_stage(8, "pack", "refresh.pack")
 
-    telemetry_rel = _relative_path(telemetry_path, root)
+    telemetry_rel = relative_path(telemetry_path, root)
     log_event(
         {
             "event": "done",
@@ -1615,7 +1473,7 @@ def normalize_entries(entries: list[EntryResult], root: Path) -> dict[str, Any]:
         markdown_path = root / entry.markdown_path
         if not markdown_path.exists():
             continue
-        source_hash = entry.source_hash or _digest_bytes(markdown_path.read_bytes())
+        source_hash = entry.source_hash or digest_bytes(markdown_path.read_bytes())
         source_type = entry.source_type or "journal"
         normalized_path, changed = _normalize_markdown(
             markdown_path,
@@ -1625,8 +1483,8 @@ def normalize_entries(entries: list[EntryResult], root: Path) -> dict[str, Any]:
         )
         if changed:
             normalized += 1
-            changed_paths.append(_relative_path(normalized_path, root))
-        entry.normalized_path = _relative_path(normalized_path, root)
+            changed_paths.append(relative_path(normalized_path, root))
+        entry.normalized_path = relative_path(normalized_path, root)
     return {"normalized": normalized, "paths": changed_paths}
 
 

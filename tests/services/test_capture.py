@@ -14,12 +14,12 @@ from aijournal.models import ManifestEntry
 from aijournal.services.capture import (
     CaptureInput,
     EntryResult,
-    _discover_markdown_files,
     _persist_file_entry,
     _persist_text_entry,
     normalize_entries,
     run_capture,
 )
+from aijournal.services.capture.utils import discover_markdown_files
 
 
 def test_capture_input_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -122,39 +122,36 @@ def test_run_capture_records_telemetry(tmp_path: Path, monkeypatch: pytest.Monke
         review_calls.append(batch_path)
         return True
 
+    monkeypatch.setattr("aijournal.commands.summarize.run_summarize", fake_run_summarize)
+    monkeypatch.setattr("aijournal.commands.facts.run_facts", fake_run_facts)
     monkeypatch.setattr(
-        "aijournal.services.capture.run_summarize_command",
-        fake_run_summarize,
-    )
-    monkeypatch.setattr("aijournal.services.capture.run_facts", fake_run_facts)
-    monkeypatch.setattr(
-        "aijournal.services.capture.run_profile_suggest",
+        "aijournal.commands.profile.run_profile_suggest",
         fake_run_profile_suggest,
     )
     monkeypatch.setattr(
-        "aijournal.services.capture.run_profile_apply",
+        "aijournal.commands.profile.run_profile_apply",
         fake_run_profile_apply,
     )
     monkeypatch.setattr(
-        "aijournal.services.capture.run_characterize",
+        "aijournal.commands.characterize.run_characterize",
         fake_run_characterize,
-    )
-    monkeypatch.setattr(
-        "aijournal.services.capture._apply_profile_update_batch",
-        fake_apply_batch,
     )
     dummy_claim = object()
     monkeypatch.setattr(
-        "aijournal.services.capture._load_profile_components",
+        "aijournal.commands.profile._load_profile_components",
         lambda root: (None, [dummy_claim]),
     )
     monkeypatch.setattr(
-        "aijournal.services.capture.run_index_rebuild",
+        "aijournal.commands.index.run_index_rebuild",
         lambda since, *, limit: index_rebuild_calls.append((since, limit)) or "rebuild",
     )
     monkeypatch.setattr(
-        "aijournal.services.capture.run_index_tail",
+        "aijournal.commands.index.run_index_tail",
         lambda since, *, days, limit: index_tail_calls.append((since, days, limit)) or "updated",
+    )
+    monkeypatch.setattr(
+        "aijournal.services.capture.utils.apply_profile_update_batch",
+        fake_apply_batch,
     )
 
     persona_states = [
@@ -181,10 +178,10 @@ def test_run_capture_records_telemetry(tmp_path: Path, monkeypatch: pytest.Monke
         )
         return persona_path, True
 
-    monkeypatch.setattr("aijournal.services.capture.persona_state", fake_persona_state)
-    monkeypatch.setattr("aijournal.services.capture.run_persona_build", fake_run_persona_build)
+    monkeypatch.setattr("aijournal.commands.persona.persona_state", fake_persona_state)
+    monkeypatch.setattr("aijournal.commands.persona.run_persona_build", fake_run_persona_build)
     monkeypatch.setattr(
-        "aijournal.services.capture.run_pack",
+        "aijournal.commands.pack.run_pack",
         lambda level, date, *, output, max_tokens, fmt, history_days, dry_run: pack_calls.append(
             (level, output)
         ),
@@ -290,14 +287,14 @@ def test_run_capture_review_mode_skips_apply(
         return path
 
     monkeypatch.setattr(
-        "aijournal.services.capture.run_summarize_command",
+        "aijournal.commands.summarize.run_summarize",
         lambda date, *, timeout, retries, progress: _ensure_file(
             tmp_path / "derived" / "summaries" / f"{date}.yaml", "summary"
         ),
     )
 
     monkeypatch.setattr(
-        "aijournal.services.capture.run_facts",
+        "aijournal.commands.facts.run_facts",
         lambda date, *, timeout, retries, progress, claim_models, build_claim_preview: (
             None,
             _ensure_file(tmp_path / "derived" / "microfacts" / f"{date}.yaml", "facts"),
@@ -305,7 +302,7 @@ def test_run_capture_review_mode_skips_apply(
     )
 
     monkeypatch.setattr(
-        "aijournal.services.capture.run_profile_suggest",
+        "aijournal.commands.profile.run_profile_suggest",
         lambda date, *, timeout, retries, progress: _ensure_file(
             tmp_path / "derived" / "profile_suggestions" / f"{date}.yaml",
             "suggest",
@@ -313,7 +310,7 @@ def test_run_capture_review_mode_skips_apply(
     )
 
     monkeypatch.setattr(
-        "aijournal.services.capture.run_characterize",
+        "aijournal.commands.characterize.run_characterize",
         lambda date, *, timeout, retries, progress, build_claim_preview: _ensure_file(
             tmp_path / "derived" / "pending" / "profile_updates" / f"{date}-batch.yaml",
             "batch",
@@ -324,24 +321,21 @@ def test_run_capture_review_mode_skips_apply(
     review_calls: list[Path] = []
 
     monkeypatch.setattr(
-        "aijournal.services.capture.run_profile_apply",
+        "aijournal.commands.profile.run_profile_apply",
         lambda *args, **kwargs: profile_apply_calls.append("called"),
     )
+
     monkeypatch.setattr(
-        "aijournal.services.capture._apply_profile_update_batch",
-        lambda root, path: review_calls.append(path) or True,
-    )
-    monkeypatch.setattr(
-        "aijournal.services.capture._load_profile_components",
+        "aijournal.commands.profile._load_profile_components",
         lambda root: (None, []),
     )
     index_rebuild_calls: list[tuple[str | None, int | None]] = []
     monkeypatch.setattr(
-        "aijournal.services.capture.run_index_rebuild",
+        "aijournal.commands.index.run_index_rebuild",
         lambda since, *, limit: index_rebuild_calls.append((since, limit)) or "rebuild",
     )
     monkeypatch.setattr(
-        "aijournal.services.capture.run_index_tail",
+        "aijournal.commands.index.run_index_tail",
         lambda since, *, days, limit: (_ for _ in ()).throw(AssertionError("tail should not run")),
     )
     persona_states = [
@@ -349,17 +343,17 @@ def test_run_capture_review_mode_skips_apply(
         ("fresh", []),
     ]
     monkeypatch.setattr(
-        "aijournal.services.capture.persona_state",
+        "aijournal.commands.persona.persona_state",
         lambda root: persona_states.pop(0),
     )
     monkeypatch.setattr(
-        "aijournal.services.capture.run_persona_build",
+        "aijournal.commands.persona.run_persona_build",
         lambda *args, **kwargs: (_ for _ in ()).throw(
             AssertionError("persona build should not run")
         ),
     )
     monkeypatch.setattr(
-        "aijournal.services.capture.run_pack",
+        "aijournal.commands.pack.run_pack",
         lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("pack should not run")),
     )
 
@@ -531,7 +525,7 @@ def test_discover_markdown_files_recurses(tmp_path: Path) -> None:
     # Non-markdown file should be ignored.
     (tmp_path / "nested" / "ignore.txt").write_text("ignore", encoding="utf-8")
 
-    discovered = _discover_markdown_files([str(tmp_path)])
+    discovered = discover_markdown_files([str(tmp_path)])
     relative = [path.relative_to(tmp_path) for path in discovered]
     assert relative == [
         Path("nested/inner/journal.md"),

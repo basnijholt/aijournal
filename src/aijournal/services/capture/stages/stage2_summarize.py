@@ -15,20 +15,21 @@ def run_summarize_stage_2(
     inputs: CaptureInput,
     root: Path,
 ) -> SummarizeStage2Outputs:
+    from aijournal.commands.summarize import run_summarize
+
     from .. import (
         DEFAULT_TIMEOUT_SECONDS,
         OperationResult,
         SummarizeStage2Outputs,
-        _relative_path,
-        run_summarize_command,
     )
+    from ..utils import relative_path
 
     stage_start = perf_counter()
     summary_paths: list[str] = []
     summary_errors: list[str] = []
     for date in changed_dates:
         try:
-            summary_path = run_summarize_command(
+            summary_path = run_summarize(
                 date,
                 timeout=DEFAULT_TIMEOUT_SECONDS,
                 retries=inputs.retries,
@@ -40,7 +41,7 @@ def run_summarize_stage_2(
         except Exception as exc:  # pragma: no cover - defensive
             summary_errors.append(f"{date}: {exc}")
         else:
-            summary_paths.append(_relative_path(summary_path, root))
+            summary_paths.append(relative_path(summary_path, root))
     duration_ms = (perf_counter() - stage_start) * 1000.0
     summary_details: dict[str, object] = {"dates": changed_dates}
     if summary_errors:

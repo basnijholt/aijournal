@@ -14,13 +14,10 @@ def run_index_stage_6(
     changed_dates: list[str],
     root: Path,
 ) -> IndexStage6Outputs:
-    from .. import (
-        IndexStage6Outputs,
-        OperationResult,
-        _relative_path,
-        run_index_rebuild,
-        run_index_tail,
-    )
+    from aijournal.commands.index import run_index_rebuild, run_index_tail
+
+    from .. import IndexStage6Outputs, OperationResult
+    from ..utils import relative_path
 
     stage_start = perf_counter()
     index_message = ""
@@ -55,8 +52,8 @@ def run_index_stage_6(
         )
     elif index_updated:
         index_artifacts = [
-            _relative_path(root / "derived" / "index" / "index.db", root),
-            _relative_path(root / "derived" / "index" / "annoy.index", root),
+            relative_path(root / "derived" / "index" / "index.db", root),
+            relative_path(root / "derived" / "index" / "annoy.index", root),
         ]
         op_result = OperationResult.wrote(
             index_artifacts,

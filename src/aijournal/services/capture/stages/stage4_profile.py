@@ -15,14 +15,10 @@ def run_profile_stage_4(
     inputs: CaptureInput,
     root: Path,
 ) -> ProfileStage4Outputs:
-    from .. import (
-        DEFAULT_TIMEOUT_SECONDS,
-        OperationResult,
-        ProfileStage4Outputs,
-        _relative_path,
-        run_profile_apply,
-        run_profile_suggest,
-    )
+    from aijournal.commands.profile import run_profile_apply, run_profile_suggest
+
+    from .. import DEFAULT_TIMEOUT_SECONDS, OperationResult, ProfileStage4Outputs
+    from ..utils import relative_path
 
     stage_start = perf_counter()
     suggestion_paths: list[str] = []
@@ -45,7 +41,7 @@ def run_profile_stage_4(
             suggestion_errors.append(f"{date}: {exc}")
         else:
             if suggestions_path is not None:
-                suggestion_paths.append(_relative_path(suggestions_path, root))
+                suggestion_paths.append(relative_path(suggestions_path, root))
 
         if inputs.apply_profile == "auto" and suggestions_path is not None:
             try:
