@@ -86,7 +86,7 @@ Decompose the 5.8k LOC `cli.py` and 700 LOC `models/__init__.py` into modular pa
 12. [x] Create `models/responses.py` (DailySummaryResponse, ExtractedFactsResponse, CharacterizeResponse, SimpleProfileSuggestionsResponse, …); update imports.  
     → `uv run pytest`
 
-13. Update `aijournal/schema.py` registry to use new modules.  
+13. [x] Update `aijournal/schema.py` registry to use new modules.  
     → `uv run pytest`
 
 ---
