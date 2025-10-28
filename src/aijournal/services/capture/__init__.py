@@ -3,11 +3,9 @@
 from __future__ import annotations
 
 import json
-import os
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from hashlib import sha256
 from pathlib import Path
 from typing import Any, Literal, NamedTuple
 
@@ -21,8 +19,6 @@ from aijournal.commands.ingest import _fake_structured_entry, _load_config
 from aijournal.commands.pack import run_pack
 from aijournal.commands.persona import persona_state, run_persona_build
 from aijournal.commands.profile import (
-    _apply_claim_upsert,
-    _apply_profile_update,
     _load_profile_components,
     _profile_to_dict,
     run_profile_apply,
@@ -30,17 +26,10 @@ from aijournal.commands.profile import (
 )
 from aijournal.commands.summarize import run_summarize as run_summarize_command
 from aijournal.ingest_agent import IngestResult, build_ingest_agent, ingest_with_agent
-from aijournal.io.yaml_io import load_yaml_model, write_yaml_model
 from aijournal.models import (
-    ClaimAtom,
-    ClaimProposal,
-    ClaimsFile,
-    FacetProposal,
     JournalSection,
     ManifestEntry,
     NormalizedEntry,
-    ProfileUpdateBatch,
-    SelfProfile,
 )
 from aijournal.pipelines import normalization
 from aijournal.types.results import OperationResult, StageResult
@@ -56,6 +45,57 @@ from .stages.stage5_characterize import _run_characterize_stage_5
 from .stages.stage6_index import _run_index_stage_6
 from .stages.stage7_persona import _run_persona_stage_7
 from .stages.stage8_pack import _run_pack_stage_8
+from .utils import (
+    apply_profile_update_batch as _apply_profile_update_batch,
+)
+from .utils import (
+    digest_bytes as _digest_bytes,
+)
+from .utils import (
+    digest_text as _digest_text,
+)
+from .utils import (
+    discover_markdown_files as _discover_markdown_files,
+)
+from .utils import (
+    ensure_manifest as _ensure_manifest,
+)
+from .utils import (
+    ensure_unique_slug as _ensure_unique_slug,
+)
+from .utils import (
+    journal_path as _journal_path,
+)
+from .utils import (
+    manifest_index as _manifest_index,
+)
+from .utils import (
+    manifest_path as _manifest_path,
+)
+from .utils import (
+    noop_preview as _noop_preview,
+)
+from .utils import (
+    pending_batches as _pending_batches,
+)
+from .utils import (
+    relative_path as _relative_path,
+)
+from .utils import (
+    use_fake_llm as _use_fake_llm,
+)
+from .utils import (
+    write_manifest as _write_manifest,
+)
+from .utils import (
+    write_markdown_entry as _write_markdown_entry,
+)
+from .utils import (
+    write_snapshot as _write_snapshot,
+)
+from .utils import (
+    write_yaml_if_changed as _write_yaml_if_changed,
+)
 
 __all__ = [
     "run_capture",
@@ -69,9 +109,26 @@ __all__ = [
     "run_profile_apply",
     "run_profile_suggest",
     "run_summarize_command",
+    "_apply_profile_update_batch",
+    "_discover_markdown_files",
+    "_ensure_manifest",
+    "_ensure_unique_slug",
+    "_journal_path",
+    "_manifest_index",
+    "_manifest_path",
+    "_noop_preview",
+    "_pending_batches",
+    "_relative_path",
+    "_write_manifest",
+    "_write_markdown_entry",
+    "_write_snapshot",
+    "_write_yaml_if_changed",
+    "_use_fake_llm",
+    "_digest_bytes",
+    "_digest_text",
+    "_load_profile_components",
+    "_profile_to_dict",
 ]
-
-MARKDOWN_SUFFIXES = {".md", ".markdown"}
 
 
 class CaptureStage(NamedTuple):
@@ -324,195 +381,10 @@ def _record_stage(
     _emit_stage_event(log_event, stage_result, status=status)
 
 
-def _journal_path(root: Path, date_str: str, slug: str) -> Path:
-    date = datetime.strptime(date_str, "%Y-%m-%d")
-    return (
-        root
-        / "data"
-        / "journal"
-        / date.strftime("%Y")
-        / date.strftime("%m")
-        / date.strftime("%d")
-        / f"{slug}.md"
-    )
-
-
-def _manifest_path(root: Path) -> Path:
-    return root / "data" / "manifest" / "ingested.yaml"
-
-
-def _load_manifest(path: Path) -> list[ManifestEntry]:
-    if not path.exists():
-        return []
-    raw = yaml.safe_load(path.read_text(encoding="utf-8"))
-    if not raw:
-        return []
-    return [ManifestEntry.model_validate(entry) for entry in raw]
-
-
-def _write_manifest(path: Path, entries: Iterable[ManifestEntry]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    payload = [entry.model_dump(mode="python") for entry in entries]
-    path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
-
-
-def _manifest_index(entries: Iterable[ManifestEntry]) -> dict[str, ManifestEntry]:
-    return {entry.hash: entry for entry in entries}
-
-
-def _relative_path(path: Path, root: Path) -> str:
-    try:
-        return str(path.relative_to(root))
-    except ValueError:
-        return str(path)
-
-
-def _write_markdown_entry(path: Path, frontmatter: dict[str, object], body: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    yaml_block = yaml.safe_dump(frontmatter, sort_keys=False).strip()
-    content = f"---\n{yaml_block}\n---\n"
-    if body:
-        content += f"\n{body.strip()}\n"
-    else:
-        content += "\n"
-    path.write_text(content, encoding="utf-8")
-
-
-def _write_yaml(path: Path, payload: dict[str, object]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
-
-
-def _load_existing_yaml(path: Path) -> dict[str, object] | None:
-    if not path.exists():
-        return None
-    data = yaml.safe_load(path.read_text(encoding="utf-8"))
-    if not isinstance(data, dict):
-        return None
-    return data
-
-
-def _write_yaml_if_changed(path: Path, payload: dict[str, object]) -> bool:
-    existing = _load_existing_yaml(path)
-    if existing == payload:
-        return False
-    _write_yaml(path, payload)
-    return True
-
-
-def _use_fake_llm() -> bool:
-    return os.getenv("AIJOURNAL_FAKE_OLLAMA") == "1"
-
-
-def _ensure_unique_slug(root: Path, date_str: str, base_slug: str) -> str:
-    slug = base_slug
-    counter = 2
-    while _journal_path(root, date_str, slug).exists():
-        slug = f"{base_slug}-{counter}"
-        counter += 1
-    return slug
-
-
-def _digest_bytes(data: bytes) -> str:
-    return sha256(data).hexdigest()
-
-
-def _digest_text(text: str) -> str:
-    return _digest_bytes(text.encode("utf-8"))
-
-
 def _generate_run_id() -> str:
     """Return a monotonic-ish identifier for a capture run."""
 
     return f"capture-{time_utils.now().strftime('%Y%m%d%H%M%S')}"
-
-
-def _pending_batches(root: Path) -> set[Path]:
-    directory = root / "derived" / "pending" / "profile_updates"
-    if not directory.exists():
-        return set()
-    return {path for path in directory.glob("*.yaml") if path.is_file()}
-
-
-def _noop_preview(
-    proposals: Sequence[ClaimProposal],
-    claims: Sequence[ClaimAtom],
-    timestamp: str,
-) -> None:
-    del proposals, claims, timestamp
-    return None
-
-
-def _apply_profile_update_batch(root: Path, batch_path: Path) -> bool:
-    batch = load_yaml_model(batch_path, ProfileUpdateBatch)
-    claim_proposals: list[ClaimProposal] = [
-        proposal.model_copy(deep=True) for proposal in batch.proposals.claims
-    ]
-    facet_proposals: list[FacetProposal] = [
-        proposal.model_copy(deep=True) for proposal in batch.proposals.facets
-    ]
-
-    profile_model, claim_models = _load_profile_components(root)
-    profile = _profile_to_dict(profile_model)
-    claims_data = [claim.model_copy(deep=True) for claim in claim_models]
-    timestamp = time_utils.format_timestamp(time_utils.now())
-
-    applied = False
-    for claim_proposal in claim_proposals:
-        if _apply_claim_upsert(claims_data, claim_proposal.claim, timestamp):
-            applied = True
-
-    for facet_proposal in facet_proposals:
-        if not facet_proposal.path:
-            continue
-        if _apply_profile_update(profile, facet_proposal.path, facet_proposal.value, timestamp):
-            applied = True
-
-    if not applied:
-        return False
-
-    updated_profile = SelfProfile.model_validate(profile)
-    updated_claims = [claim.model_copy(deep=True) for claim in claims_data]
-    write_yaml_model(root / "profile" / "self_profile.yaml", updated_profile)
-    write_yaml_model(root / "profile" / "claims.yaml", ClaimsFile(claims=updated_claims))
-    return True
-
-
-def _raw_snapshot_path(root: Path, digest: str) -> Path:
-    return root / "data" / "raw" / f"{digest}.md"
-
-
-def _write_snapshot(raw_bytes: bytes, root: Path, digest: str) -> Path:
-    snapshot_path = _raw_snapshot_path(root, digest)
-    snapshot_path.parent.mkdir(parents=True, exist_ok=True)
-    if not snapshot_path.exists():
-        snapshot_path.write_bytes(raw_bytes)
-    return snapshot_path
-
-
-def _discover_markdown_files(paths: Sequence[str]) -> list[Path]:
-    collected: list[Path] = []
-    for raw in paths:
-        candidate = Path(raw).expanduser().resolve()
-        if candidate.is_dir():
-            for path in sorted(candidate.rglob("*")):
-                if path.is_file() and path.suffix.lower() in MARKDOWN_SUFFIXES:
-                    collected.append(path)
-            continue
-        if candidate.is_file():
-            if candidate.suffix.lower() in MARKDOWN_SUFFIXES:
-                collected.append(candidate)
-            continue
-        raise FileNotFoundError(f"capture --from path not found: {raw}")
-
-    unique: list[Path] = []
-    seen: set[Path] = set()
-    for path in sorted(collected):
-        if path in seen:
-            continue
-        seen.add(path)
-        unique.append(path)
-    return unique
 
 
 def _telemetry_log_path(root: Path, run_id: str) -> Path:
@@ -568,12 +440,6 @@ def load_capture_result(root: Path, run_id: str) -> CaptureResult:
 
 
 DEFAULT_TIMEOUT_SECONDS = 120.0
-
-
-def _ensure_manifest(entries: list[ManifestEntry], root: Path) -> None:
-    if entries:
-        return
-    entries.extend(_load_manifest(_manifest_path(root)))
 
 
 def _resolve_created_dt(preferred: object, fallback: datetime) -> datetime:
