@@ -14,6 +14,7 @@ from aijournal.services.capture import (
     EntryResult,
     _persist_file_entry,
     _persist_text_entry,
+    normalize_entries,
     run_capture,
 )
 
@@ -66,6 +67,13 @@ def test_persist_text_writes_markdown_and_normalized(
     assert normalized_payload["summary"] == "Hello capture"
     assert manifest  # manifest entry recorded
 
+    normalized_path = tmp_path / result.normalized_path
+    normalized_path.unlink()
+    copy = result.model_copy(update={"changed": True})
+    counts = normalize_entries([copy], tmp_path)
+    assert counts["normalized"] == 1
+    assert normalized_path.exists()
+
 
 def test_persist_file_skips_duplicate(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
@@ -83,3 +91,7 @@ def test_persist_file_skips_duplicate(tmp_path: Path, monkeypatch: pytest.Monkey
     assert first.changed is True
     second = _persist_file_entry(inputs, tmp_path, manifest)
     assert second.deduped is True
+
+    counts = normalize_entries([second], tmp_path)
+    # Already normalized via first persist; second should trigger no rewrite.
+    assert counts["normalized"] == 0
