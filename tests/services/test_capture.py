@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import textwrap
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -12,6 +14,7 @@ from aijournal.models import ManifestEntry
 from aijournal.services.capture import (
     CaptureInput,
     EntryResult,
+    _discover_markdown_files,
     _persist_file_entry,
     _persist_text_entry,
     normalize_entries,
@@ -234,6 +237,34 @@ def test_run_capture_records_telemetry(tmp_path: Path, monkeypatch: pytest.Monke
     assert result.persona_stale_after is False
     assert result.index_rebuilt is True
     assert not result.warnings
+    assert result.review_candidates
+    assert result.telemetry_path is not None
+    telemetry_file = tmp_path / result.telemetry_path
+    assert telemetry_file.exists()
+    for candidate in result.review_candidates:
+        assert (tmp_path / candidate).exists()
+    events = [
+        json.loads(line)
+        for line in telemetry_file.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    event_names = {event.get("event") for event in events}
+    assert all("timestamp" in event for event in events)
+    expected = {
+        "preflight",
+        "persist",
+        "normalize",
+        "derive.summarize",
+        "derive.extract_facts",
+        "derive.profile_suggest",
+        "derive.profile_apply",
+        "derive.characterize",
+        "derive.review",
+        "index.rebuild",
+        "persona.status",
+        "done",
+    }
+    assert expected.issubset(event_names)
 
 
 def test_run_capture_requires_text(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -401,3 +432,109 @@ def test_persist_file_skips_duplicate(tmp_path: Path, monkeypatch: pytest.Monkey
     counts = normalize_entries([second], tmp_path)
     # Already normalized via first persist; second should trigger no rewrite.
     assert counts["normalized"] == 0
+
+
+def test_persist_file_records_snapshot_and_manifest_fields(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        "aijournal.utils.time.now",
+        lambda: datetime(2025, 10, 28, 7, 30, tzinfo=UTC),
+    )
+    entry_path = tmp_path / "imports" / "json-entry.md"
+    entry_path.parent.mkdir(parents=True, exist_ok=True)
+    entry_path.write_text(
+        textwrap.dedent(
+            """
+            {
+              "id": "json-entry",
+              "created_at": "2025-10-20T05:00:00Z",
+              "title": "JSON Import",
+              "tags": ["json", "import"],
+              "projects": ["capture-phase6"]
+            }
+
+            Body from JSON frontmatter.
+            """
+        ).strip(),
+        encoding="utf-8",
+    )
+
+    inputs = CaptureInput(
+        source="file",
+        paths=[str(entry_path)],
+        source_type="notes",
+        tags=["cli"],
+        projects=["proj"],
+    )
+    manifest: list[ManifestEntry] = []
+    result = _persist_file_entry(inputs, tmp_path, manifest, source_path=entry_path, snapshot=True)
+
+    assert result.changed is True
+    manifest_entry = manifest[-1]
+    assert manifest_entry.snapshot_path is not None
+    snapshot_path = tmp_path / manifest_entry.snapshot_path
+    assert snapshot_path.exists()
+    assert snapshot_path.read_bytes() == entry_path.read_bytes()
+    assert manifest_entry.canonical_journal_path == result.markdown_path
+
+    markdown_path = tmp_path / result.markdown_path
+    markdown_text = markdown_path.read_text(encoding="utf-8")
+    frontmatter_yaml = markdown_text.split("---\n", 1)[1].split("\n---", 1)[0]
+    origin_metadata = yaml.safe_load(frontmatter_yaml)
+    assert origin_metadata["origin"]["canonical_path"] == result.markdown_path
+    assert origin_metadata["origin"]["snapshot_path"] == manifest_entry.snapshot_path
+
+
+def test_persist_file_slug_collision_logs_alias(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        "aijournal.utils.time.now",
+        lambda: datetime(2025, 10, 28, 9, 0, tzinfo=UTC),
+    )
+    entry_one = tmp_path / "first.md"
+    entry_two = tmp_path / "second.md"
+    entry_one.write_text(
+        "---\nid: collide\ncreated_at: 2025-10-27\ntitle: First\n---\nBody one",
+        encoding="utf-8",
+    )
+    entry_two.write_text(
+        "---\nid: collide\ncreated_at: 2025-10-27\ntitle: Second\n---\nBody two",
+        encoding="utf-8",
+    )
+
+    manifest: list[ManifestEntry] = []
+    inputs = CaptureInput(source="file", paths=[str(entry_one)])
+    _persist_file_entry(inputs, tmp_path, manifest, source_path=entry_one, snapshot=False)
+
+    inputs_two = CaptureInput(source="file", paths=[str(entry_two)])
+    result_two = _persist_file_entry(
+        inputs_two, tmp_path, manifest, source_path=entry_two, snapshot=False
+    )
+
+    assert result_two.slug.endswith("-2")
+    assert result_two.warnings
+    assert "stored as" in result_two.warnings[0]
+    manifest_entry = manifest[-1]
+    assert manifest_entry.aliases == ["collide"]
+    assert manifest_entry.snapshot_path is None
+
+
+def test_discover_markdown_files_recurses(tmp_path: Path) -> None:
+    (tmp_path / "nested" / "inner").mkdir(parents=True, exist_ok=True)
+    file_one = tmp_path / "root.md"
+    file_two = tmp_path / "nested" / "note.markdown"
+    file_three = tmp_path / "nested" / "inner" / "journal.md"
+    for path in (file_one, file_two, file_three):
+        path.write_text("---\nid: test\ncreated_at: 2025-10-27\n---\nBody", encoding="utf-8")
+    # Non-markdown file should be ignored.
+    (tmp_path / "nested" / "ignore.txt").write_text("ignore", encoding="utf-8")
+
+    discovered = _discover_markdown_files([str(tmp_path)])
+    relative = [path.relative_to(tmp_path) for path in discovered]
+    assert relative == [
+        Path("nested/inner/journal.md"),
+        Path("nested/note.markdown"),
+        Path("root.md"),
+    ]

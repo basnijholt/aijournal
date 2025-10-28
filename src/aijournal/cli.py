@@ -12,7 +12,7 @@ import json
 import os
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 import httpx
 import typer
@@ -111,6 +111,7 @@ from aijournal.services import (
     resolve_ollama_host,
     run_ollama_agent,
 )
+from aijournal.services.capture import CaptureInput, run_capture
 from aijournal.utils import time as time_utils
 from aijournal.utils.coercion import coerce_int
 from aijournal.utils.paths import (
@@ -150,12 +151,216 @@ app.add_typer(export_app, name="export")
 app.add_typer(serve_app, name="serve")
 
 
-@app.command(help="Placeholder for the upcoming capture workflow.")
-def capture() -> None:
-    """Temporary stub until capture orchestration lands."""
+def _emit_deprecation(command: str, replacement: str | None = None) -> None:
+    """Emit a standardized deprecation notice for legacy commands."""
+    message = f"[DEPRECATED] `{command}` has moved into the new capture-first workflow."
+    if replacement:
+        message += f" Use `{replacement}` instead."
+    typer.secho(message, fg=typer.colors.YELLOW, err=True)
 
-    typer.echo("capture is not implemented yet; see refactor2 Phase 1.")
-    raise typer.Exit(code=2)
+
+@app.command(help="Capture Markdown into the journal workspace and refresh derived artifacts.")
+def capture(
+    from_paths: list[Path] | None = typer.Option(
+        None,
+        "--from",
+        help="File or directory to import (repeatable).",
+        exists=True,
+        dir_okay=True,
+        file_okay=True,
+        readable=True,
+        resolve_path=True,
+        rich_help_panel="INPUT",
+    ),
+    text: str | None = typer.Option(
+        None,
+        "--text",
+        help="Raw Markdown content to capture directly from the CLI.",
+        rich_help_panel="INPUT",
+    ),
+    snapshot: bool = typer.Option(
+        True,
+        "--snapshot/--no-snapshot",
+        help="Store raw copies under data/raw/<hash>.md when importing files.",
+        rich_help_panel="IMPORT BEHAVIOR",
+    ),
+    source_type: str = typer.Option(
+        "journal",
+        "--source-type",
+        help="Semantic classification recorded in front matter (journal|notes|blog).",
+        rich_help_panel="METADATA",
+    ),
+    date: str | None = typer.Option(
+        None,
+        "--date",
+        "-d",
+        help="Fallback created_at date when input lacks one (YYYY-MM-DD).",
+        rich_help_panel="METADATA",
+    ),
+    title: str | None = typer.Option(
+        None,
+        "--title",
+        help="Override title when capturing raw text.",
+        rich_help_panel="METADATA",
+    ),
+    tags: list[str] = typer.Option(
+        [],
+        "--tag",
+        "-t",
+        help="Tag to merge into front matter (repeatable).",
+        rich_help_panel="METADATA",
+        show_default=False,
+    ),
+    projects: list[str] = typer.Option(
+        [],
+        "--project",
+        help="Project to merge into front matter (repeatable).",
+        rich_help_panel="METADATA",
+        show_default=False,
+    ),
+    mood: str | None = typer.Option(
+        None,
+        "--mood",
+        help="Mood value to record in front matter.",
+        rich_help_panel="METADATA",
+    ),
+    apply_profile: str = typer.Option(
+        "auto",
+        "--apply-profile",
+        help="Apply profile suggestions automatically or leave for review (auto|review).",
+        rich_help_panel="APPLY & REFRESH",
+    ),
+    rebuild: str = typer.Option(
+        "auto",
+        "--rebuild",
+        help="Rebuild persona/index artifacts (auto|always|skip).",
+        rich_help_panel="APPLY & REFRESH",
+    ),
+    pack: str | None = typer.Option(
+        None,
+        "--pack",
+        help="Emit a context pack level when persona changes (L1|L3|L4).",
+        rich_help_panel="APPLY & REFRESH",
+    ),
+    retries: int = typer.Option(
+        1,
+        "--retries",
+        min=0,
+        help="Structured-output retry attempts per stage.",
+        rich_help_panel="LLM & VALIDATION",
+    ),
+    progress: bool = typer.Option(
+        True,
+        "--progress/--no-progress",
+        help="Show per-stage progress indicators during derivations.",
+        rich_help_panel="LLM & VALIDATION",
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        help="Skip writes and report planned actions only.",
+        rich_help_panel="APPLY & REFRESH",
+    ),
+) -> None:
+    """Persist new material and refresh downstream artifacts in one pass."""
+
+    if bool(from_paths) and text:
+        typer.secho("Provide either --from or --text, not both.", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2)
+    if not from_paths and not text:
+        typer.secho(
+            "Use --from to import files/directories or --text for raw Markdown.",
+            fg=typer.colors.RED,
+            err=True,
+        )
+        raise typer.Exit(code=2)
+
+    source_type_value = source_type.lower()
+    if source_type_value not in {"journal", "notes", "blog"}:
+        typer.secho(
+            "--source-type must be one of: journal, notes, blog.", fg=typer.colors.RED, err=True
+        )
+        raise typer.Exit(code=2)
+
+    apply_profile_value = apply_profile.lower()
+    if apply_profile_value not in {"auto", "review"}:
+        typer.secho("--apply-profile must be auto or review.", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2)
+
+    rebuild_value = rebuild.lower()
+    if rebuild_value not in {"auto", "always", "skip"}:
+        typer.secho("--rebuild must be auto, always, or skip.", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2)
+
+    pack_value: str | None = None
+    if pack:
+        pack_upper = pack.upper()
+        if pack_upper not in {"L1", "L3", "L4"}:
+            typer.secho("--pack must be one of: L1, L3, L4.", fg=typer.colors.RED, err=True)
+            raise typer.Exit(code=2)
+        pack_value = pack_upper
+
+    if from_paths:
+        resolved_paths = [str(path.resolve()) for path in from_paths]
+        contains_dir = any(path.is_dir() for path in from_paths)
+        source_mode: Literal["stdin", "editor", "file", "dir"] = "dir" if contains_dir else "file"
+    else:
+        resolved_paths = []
+        source_mode = "stdin"
+
+    capture_input = CaptureInput(
+        source=source_mode,
+        text=text,
+        paths=resolved_paths,
+        source_type=source_type_value,  # type: ignore[arg-type]
+        date=date,
+        title=title,
+        slug=None,
+        tags=tags,
+        projects=projects,
+        mood=mood,
+        apply_profile=apply_profile_value,  # type: ignore[arg-type]
+        rebuild=rebuild_value,  # type: ignore[arg-type]
+        pack=pack_value,  # type: ignore[arg-type]
+        retries=retries,
+        progress=progress,
+        dry_run=dry_run,
+        snapshot=snapshot,
+    )
+
+    result = run_capture(capture_input)
+
+    if result.errors:
+        for error in result.errors:
+            typer.secho(error, fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=1)
+
+    for warning in result.warnings:
+        typer.secho(warning, fg=typer.colors.YELLOW, err=False)
+
+    created = [entry for entry in result.entries if entry.changed and not entry.deduped]
+    deduped = [entry for entry in result.entries if entry.deduped]
+
+    if created:
+        typer.secho("Captured entries:", fg=typer.colors.GREEN)
+        for entry in created:
+            typer.echo(f"  - {entry.date} / {entry.slug}")
+    if deduped:
+        typer.secho("Skipped duplicates:", fg=typer.colors.BLUE)
+        for entry in deduped:
+            typer.echo(f"  - {entry.date} / {entry.slug}")
+
+    typer.echo(
+        json.dumps(
+            {
+                "run_id": result.run_id,
+                "entries": len(result.entries),
+                "created": len(created),
+                "deduped": len(deduped),
+            },
+            indent=2,
+        )
+    )
 
 
 @app.command()
@@ -377,7 +582,7 @@ def init(
     typer.echo(summary)
 
 
-@ops_dev_app.command("new")
+@ops_dev_app.command("new", hidden=True)
 def new(
     title: str | None = typer.Argument(
         None,
@@ -402,10 +607,11 @@ def new(
     ),
 ) -> None:
     """Create a new journal entry or synthesize fake entries for testing."""
+    _emit_deprecation("aijournal ops dev new", "aijournal capture --text")
     run_new_command(title, tags, fake, seed)
 
 
-@ops_pipeline_app.command("ingest")
+@ops_pipeline_app.command("ingest", hidden=True)
 def ingest(
     sources: list[Path] = typer.Argument(
         ...,
@@ -420,19 +626,23 @@ def ingest(
         "external",
         "--source-type",
         help="Label recorded in the manifest for these sources.",
+        rich_help_panel="METADATA",
     ),
     limit: int | None = typer.Option(
         None,
         "--limit",
         help="Maximum number of files to ingest.",
+        rich_help_panel="CONTROL",
     ),
     snapshot: bool = typer.Option(
         True,
         "--snapshot/--no-snapshot",
         help="Store raw copies under data/raw/<hash>.md.",
+        rich_help_panel="IMPORT",
     ),
 ) -> None:
     """Ingest Markdown posts into normalized YAML via Ollama."""
+    _emit_deprecation("aijournal ops pipeline ingest", "aijournal capture --from")
     run_ingest_command(
         sources,
         source_type=source_type,
@@ -494,14 +704,21 @@ def normalize(
     typer.echo(str(output_path))
 
 
-@ops_pipeline_app.command("summarize")
+@ops_pipeline_app.command("summarize", hidden=True)
 def summarize(
-    date: str = typer.Option(..., "--date", "-d", help="Date (YYYY-MM-DD) to summarize."),
+    date: str = typer.Option(
+        ...,
+        "--date",
+        "-d",
+        help="Date (YYYY-MM-DD) to summarize.",
+        rich_help_panel="INPUT",
+    ),
     timeout: float = typer.Option(
         DEFAULT_TIMEOUT_SECONDS,
         "--timeout",
         help="Seconds to wait for the LLM response before retrying.",
         show_default=True,
+        rich_help_panel="LLM",
     ),
     retries: int = typer.Option(
         DEFAULT_LLM_RETRIES,
@@ -509,14 +726,17 @@ def summarize(
         min=0,
         help="Number of retry attempts when the model times out or returns invalid JSON.",
         show_default=True,
+        rich_help_panel="LLM",
     ),
     progress: bool = typer.Option(
         False,
         "--progress/--no-progress",
         help="Print progress for each normalized entry before calling the model.",
+        rich_help_panel="LLM",
     ),
 ) -> None:
     """Generate a daily summary from normalized entries."""
+    _emit_deprecation("aijournal ops pipeline summarize", "aijournal capture --from/--text")
     summary_path = run_summarize_command(
         date,
         timeout=timeout,
@@ -526,14 +746,21 @@ def summarize(
     typer.echo(str(summary_path))
 
 
-@ops_pipeline_app.command("extract-facts")
+@ops_pipeline_app.command("extract-facts", hidden=True)
 def facts(
-    date: str = typer.Option(..., "--date", "-d", help="Date (YYYY-MM-DD) to analyze."),
+    date: str = typer.Option(
+        ...,
+        "--date",
+        "-d",
+        help="Date (YYYY-MM-DD) to analyze.",
+        rich_help_panel="INPUT",
+    ),
     timeout: float = typer.Option(
         DEFAULT_TIMEOUT_SECONDS,
         "--timeout",
         help="Seconds to wait for the LLM response before retrying.",
         show_default=True,
+        rich_help_panel="LLM",
     ),
     retries: int = typer.Option(
         DEFAULT_LLM_RETRIES,
@@ -541,14 +768,17 @@ def facts(
         min=0,
         help="Number of retry attempts when the model times out or returns invalid JSON.",
         show_default=True,
+        rich_help_panel="LLM",
     ),
     progress: bool = typer.Option(
         False,
         "--progress/--no-progress",
         help="Print progress for each normalized entry before calling the model.",
+        rich_help_panel="LLM",
     ),
 ) -> None:
     """Generate micro-facts from normalized entries."""
+    _emit_deprecation("aijournal ops pipeline extract-facts", "aijournal capture --from/--text")
     root = Path.cwd()
     _, claim_models = _load_profile_components(root)
     preview, facts_path = run_facts_command(
@@ -615,14 +845,21 @@ def profile_apply(
     typer.echo(message)
 
 
-@ops_pipeline_app.command("characterize")
+@ops_pipeline_app.command("characterize", hidden=True)
 def characterize(
-    date: str = typer.Option(..., "--date", "-d", help="Date (YYYY-MM-DD) to analyze."),
+    date: str = typer.Option(
+        ...,
+        "--date",
+        "-d",
+        help="Date (YYYY-MM-DD) to analyze.",
+        rich_help_panel="INPUT",
+    ),
     timeout: float = typer.Option(
         DEFAULT_TIMEOUT_SECONDS,
         "--timeout",
         help="Seconds to wait for the LLM response before retrying.",
         show_default=True,
+        rich_help_panel="LLM",
     ),
     retries: int = typer.Option(
         DEFAULT_LLM_RETRIES,
@@ -630,14 +867,17 @@ def characterize(
         min=0,
         help="Number of retry attempts when the model times out or returns invalid JSON.",
         show_default=True,
+        rich_help_panel="LLM",
     ),
     progress: bool = typer.Option(
         False,
         "--progress/--no-progress",
         help="Print progress for each normalized entry before calling the model.",
+        rich_help_panel="LLM",
     ),
 ) -> None:
     """Derive pending profile updates from normalized entries."""
+    _emit_deprecation("aijournal ops pipeline characterize", "aijournal capture --from/--text")
     batch_path = run_characterize(
         date,
         timeout=timeout,
@@ -655,16 +895,23 @@ def characterize(
     typer.echo(str(batch_path))
 
 
-@ops_pipeline_app.command("review")
+@ops_pipeline_app.command("review", hidden=True)
 def review_updates(
     file: Path | None = typer.Option(
         None,
         "--file",
         help="Specific pending batch to review (defaults to latest).",
+        rich_help_panel="INPUT",
     ),
-    apply: bool = typer.Option(False, "--apply", help="Apply the proposed updates."),
+    apply: bool = typer.Option(
+        False,
+        "--apply",
+        help="Apply the proposed updates.",
+        rich_help_panel="ACTIONS",
+    ),
 ) -> None:
     """Review or apply pending profile update batches."""
+    _emit_deprecation("aijournal ops pipeline review", "aijournal capture --apply-profile review")
     root = Path.cwd()
     batch_path = file or _latest_pending_batch(root)
     if batch_path is None:
@@ -1244,26 +1491,56 @@ def interview(
         typer.echo(f"- {question.text}")
 
 
-@export_app.command("pack")
+@export_app.command("pack", hidden=True)
 def pack(
-    level: str = typer.Option("L2", "--level", "-l", help="Context depth (L1 or L2)."),
+    level: str = typer.Option(
+        "L2",
+        "--level",
+        "-l",
+        help="Context depth (L1 or L2).",
+        rich_help_panel="PACK CONFIG",
+    ),
     date: str | None = typer.Option(
         None,
         "--date",
         "-d",
         help="Date (YYYY-MM-DD); auto-detected for L2 when omitted.",
+        rich_help_panel="PACK CONFIG",
     ),
-    output: Path | None = typer.Option(None, "--output", "-o"),
-    max_tokens: int | None = typer.Option(None, "--max-tokens"),
-    fmt: str = typer.Option("yaml", "--format", help="Output format: yaml or json."),
+    output: Path | None = typer.Option(
+        None,
+        "--output",
+        "-o",
+        help="Destination file (defaults to stdout).",
+        rich_help_panel="OUTPUT",
+    ),
+    max_tokens: int | None = typer.Option(
+        None,
+        "--max-tokens",
+        help="Optional token budget when trimming persona context.",
+        rich_help_panel="OUTPUT",
+    ),
+    fmt: str = typer.Option(
+        "yaml",
+        "--format",
+        help="Output format: yaml or json.",
+        rich_help_panel="OUTPUT",
+    ),
     history_days: int = typer.Option(
         0,
         "--history-days",
         help="Number of previous days to include (L4 packs only).",
+        rich_help_panel="OUTPUT",
     ),
-    dry_run: bool = typer.Option(False, "--dry-run", help="Show plan without emitting payload."),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        help="Show plan without emitting payload.",
+        rich_help_panel="OUTPUT",
+    ),
 ) -> None:
     """Assemble a context bundle for prompting."""
+    _emit_deprecation("aijournal export pack", "aijournal capture --pack")
     run_pack(
         level,
         date,
@@ -1368,41 +1645,49 @@ def chat(
         "--top",
         "-k",
         help="Maximum number of retrieval chunks to use.",
+        rich_help_panel="RETRIEVAL FILTERS",
     ),
     tags: str | None = typer.Option(
         None,
         "--tags",
         help="Optional tag filters (comma or space separated).",
+        rich_help_panel="RETRIEVAL FILTERS",
     ),
     source: str | None = typer.Option(
         None,
         "--source",
         help="Optional source-type filters (comma or space separated).",
+        rich_help_panel="RETRIEVAL FILTERS",
     ),
     date_from: str | None = typer.Option(
         None,
         "--date-from",
         help="Earliest chunk date (YYYY-MM-DD).",
+        rich_help_panel="RETRIEVAL FILTERS",
     ),
     date_to: str | None = typer.Option(
         None,
         "--date-to",
         help="Latest chunk date (YYYY-MM-DD).",
+        rich_help_panel="RETRIEVAL FILTERS",
     ),
     session: str | None = typer.Option(
         None,
         "--session",
         help="Session identifier (defaults to chat-YYYYMMDD-HHMMSS).",
+        rich_help_panel="SESSION",
     ),
     save: bool = typer.Option(
         True,
         "--save/--no-save",
         help="Persist the turn under derived/chat_sessions/<session>.",
+        rich_help_panel="SESSION",
     ),
     feedback: str | None = typer.Option(
         None,
         "--feedback",
         help="Provide 'up' or 'down' to nudge cited claim strengths.",
+        rich_help_panel="SESSION",
     ),
 ) -> None:
     """Run a retrieval-augmented chat turn against your journal."""
@@ -1419,12 +1704,13 @@ def chat(
     )
 
 
-@serve_app.command("chat")
+@serve_app.command("chat", hidden=True)
 def serve_chat(
     host: str = typer.Option("127.0.0.1", "--host", help="Host interface to bind."),
     port: int = typer.Option(8080, "--port", help="Port to listen on."),
 ) -> None:
     """Start the FastAPI chat daemon (chatd)."""
+    _emit_deprecation("aijournal serve chat", "the REST capture API (POST /capture)")
     run_chatd(host, port)
 
 

@@ -19,7 +19,7 @@ from pydantic_ai.providers.ollama import OllamaProvider
 from aijournal.utils.coercion import coerce_float, coerce_int
 
 DEFAULT_OLLAMA_HOST = "http://127.0.0.1:11434"
-DEFAULT_MODEL_NAME = "llama3.1:8b-instruct"
+DEFAULT_MODEL_NAME = "gpt-oss:20b"
 _JSON_SYSTEM_PROMPT = (
     "You are part of the aijournal CLI. "
     "Respond with valid JSON only—no markdown fences, explanations, or trailing text."

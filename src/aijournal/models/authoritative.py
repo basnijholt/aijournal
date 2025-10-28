@@ -31,6 +31,9 @@ class ManifestEntry(AijournalModel):
     id: str
     tags: list[str] = Field(default_factory=list)
     model: str | None = None
+    canonical_journal_path: str | None = None
+    snapshot_path: str | None = None
+    aliases: list[str] = Field(default_factory=list)
 
 
 class JournalEntry(AijournalModel):
