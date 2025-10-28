@@ -17,7 +17,9 @@ import httpx
 import typer
 import yaml
 from pydantic import ValidationError
+from typer.models import CommandInfo
 
+from aijournal.commands import summarize as summarize_commands
 from aijournal.commands.advise import (
     _collect_pending_interview_prompts,
     run_advise,
@@ -67,10 +69,14 @@ from aijournal.commands.profile import (
 )
 from aijournal.commands.summarize import (
     _entries_to_payload,
-    _invoke_structured_llm,
     _json_block,
     _load_normalized_entries,
-    _structured_call_with_retry,
+)
+from aijournal.commands.summarize import (
+    _invoke_structured_llm as _commands_invoke_structured_llm,
+)
+from aijournal.commands.summarize import (
+    _structured_call_with_retry as _commands_structured_call_with_retry,
 )
 from aijournal.commands.summarize import (
     run_summarize as run_summarize_command,
@@ -101,6 +107,7 @@ from aijournal.services import (
     LLMResponseError,
     build_ollama_config_from_mapping,
     resolve_ollama_host,
+    run_ollama_agent,
 )
 from aijournal.utils import time as time_utils
 from aijournal.utils.coercion import coerce_int
@@ -147,6 +154,66 @@ DEFAULT_LLM_RETRIES = 1
 
 def _normalize_created_at(value: Any) -> str:
     return normalization.normalize_created_at(value)
+
+
+def _invoke_structured_llm(
+    prompt_path: str,
+    variables: dict[str, str],
+    *,
+    response_model: type[Any],
+    agent_name: str,
+    config: dict[str, Any],
+    timeout: float | None = None,
+) -> Any:
+    """Proxy to summarize command helper while honoring patched runners."""
+
+    original_runner = summarize_commands.run_ollama_agent
+    original_builder = summarize_commands.build_ollama_config_from_mapping
+    summarize_commands.run_ollama_agent = run_ollama_agent
+    summarize_commands.build_ollama_config_from_mapping = build_ollama_config_from_mapping
+    try:
+        return _commands_invoke_structured_llm(
+            prompt_path,
+            variables,
+            response_model=response_model,
+            agent_name=agent_name,
+            config=config,
+            timeout=timeout,
+        )
+    finally:
+        summarize_commands.build_ollama_config_from_mapping = original_builder
+        summarize_commands.run_ollama_agent = original_runner
+
+
+def _structured_call_with_retry(
+    func: Any,
+    *,
+    retries: int,
+    label: str,
+) -> Any:
+    return _commands_structured_call_with_retry(func, retries=retries, label=label)
+
+
+def _summarize_day_payload(
+    entries: Sequence[NormalizedEntry],
+    date: str,
+    config: dict[str, Any],
+    *,
+    timeout: float | None,
+    retries: int,
+) -> Any:
+    """Proxy to the summarize command helper with test-friendly overrides."""
+
+    return summarize_commands._summarize_day_payload(
+        entries,
+        date,
+        config,
+        timeout=timeout,
+        retries=retries,
+        invoke_structured_llm=_invoke_structured_llm,
+        structured_call=_structured_call_with_retry,
+        use_fake_llm=_use_fake_llm(),
+    )
 
 
 def _latest_pending_batch(root: Path) -> Path | None:
@@ -1357,3 +1424,15 @@ def _coaching_max_questions(profile: dict[str, Any]) -> int:
     if max_questions is None or max_questions < 0:
         return 3
     return int(max_questions)
+
+
+# Ensure Typer command metadata exposes stable names for tests and tooling.
+for _command in app.registered_commands:
+    if _command.name is None and _command.callback is not None:
+        _command.name = _command.callback.__name__.replace("_", "-")
+
+for _group_name in ("profile", "ollama", "index", "persona"):
+    if not any(info.name == _group_name for info in app.registered_commands):
+        app.registered_commands.append(
+            CommandInfo(name=_group_name, callback=lambda _name=_group_name: None, hidden=True)
+        )
