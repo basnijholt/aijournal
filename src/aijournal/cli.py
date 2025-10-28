@@ -31,7 +31,6 @@ from aijournal.fakes import (
     fake_characterize,
     fake_microfacts,
     fake_profile_suggestions,
-    fake_summarize,
 )
 from aijournal.ingest_agent import (
     IngestResult,
@@ -57,7 +56,6 @@ from aijournal.models import (
     ClaimSource,
     ClaimSourceSpan,
     ClaimStatus,
-    DailySummary,
     DailySummaryResponse,
     ExtractedFactsResponse,
     FacetProposal,
@@ -86,6 +84,7 @@ from aijournal.models import (
     SummaryMeta,
 )
 from aijournal.pipelines import normalization
+from aijournal.pipelines import summarize as summarize_pipeline
 from aijournal.schema import SchemaValidationError, validate_schema
 from aijournal.services import (
     ChatService,
@@ -1146,73 +1145,6 @@ def _build_meta(
     )
 
 
-def _coerce_str_list(value: Any) -> list[str]:
-    if isinstance(value, list):
-        return [str(item).strip() for item in value if str(item).strip()]
-    if isinstance(value, str):
-        candidate = value.strip()
-        return [candidate] if candidate else []
-    return []
-
-
-def _todo_from_entries(entries: Sequence[NormalizedEntry]) -> list[str]:
-    todos: list[str] = []
-    for entry in entries[:3]:
-        title = entry.title or entry.id or "entry"
-        todos.append(f"Review follow-ups from {title}")
-    return todos or ["Capture explicit next actions in tomorrow's entry."]
-
-
-def _summarize_day_payload(
-    entries: Sequence[NormalizedEntry],
-    date: str,
-    config: dict[str, Any],
-    *,
-    timeout: float | None = None,
-    retries: int = DEFAULT_LLM_RETRIES,
-) -> DailySummary:
-    def fallback_model() -> DailySummary:
-        return fake_summarize(entries, date, todo_builder=_todo_from_entries)
-
-    if _use_fake_llm():
-        return fallback_model()
-
-    response_model = cast(
-        DailySummaryResponse,
-        _structured_call_with_retry(
-            lambda: _invoke_structured_llm(
-                "prompts/summarize_day.md",
-                {"date": date, "entries_json": _json_block(_entries_to_payload(entries))},
-                response_model=DailySummaryResponse,
-                agent_name="aijournal-summarize",
-                config=config,
-                timeout=timeout,
-            ),
-            retries=retries,
-            label=f"summarize {date}",
-        ),
-    )
-
-    bullets = [item for item in response_model.bullets if item]
-    highlights = [item for item in response_model.highlights if item]
-    todo_candidates = [item for item in response_model.todo_candidates if item]
-
-    if not bullets:
-        bullets = fallback_model().bullets
-    if not highlights:
-        highlights = bullets[:3]
-    if not todo_candidates:
-        todo_candidates = _todo_from_entries(entries)
-
-    day = response_model.day or date
-    return DailySummary(
-        day=day,
-        bullets=bullets,
-        highlights=highlights,
-        todo_candidates=todo_candidates,
-    )
-
-
 def _fact_sources_from_evidence(fact: MicroFact) -> list[ClaimSource]:
     evidence = fact.evidence
     if evidence is None:
@@ -2127,12 +2059,28 @@ def summarize(
     _log_entry_progress(f"Summarizing entries for {date}", entries, progress)
 
     config = _load_config(root)
+    use_fake_llm = _use_fake_llm()
+
+    def request_summary() -> DailySummaryResponse:
+        return cast(
+            DailySummaryResponse,
+            _invoke_structured_llm(
+                "prompts/summarize_day.md",
+                {"date": date, "entries_json": _json_block(_entries_to_payload(entries))},
+                response_model=DailySummaryResponse,
+                agent_name="aijournal-summarize",
+                config=config,
+                timeout=timeout_value,
+            ),
+        )
+
     try:
-        summary_data = _summarize_day_payload(
+        summary_data = summarize_pipeline.generate_summary(
             entries,
             date,
-            config,
-            timeout=timeout_value,
+            use_fake_llm=use_fake_llm,
+            structured_call=_structured_call_with_retry,
+            request_factory=request_summary,
             retries=retries,
         )
     except LLMResponseError as exc:
