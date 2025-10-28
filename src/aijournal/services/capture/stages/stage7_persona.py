@@ -37,10 +37,13 @@ def run_persona_stage_7(
     persona_stale_after = False
     status_before = "unknown"
     status_after = "unknown"
+    force_rebuild = inputs.rebuild == "always"
     try:
         status_before, _ = persona_state(root)
         persona_stale_before = status_before != "fresh"
-        should_build = persona_stale_before or artifacts_changed.get("profile", 0) > 0
+        should_build = (
+            force_rebuild or persona_stale_before or artifacts_changed.get("profile", 0) > 0
+        )
         profile_model, claim_models = _load_profile_components(root)
         profile_payload = _profile_to_dict(profile_model)
         if should_build and (profile_payload or claim_models):
@@ -68,6 +71,7 @@ def run_persona_stage_7(
         "before_fresh": not persona_stale_before,
         "after_fresh": not persona_stale_after,
         "should_build": should_build,
+        "mode": inputs.rebuild,
     }
     if persona_error is not None:
         op_result = OperationResult.fail(

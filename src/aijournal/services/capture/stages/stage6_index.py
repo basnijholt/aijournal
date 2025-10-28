@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from pathlib import Path
 from time import perf_counter
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 import typer
 
@@ -11,8 +12,9 @@ if TYPE_CHECKING:
 
 
 def run_index_stage_6(
-    changed_dates: list[str],
+    changed_dates: Sequence[str],
     root: Path,
+    rebuild_mode: Literal["auto", "always", "skip"] = "auto",
 ) -> IndexStage6Outputs:
     from aijournal.commands.index import run_index_rebuild, run_index_tail
 
@@ -24,17 +26,25 @@ def run_index_stage_6(
     index_error: str | None = None
     index_updated = False
     rebuilt = False
+    force_rebuild = rebuild_mode == "always"
+    changed_dates_list = list(changed_dates)
     try:
         index_db = root / "derived" / "index" / "index.db"
-        if not index_db.exists():
+        if force_rebuild:
             index_message = run_index_rebuild(since=None, limit=None)
             rebuilt = True
             index_updated = True
-        else:
-            since = min(changed_dates)
+        elif not index_db.exists():
+            index_message = run_index_rebuild(since=None, limit=None)
+            rebuilt = True
+            index_updated = True
+        elif changed_dates_list:
+            since = min(changed_dates_list)
             index_message = run_index_tail(since=since, days=7, limit=None)
             if not index_message or "already up to date" not in index_message.lower():
                 index_updated = True
+        else:
+            index_message = "no capture changes detected"
     except typer.Exit as exc:
         if exc.exit_code not in (0,):
             index_error = str(exc)
@@ -44,6 +54,7 @@ def run_index_stage_6(
     index_details: dict[str, object] = {
         "message": index_message,
         "rebuild": rebuilt,
+        "mode": rebuild_mode,
     }
     if index_error is not None:
         op_result = OperationResult.fail(
