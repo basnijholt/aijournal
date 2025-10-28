@@ -43,6 +43,7 @@ Read these first to avoid surprises mid-run.
   ```bash
   uv run -- bash -lc 'export AIJOURNAL_MODEL="gpt-oss:20b" AIJOURNAL_OLLAMA_HOST="http://192.168.1.143:11434"; aijournal ollama health'
   ```
+- **Set the host upfront**: before running any live-mode CLI command, export `AIJOURNAL_OLLAMA_HOST` to the remote Ollama address so chat, retrieval, and embeddings avoid defaulting to localhost.
 - **Clean runs only**: if the repo has pending changes, either commit them or reset to a clean state before beginning.
 - **No data loss**: Do not remove artifacts outside the temp workspace. Archive/rename instead of deleting in the repo.
 - **Feedback loop**: When chat answers omit claim markers, feedback adjustments cannot apply. The chat prompt and telemetry now highlight this scenario—respond accordingly.
@@ -95,7 +96,7 @@ Structured commands expect the model to mine existing fields (`summary`, `sectio
 - Updated instruction instructs the model to synthesize statements from summaries/sections when paragraphs are missing.
 - Validate outputs with:
   ```bash
-  uv run -- bash -lc "cd $RUN_ROOT && aijournal facts --date 2025-10-26 --timeout 180"
+  uv run -- bash -lc "cd $RUN_ROOT && aijournal facts --date 2025-10-26"
   ```
   The file `derived/microfacts/<date>.yaml` should contain facts plus claim proposals. If spans are empty, that's acceptable; we log the raw text upstream.
 
@@ -103,7 +104,7 @@ Structured commands expect the model to mine existing fields (`summary`, `sectio
 - Model now mines structured fields even without paragraphs. Expect claims such as “weekly planning resets align meals with training goals.”
 - Validate with:
   ```bash
-  uv run -- bash -lc "cd $RUN_ROOT && aijournal profile suggest --date 2025-10-26 --timeout 180"
+  uv run -- bash -lc "cd $RUN_ROOT && aijournal profile suggest --date 2025-10-26"
   ```
   Output lives at `derived/profile_suggestions/<date>.yaml`.
 
@@ -127,11 +128,11 @@ export AIJOURNAL_OLLAMA_HOST="http://192.168.1.143:11434"
 ```
 
 1. `uv run aijournal summarize --date YYYY-MM-DD`
-2. `uv run aijournal facts --date YYYY-MM-DD --timeout 180`
-3. `uv run aijournal profile suggest --date YYYY-MM-DD --timeout 180`
+2. `uv run aijournal facts --date YYYY-MM-DD`
+3. `uv run aijournal profile suggest --date YYYY-MM-DD`
 4. `uv run aijournal profile apply --date YYYY-MM-DD --yes`
 5. `uv run aijournal profile status`
-6. `uv run aijournal characterize --date YYYY-MM-DD --progress --timeout 240`
+6. `uv run aijournal characterize --date YYYY-MM-DD --progress`
 7. `uv run aijournal review-updates --file derived/pending/profile_updates/<batch>.yaml --apply`
 8. (Repeat characterize/review for each new entry date)
 9. `uv run aijournal index rebuild`
