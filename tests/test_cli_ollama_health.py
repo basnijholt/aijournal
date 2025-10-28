@@ -26,7 +26,7 @@ def fake_ollama(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_ollama_health_reports_models_and_default(cli_runner: CliRunner) -> None:
-    result = cli_runner.invoke(app, ["ollama", "health"])
+    result = cli_runner.invoke(app, ["ops", "system", "ollama", "health"])
     assert result.exit_code == 0, result.output
     normalized = result.output.lower()
     assert "models" in normalized
@@ -34,10 +34,10 @@ def test_ollama_health_reports_models_and_default(cli_runner: CliRunner) -> None
 
 
 def test_ollama_health_is_idempotent(cli_runner: CliRunner) -> None:
-    first = cli_runner.invoke(app, ["ollama", "health"])
+    first = cli_runner.invoke(app, ["ops", "system", "ollama", "health"])
     assert first.exit_code == 0, first.output
 
-    second = cli_runner.invoke(app, ["ollama", "health"])
+    second = cli_runner.invoke(app, ["ops", "system", "ollama", "health"])
     assert second.exit_code == 0, second.output
     normalized_first = first.output.lower()
     normalized_second = second.output.lower()

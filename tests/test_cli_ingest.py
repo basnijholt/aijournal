@@ -47,7 +47,7 @@ def test_ingest_creates_normalized_and_manifest(
     cli_runner: CliRunner,
 ) -> None:
     post = _write_blog_post(cli_workspace)
-    result = cli_runner.invoke(app, ["ingest", str(post)])
+    result = cli_runner.invoke(app, ["ops", "pipeline", "ingest", str(post)])
 
     assert result.exit_code == 0, result.stdout
     normalized = (
@@ -75,10 +75,10 @@ def test_ingest_skips_duplicate_hash(
     cli_runner: CliRunner,
 ) -> None:
     post = _write_blog_post(cli_workspace)
-    first = cli_runner.invoke(app, ["ingest", str(post)])
+    first = cli_runner.invoke(app, ["ops", "pipeline", "ingest", str(post)])
     assert first.exit_code == 0
 
-    second = cli_runner.invoke(app, ["ingest", str(post)])
+    second = cli_runner.invoke(app, ["ops", "pipeline", "ingest", str(post)])
     assert second.exit_code == 0
     assert "already ingested" in second.stdout
 

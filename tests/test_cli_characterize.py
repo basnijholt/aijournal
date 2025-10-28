@@ -1,4 +1,4 @@
-"""Tests for characterize/review-updates commands."""
+"""Tests for characterize/review pipeline commands."""
 
 from __future__ import annotations
 
@@ -96,7 +96,7 @@ def _run_characterize(
     extra_args: list[str] | None = None,
     env_override: dict[str, str] | None = None,
 ) -> tuple[Path, str]:
-    args = ["characterize", "--date", DATE]
+    args = ["ops", "pipeline", "characterize", "--date", DATE]
     if extra_args:
         args.extend(extra_args)
     result = cli_runner.invoke(app, args, env=env_override)
@@ -143,7 +143,7 @@ def test_review_updates_applies_batch(
     batch_path, _ = _run_characterize(cli_workspace, cli_runner)
     result = cli_runner.invoke(
         app,
-        ["review-updates", "--file", str(batch_path), "--apply"],
+        ["ops", "pipeline", "review", "--file", str(batch_path), "--apply"],
     )
     assert result.exit_code == 0, result.output
 

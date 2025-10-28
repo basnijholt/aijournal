@@ -80,7 +80,7 @@ def _invoke(
     args = ["profile", "suggest", "--date", DATE]
     if extra_args:
         args.extend(extra_args)
-    result = cli_runner.invoke(app, args)
+    result = cli_runner.invoke(app, ["ops", "profile", *args[1:]])
     assert result.exit_code == 0, result.output
     path = workspace / "derived" / "profile_suggestions" / f"{DATE}.yaml"
     assert path.exists()

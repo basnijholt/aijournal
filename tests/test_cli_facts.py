@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-import pytest
 import yaml
 from typer.testing import CliRunner
 
@@ -15,16 +14,6 @@ if TYPE_CHECKING:
 
 DATE = "2025-02-03"
 ENTRY_ID = "2025-02-03-sync-notes"
-
-
-def _has_command(name: str) -> bool:
-    return any(info.name == name for info in app.registered_commands)
-
-
-@pytest.fixture(autouse=True)
-def skip_if_missing() -> None:
-    if not _has_command("facts"):
-        pytest.skip("facts command not available yet")
 
 
 def _write_normalized(workspace: Path) -> Path:
@@ -60,7 +49,10 @@ def test_facts_generates_microfacts(
 ) -> None:
     _write_normalized(cli_workspace)
 
-    result = cli_runner.invoke(app, ["facts", "--date", DATE])
+    result = cli_runner.invoke(
+        app,
+        ["ops", "pipeline", "extract-facts", "--date", DATE],
+    )
 
     assert result.exit_code == 0, result.stdout
 
@@ -101,13 +93,19 @@ def test_facts_is_idempotent(
 ) -> None:
     _write_normalized(cli_workspace)
 
-    first = cli_runner.invoke(app, ["facts", "--date", DATE])
+    first = cli_runner.invoke(
+        app,
+        ["ops", "pipeline", "extract-facts", "--date", DATE],
+    )
     assert first.exit_code == 0
 
     facts_path = cli_workspace / "derived" / "microfacts" / f"{DATE}.yaml"
     before = facts_path.stat().st_mtime
 
-    second = cli_runner.invoke(app, ["facts", "--date", DATE])
+    second = cli_runner.invoke(
+        app,
+        ["ops", "pipeline", "extract-facts", "--date", DATE],
+    )
     assert second.exit_code == 0
     after = facts_path.stat().st_mtime
 
@@ -120,7 +118,10 @@ def test_facts_progress_flag(
 ) -> None:
     _write_normalized(cli_workspace)
 
-    result = cli_runner.invoke(app, ["facts", "--date", DATE, "--progress"])
+    result = cli_runner.invoke(
+        app,
+        ["ops", "pipeline", "extract-facts", "--date", DATE, "--progress"],
+    )
 
     assert result.exit_code == 0, result.stdout
     assert "Extracting micro-facts" in result.stdout

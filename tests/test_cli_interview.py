@@ -77,7 +77,7 @@ def test_interview_emits_ranked_probes(
     _seed_profile(cli_workspace)
     _seed_normalized(cli_workspace)
 
-    result = cli_runner.invoke(app, ["interview", "--date", DATE])
+    result = cli_runner.invoke(app, ["ops", "profile", "interview", "--date", DATE])
     assert result.exit_code == 0, result.output
     lines = [line for line in result.output.splitlines() if line.strip()]
     probes = [line for line in lines if line.startswith("- ")]
@@ -95,7 +95,7 @@ def test_interview_fallback_when_no_stale(
     _write(cli_workspace / "profile" / "claims.yaml", yaml.safe_dump({"claims": []}))
     _seed_normalized(cli_workspace)
 
-    result = cli_runner.invoke(app, ["interview", "--date", DATE])
+    result = cli_runner.invoke(app, ["ops", "profile", "interview", "--date", DATE])
     assert result.exit_code == 0
     probes = [line for line in result.output.splitlines() if line.startswith("- ")]
     assert len(probes) == 3
@@ -111,7 +111,7 @@ def test_interview_missing_profile(
         if target.exists():
             target.unlink()
 
-    result = cli_runner.invoke(app, ["interview", "--date", DATE])
+    result = cli_runner.invoke(app, ["ops", "profile", "interview", "--date", DATE])
     assert result.exit_code != 0
     assert "No profile data" in result.output
 
@@ -122,7 +122,7 @@ def test_interview_missing_entries(
 ) -> None:
     _seed_profile(cli_workspace)
 
-    result = cli_runner.invoke(app, ["interview", "--date", DATE])
+    result = cli_runner.invoke(app, ["ops", "profile", "interview", "--date", DATE])
     assert result.exit_code != 0
     assert "No normalized entries" in result.output
 
@@ -151,7 +151,9 @@ def test_interview_live_mode_structured(
     monkeypatch.setattr("aijournal.cli._invoke_structured_llm", lambda *a, **k: _fake_structured())
 
     result = cli_runner.invoke(
-        app, ["interview", "--date", DATE], env={"AIJOURNAL_FAKE_OLLAMA": "0"}
+        app,
+        ["ops", "profile", "interview", "--date", DATE],
+        env={"AIJOURNAL_FAKE_OLLAMA": "0"},
     )
     assert result.exit_code == 0, result.output
     assert "focus routines" in result.output

@@ -273,7 +273,7 @@ Extend current FastAPI server with **capture**:
 
 4. [x] Create Typer sub-apps: `ops`, `ops.pipeline`, `ops.profile`, `ops.index`, `ops.persona`, `ops.feedback`, `ops.system`, `ops.dev`, `export`, `serve`.
 5. [x] Register **top-level**: `init`, `capture` (placeholder, not functional yet—print “Not implemented” and exit 2), `chat`, `advise`, `status` (placeholder), `serve chat`, `export pack`.
-6. [ ] Move low-level commands into the new sub-apps, removing the legacy entry points entirely (document the change in `CLI_MIGRATION.md` and tests).
+6. [x] Move low-level commands into the new sub-apps, removing the legacy entry points entirely (document the change in `CLI_MIGRATION.md` and tests).
 
 > Commit: `cli: introduce top-level/ops layout; drop legacy command names`
 

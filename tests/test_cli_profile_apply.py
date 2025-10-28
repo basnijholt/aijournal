@@ -18,7 +18,7 @@ DATE = "2025-02-03"
 
 
 def _has_profile_apply() -> bool:
-    result = CliRunner().invoke(app, ["profile", "apply", "--help"])
+    result = CliRunner().invoke(app, ["ops", "profile", "apply", "--help"])
     return result.exit_code == 0
 
 
@@ -91,6 +91,7 @@ def _seed_suggestions(workspace: Path) -> Path:
 
 def _invoke(suggestions_path: Path, cli_runner: CliRunner) -> str:
     args = [
+        "ops",
         "profile",
         "apply",
         "--date",

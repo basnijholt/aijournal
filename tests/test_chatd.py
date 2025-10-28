@@ -26,7 +26,12 @@ def _init_workspace(base: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.chdir(base)
     assert runner.invoke(app, ["init"]).exit_code == 0
     assert (
-        runner.invoke(app, ["persona", "build"], env={"AIJOURNAL_FAKE_OLLAMA": "1"}).exit_code == 0
+        runner.invoke(
+            app,
+            ["ops", "persona", "build"],
+            env={"AIJOURNAL_FAKE_OLLAMA": "1"},
+        ).exit_code
+        == 0
     )
 
 
@@ -50,7 +55,12 @@ def _build_index(base: Path, *, day: str, entry_id: str, summary: str) -> None:
     )
     runner = CliRunner()
     assert (
-        runner.invoke(app, ["index", "rebuild"], env={"AIJOURNAL_FAKE_OLLAMA": "1"}).exit_code == 0
+        runner.invoke(
+            app,
+            ["ops", "index", "rebuild"],
+            env={"AIJOURNAL_FAKE_OLLAMA": "1"},
+        ).exit_code
+        == 0
     )
 
 
