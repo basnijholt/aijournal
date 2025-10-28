@@ -282,7 +282,7 @@ Extend current FastAPI server with **capture**:
 ### Phase 2 — `capture` v1 (Persist + Normalize only)
 
 8. [x] Create `services/capture.py` with `CaptureInput`, `EntryResult`, `CaptureResult`; stub `run_capture()`.
-9. [ ] Implement **persist** for `--text`, `--edit`, `--from <file>` (single file), slug/date inference, duplicate detection.
+9. [x] Implement **persist** for `--text`, `--edit`, `--from <file>` (single file), slug/date inference, duplicate detection.
 10. [ ] Implement **normalize** call(s) for newly persisted/changed entries.
 11. [ ] Write minimal telemetry (persist/normalize durations).
 

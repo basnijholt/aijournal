@@ -2,9 +2,425 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
+from datetime import UTC, datetime
+from hashlib import sha256
+from pathlib import Path
 from typing import Literal
 
+import yaml
 from pydantic import BaseModel, Field
+
+from aijournal.models import JournalSection, ManifestEntry, NormalizedEntry
+from aijournal.utils import time as time_utils
+from aijournal.utils.paths import normalized_entry_path
+
+
+def _journal_path(root: Path, date_str: str, slug: str) -> Path:
+    date = datetime.strptime(date_str, "%Y-%m-%d")
+    return (
+        root
+        / "data"
+        / "journal"
+        / date.strftime("%Y")
+        / date.strftime("%m")
+        / date.strftime("%d")
+        / f"{slug}.md"
+    )
+
+
+def _manifest_path(root: Path) -> Path:
+    return root / "data" / "manifest" / "ingested.yaml"
+
+
+def _load_manifest(path: Path) -> list[ManifestEntry]:
+    if not path.exists():
+        return []
+    raw = yaml.safe_load(path.read_text(encoding="utf-8"))
+    if not raw:
+        return []
+    return [ManifestEntry.model_validate(entry) for entry in raw]
+
+
+def _write_manifest(path: Path, entries: Iterable[ManifestEntry]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = [entry.model_dump(mode="python") for entry in entries]
+    path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
+
+
+def _manifest_index(entries: Iterable[ManifestEntry]) -> dict[str, ManifestEntry]:
+    return {entry.hash: entry for entry in entries}
+
+
+def _relative_path(path: Path, root: Path) -> str:
+    return str(path.relative_to(root))
+
+
+def _write_markdown_entry(path: Path, frontmatter: dict[str, object], body: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    yaml_block = yaml.safe_dump(frontmatter, sort_keys=False).strip()
+    content = f"---\n{yaml_block}\n---\n"
+    if body:
+        content += f"\n{body.strip()}\n"
+    else:
+        content += "\n"
+    path.write_text(content, encoding="utf-8")
+
+
+def _write_yaml(path: Path, payload: dict[str, object]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
+
+
+def _ensure_unique_slug(root: Path, date_str: str, base_slug: str) -> str:
+    slug = base_slug
+    counter = 2
+    while _journal_path(root, date_str, slug).exists():
+        slug = f"{base_slug}-{counter}"
+        counter += 1
+    return slug
+
+
+def _digest_bytes(data: bytes) -> str:
+    return sha256(data).hexdigest()
+
+
+def _digest_text(text: str) -> str:
+    return _digest_bytes(text.encode("utf-8"))
+
+
+def _ensure_manifest(entries: list[ManifestEntry], root: Path) -> None:
+    if entries:
+        return
+    entries.extend(_load_manifest(_manifest_path(root)))
+
+
+def _resolve_created_dt(preferred: object, fallback: datetime) -> datetime:
+    if preferred:
+        if isinstance(preferred, datetime):
+            parsed = preferred
+        elif (
+            hasattr(preferred, "year") and hasattr(preferred, "month") and hasattr(preferred, "day")
+        ):
+            parsed = datetime(preferred.year, preferred.month, preferred.day, tzinfo=UTC)
+        else:
+            text = str(preferred)
+            try:
+                parsed = datetime.fromisoformat(text)
+            except ValueError:
+                parsed = datetime.strptime(text, "%Y-%m-%d")
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=UTC)
+        return parsed
+    return fallback
+
+
+def _resolve_title(inputs: CaptureInput, body: str) -> str:
+    if inputs.title:
+        return inputs.title
+    stripped = body.strip().splitlines()
+    if stripped:
+        return stripped[0][:120]
+    return "Captured Entry"
+
+
+def _build_manifest_entry(
+    *,
+    digest: str,
+    markdown_path: Path,
+    normalized_path: Path,
+    source_type: str,
+    created_at: str,
+    slug: str,
+    tags: list[str],
+    root: Path,
+) -> ManifestEntry:
+    return ManifestEntry(
+        hash=digest,
+        path=_relative_path(markdown_path, root),
+        normalized=_relative_path(normalized_path, root),
+        source_type=source_type,
+        ingested_at=time_utils.format_timestamp(time_utils.now()),
+        created_at=created_at,
+        id=slug,
+        tags=tags,
+        model=None,
+    )
+
+
+def _coalesce_tags(*tag_sets: Iterable[str]) -> list[str]:
+    ordered: list[str] = []
+    seen: set[str] = set()
+    for tags in tag_sets:
+        for tag in tags:
+            if tag not in seen:
+                ordered.append(tag)
+                seen.add(tag)
+    return ordered
+
+
+def _coerce_frontmatter_tags(raw: object) -> list[str]:
+    if raw is None:
+        return []
+    if isinstance(raw, list):
+        return [str(item) for item in raw if isinstance(item, (str, int, float))]
+    if isinstance(raw, str):
+        return [raw]
+    return []
+
+
+def _persist_text_entry(
+    inputs: CaptureInput,
+    root: Path,
+    manifest_entries: list[ManifestEntry],
+) -> EntryResult:
+    _ensure_manifest(manifest_entries, root)
+    manifest_path = _manifest_path(root)
+    manifest_index = _manifest_index(manifest_entries)
+
+    now_dt = time_utils.now()
+    created_dt = _resolve_created_dt(inputs.date, now_dt)
+    date_str = created_dt.strftime("%Y-%m-%d")
+
+    body_text = (inputs.text or "").strip()
+    title = _resolve_title(inputs, body_text)
+    base_slug = inputs.slug or f"{date_str}-{time_utils.slugify_title(title)}"
+    slug = _ensure_unique_slug(root, date_str, base_slug)
+
+    markdown_path = _journal_path(root, date_str, slug)
+    frontmatter_tags = _coalesce_tags(inputs.tags)
+    projects = _coalesce_tags(inputs.projects)
+
+    frontmatter: dict[str, object] = {
+        "id": slug,
+        "created_at": time_utils.format_timestamp(created_dt),
+        "title": title,
+        "tags": frontmatter_tags,
+        "source_type": inputs.source_type,
+        "origin": {"kind": "capture"},
+    }
+    if projects:
+        frontmatter["projects"] = projects
+    if inputs.mood:
+        frontmatter["mood"] = inputs.mood
+    summary_text = body_text or None
+    if summary_text:
+        frontmatter["summary"] = summary_text
+
+    content = yaml.safe_dump(frontmatter, sort_keys=False).strip()
+    markdown_content = f"---\n{content}\n---\n"
+    if body_text:
+        markdown_content += f"\n{body_text}\n"
+    else:
+        markdown_content += "\n"
+    digest = _digest_text(markdown_content)
+    if digest in manifest_index:
+        # Entry already exists with identical content.
+        existing = manifest_index[digest]
+        return EntryResult(
+            markdown_path=existing.path,
+            normalized_path=existing.normalized,
+            date=existing.created_at[:10],
+            slug=existing.id,
+            deduped=True,
+            changed=False,
+            warnings=[],
+        )
+
+    _write_markdown_entry(markdown_path, frontmatter, body_text)
+
+    normalized_path = normalized_entry_path(root, date_str, slug)
+    sections = [JournalSection(heading=title, level=1, summary=summary_text)]
+    normalized_entry = NormalizedEntry(
+        id=slug,
+        created_at=time_utils.format_timestamp(created_dt),
+        source_path=_relative_path(markdown_path, root),
+        title=title,
+        tags=frontmatter_tags,
+        sections=sections,
+        summary=summary_text,
+        source_hash=digest,
+        source_type=inputs.source_type,
+    )
+    _write_yaml(normalized_path, normalized_entry.model_dump(mode="python"))
+
+    entry = _build_manifest_entry(
+        digest=digest,
+        markdown_path=markdown_path,
+        normalized_path=normalized_path,
+        source_type=inputs.source_type,
+        created_at=time_utils.format_timestamp(created_dt),
+        slug=slug,
+        tags=frontmatter_tags,
+        root=root,
+    )
+    manifest_entries.append(entry)
+    _write_manifest(manifest_path, manifest_entries)
+    manifest_index[digest] = entry
+
+    return EntryResult(
+        markdown_path=_relative_path(markdown_path, root),
+        normalized_path=_relative_path(normalized_path, root),
+        date=date_str,
+        slug=slug,
+        deduped=False,
+        changed=True,
+        warnings=[],
+    )
+
+
+def _split_frontmatter(text: str) -> tuple[dict[str, object], str]:
+    delimiter = None
+    if text.startswith("---"):
+        delimiter = "---"
+    elif text.startswith("+++"):
+        delimiter = "+++"
+    if delimiter is None:
+        msg = "Markdown entry missing YAML/TOML frontmatter delimiter"
+        raise ValueError(msg)
+
+    parts = text.split(delimiter, 2)
+    if len(parts) < 3:
+        msg = "Incomplete YAML/TOML frontmatter block"
+        raise ValueError(msg)
+
+    frontmatter_raw = parts[1].strip()
+    body = parts[2]
+    data = yaml.safe_load(frontmatter_raw) or {}
+    if not isinstance(data, dict):
+        data = {}
+    return data, body
+
+
+def _persist_file_entry(
+    inputs: CaptureInput,
+    root: Path,
+    manifest_entries: list[ManifestEntry],
+) -> EntryResult:
+    if not inputs.paths:
+        raise ValueError("capture --from requires at least one path")
+
+    _ensure_manifest(manifest_entries, root)
+    manifest_path = _manifest_path(root)
+    manifest_index = _manifest_index(manifest_entries)
+
+    source_path = Path(inputs.paths[0]).expanduser().resolve()
+    raw_bytes = source_path.read_bytes()
+    digest = _digest_bytes(raw_bytes)
+
+    if digest in manifest_index:
+        existing = manifest_index[digest]
+        return EntryResult(
+            markdown_path=existing.path,
+            normalized_path=existing.normalized,
+            date=existing.created_at[:10],
+            slug=existing.id,
+            deduped=True,
+            changed=False,
+            warnings=[],
+        )
+
+    text = raw_bytes.decode("utf-8")
+    frontmatter_data, body = _split_frontmatter(text)
+    body = body.strip()
+
+    created_dt = _resolve_created_dt(
+        frontmatter_data.get("created_at") or inputs.date,
+        time_utils.now(),
+    )
+    date_str = created_dt.strftime("%Y-%m-%d")
+
+    title_raw = frontmatter_data.get("title") or _resolve_title(inputs, body)
+    title = str(title_raw)
+    slug_source = frontmatter_data.get("id") or frontmatter_data.get("slug") or inputs.slug
+    if slug_source is not None:
+        slug_source = str(slug_source)
+    else:
+        slug_source = f"{date_str}-{time_utils.slugify_title(title)}"
+    slug = _ensure_unique_slug(root, date_str, slug_source)
+
+    tags = _coalesce_tags(
+        _coerce_frontmatter_tags(frontmatter_data.get("tags")),
+        inputs.tags,
+    )
+    projects = _coalesce_tags(
+        _coerce_frontmatter_tags(frontmatter_data.get("projects")),
+        inputs.projects,
+    )
+
+    markdown_path = _journal_path(root, date_str, slug)
+    frontmatter_out: dict[str, object] = {
+        "id": slug,
+        "created_at": time_utils.format_timestamp(created_dt),
+        "title": title,
+        "tags": tags,
+        "source_type": inputs.source_type,
+        "origin": {
+            "kind": "import",
+            "original_path": str(source_path),
+            "import_hash": digest,
+        },
+    }
+    if projects:
+        frontmatter_out["projects"] = projects
+    mood = frontmatter_data.get("mood") or inputs.mood
+    if mood:
+        frontmatter_out["mood"] = mood
+    summary_raw = frontmatter_data.get("summary")
+    if summary_raw is not None:
+        summary_text = str(summary_raw)
+    elif body:
+        summary_text = body
+    else:
+        summary_text = None
+    if summary_text:
+        frontmatter_out["summary"] = summary_text
+
+    # Preserve any unhandled keys from the original frontmatter.
+    for key, value in frontmatter_data.items():
+        if key not in frontmatter_out:
+            frontmatter_out[key] = value
+
+    _write_markdown_entry(markdown_path, frontmatter_out, body)
+
+    normalized_path = normalized_entry_path(root, date_str, slug)
+    sections = [JournalSection(heading=title, level=1, summary=summary_text)]
+    normalized_entry = NormalizedEntry(
+        id=slug,
+        created_at=time_utils.format_timestamp(created_dt),
+        source_path=_relative_path(markdown_path, root),
+        title=title,
+        tags=tags,
+        sections=sections,
+        summary=summary_text,
+        source_hash=digest,
+        source_type=inputs.source_type,
+    )
+    _write_yaml(normalized_path, normalized_entry.model_dump(mode="python"))
+
+    entry = _build_manifest_entry(
+        digest=digest,
+        markdown_path=markdown_path,
+        normalized_path=normalized_path,
+        source_type=inputs.source_type,
+        created_at=time_utils.format_timestamp(created_dt),
+        slug=slug,
+        tags=tags,
+        root=root,
+    )
+    manifest_entries.append(entry)
+    _write_manifest(manifest_path, manifest_entries)
+    manifest_index[digest] = entry
+
+    return EntryResult(
+        markdown_path=_relative_path(markdown_path, root),
+        normalized_path=_relative_path(normalized_path, root),
+        date=date_str,
+        slug=slug,
+        deduped=False,
+        changed=True,
+        warnings=[],
+    )
 
 
 class CaptureInput(BaseModel):
