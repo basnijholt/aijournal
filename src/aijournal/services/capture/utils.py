@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from datetime import datetime
 from hashlib import sha256
 from pathlib import Path
@@ -26,6 +26,7 @@ from aijournal.models import (
     ProfileUpdateBatch,
     SelfProfile,
 )
+from aijournal.types.results import OperationResult
 from aijournal.utils import time as time_utils
 
 MARKDOWN_SUFFIXES = {".md", ".markdown"}
@@ -220,3 +221,27 @@ def ensure_unique_slug(root: Path, date_str: str, base_slug: str) -> str:
         slug = f"{base_slug}-{counter}"
         counter += 1
     return slug
+
+
+def emit_operation_event(
+    log_event: Callable[[dict[str, object]], None],
+    *,
+    event: str,
+    status: str,
+    result: OperationResult,
+    details: dict[str, object] | None = None,
+    extra: Mapping[str, object] | None = None,
+) -> None:
+    """Emit a consistent telemetry payload for non-stage capture events."""
+
+    payload: dict[str, object] = {"event": event, "status": status}
+    if result.message:
+        payload["message"] = result.message
+    payload_details = details if details is not None else result.details
+    if payload_details:
+        payload["details"] = payload_details
+    if result.warnings:
+        payload["warnings"] = result.warnings
+    if extra:
+        payload.update(dict(extra))
+    log_event(payload)
