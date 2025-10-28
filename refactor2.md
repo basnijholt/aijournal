@@ -312,8 +312,8 @@ Extend current FastAPI server with **capture**:
 
 ### Phase 5 — `status` & `ops system doctor`
 
-18. [ ] Implement `ops system doctor` (fts5, Annoy, Ollama host reachability, writable paths) with JSON + human output.
-19. [ ] Implement `status` summary (persona freshness, index presence/meta, pending updates count, Ollama reachability hint) with exit code policy.
+18. [x] Implement `ops system doctor` (fts5, Annoy, Ollama host reachability, writable paths) with JSON + human output.
+19. [x] Implement `status` summary (persona freshness, index presence/meta, pending updates count, Ollama reachability hint) with exit code policy.
 
 > Commit: `status + system doctor: aggregated health checks`
 
