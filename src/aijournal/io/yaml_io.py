@@ -32,4 +32,9 @@ def write_yaml_model(path: Path, instance: T) -> None:
     """Persist a Pydantic model instance to YAML on disk."""
     payload = instance.model_dump(mode="python", exclude_none=False)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
+    serialized = yaml.safe_dump(payload, sort_keys=False)
+    if path.exists():
+        existing = path.read_text(encoding="utf-8")
+        if existing == serialized:
+            return
+    path.write_text(serialized, encoding="utf-8")

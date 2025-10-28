@@ -108,9 +108,6 @@ def fake_advise(
     if claim_statement:
         assumption_lines.append(f"Reference claim: {claim_statement}")
     if top_priority:
-        reason = "; ".join(getattr(top_priority, "reasons", [])[:1]) or "needs review"
-        path = getattr(top_priority, "path", "follow-up")
-        assumption_lines.append(f"Follow-up focus: {path} ({reason}).")
         kind = getattr(top_priority, "kind", None)
         if kind == "claim" and getattr(top_priority, "claim_id", None):
             alignment.claims = list({top_priority.claim_id, *alignment.claims})

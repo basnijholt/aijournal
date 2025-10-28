@@ -14,7 +14,7 @@ from pydantic import BaseModel
 
 from aijournal.commands.ingest import _load_config, _use_fake_llm
 from aijournal.io.yaml_io import load_yaml_model, write_yaml_model
-from aijournal.models import DailySummaryResponse, NormalizedEntry, SummaryMeta
+from aijournal.models import DailySummary, DailySummaryResponse, NormalizedEntry, SummaryMeta
 from aijournal.pipelines import summarize as summarize_pipeline
 from aijournal.services import LLMResponseError, build_ollama_config_from_mapping, run_ollama_agent
 from aijournal.utils import time as time_utils
@@ -34,7 +34,7 @@ DEFAULT_PROMPTS = {
 }
 
 _STRUCTURED_SYSTEM_PROMPT = (
-    "You are part of the local aijournal CLI. "
+    "You are the summarize agent for the local aijournal CLI. "
     "Read the user's prompt carefully and respond with JSON that matches the declared response schema. "
     "Do not include markdown fences or commentary."
 )
@@ -81,7 +81,7 @@ def _invoke_structured_llm(
 
 def _validate_timeout(value: float) -> float:
     if value <= 0:
-        typer.secho("--timeout must be positive.", fg=typer.colors.RED, err=True)
+        typer.secho("--timeout must be positive.", fg=typer.colors.RED)
         raise typer.Exit(1)
     return value
 
@@ -188,6 +188,47 @@ def _build_meta(
     )
 
 
+def _summarize_day_payload(
+    entries: Sequence[NormalizedEntry],
+    date: str,
+    config: dict[str, Any],
+    *,
+    timeout: float | None,
+    retries: int,
+    invoke_structured_llm: Callable[..., BaseModel] | None = None,
+    structured_call: Callable[..., BaseModel] | None = None,
+    use_fake_llm: bool | None = None,
+) -> DailySummary:
+    invoke = invoke_structured_llm or _invoke_structured_llm
+    structured = structured_call or _structured_call_with_retry
+    fake_mode = _use_fake_llm() if use_fake_llm is None else use_fake_llm
+
+    def request_summary() -> DailySummaryResponse:
+        return cast(
+            DailySummaryResponse,
+            invoke(
+                "prompts/summarize_day.md",
+                {
+                    "date": date,
+                    "entries_json": _json_block(_entries_to_payload(entries)),
+                },
+                response_model=DailySummaryResponse,
+                agent_name="aijournal-summarize",
+                config=config,
+                timeout=timeout,
+            ),
+        )
+
+    return summarize_pipeline.generate_summary(
+        entries,
+        date,
+        use_fake_llm=fake_mode,
+        structured_call=structured,
+        request_factory=request_summary,
+        retries=retries,
+    )
+
+
 def run_summarize(
     date: str,
     *,
@@ -206,28 +247,13 @@ def run_summarize(
     _log_entry_progress(f"Summarizing entries for {date}", entries, progress)
 
     config = _load_config(root)
-    use_fake_llm = _use_fake_llm()
-
-    def request_summary() -> DailySummaryResponse:
-        return cast(
-            DailySummaryResponse,
-            _invoke_structured_llm(
-                "prompts/summarize_day.md",
-                {"date": date, "entries_json": _json_block(_entries_to_payload(entries))},
-                response_model=DailySummaryResponse,
-                agent_name="aijournal-summarize",
-                config=config,
-                timeout=timeout_value,
-            ),
-        )
 
     try:
-        summary_data = summarize_pipeline.generate_summary(
+        summary_data = _summarize_day_payload(
             entries,
             date,
-            use_fake_llm=use_fake_llm,
-            structured_call=_structured_call_with_retry,
-            request_factory=request_summary,
+            config,
+            timeout=timeout_value,
             retries=retries,
         )
     except LLMResponseError as exc:
