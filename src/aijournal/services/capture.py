@@ -2,17 +2,40 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from datetime import UTC, datetime
 from hashlib import sha256
 from pathlib import Path
 from time import perf_counter
 from typing import Literal
 
+import typer
 import yaml
 from pydantic import BaseModel, Field
 
-from aijournal.models import JournalSection, ManifestEntry, NormalizedEntry
+from aijournal.commands.characterize import run_characterize
+from aijournal.commands.facts import run_facts
+from aijournal.commands.profile import (
+    _apply_claim_upsert,
+    _apply_profile_update,
+    _load_profile_components,
+    _profile_to_dict,
+    run_profile_apply,
+    run_profile_suggest,
+)
+from aijournal.commands.summarize import run_summarize as run_summarize_command
+from aijournal.io.yaml_io import load_yaml_model, write_yaml_model
+from aijournal.models import (
+    ClaimAtom,
+    ClaimProposal,
+    ClaimsFile,
+    FacetProposal,
+    JournalSection,
+    ManifestEntry,
+    NormalizedEntry,
+    ProfileUpdateBatch,
+    SelfProfile,
+)
 from aijournal.utils import time as time_utils
 from aijournal.utils.paths import normalized_entry_path
 
@@ -114,6 +137,60 @@ def _generate_run_id() -> str:
     """Return a monotonic-ish identifier for a capture run."""
 
     return f"capture-{time_utils.now().strftime('%Y%m%d%H%M%S')}"
+
+
+def _pending_batches(root: Path) -> set[Path]:
+    directory = root / "derived" / "pending" / "profile_updates"
+    if not directory.exists():
+        return set()
+    return {path for path in directory.glob("*.yaml") if path.is_file()}
+
+
+def _noop_preview(
+    proposals: Sequence[ClaimProposal],
+    claims: Sequence[ClaimAtom],
+    timestamp: str,
+) -> None:
+    del proposals, claims, timestamp
+    return None
+
+
+def _apply_profile_update_batch(root: Path, batch_path: Path) -> bool:
+    batch = load_yaml_model(batch_path, ProfileUpdateBatch)
+    claim_proposals: list[ClaimProposal] = [
+        proposal.model_copy(deep=True) for proposal in batch.proposals.claims
+    ]
+    facet_proposals: list[FacetProposal] = [
+        proposal.model_copy(deep=True) for proposal in batch.proposals.facets
+    ]
+
+    profile_model, claim_models = _load_profile_components(root)
+    profile = _profile_to_dict(profile_model)
+    claims_data = [claim.model_copy(deep=True) for claim in claim_models]
+    timestamp = time_utils.format_timestamp(time_utils.now())
+
+    applied = False
+    for claim_proposal in claim_proposals:
+        if _apply_claim_upsert(claims_data, claim_proposal.claim, timestamp):
+            applied = True
+
+    for facet_proposal in facet_proposals:
+        if not facet_proposal.path:
+            continue
+        if _apply_profile_update(profile, facet_proposal.path, facet_proposal.value, timestamp):
+            applied = True
+
+    if not applied:
+        return False
+
+    updated_profile = SelfProfile.model_validate(profile)
+    updated_claims = [claim.model_copy(deep=True) for claim in claims_data]
+    write_yaml_model(root / "profile" / "self_profile.yaml", updated_profile)
+    write_yaml_model(root / "profile" / "claims.yaml", ClaimsFile(claims=updated_claims))
+    return True
+
+
+DEFAULT_TIMEOUT_SECONDS = 120.0
 
 
 def _ensure_manifest(entries: list[ManifestEntry], root: Path) -> None:
@@ -607,7 +684,7 @@ class CaptureResult(BaseModel):
 
 
 def run_capture(inputs: CaptureInput) -> CaptureResult:
-    """Execute the Phase 2 capture workflow (persist + normalize + telemetry)."""
+    """Execute the capture workflow (persist, normalize, derive, telemetry)."""
 
     if inputs.dry_run:
         msg = "capture dry-run is not implemented yet"
@@ -622,6 +699,7 @@ def run_capture(inputs: CaptureInput) -> CaptureResult:
     manifest_entries: list[ManifestEntry] = []
     entry_results: list[EntryResult] = []
     durations_ms: dict[str, float] = {}
+    warnings: list[str] = []
 
     persist_start = perf_counter()
     if inputs.source in {"stdin", "editor"}:
@@ -648,6 +726,139 @@ def run_capture(inputs: CaptureInput) -> CaptureResult:
     if entries_changed:
         artifacts_changed.setdefault("entries", entries_changed)
 
+    changed_dates = sorted(
+        {entry.date for entry in entry_results if entry.changed and not entry.deduped}
+    )
+
+    def _record_duration(stage: str, start: float) -> None:
+        elapsed = (perf_counter() - start) * 1000.0
+        durations_ms[stage] = durations_ms.get(stage, 0.0) + elapsed
+
+    def _warn(stage: str, exc: BaseException) -> None:
+        warnings.append(f"{stage}: {exc}")
+
+    for date in changed_dates:
+        stage = "derive.summarize"
+        start = perf_counter()
+        try:
+            run_summarize_command(
+                date,
+                timeout=DEFAULT_TIMEOUT_SECONDS,
+                retries=inputs.retries,
+                progress=inputs.progress,
+            )
+        except typer.Exit as exc:
+            if exc.exit_code not in (0,):
+                _warn(stage, exc)
+        except Exception as exc:  # pragma: no cover - defensive
+            _warn(stage, exc)
+        else:
+            artifacts_changed["summaries"] = artifacts_changed.get("summaries", 0) + 1
+        _record_duration(stage, start)
+
+        stage = "derive.extract_facts"
+        start = perf_counter()
+        try:
+            _, facts_path = run_facts(
+                date,
+                timeout=DEFAULT_TIMEOUT_SECONDS,
+                retries=inputs.retries,
+                progress=inputs.progress,
+                claim_models=_load_profile_components(root)[1],
+                build_claim_preview=_noop_preview,
+            )
+        except typer.Exit as exc:
+            if exc.exit_code not in (0,):
+                _warn(stage, exc)
+        except Exception as exc:  # pragma: no cover - defensive
+            _warn(stage, exc)
+        else:
+            if facts_path:
+                artifacts_changed["microfacts"] = artifacts_changed.get("microfacts", 0) + 1
+        _record_duration(stage, start)
+
+        stage = "derive.profile_suggest"
+        start = perf_counter()
+        suggestions_path: Path | None = None
+        try:
+            suggestions_path = run_profile_suggest(
+                date,
+                timeout=DEFAULT_TIMEOUT_SECONDS,
+                retries=inputs.retries,
+                progress=inputs.progress,
+            )
+        except typer.Exit as exc:
+            if exc.exit_code not in (0,):
+                _warn(stage, exc)
+        except Exception as exc:  # pragma: no cover - defensive
+            _warn(stage, exc)
+        else:
+            artifacts_changed["profile_suggestions"] = (
+                artifacts_changed.get("profile_suggestions", 0) + 1
+            )
+        _record_duration(stage, start)
+
+        if inputs.apply_profile == "auto":
+            stage = "derive.profile_apply"
+            start = perf_counter()
+            try:
+                run_profile_apply(
+                    date,
+                    suggestions_path=suggestions_path,
+                    auto_confirm=True,
+                )
+            except typer.Exit as exc:
+                if exc.exit_code not in (0,):
+                    _warn(stage, exc)
+            except Exception as exc:  # pragma: no cover - defensive
+                _warn(stage, exc)
+            else:
+                artifacts_changed["profile"] = artifacts_changed.get("profile", 0) + 1
+            _record_duration(stage, start)
+
+        pending_before = _pending_batches(root)
+        stage = "derive.characterize"
+        start = perf_counter()
+        created_batches: list[Path] = []
+        try:
+            batch_path = run_characterize(
+                date,
+                timeout=DEFAULT_TIMEOUT_SECONDS,
+                retries=inputs.retries,
+                progress=inputs.progress,
+                build_claim_preview=_noop_preview,
+            )
+            created_batches.append(batch_path)
+        except typer.Exit as exc:
+            if exc.exit_code not in (0,):
+                _warn(stage, exc)
+        except Exception as exc:  # pragma: no cover - defensive
+            _warn(stage, exc)
+        else:
+            artifacts_changed["characterize"] = artifacts_changed.get("characterize", 0) + 1
+        _record_duration(stage, start)
+
+        pending_after = _pending_batches(root)
+        new_batches = sorted(pending_after - pending_before)
+        for batch_path in created_batches:
+            if batch_path not in new_batches:
+                new_batches.append(batch_path)
+
+        if inputs.apply_profile == "auto" and new_batches:
+            stage = "derive.review"
+            for batch_path in new_batches:
+                start = perf_counter()
+                try:
+                    if _apply_profile_update_batch(root, batch_path):
+                        artifacts_changed["profile"] = artifacts_changed.get("profile", 0) + 1
+                except Exception as exc:  # pragma: no cover - defensive
+                    _warn(stage, exc)
+                finally:
+                    _record_duration(stage, start)
+
+        if inputs.apply_profile != "auto" and "profile" not in artifacts_changed:
+            artifacts_changed.setdefault("profile", 0)
+
     return CaptureResult(
         run_id=run_id,
         entries=entry_results,
@@ -656,6 +867,7 @@ def run_capture(inputs: CaptureInput) -> CaptureResult:
         persona_stale_after=False,
         index_rebuilt=False,
         durations_ms={key: round(value, 3) for key, value in durations_ms.items()},
+        warnings=warnings,
     )
 
 
