@@ -47,7 +47,7 @@ def test_run_status_summary(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
     (index_dir / "annoy.index").touch()
     meta_path = index_dir / "meta.json"
     meta_payload = {
-        "embedding_model": "nomic-embed-text",
+        "embedding_model": "embeddinggemma",
         "vector_dimension": 384,
         "chunk_count": 2,
         "entry_count": 2,
