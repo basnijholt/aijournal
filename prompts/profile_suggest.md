@@ -26,6 +26,7 @@ named `suggestions`. Each suggestion must take one of two forms:
 ```
 
 Guidelines:
+- Mine the structured data (`summary`, `sections`, `tags`) to surface meaningful changes even if full paragraphs are unavailable. Anchor every suggestion in the evidence snippets you can observe.
 - Only include fields relevant to the suggestion type (`statement` for claims, `facet_path` and `value` for facets).
 - Use the supplied entries for grounding; omit items when support is weak.
 - IDs are optional; provide them only when a stable slug already exists.
