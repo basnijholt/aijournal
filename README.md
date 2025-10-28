@@ -18,7 +18,7 @@ See `docs/archive/PLAN-v0.3.md` for the historical persona-first roadmap (typed 
 
 ## Architecture and Design
 
-For a deep dive into core concepts, memory layers, claim atoms, and system internals, read [ARCHITECTURE.md](./ARCHITECTURE.md). Operators running live-mode rehearsals should also consult [agents.md](./agents.md).
+For a deep dive into core concepts, memory layers, claim atoms, and system internals, read [ARCHITECTURE.md](./ARCHITECTURE.md). Operators running live-mode rehearsals should also consult [agents.md](./agents.md). The CLI now acts mainly as Typer glue; feature-specific orchestration lives in `src/aijournal/commands/`, while testable workflows sit under `src/aijournal/pipelines/`.
 
 ## Getting Started
 
@@ -55,7 +55,10 @@ uv run pytest -q
 - Retrieval uses Ollama’s `nomic-embed-text` embeddings by default. Override it by setting `embedding_model` in `config/config.yaml`; the `AIJOURNAL_MODEL` env var only affects chat/advice, not embeddings.
 
 - `config/config.yaml` stores runtime defaults (model, temperature, advisor settings).
+- `src/aijournal/commands/` contains orchestration logic for each Typer command (I/O, retries, progress logging). Most CLI work happens here now; `cli.py` is intentionally thin glue.
+- `src/aijournal/pipelines/` hosts deterministic workflows that combine services, prompts, and normalization for a single feature (summaries, facts, persona, packs, characterize, advise).
 - `src/aijournal/models/` defines the Pydantic schemas the CLI enforces on every write.
+- `src/aijournal/services/` keeps reusable integrations (Ollama client, retriever, chat daemon, feedback).
 - `prompts/*.md` contains the Ollama prompt templates for summarize/facts/profile/advise.
 - `profile/` seeds an initial self-profile plus an empty claims list so commands have context.
 
