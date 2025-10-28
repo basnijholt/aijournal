@@ -5098,6 +5098,112 @@ def chatd(
     uvicorn.run(app_instance, host=host, port=port, log_level="info")
 
 
+@app.command("feedback-apply")
+def feedback_apply(
+    archive: bool = typer.Option(
+        True,
+        "--archive/--delete",
+        help="Archive processed feedback batches (default) or delete them after applying.",
+    ),
+) -> None:
+    """Apply and clear pending chat feedback batches."""
+
+    root = Path.cwd()
+    pending_dir = root / "derived" / "pending" / "profile_updates"
+    if not pending_dir.exists():
+        typer.secho(
+            "No pending feedback batches were found (derived/pending/profile_updates missing).",
+            fg=typer.colors.YELLOW,
+            err=True,
+        )
+        raise typer.Exit(1)
+
+    batch_paths = sorted(pending_dir.glob("feedback_*.yaml"))
+    if not batch_paths:
+        typer.secho("No feedback batches to apply.", fg=typer.colors.YELLOW, err=True)
+        raise typer.Exit(1)
+
+    claims_path = root / "profile" / "claims.yaml"
+    if not claims_path.exists():
+        typer.secho(
+            "Claims file not found at profile/claims.yaml; run `aijournal profile status` first.",
+            fg=typer.colors.RED,
+            err=True,
+        )
+        raise typer.Exit(1)
+
+    claims_file = load_yaml_model(claims_path, ClaimsFile)
+    claims_by_id = {claim.id: claim for claim in claims_file.claims}
+    total_adjustments: list[tuple[str, float, float]] = []
+
+    archive_dir = pending_dir / "applied_feedback"
+    if archive:
+        archive_dir.mkdir(parents=True, exist_ok=True)
+
+    for path in batch_paths:
+        try:
+            payload = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        except yaml.YAMLError as exc:  # pragma: no cover - malformed YAML
+            typer.secho(
+                f"Skipping {path.name}: invalid YAML ({exc}).", fg=typer.colors.RED, err=True
+            )
+            continue
+
+        adjustments = payload.get("claim_adjustments") or []
+        if not isinstance(adjustments, list):
+            typer.secho(
+                f"Skipping {path.name}: claim_adjustments must be a list.",
+                fg=typer.colors.RED,
+                err=True,
+            )
+            continue
+
+        for item in adjustments:
+            claim_id = str(item.get("id") or "").strip()
+            if not claim_id:
+                continue
+            target_claim = claims_by_id.get(claim_id)
+            if target_claim is None:
+                typer.secho(
+                    f"{path.name} references unknown claim '{claim_id}' — skipping.",
+                    fg=typer.colors.YELLOW,
+                    err=True,
+                )
+                continue
+            new_strength = item.get("new_strength")
+            try:
+                new_value = float(new_strength)
+            except (TypeError, ValueError):
+                typer.secho(
+                    f"Invalid strength '{new_strength}' for '{claim_id}' in {path.name}.",
+                    fg=typer.colors.RED,
+                    err=True,
+                )
+                continue
+            old_value = float(target_claim.strength)
+            clamped_value = max(0.0, min(1.0, new_value))
+            target_claim.strength = clamped_value
+            total_adjustments.append((claim_id, old_value, clamped_value))
+
+        if archive:
+            archive_path = _unique_archive_path(archive_dir / path.name)
+            path.rename(archive_path)
+        else:
+            path.unlink()
+
+    if not total_adjustments:
+        typer.secho("No claim adjustments were applied.", fg=typer.colors.YELLOW, err=True)
+        raise typer.Exit(1)
+
+    write_yaml_model(claims_path, ClaimsFile(claims=list(claims_by_id.values())))
+
+    typer.echo(f"Applied {len(total_adjustments)} feedback adjustment(s):")
+    for claim_id, old_value, new_value in total_adjustments:
+        delta = new_value - old_value
+        sign = "+" if delta >= 0 else ""
+        typer.echo(f"- {claim_id}: {old_value:.2f} -> {new_value:.2f} ({sign}{delta:.2f})")
+
+
 def _index_dir(root: Path) -> Path:
     return root / "derived" / "index"
 
@@ -5116,6 +5222,22 @@ def _chunk_manifest_dir(root: Path) -> Path:
 
 def _index_meta_path(root: Path) -> Path:
     return _index_dir(root) / INDEX_META_FILENAME
+
+
+def _unique_archive_path(target: Path) -> Path:
+    """Return a unique path by appending a counter when needed."""
+
+    if not target.exists():
+        return target
+    stem = target.stem
+    suffix = target.suffix
+    parent = target.parent
+    counter = 1
+    while True:
+        candidate = parent / f"{stem}_{counter}{suffix}"
+        if not candidate.exists():
+            return candidate
+        counter += 1
 
 
 def _collect_normalized_files(
