@@ -200,10 +200,14 @@ def test_invoke_structured_llm_uses_shared_builder(monkeypatch: pytest.MonkeyPat
         *,
         system_prompt: str,
         output_type: type[DailySummaryResponse],
+        max_attempts: int,
+        retry_message: str | None,
     ) -> DailySummaryResponse:
         assert config.model == "builder-model"
         assert "summarize" in system_prompt.lower()
         assert "entries" in prompt
+        assert max_attempts == 2
+        assert retry_message is not None
         return output_type(
             day=DATE,
             bullets=["bullet"],

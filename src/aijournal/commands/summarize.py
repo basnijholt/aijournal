@@ -61,6 +61,8 @@ def _invoke_structured_llm(
     agent_name: str,
     config: dict[str, Any],
     timeout: float | None = None,
+    max_attempts: int = 2,
+    retry_message: str | None = None,
 ) -> BaseModel:
     prompt = _render_prompt(prompt_path, variables)
     try:
@@ -68,11 +70,16 @@ def _invoke_structured_llm(
             config,
             timeout=float(timeout) if timeout is not None else None,
         )
+        effective_retry_message = retry_message or (
+            "Return JSON that matches the expected schema with no extra keys or text."
+        )
         return run_ollama_agent(
             ollama_config,
             prompt,
             system_prompt=_STRUCTURED_SYSTEM_PROMPT,
             output_type=response_model,
+            max_attempts=max_attempts,
+            retry_message=effective_retry_message,
         )
     except Exception as exc:  # pragma: no cover - runtime dependent
         msg = f"Structured output generation failed for {prompt_path}: {exc}"
@@ -115,22 +122,8 @@ def _structured_call_with_retry(
     retries: int,
     label: str,
 ) -> BaseModel:
-    attempts_used = 0
-    total_attempts = max(1, retries + 1)
-    while True:
-        try:
-            return func()
-        except LLMResponseError as exc:
-            if attempts_used >= retries:
-                raise
-            attempts_used += 1
-            reason = "timeout" if _is_timeout_exception(exc) else "schema error"
-            next_attempt = attempts_used + 1
-            typer.secho(
-                f"{label}: retrying after {reason} (attempt {next_attempt}/{total_attempts}).",
-                fg=typer.colors.YELLOW,
-                err=True,
-            )
+    del retries, label
+    return func()
 
 
 def _json_block(data: Any) -> str:
@@ -216,6 +209,11 @@ def _summarize_day_payload(
                 agent_name="aijournal-summarize",
                 config=config,
                 timeout=timeout,
+                max_attempts=max(1, retries + 1),
+                retry_message=(
+                    "Return JSON with keys `day`, `bullets`, `highlights`, `todo_candidates` "
+                    "and no additional fields or commentary."
+                ),
             ),
         )
 
