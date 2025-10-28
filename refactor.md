@@ -31,12 +31,13 @@ Decompose the 5.8k LOC `cli.py` and 700 LOC `models/__init__.py` into modular pa
 ## Refactor Checklist
 
 > **Rule:** After every numbered task, run the full suite (`uv run pytest`). Commit only when the suite is green.
+> **Note:** Make a dedicated commit immediately after completing each individual step.
 
 ---
 
 ## Phase 0 · Harden CLI Tests
 
-1. Add `tests/conftest.py` fixture `cli_workspace(tmp_path, monkeypatch)`:
+1. [x] Add `tests/conftest.py` fixture `cli_workspace(tmp_path, monkeypatch)`:
    - `monkeypatch.chdir(tmp_path)` so commands run inside the temporary workspace
    - set `AIJOURNAL_FAKE_OLLAMA=1`
    - run `aijournal init` to seed the directory structure
@@ -44,39 +45,39 @@ Decompose the 5.8k LOC `cli.py` and 700 LOC `models/__init__.py` into modular pa
    - `yield tmp_path` for callers  
    → `uv run pytest`
 
-2. Update `tests/test_cli_summarize.py` to use `cli_workspace`, drop duplicated setup, and assert key fields instead of full snapshots.  
+2. [x] Update `tests/test_cli_summarize.py` to use `cli_workspace`, drop duplicated setup, and assert key fields instead of full snapshots.  
    → `uv run pytest`
 
-3. Update `tests/test_cli_facts.py` to use `cli_workspace`; assert claim proposals and preview events deterministically.  
+3. [x] Update `tests/test_cli_facts.py` to use `cli_workspace`; assert claim proposals and preview events deterministically.  
    → `uv run pytest`
 
-4. Update `tests/test_cli_advise.py` to use `cli_workspace`; assert assumptions/steps instead of filename checks.  
+4. [x] Update `tests/test_cli_advise.py` to use `cli_workspace`; assert assumptions/steps instead of filename checks.  
    → `uv run pytest`
 
-5. Repeat deterministic setup/assertions for remaining CLI suites that spin workspaces (`test_cli_pack`, `test_cli_persona`, `test_cli_profile_*`, etc.).  
+5. [x] Repeat deterministic setup/assertions for remaining CLI suites that spin workspaces (`test_cli_pack`, `test_cli_persona`, `test_cli_profile_*`, etc.).  
    → `uv run pytest`
 
 ---
 
 ## Phase 1 · Utilities Foundation (No Behavior Change)
 
-6. Expand `src/aijournal/utils/__init__.py` with a short docstring explaining it houses stateless, project-wide helpers.  
+6. [x] Expand `src/aijournal/utils/__init__.py` with a short docstring explaining it houses stateless, project-wide helpers.  
    → `uv run pytest`
 
-7. Move path constants/mappers from `cli.py` into `utils/paths.py`; update imports.  
+7. [x] Move path constants/mappers from `cli.py` into `utils/paths.py`; update imports.  
    → `uv run pytest`
 
-8. Move time/format helpers (`now()`, `format_timestamp`, slug helpers, session id) into `utils/time.py`; update code/tests.  
+8. [x] Move time/format helpers (`now()`, `format_timestamp`, slug helpers, session id) into `utils/time.py`; update code/tests.  
    → `uv run pytest`
 
-9. Adjust fixtures/tests to patch the new location (`aijournal.utils.time`).  
+9. [x] Adjust fixtures/tests to patch the new location (`aijournal.utils.time`).  
    → `uv run pytest`
 
 ---
 
 ## Phase 2 · Models Decomposition
 
-10. Create `models/authoritative.py` (ManifestEntry, JournalEntry, NormalizedEntry, ClaimsFile, SelfProfile, etc.) and re-export in `models/__init__.py` (keep `claim_atoms.py`/`base.py` imports consistent).  
+10. [x] Create `models/authoritative.py` (ManifestEntry, JournalEntry, NormalizedEntry, ClaimsFile, SelfProfile, etc.) and re-export in `models/__init__.py` (keep `claim_atoms.py`/`base.py` imports consistent).  
     → `uv run pytest`
 
 11. Create `models/derived.py` (DailySummary, MicroFactsFile, AdviceCard, PersonaCore*, IndexMeta, …) and re-export.  
