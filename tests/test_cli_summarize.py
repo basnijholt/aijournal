@@ -19,16 +19,6 @@ DATE = "2025-02-03"
 ENTRY_ID = "2025-02-03-sync-notes"
 
 
-def _has_command(name: str) -> bool:
-    return any(info.name == name for info in app.registered_commands)
-
-
-@pytest.fixture(autouse=True)
-def skip_if_missing() -> None:
-    if not _has_command("summarize"):
-        pytest.skip("summarize command not available yet")
-
-
 def _write_normalized(workspace: Path) -> Path:
     normalized = workspace / "data" / "normalized" / DATE / f"{ENTRY_ID}.yaml"
     normalized.parent.mkdir(parents=True, exist_ok=True)
