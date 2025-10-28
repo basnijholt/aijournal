@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 import pytest
@@ -30,21 +29,12 @@ def skip_if_missing() -> None:
         pytest.skip("profile apply command not available yet")
 
 
-@pytest.fixture(autouse=True)
-def freeze_now(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(
-        "aijournal.cli._now",
-        lambda: datetime(2025, 2, 3, 12, 0, tzinfo=UTC),
-        raising=False,
-    )
-
-
 def _write_yaml(path: Path, payload: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
 
 
-def _seed_authoritative(tmp_path: Path) -> None:
+def _seed_authoritative(workspace: Path) -> None:
     self_profile = {
         "values_motivations": {
             "schwartz_top5": ["Universalism"],
@@ -63,11 +53,11 @@ def _seed_authoritative(tmp_path: Path) -> None:
             ),
         ],
     }
-    _write_yaml(tmp_path / "profile" / "self_profile.yaml", self_profile)
-    _write_yaml(tmp_path / "profile" / "claims.yaml", claims)
+    _write_yaml(workspace / "profile" / "self_profile.yaml", self_profile)
+    _write_yaml(workspace / "profile" / "claims.yaml", claims)
 
 
-def _seed_suggestions(tmp_path: Path) -> Path:
+def _seed_suggestions(workspace: Path) -> Path:
     suggestions = {
         "upserts": [
             {
@@ -95,13 +85,12 @@ def _seed_suggestions(tmp_path: Path) -> Path:
             "prompt_path": "prompts/profile_suggest.md",
         },
     }
-    path = tmp_path / "derived" / "profile_suggestions" / f"{DATE}.yaml"
+    path = workspace / "derived" / "profile_suggestions" / f"{DATE}.yaml"
     _write_yaml(path, suggestions)
     return path
 
 
-def _invoke(tmp_path: Path, suggestions_path: Path) -> str:
-    env = {"AIJOURNAL_FAKE_OLLAMA": "1"}
+def _invoke(suggestions_path: Path) -> str:
     args = [
         "profile",
         "apply",
@@ -111,26 +100,25 @@ def _invoke(tmp_path: Path, suggestions_path: Path) -> str:
         str(suggestions_path),
         "--yes",
     ]
-    result = runner.invoke(app, args, env=env)
+    result = runner.invoke(app, args)
     assert result.exit_code == 0, result.output
     return result.output
 
 
-def test_profile_apply_merges_suggestions(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.chdir(tmp_path)
-    _seed_authoritative(tmp_path)
-    suggestions_path = _seed_suggestions(tmp_path)
+def test_profile_apply_merges_suggestions(cli_workspace: Path) -> None:
+    _seed_authoritative(cli_workspace)
+    suggestions_path = _seed_suggestions(cli_workspace)
 
-    output = _invoke(tmp_path, suggestions_path)
+    output = _invoke(suggestions_path)
     assert "Applied" in output
 
-    claims = yaml.safe_load((tmp_path / "profile" / "claims.yaml").read_text(encoding="utf-8"))
+    claims = yaml.safe_load((cli_workspace / "profile" / "claims.yaml").read_text(encoding="utf-8"))
     new_claims = {claim["id"] for claim in claims["claims"]}
     assert "pref_evening" in new_claims
     assert len(claims["claims"]) == len(new_claims), "Duplicate claim IDs"
 
     profile = yaml.safe_load(
-        (tmp_path / "profile" / "self_profile.yaml").read_text(encoding="utf-8"),
+        (cli_workspace / "profile" / "self_profile.yaml").read_text(encoding="utf-8"),
     )
     assert profile["values_motivations"]["schwartz_top5"] == [
         "Universalism",
@@ -138,19 +126,22 @@ def test_profile_apply_merges_suggestions(tmp_path: Path, monkeypatch: pytest.Mo
     ]
 
 
-def test_profile_apply_idempotent(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.chdir(tmp_path)
-    _seed_authoritative(tmp_path)
-    suggestions_path = _seed_suggestions(tmp_path)
+def test_profile_apply_idempotent(cli_workspace: Path) -> None:
+    _seed_authoritative(cli_workspace)
+    suggestions_path = _seed_suggestions(cli_workspace)
 
-    first_output = _invoke(tmp_path, suggestions_path)
-    claims_after_first = (tmp_path / "profile" / "claims.yaml").read_text(encoding="utf-8")
-    profile_after_first = (tmp_path / "profile" / "self_profile.yaml").read_text(encoding="utf-8")
+    first_output = _invoke(suggestions_path)
+    claims_after_first = (cli_workspace / "profile" / "claims.yaml").read_text(encoding="utf-8")
+    profile_after_first = (cli_workspace / "profile" / "self_profile.yaml").read_text(
+        encoding="utf-8"
+    )
 
-    second_output = _invoke(tmp_path, suggestions_path)
+    second_output = _invoke(suggestions_path)
 
-    assert (tmp_path / "profile" / "claims.yaml").read_text(encoding="utf-8") == claims_after_first
-    assert (tmp_path / "profile" / "self_profile.yaml").read_text(
+    assert (cli_workspace / "profile" / "claims.yaml").read_text(
+        encoding="utf-8"
+    ) == claims_after_first
+    assert (cli_workspace / "profile" / "self_profile.yaml").read_text(
         encoding="utf-8",
     ) == profile_after_first
     assert "Applied" in first_output
