@@ -28,8 +28,8 @@ def skip_if_missing() -> None:
         pytest.skip("facts command not available yet")
 
 
-def _write_normalized(tmp_path: Path) -> Path:
-    normalized = tmp_path / "data" / "normalized" / DATE / f"{ENTRY_ID}.yaml"
+def _write_normalized(workspace: Path) -> Path:
+    normalized = workspace / "data" / "normalized" / DATE / f"{ENTRY_ID}.yaml"
     normalized.parent.mkdir(parents=True, exist_ok=True)
     normalized.write_text(
         yaml.safe_dump(
@@ -55,63 +55,62 @@ def _read_yaml(path: Path) -> dict[str, object]:
     return yaml.safe_load(path.read_text(encoding="utf-8"))
 
 
-def test_facts_generates_microfacts(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.chdir(tmp_path)
-    _write_normalized(tmp_path)
+def test_facts_generates_microfacts(cli_workspace: Path) -> None:
+    _write_normalized(cli_workspace)
 
-    env = {"AIJOURNAL_FAKE_OLLAMA": "1"}
-    result = runner.invoke(app, ["facts", "--date", DATE], env=env)
+    result = runner.invoke(app, ["facts", "--date", DATE])
 
     assert result.exit_code == 0, result.stdout
 
-    facts_path = tmp_path / "derived" / "microfacts" / f"{DATE}.yaml"
+    facts_path = cli_workspace / "derived" / "microfacts" / f"{DATE}.yaml"
     assert facts_path.exists()
 
     data = _read_yaml(facts_path)
     facts = data.get("facts", [])
-    assert isinstance(facts, list)
-    if facts:
-        first = facts[0]
-        assert first.get("id")
-        assert first.get("statement")
+    assert isinstance(facts, list) and facts
+    first_fact = facts[0]
+    assert first_fact.get("id") == f"fact-{ENTRY_ID}"
+    assert first_fact.get("statement") == "Sync Notes covers 2 sections"
     meta = data.get("meta", {})
-    for key in ("llm_model", "prompt_path", "prompt_hash", "created_at"):
-        assert meta.get(key), f"Missing {key}"
     assert meta.get("llm_model") == "fake-ollama"
+    for key in ("prompt_path", "prompt_hash", "created_at"):
+        assert meta.get(key), f"Missing {key}"
     proposals = data.get("claim_proposals", [])
     assert isinstance(proposals, list) and proposals, "Expected claim proposals from micro-facts"
+    claim = proposals[0]["claim"]
+    assert claim["id"] == f"microfact.fact-{ENTRY_ID}"
+    assert claim["statement"] == "Sync Notes covers 2 sections"
+    assert proposals[0]["normalized_ids"] == [ENTRY_ID]
     preview = data.get("preview") or {}
     events = preview.get("claim_events") or []
     assert events, "Expected preview events for micro-facts consolidation"
-    assert any(event.get("action") == "created" for event in events)
+    event = events[0]
+    assert event.get("action") == "created"
+    assert event.get("claim_id") == f"microfact.fact-{ENTRY_ID}"
     assert "Preview (claim consolidation)" in result.stdout
     assert str(facts_path) in result.stdout
 
 
-def test_facts_is_idempotent(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.chdir(tmp_path)
-    _write_normalized(tmp_path)
+def test_facts_is_idempotent(cli_workspace: Path) -> None:
+    _write_normalized(cli_workspace)
 
-    env = {"AIJOURNAL_FAKE_OLLAMA": "1"}
-    first = runner.invoke(app, ["facts", "--date", DATE], env=env)
+    first = runner.invoke(app, ["facts", "--date", DATE])
     assert first.exit_code == 0
 
-    facts_path = tmp_path / "derived" / "microfacts" / f"{DATE}.yaml"
+    facts_path = cli_workspace / "derived" / "microfacts" / f"{DATE}.yaml"
     before = facts_path.stat().st_mtime
 
-    second = runner.invoke(app, ["facts", "--date", DATE], env=env)
+    second = runner.invoke(app, ["facts", "--date", DATE])
     assert second.exit_code == 0
     after = facts_path.stat().st_mtime
 
     assert before == after
 
 
-def test_facts_progress_flag(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.chdir(tmp_path)
-    _write_normalized(tmp_path)
+def test_facts_progress_flag(cli_workspace: Path) -> None:
+    _write_normalized(cli_workspace)
 
-    env = {"AIJOURNAL_FAKE_OLLAMA": "1"}
-    result = runner.invoke(app, ["facts", "--date", DATE, "--progress"], env=env)
+    result = runner.invoke(app, ["facts", "--date", DATE, "--progress"])
 
     assert result.exit_code == 0, result.stdout
     assert "Extracting micro-facts" in result.stdout

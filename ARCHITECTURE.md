@@ -47,8 +47,11 @@ aijournal/
   config/config.yaml
   src/aijournal/
     cli.py
+    commands/
     models/
+    pipelines/
     services/
+    utils/
     io/
     prompts/
   data/
@@ -72,10 +75,12 @@ aijournal/
 
 ### 2.2 Core Components
 
-- **CLI (`src/aijournal/cli.py`)** – Entry points for initialization, ingestion, normalization, derivation, profile management, retrieval, chat, advisor mode, packs, and feedback.
+- **CLI (`src/aijournal/cli.py`)** – Thin Typer glue that wires user-facing commands to the orchestration layer. It keeps direct terminal interactions (printing previews, handling Typer exits) but delegates business logic.
+- **Commands (`src/aijournal/commands/`)** – Feature-specific runners that orchestrate file I/O, pipelines, and error handling for each CLI surface (`init`, `facts`, `profile`, `persona`, `chat`, etc.).
+- **Pipelines (`src/aijournal/pipelines/`)** – Deterministic workflows that combine services, prompts, and validation for a single use case (summaries, facts, characterization, packs, advice). Pipelines avoid Typer and file-system concerns so they remain testable.
 - **Models (`src/aijournal/models/`)** – Pydantic schemas that validate every authoritative and derived artifact before it hits disk.
 - **Services (`src/aijournal/services/`)** – Ollama client, retrieval/indexing, characterization, consolidation, chat orchestrator, advisor, and feedback handlers.
-- **I/O utilities (`src/aijournal/io/`)** – Path mappers, YAML helpers, slug and ID generators, filesystem safety rails.
+- **Utilities (`src/aijournal/utils/` & `src/aijournal/io/`)** – Path mappers, YAML helpers, slug and ID generators, time utilities, filesystem safety rails.
 - **Prompts (`prompts/`)** – Markdown templates hashed into derived metadata to keep runs reproducible.
 
 ## 3. Core Concepts

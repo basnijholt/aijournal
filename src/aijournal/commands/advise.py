@@ -1,0 +1,164 @@
+"""Advice command orchestration helpers."""
+
+from __future__ import annotations
+
+from collections.abc import Sequence
+from hashlib import sha256
+from pathlib import Path
+from typing import Any, cast
+
+import typer
+import yaml
+
+from aijournal.commands.ingest import _load_config, _use_fake_llm
+from aijournal.commands.pack import _latest_normalized_day
+from aijournal.commands.profile import (
+    InterviewTarget,
+    _compute_rankings,
+    _load_profile_components,
+    _profile_to_dict,
+)
+from aijournal.commands.summarize import (
+    _build_meta,
+    _invoke_structured_llm,
+    _json_block,
+    _load_normalized_entries,
+)
+from aijournal.io.yaml_io import write_yaml_model
+from aijournal.models import AdviceCard, AdviceLLMResponse, ClaimAtom
+from aijournal.pipelines import advise as advise_pipeline
+from aijournal.services import build_ollama_config_from_mapping
+from aijournal.utils import time as time_utils
+
+
+def run_advise(question: str) -> Path:
+    """Generate advice from the current profile and return the output path."""
+    root = Path.cwd()
+    profile_model, claim_models = _load_profile_components(root)
+    profile = _profile_to_dict(profile_model)
+    claims = [claim.model_copy(deep=True) for claim in claim_models]
+    if not profile and not claims:
+        typer.secho("No profile data", fg=typer.colors.RED, err=True)
+        raise typer.Exit(1)
+
+    config = _load_config(root)
+    weights = config.get("impact_weights", {})
+    latest_day = _latest_normalized_day(root)
+    entries = _load_normalized_entries(root, latest_day) if latest_day else []
+    pending_prompts = _collect_pending_interview_prompts(root)
+    rankings = _compute_rankings(
+        profile,
+        claims,
+        weights,
+        time_utils.now(),
+        entries=entries,
+        pending_prompts=pending_prompts,
+    )
+    advice_card = _advice_payload(
+        question,
+        profile,
+        claims,
+        config,
+        rankings=rankings,
+        pending_prompts=pending_prompts,
+    )
+    model_name = (
+        "fake-ollama" if _use_fake_llm() else build_ollama_config_from_mapping(config).model
+    )
+    advice_card.meta = _build_meta("prompts/advise.md", model=model_name)
+
+    day = time_utils.created_date(time_utils.format_timestamp(time_utils.now()))
+    advice_path = _derived_advice_path(root, day, question)
+    write_yaml_model(advice_path, advice_card)
+    return advice_path
+
+
+def _collect_pending_interview_prompts(root: Path, limit: int = 5) -> list[str]:
+    directory = root / "derived" / "pending" / "profile_updates"
+    if not directory.exists():
+        return []
+    prompts: list[str] = []
+    for path in sorted((p for p in directory.glob("*.yaml") if p.is_file()), reverse=True):
+        try:
+            payload = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        except yaml.YAMLError:
+            continue
+        preview = payload.get("preview") or {}
+        for prompt in preview.get("interview_prompts") or []:
+            text = str(prompt).strip()
+            if text and text not in prompts:
+                prompts.append(text)
+        if len(prompts) >= limit:
+            break
+    return prompts[:limit]
+
+
+def _advice_identifier(question: str) -> str:
+    day = time_utils.created_date(time_utils.format_timestamp(time_utils.now()))
+    digest = sha256(question.encode("utf-8")).hexdigest()[:8]
+    return f"adv_{day}_{digest}"
+
+
+def _advice_payload(
+    question: str,
+    profile: dict[str, Any],
+    claims: Sequence[ClaimAtom],
+    config: dict[str, Any],
+    *,
+    rankings: Sequence[InterviewTarget],
+    pending_prompts: Sequence[str],
+) -> AdviceCard:
+    rankings_payload = [
+        {
+            "path": target.path,
+            "score": target.score,
+            "kind": target.kind,
+            "reasons": list(target.reasons),
+            "claim_id": target.claim_id,
+            "missing_context": list(target.missing_context),
+        }
+        for target in rankings[:8]
+    ]
+
+    def request_advice() -> AdviceLLMResponse:
+        return cast(
+            AdviceLLMResponse,
+            _invoke_structured_llm(
+                "prompts/advise.md",
+                {
+                    "date": time_utils.created_date(time_utils.format_timestamp(time_utils.now())),
+                    "question": question,
+                    "profile_json": _json_block(profile),
+                    "claims_json": _json_block(
+                        {"claims": [claim.model_dump(mode="python") for claim in claims]}
+                    ),
+                    "rankings_json": _json_block(rankings_payload),
+                    "pending_prompts_json": _json_block(list(pending_prompts)),
+                },
+                response_model=AdviceLLMResponse,
+                agent_name="aijournal-advise",
+                config=config,
+            ),
+        )
+
+    return advise_pipeline.generate_advice(
+        question,
+        profile,
+        claims,
+        use_fake_llm=_use_fake_llm(),
+        advice_identifier=_advice_identifier,
+        request_advice=request_advice,
+        rankings=rankings,
+        pending_prompts=pending_prompts,
+    )
+
+
+def _derived_advice_path(root: Path, day: str, question: str) -> Path:
+    slug = time_utils.slugify_title(question)
+    return root / "derived" / "advice" / day / f"{slug}.yaml"
+
+
+__all__ = [
+    "run_advise",
+    "_collect_pending_interview_prompts",
+]

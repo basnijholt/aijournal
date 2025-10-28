@@ -1,0 +1,214 @@
+"""Chat command orchestration helpers."""
+
+from __future__ import annotations
+
+import json
+from collections.abc import Sequence
+from pathlib import Path
+
+import typer
+
+from aijournal.commands.index import (
+    _format_search_snippet,
+    _split_filter_values,
+    _validate_date_option,
+)
+from aijournal.commands.ingest import _load_config
+from aijournal.io.chat_sessions import ChatSessionRecorder
+from aijournal.services import (
+    ChatService,
+    ChatTurn,
+    FeedbackAdjustment,
+    apply_chat_feedback,
+    extract_claim_markers,
+)
+from aijournal.services.retriever import RetrievalFilters
+from aijournal.utils import time as time_utils
+
+
+def run_chat(
+    question: str,
+    *,
+    top: int,
+    tags: str | None,
+    source: str | None,
+    date_from: str | None,
+    date_to: str | None,
+    session: str | None,
+    save: bool,
+    feedback: str | None,
+) -> None:
+    """Execute a retrieval-augmented chat turn and render the response."""
+    if top <= 0:
+        typer.secho("--top must be positive.", fg=typer.colors.RED, err=True)
+        raise typer.Exit(1)
+
+    root = Path.cwd()
+    config = _load_config(root)
+    filters = RetrievalFilters(
+        tags=_split_filter_values(tags),
+        source_types=_split_filter_values(source),
+        date_from=_validate_date_option(date_from, "--date-from"),
+        date_to=_validate_date_option(date_to, "--date-to"),
+    )
+
+    service = ChatService(root, config)
+    try:
+        turn = service.run(question, top=top, filters=filters)
+    except (RuntimeError, ValueError) as exc:
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        raise typer.Exit(1) from exc
+    finally:
+        service.close()
+
+    feedback_value = _normalize_feedback_option(feedback)
+    session_id = session.strip() if isinstance(session, str) and session.strip() else None
+    saved_dir: Path | None = None
+    if save:
+        session_id = session_id or time_utils.generate_session_id()
+        recorder = ChatSessionRecorder(root, session_id)
+        recorder.append(turn, feedback=feedback_value)
+        saved_dir = recorder.session_dir
+    else:
+        session_id = session_id or time_utils.generate_session_id()
+
+    _render_chat_turn(
+        turn,
+        session_id=session_id,
+        saved_dir=saved_dir,
+        persisted=save,
+    )
+
+    _log_chat_telemetry(turn, session_id=session_id)
+
+    if feedback_value:
+        adjustments, feedback_path = apply_chat_feedback(
+            root,
+            turn_answer=turn.answer,
+            question=turn.question,
+            session_id=session_id,
+            timestamp=turn.timestamp,
+            feedback=feedback_value,
+        )
+        _render_feedback_summary(adjustments, feedback_path, feedback_value)
+
+
+def _normalize_feedback_option(value: str | None) -> str | None:
+    if value is None:
+        return None
+    normalized = value.strip().lower()
+    if normalized in {"up", "down"}:
+        return normalized
+    typer.secho("--feedback must be 'up' or 'down'.", fg=typer.colors.RED, err=True)
+    raise typer.Exit(1)
+
+
+def _render_chat_turn(
+    turn: ChatTurn,
+    *,
+    session_id: str | None,
+    saved_dir: Path | None,
+    persisted: bool,
+) -> None:
+    mode_label = "fake mode" if turn.fake_mode else "live mode"
+    typer.echo(f"Chat response ({mode_label})")
+    if session_id:
+        typer.echo(f"Session: {session_id}")
+    typer.echo(f"Question: {turn.question}")
+    typer.echo(f"Intent: {turn.intent}")
+    typer.echo("Answer:")
+    answer_lines = turn.answer.splitlines() or [turn.answer]
+    for line in answer_lines:
+        typer.echo(f"  {line}")
+
+    if turn.clarifying_question:
+        typer.echo("")
+        typer.echo(f"Clarifying question: {turn.clarifying_question}")
+
+    typer.echo("")
+    typer.echo(
+        (
+            "Telemetry: "
+            f"retrieval={turn.telemetry.retrieval_ms:.1f}ms "
+            f"chunks={turn.telemetry.chunk_count} "
+            f"source={turn.telemetry.retriever_source} "
+            f"model={turn.telemetry.model}"
+        ),
+    )
+
+    if not turn.citations:
+        if turn.retrieved_chunks:
+            typer.echo("")
+            typer.echo("Citations: none referenced.")
+        else:
+            typer.echo("")
+            typer.echo("No journal chunks were retrieved.")
+    else:
+        typer.echo("")
+        typer.echo("Citations:")
+        chunk_map = {chunk.chunk_id: chunk for chunk in turn.retrieved_chunks}
+        for idx, citation in enumerate(turn.citations, start=1):
+            chunk = chunk_map.get(citation.chunk_id)
+            source_path = citation.source_path or citation.normalized_id
+            typer.echo(
+                f"{idx}. {citation.marker} {source_path} ({citation.date}) score {citation.score:.3f}",
+            )
+            if chunk:
+                snippet = _format_search_snippet(chunk.text)
+                tag_display = ", ".join(citation.tags) if citation.tags else "-"
+                typer.echo(f"   tags: {tag_display}")
+                typer.echo(f"   {snippet}")
+            if idx != len(turn.citations):
+                typer.echo("")
+
+    if persisted and saved_dir is not None:
+        typer.echo("")
+        typer.echo(f"Saved transcript: {saved_dir}")
+
+
+def _log_chat_telemetry(turn: ChatTurn, *, session_id: str | None) -> None:
+    claim_markers = extract_claim_markers(turn.answer)
+    payload = {
+        "event": "chat.telemetry",
+        "session_id": session_id,
+        "intent": turn.intent,
+        "retrieval_ms": round(turn.telemetry.retrieval_ms, 2),
+        "chunks": turn.telemetry.chunk_count,
+        "model": turn.telemetry.model,
+        "clarifying": bool(turn.clarifying_question),
+        "claim_markers": claim_markers,
+    }
+    if not claim_markers and session_id is not None and turn.persona.claims:
+        typer.secho(
+            "No persona claim markers were referenced; thumbs up/down cannot adjust claim strengths.",
+            fg=typer.colors.YELLOW,
+            err=True,
+        )
+    typer.echo(json.dumps(payload, ensure_ascii=False), err=True)
+
+
+def _render_feedback_summary(
+    adjustments: Sequence[FeedbackAdjustment],
+    feedback_path: Path | None,
+    feedback: str,
+) -> None:
+    if not adjustments:
+        typer.secho(
+            "Feedback provided but no claim citations were found to adjust.",
+            fg=typer.colors.YELLOW,
+            err=True,
+        )
+        return
+
+    typer.echo("")
+    typer.echo(f"Recorded {feedback} feedback for {len(adjustments)} claim(s):")
+    for adj in adjustments:
+        sign = "+" if adj.delta >= 0 else ""
+        typer.echo(
+            f"- {adj.claim_id}: {adj.old_strength:.2f} -> {adj.new_strength:.2f} ({sign}{adj.delta:.2f})",
+        )
+    if feedback_path is not None:
+        typer.echo(f"Queued feedback batch: {feedback_path}")
+
+
+__all__ = ["run_chat"]

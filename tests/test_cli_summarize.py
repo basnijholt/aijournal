@@ -30,8 +30,8 @@ def skip_if_missing() -> None:
         pytest.skip("summarize command not available yet")
 
 
-def _write_normalized(tmp_path: Path) -> Path:
-    normalized = tmp_path / "data" / "normalized" / DATE / f"{ENTRY_ID}.yaml"
+def _write_normalized(workspace: Path) -> Path:
+    normalized = workspace / "data" / "normalized" / DATE / f"{ENTRY_ID}.yaml"
     normalized.parent.mkdir(parents=True, exist_ok=True)
     normalized.write_text(
         yaml.safe_dump(
@@ -57,16 +57,14 @@ def _read_yaml(path: Path) -> dict[str, object]:
     return yaml.safe_load(path.read_text(encoding="utf-8"))
 
 
-def test_summarize_generates_summary(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.chdir(tmp_path)
-    _write_normalized(tmp_path)
+def test_summarize_generates_summary(cli_workspace: Path) -> None:
+    _write_normalized(cli_workspace)
 
-    env = {"AIJOURNAL_FAKE_OLLAMA": "1"}
-    result = runner.invoke(app, ["summarize", "--date", DATE], env=env)
+    result = runner.invoke(app, ["summarize", "--date", DATE])
 
     assert result.exit_code == 0, result.stdout
 
-    summary_path = tmp_path / "derived" / "summaries" / f"{DATE}.yaml"
+    summary_path = cli_workspace / "derived" / "summaries" / f"{DATE}.yaml"
     assert summary_path.exists()
 
     data = _read_yaml(summary_path)
@@ -74,48 +72,42 @@ def test_summarize_generates_summary(tmp_path: Path, monkeypatch: pytest.MonkeyP
     assert isinstance(data.get("highlights"), list)
     assert isinstance(data.get("todo_candidates"), list)
     meta = data.get("meta", {})
-    for key in ("llm_model", "prompt_path", "prompt_hash", "created_at"):
-        assert meta.get(key), f"Missing {key}"
     assert meta.get("llm_model") == "fake-ollama"
+    for key in ("prompt_path", "prompt_hash", "created_at"):
+        assert meta.get(key), f"Missing {key}"
     assert str(summary_path) in result.stdout
 
 
-def test_summarize_is_idempotent(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.chdir(tmp_path)
-    _write_normalized(tmp_path)
+def test_summarize_is_idempotent(cli_workspace: Path) -> None:
+    _write_normalized(cli_workspace)
 
-    env = {"AIJOURNAL_FAKE_OLLAMA": "1"}
-    first = runner.invoke(app, ["summarize", "--date", DATE], env=env)
+    first = runner.invoke(app, ["summarize", "--date", DATE])
     assert first.exit_code == 0
 
-    summary_path = tmp_path / "derived" / "summaries" / f"{DATE}.yaml"
+    summary_path = cli_workspace / "derived" / "summaries" / f"{DATE}.yaml"
     before = summary_path.stat().st_mtime
 
-    second = runner.invoke(app, ["summarize", "--date", DATE], env=env)
+    second = runner.invoke(app, ["summarize", "--date", DATE])
     assert second.exit_code == 0
     after = summary_path.stat().st_mtime
 
     assert before == after
 
 
-def test_summarize_progress_flag(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.chdir(tmp_path)
-    _write_normalized(tmp_path)
+def test_summarize_progress_flag(cli_workspace: Path) -> None:
+    _write_normalized(cli_workspace)
 
-    env = {"AIJOURNAL_FAKE_OLLAMA": "1"}
-    result = runner.invoke(app, ["summarize", "--date", DATE, "--progress"], env=env)
+    result = runner.invoke(app, ["summarize", "--date", DATE, "--progress"])
 
     assert result.exit_code == 0, result.stdout
     assert "Summarizing entries for" in result.stdout
     assert "[1/1]" in result.stdout
 
 
-def test_summarize_rejects_zero_timeout(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.chdir(tmp_path)
-    _write_normalized(tmp_path)
+def test_summarize_rejects_zero_timeout(cli_workspace: Path) -> None:
+    _write_normalized(cli_workspace)
 
-    env = {"AIJOURNAL_FAKE_OLLAMA": "1"}
-    result = runner.invoke(app, ["summarize", "--date", DATE, "--timeout", "0"], env=env)
+    result = runner.invoke(app, ["summarize", "--date", DATE, "--timeout", "0"])
 
     assert result.exit_code != 0
     assert "--timeout must be positive" in result.stdout
