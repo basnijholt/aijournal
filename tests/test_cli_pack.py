@@ -1,4 +1,4 @@
-"""Tests for `aijournal pack` CLI."""
+"""Tests for `aijournal export pack` CLI."""
 
 from __future__ import annotations
 
@@ -6,7 +6,6 @@ import json
 from math import ceil
 from typing import TYPE_CHECKING
 
-import pytest
 import yaml
 from typer.testing import CliRunner
 
@@ -21,16 +20,6 @@ ENTRY_ID = "2025-02-03-sync-notes"
 PRIOR_DATE = "2025-02-02"
 PRIOR_ENTRY_ID = f"{PRIOR_DATE}-retro-notes"
 ADVICE_QUESTION = "How do I protect deep work blocks?"
-
-
-def _has_pack_command() -> bool:
-    return any(cmd.name == "pack" for cmd in app.registered_commands)
-
-
-@pytest.fixture(autouse=True)
-def skip_if_missing() -> None:
-    if not _has_pack_command():
-        pytest.skip("pack command not available yet")
 
 
 def _write(path: Path, text: str) -> None:
@@ -65,7 +54,7 @@ traits:
 
 
 def _ensure_persona_core(tmp_path: Path, cli_runner: CliRunner) -> Path:
-    result = cli_runner.invoke(app, ["persona", "build"])
+    result = cli_runner.invoke(app, ["ops", "persona", "build"])
     assert result.exit_code == 0, result.output
     persona_path = tmp_path / "derived" / "persona" / "persona_core.yaml"
     assert persona_path.exists(), "persona_core.yaml should be created"
@@ -193,7 +182,10 @@ def test_pack_l1_uses_persona_core(
     _seed_profile(cli_workspace)
     persona_path = _ensure_persona_core(cli_workspace, cli_runner)
 
-    result = cli_runner.invoke(app, ["pack", "--level", "L1", "--format", "yaml"])
+    result = cli_runner.invoke(
+        app,
+        ["export", "pack", "--level", "L1", "--format", "yaml"],
+    )
     assert result.exit_code == 0, result.output
     payload = yaml.safe_load(result.stdout)
     files = payload.get("files", [])
@@ -210,7 +202,10 @@ def test_pack_l2_includes_daily_artifacts(
     entry_slug = _seed_daily_artifacts(cli_workspace)
     _seed_daily_artifacts(cli_workspace, day=PRIOR_DATE, entry_id=PRIOR_ENTRY_ID)
 
-    result = cli_runner.invoke(app, ["pack", "--level", "L2", "--date", DATE])
+    result = cli_runner.invoke(
+        app,
+        ["export", "pack", "--level", "L2", "--date", DATE],
+    )
     assert result.exit_code == 0
     payload = yaml.safe_load(result.stdout)
     paths = {entry["path"] for entry in payload.get("files", [])}
@@ -228,7 +223,7 @@ def test_pack_requires_persona_core(
 ) -> None:
     _seed_profile(cli_workspace)
 
-    result = cli_runner.invoke(app, ["pack", "--level", "L1"])
+    result = cli_runner.invoke(app, ["export", "pack", "--level", "L1"])
     assert result.exit_code != 0
     assert "persona core" in result.output.lower()
 
@@ -242,7 +237,10 @@ def test_pack_missing_profile_errors_for_l2(
     _ensure_persona_core(cli_workspace, cli_runner)
     (cli_workspace / "profile" / "self_profile.yaml").unlink()
 
-    result = cli_runner.invoke(app, ["pack", "--level", "L2", "--date", DATE])
+    result = cli_runner.invoke(
+        app,
+        ["export", "pack", "--level", "L2", "--date", DATE],
+    )
     assert result.exit_code != 0
     assert "self_profile" in result.output.lower()
 
@@ -257,7 +255,7 @@ def test_pack_warns_when_persona_stale(
     existing = profile_path.read_text(encoding="utf-8")
     profile_path.write_text(existing + "\n# updated\n", encoding="utf-8")
 
-    result = cli_runner.invoke(app, ["pack", "--level", "L1"])
+    result = cli_runner.invoke(app, ["export", "pack", "--level", "L1"])
     assert result.exit_code == 0
     assert "persona core is stale" in result.output.lower()
 
@@ -273,7 +271,16 @@ def test_pack_trims_to_budget(
 
     result = cli_runner.invoke(
         app,
-        ["pack", "--level", "L2", "--date", DATE, "--max-tokens", "50"],
+        [
+            "export",
+            "pack",
+            "--level",
+            "L2",
+            "--date",
+            DATE,
+            "--max-tokens",
+            "50",
+        ],
     )
     assert result.exit_code == 0
     assert "trimmed" in result.output.lower()
@@ -287,11 +294,17 @@ def test_pack_output_file_idempotent(
     _ensure_persona_core(cli_workspace, cli_runner)
     out_path = cli_workspace / "derived" / "packs" / "l1.yaml"
 
-    first = cli_runner.invoke(app, ["pack", "--level", "L1", "--output", str(out_path)])
+    first = cli_runner.invoke(
+        app,
+        ["export", "pack", "--level", "L1", "--output", str(out_path)],
+    )
     assert first.exit_code == 0
     mtime = out_path.stat().st_mtime
 
-    second = cli_runner.invoke(app, ["pack", "--level", "L1", "--output", str(out_path)])
+    second = cli_runner.invoke(
+        app,
+        ["export", "pack", "--level", "L1", "--output", str(out_path)],
+    )
     assert second.exit_code == 0
     assert out_path.stat().st_mtime == mtime
 
@@ -304,7 +317,7 @@ def test_pack_dry_run_lists_files(
     _ensure_persona_core(cli_workspace, cli_runner)
     _seed_daily_artifacts(cli_workspace)
 
-    result = cli_runner.invoke(app, ["pack", "--level", "L2", "--dry-run"])
+    result = cli_runner.invoke(app, ["export", "pack", "--level", "L2", "--dry-run"])
     assert result.exit_code == 0
     assert "derived/persona/persona_core.yaml" in result.output
     assert "profile/self_profile.yaml" in result.output
@@ -319,9 +332,15 @@ def test_pack_deterministic_order(
     _ensure_persona_core(cli_workspace, cli_runner)
     _seed_daily_artifacts(cli_workspace)
 
-    first = cli_runner.invoke(app, ["pack", "--level", "L2", "--date", DATE])
+    first = cli_runner.invoke(
+        app,
+        ["export", "pack", "--level", "L2", "--date", DATE],
+    )
     assert first.exit_code == 0
-    second = cli_runner.invoke(app, ["pack", "--level", "L2", "--date", DATE])
+    second = cli_runner.invoke(
+        app,
+        ["export", "pack", "--level", "L2", "--date", DATE],
+    )
     assert second.exit_code == 0
     payload_first = yaml.safe_load(first.stdout)
     payload_second = yaml.safe_load(second.stdout)
@@ -338,7 +357,10 @@ def test_pack_json_format(
     _seed_profile(cli_workspace)
     _ensure_persona_core(cli_workspace, cli_runner)
 
-    result = cli_runner.invoke(app, ["pack", "--level", "L1", "--format", "json"])
+    result = cli_runner.invoke(
+        app,
+        ["export", "pack", "--level", "L1", "--format", "json"],
+    )
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
     assert payload["level"] == "L1"
@@ -354,7 +376,10 @@ def test_pack_l3_includes_advice_and_profile_suggestions(
     advice_path = _seed_advice(cli_workspace)
     suggestions_path = _seed_profile_suggestions(cli_workspace)
 
-    result = cli_runner.invoke(app, ["pack", "--level", "L3", "--date", DATE])
+    result = cli_runner.invoke(
+        app,
+        ["export", "pack", "--level", "L3", "--date", DATE],
+    )
     assert result.exit_code == 0
     payload = yaml.safe_load(result.stdout)
     files = [entry["path"] for entry in payload.get("files", [])]
@@ -376,7 +401,16 @@ def test_pack_l4_history_days_includes_prior_context(
 
     result = cli_runner.invoke(
         app,
-        ["pack", "--level", "L4", "--date", DATE, "--history-days", "1"],
+        [
+            "export",
+            "pack",
+            "--level",
+            "L4",
+            "--date",
+            DATE,
+            "--history-days",
+            "1",
+        ],
     )
     assert result.exit_code == 0
     payload = yaml.safe_load(result.stdout)
@@ -398,7 +432,10 @@ def test_pack_respects_token_estimator_config(
     _seed_config(cli_workspace, char_per_token=2.0)
     _ensure_persona_core(cli_workspace, cli_runner)
 
-    result = cli_runner.invoke(app, ["pack", "--level", "L2", "--date", DATE])
+    result = cli_runner.invoke(
+        app,
+        ["export", "pack", "--level", "L2", "--date", DATE],
+    )
     assert result.exit_code == 0
     payload = yaml.safe_load(result.stdout)
     files = payload.get("files", [])
@@ -431,6 +468,7 @@ def test_pack_l4_trimming_prioritizes_raw_journal_entries(
     result = cli_runner.invoke(
         app,
         [
+            "export",
             "pack",
             "--level",
             "L4",
@@ -462,7 +500,16 @@ def test_pack_l4_handles_missing_optional_artifacts(
 
     result = cli_runner.invoke(
         app,
-        ["pack", "--level", "L4", "--date", DATE, "--history-days", "2"],
+        [
+            "export",
+            "pack",
+            "--level",
+            "L4",
+            "--date",
+            DATE,
+            "--history-days",
+            "2",
+        ],
     )
     assert result.exit_code == 0
     payload = yaml.safe_load(result.stdout)
@@ -483,6 +530,7 @@ def test_pack_l4_supports_json_output(
     result = cli_runner.invoke(
         app,
         [
+            "export",
             "pack",
             "--level",
             "L4",
@@ -519,6 +567,7 @@ def test_pack_l4_dry_run_lists_expected_files(
     result = cli_runner.invoke(
         app,
         [
+            "export",
             "pack",
             "--level",
             "L4",

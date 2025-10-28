@@ -122,28 +122,22 @@ ollama_app = typer.Typer(help="Ollama helpers.")
 index_app = typer.Typer(help="Retrieval index utilities.")
 persona_app = typer.Typer(help="Persona utilities.")
 
-app.add_typer(profile_app, name="profile")
-app.add_typer(ollama_app, name="ollama")
-app.add_typer(index_app, name="index")
-app.add_typer(persona_app, name="persona")
-
 # Phase 1 scaffold: advanced operations namespace and placeholder groups.
 ops_app = typer.Typer(help="Advanced operations namespace.")
 ops_pipeline_app = typer.Typer(help="Pipeline tools (normalize, summarize, characterize).")
-ops_profile_app = typer.Typer(help="Profile management utilities.")
-ops_index_app = typer.Typer(help="Index maintenance utilities.")
-ops_persona_app = typer.Typer(help="Persona workflows.")
 ops_feedback_app = typer.Typer(help="Feedback processing utilities.")
 ops_system_app = typer.Typer(help="System diagnostics and doctor helpers.")
 ops_dev_app = typer.Typer(help="Developer fixtures and helpers.")
 
 ops_app.add_typer(ops_pipeline_app, name="pipeline")
-ops_app.add_typer(ops_profile_app, name="profile")
-ops_app.add_typer(ops_index_app, name="index")
-ops_app.add_typer(ops_persona_app, name="persona")
+ops_app.add_typer(profile_app, name="profile")
+ops_app.add_typer(index_app, name="index")
+ops_app.add_typer(persona_app, name="persona")
 ops_app.add_typer(ops_feedback_app, name="feedback")
 ops_app.add_typer(ops_system_app, name="system")
 ops_app.add_typer(ops_dev_app, name="dev")
+
+ops_system_app.add_typer(ollama_app, name="ollama")
 
 app.add_typer(ops_app, name="ops")
 
@@ -167,18 +161,6 @@ def status() -> None:
     """Temporary stub until status wiring lands."""
 
     typer.echo("status is not implemented yet; see refactor2 Phase 1.")
-    raise typer.Exit(code=2)
-
-
-@serve_app.command("chat", help="Placeholder for chat service daemon.")
-def serve_chat_placeholder() -> None:
-    typer.echo("serve chat is not implemented yet; see refactor2 Phase 1.")
-    raise typer.Exit(code=2)
-
-
-@export_app.command("pack", help="Placeholder for pack export flow.")
-def export_pack_placeholder() -> None:
-    typer.echo("export pack is not implemented yet; see refactor2 Phase 1.")
     raise typer.Exit(code=2)
 
 
@@ -293,7 +275,7 @@ def init(
     typer.echo(summary)
 
 
-@app.command()
+@ops_dev_app.command("new")
 def new(
     title: str | None = typer.Argument(
         None,
@@ -321,7 +303,7 @@ def new(
     run_new_command(title, tags, fake, seed)
 
 
-@app.command()
+@ops_pipeline_app.command("ingest")
 def ingest(
     sources: list[Path] = typer.Argument(
         ...,
@@ -357,7 +339,7 @@ def ingest(
     )
 
 
-@app.command()
+@ops_pipeline_app.command("normalize")
 def normalize(
     entry: Path = typer.Argument(
         ...,
@@ -410,7 +392,7 @@ def normalize(
     typer.echo(str(output_path))
 
 
-@app.command()
+@ops_pipeline_app.command("summarize")
 def summarize(
     date: str = typer.Option(..., "--date", "-d", help="Date (YYYY-MM-DD) to summarize."),
     timeout: float = typer.Option(
@@ -442,7 +424,7 @@ def summarize(
     typer.echo(str(summary_path))
 
 
-@app.command()
+@ops_pipeline_app.command("extract-facts")
 def facts(
     date: str = typer.Option(..., "--date", "-d", help="Date (YYYY-MM-DD) to analyze."),
     timeout: float = typer.Option(
@@ -531,7 +513,7 @@ def profile_apply(
     typer.echo(message)
 
 
-@app.command()
+@ops_pipeline_app.command("characterize")
 def characterize(
     date: str = typer.Option(..., "--date", "-d", help="Date (YYYY-MM-DD) to analyze."),
     timeout: float = typer.Option(
@@ -571,7 +553,7 @@ def characterize(
     typer.echo(str(batch_path))
 
 
-@app.command("review-updates")
+@ops_pipeline_app.command("review")
 def review_updates(
     file: Path | None = typer.Option(
         None,
@@ -1056,13 +1038,7 @@ def profile_status() -> None:
     run_profile_status()
 
 
-@app.command("profile-status")
-def profile_status_alias() -> None:
-    """Alias command for profile status (for backwards compatibility)."""
-    run_profile_status()
-
-
-@app.command("interview")
+@profile_app.command("interview")
 def interview(
     date: str = typer.Option(..., "--date", "-d", help="Date (YYYY-MM-DD) to review."),
 ) -> None:
@@ -1166,7 +1142,7 @@ def interview(
         typer.echo(f"- {question.text}")
 
 
-@app.command("pack")
+@export_app.command("pack")
 def pack(
     level: str = typer.Option("L2", "--level", "-l", help="Context depth (L1 or L2)."),
     date: str | None = typer.Option(
@@ -1215,8 +1191,8 @@ def index_rebuild(
     typer.echo(message)
 
 
-@index_app.command("tail")
-def index_tail(
+@index_app.command("update")
+def index_update(
     since: str | None = typer.Option(
         None,
         "--since",
@@ -1341,8 +1317,8 @@ def chat(
     )
 
 
-@app.command("chatd")
-def chatd(
+@serve_app.command("chat")
+def serve_chat(
     host: str = typer.Option("127.0.0.1", "--host", help="Host interface to bind."),
     port: int = typer.Option(8080, "--port", help="Port to listen on."),
 ) -> None:
@@ -1350,7 +1326,7 @@ def chatd(
     run_chatd(host, port)
 
 
-@app.command("feedback-apply")
+@ops_feedback_app.command("apply")
 def feedback_apply(
     archive: bool = typer.Option(
         True,
@@ -1378,7 +1354,7 @@ def feedback_apply(
     claims_path = root / "profile" / "claims.yaml"
     if not claims_path.exists():
         typer.secho(
-            "Claims file not found at profile/claims.yaml; run `aijournal profile status` first.",
+            "Claims file not found at profile/claims.yaml; run `aijournal ops profile status` first.",
             fg=typer.colors.RED,
             err=True,
         )

@@ -21,7 +21,7 @@ def _fake_mode_env(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def _ensure_persona(cli_runner: CliRunner) -> None:
-    persona_result = cli_runner.invoke(app, ["persona", "build"])
+    persona_result = cli_runner.invoke(app, ["ops", "persona", "build"])
     assert persona_result.exit_code == 0, persona_result.stdout
 
 
@@ -47,7 +47,7 @@ def _build_index(
             {"id": entry_id, "hash": f"hash-{entry_id}", "source_type": "journal"},
         ],
     )
-    rebuild = cli_runner.invoke(app, ["index", "rebuild"])
+    rebuild = cli_runner.invoke(app, ["ops", "index", "rebuild"])
     assert rebuild.exit_code == 0, rebuild.stdout
 
 

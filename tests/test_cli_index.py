@@ -40,7 +40,7 @@ def _build_index(
             {"id": entry_id, "hash": f"hash-{entry_id}", "source_type": source_type},
         ],
     )
-    rebuild = cli_runner.invoke(app, ["index", "rebuild"])
+    rebuild = cli_runner.invoke(app, ["ops", "index", "rebuild"])
     assert rebuild.exit_code == 0, rebuild.stdout
 
 
@@ -61,7 +61,16 @@ def test_index_search_returns_results(
 
     result = cli_runner.invoke(
         app,
-        ["index", "search", "deep work ideas", "--tags", "focus", "--top", "3"],
+        [
+            "ops",
+            "index",
+            "search",
+            "deep work ideas",
+            "--tags",
+            "focus",
+            "--top",
+            "3",
+        ],
     )
     assert result.exit_code == 0, result.stdout
     assert "Top" in result.stdout
@@ -84,7 +93,14 @@ def test_index_search_handles_no_matches(
 
     result = cli_runner.invoke(
         app,
-        ["index", "search", "nonexistent topic", "--tags", "missing-tag"],
+        [
+            "ops",
+            "index",
+            "search",
+            "nonexistent topic",
+            "--tags",
+            "missing-tag",
+        ],
     )
     assert result.exit_code == 0
     assert "No matches found." in result.stdout
@@ -95,6 +111,6 @@ def test_index_search_errors_when_index_missing(
     cli_runner: CliRunner,
 ) -> None:
     # workspace initialized but retrieval index not rebuilt
-    result = cli_runner.invoke(app, ["index", "search", "anything"])
+    result = cli_runner.invoke(app, ["ops", "index", "search", "anything"])
     assert result.exit_code != 0
     assert "Retrieval index not available" in (result.stderr or "")

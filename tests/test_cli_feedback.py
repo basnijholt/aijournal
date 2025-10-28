@@ -53,7 +53,7 @@ def test_feedback_apply_updates_claims_and_archives(
     batch_path = pending_dir / "feedback_focus.yaml"
     _write_feedback_batch(batch_path, claim_id="focus-claim", delta=-0.05, new_strength=0.45)
 
-    result = cli_runner.invoke(app, ["feedback-apply"])
+    result = cli_runner.invoke(app, ["ops", "feedback", "apply"])
     assert result.exit_code == 0, result.stdout
     output = result.stdout or result.output
     assert "Applied 1 feedback adjustment" in output
@@ -73,6 +73,6 @@ def test_feedback_apply_no_batches_exits_non_zero(
     pending_dir.mkdir(parents=True, exist_ok=True)
     _write_claims(cli_workspace / "profile" / "claims.yaml", claim_id="focus-claim", strength=0.5)
 
-    result = cli_runner.invoke(app, ["feedback-apply"])
+    result = cli_runner.invoke(app, ["ops", "feedback", "apply"])
     assert result.exit_code != 0
     assert "No feedback batches to apply." in (result.stderr or result.stdout or "")

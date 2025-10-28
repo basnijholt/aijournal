@@ -57,7 +57,7 @@ def test_normalize_creates_yaml(
     entry_path = cli_workspace / "data" / "journal" / "2025" / "02" / "03" / f"{EXPECTED_SLUG}.md"
     _write_markdown(entry_path)
 
-    result = cli_runner.invoke(app, ["normalize", str(entry_path)])
+    result = cli_runner.invoke(app, ["ops", "pipeline", "normalize", str(entry_path)])
 
     assert result.exit_code == 0, result.output
 
@@ -86,7 +86,7 @@ def test_normalize_is_idempotent(
     entry_path = cli_workspace / "data" / "journal" / "2025" / "02" / "03" / f"{EXPECTED_SLUG}.md"
     _write_markdown(entry_path)
 
-    first = cli_runner.invoke(app, ["normalize", str(entry_path)])
+    first = cli_runner.invoke(app, ["ops", "pipeline", "normalize", str(entry_path)])
     assert first.exit_code == 0
 
     normalized_path = (
@@ -94,7 +94,7 @@ def test_normalize_is_idempotent(
     )
     before_mtime = normalized_path.stat().st_mtime
 
-    second = cli_runner.invoke(app, ["normalize", str(entry_path)])
+    second = cli_runner.invoke(app, ["ops", "pipeline", "normalize", str(entry_path)])
     assert second.exit_code == 0
     after_mtime = normalized_path.stat().st_mtime
 
@@ -108,7 +108,7 @@ def test_normalize_converts_timezones_to_utc(
     entry_path = cli_workspace / "data" / "journal" / "2025" / "02" / "03" / f"{EXPECTED_SLUG}.md"
     _write_markdown(entry_path, created_at="2025-02-03T09:00:00-05:00")
 
-    result = cli_runner.invoke(app, ["normalize", str(entry_path)])
+    result = cli_runner.invoke(app, ["ops", "pipeline", "normalize", str(entry_path)])
 
     assert result.exit_code == 0, result.output
 

@@ -1,4 +1,4 @@
-"""Tests for `aijournal profile status` (command not yet implemented)."""
+"""Tests for `aijournal ops profile status` (command not yet implemented)."""
 
 from __future__ import annotations
 
@@ -17,7 +17,8 @@ FIXED_NOW = datetime(2025, 2, 1, tzinfo=UTC)
 
 
 def _has_profile_status() -> bool:
-    return any(cmd.name == "profile-status" for cmd in app.registered_commands)
+    result = CliRunner().invoke(app, ["ops", "profile", "status", "--help"])
+    return result.exit_code == 0
 
 
 @pytest.fixture(autouse=True)
@@ -101,7 +102,8 @@ impact_weights:
 
 
 def _invoke(args: list[str], cli_runner: CliRunner) -> str:
-    result = cli_runner.invoke(app, args)
+    path = ["ops", "profile", *args[1:]] if args and args[0] == "profile" else args
+    result = cli_runner.invoke(app, path)
     assert result.exit_code == 0, result.output
     return result.output
 
@@ -129,7 +131,7 @@ def test_profile_status_handles_missing_files(
         if target.exists():
             target.unlink()
 
-    result = cli_runner.invoke(app, ["profile", "status"])
+    result = cli_runner.invoke(app, ["ops", "profile", "status"])
 
     assert result.exit_code == 0
     assert "No profile data" in result.output

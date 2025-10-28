@@ -62,7 +62,7 @@ def test_summarize_generates_summary(
 ) -> None:
     _write_normalized(cli_workspace)
 
-    result = cli_runner.invoke(app, ["summarize", "--date", DATE])
+    result = cli_runner.invoke(app, ["ops", "pipeline", "summarize", "--date", DATE])
 
     assert result.exit_code == 0, result.stdout
 
@@ -86,13 +86,13 @@ def test_summarize_is_idempotent(
 ) -> None:
     _write_normalized(cli_workspace)
 
-    first = cli_runner.invoke(app, ["summarize", "--date", DATE])
+    first = cli_runner.invoke(app, ["ops", "pipeline", "summarize", "--date", DATE])
     assert first.exit_code == 0
 
     summary_path = cli_workspace / "derived" / "summaries" / f"{DATE}.yaml"
     before = summary_path.stat().st_mtime
 
-    second = cli_runner.invoke(app, ["summarize", "--date", DATE])
+    second = cli_runner.invoke(app, ["ops", "pipeline", "summarize", "--date", DATE])
     assert second.exit_code == 0
     after = summary_path.stat().st_mtime
 
@@ -105,7 +105,10 @@ def test_summarize_progress_flag(
 ) -> None:
     _write_normalized(cli_workspace)
 
-    result = cli_runner.invoke(app, ["summarize", "--date", DATE, "--progress"])
+    result = cli_runner.invoke(
+        app,
+        ["ops", "pipeline", "summarize", "--date", DATE, "--progress"],
+    )
 
     assert result.exit_code == 0, result.stdout
     assert "Summarizing entries for" in result.stdout
@@ -118,7 +121,10 @@ def test_summarize_rejects_zero_timeout(
 ) -> None:
     _write_normalized(cli_workspace)
 
-    result = cli_runner.invoke(app, ["summarize", "--date", DATE, "--timeout", "0"])
+    result = cli_runner.invoke(
+        app,
+        ["ops", "pipeline", "summarize", "--date", DATE, "--timeout", "0"],
+    )
 
     assert result.exit_code != 0
     assert "--timeout must be positive" in result.stdout
