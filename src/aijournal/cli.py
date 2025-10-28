@@ -26,7 +26,6 @@ from pydantic import BaseModel, ValidationError
 from pydantic_ai import Agent
 
 from aijournal.fakes import (
-    fake_advise,
     fake_profile_suggestions,
 )
 from aijournal.ingest_agent import (
@@ -76,6 +75,7 @@ from aijournal.models import (
     SimpleSuggestion,
     SummaryMeta,
 )
+from aijournal.pipelines import advise as advise_pipeline
 from aijournal.pipelines import characterize as characterize_pipeline
 from aijournal.pipelines import facts as facts_pipeline
 from aijournal.pipelines import normalization
@@ -1329,16 +1329,6 @@ def _advice_payload(
     rankings: Sequence[InterviewTarget],
     pending_prompts: Sequence[str],
 ) -> AdviceCard:
-    if _use_fake_llm():
-        return fake_advise(
-            question,
-            profile,
-            claims,
-            advice_identifier=_advice_identifier,
-            rankings=rankings,
-            pending_prompts=pending_prompts,
-        )
-
     rankings_payload = [
         {
             "path": target.path,
@@ -1351,24 +1341,37 @@ def _advice_payload(
         for target in rankings[:8]
     ]
 
-    response = _invoke_structured_llm(
-        "prompts/advise.md",
-        {
-            "date": time_utils.created_date(time_utils.format_timestamp(time_utils.now())),
-            "question": question,
-            "profile_json": _json_block(profile),
-            "claims_json": _json_block(
-                {"claims": [claim.model_dump(mode="python") for claim in claims]}
+    def request_advice() -> AdviceLLMResponse:
+        return cast(
+            AdviceLLMResponse,
+            _invoke_structured_llm(
+                "prompts/advise.md",
+                {
+                    "date": time_utils.created_date(time_utils.format_timestamp(time_utils.now())),
+                    "question": question,
+                    "profile_json": _json_block(profile),
+                    "claims_json": _json_block(
+                        {"claims": [claim.model_dump(mode="python") for claim in claims]}
+                    ),
+                    "rankings_json": _json_block(rankings_payload),
+                    "pending_prompts_json": _json_block(list(pending_prompts)),
+                },
+                response_model=AdviceLLMResponse,
+                agent_name="aijournal-advise",
+                config=config,
             ),
-            "rankings_json": _json_block(rankings_payload),
-            "pending_prompts_json": _json_block(list(pending_prompts)),
-        },
-        response_model=AdviceLLMResponse,
-        agent_name="aijournal-advise",
-        config=config,
-    )
+        )
 
-    return AdviceCard.model_validate(response.model_dump(mode="python"))
+    return advise_pipeline.generate_advice(
+        question,
+        profile,
+        claims,
+        use_fake_llm=_use_fake_llm(),
+        advice_identifier=_advice_identifier,
+        request_advice=request_advice,
+        rankings=rankings,
+        pending_prompts=pending_prompts,
+    )
 
 
 @app.command()

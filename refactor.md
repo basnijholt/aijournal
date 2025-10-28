@@ -123,7 +123,7 @@ _For each pipeline: (1) add the new module + unit test, commit; (2) update the C
 21. [x] Add `pipelines/characterize.py`, update CLI/tests.  
     → `uv run pytest`
 
-22. Add `pipelines/advise.py`, update CLI/tests.  
+22. [x] Add `pipelines/advise.py`, update CLI/tests.  
     → `uv run pytest`
 
 23. Add `pipelines/index.py`, update CLI/tests.  
