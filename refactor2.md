@@ -292,9 +292,9 @@ Extend current FastAPI server with **capture**:
 
 ### Phase 3 — `capture` v2 (Derivation steps per date)
 
-12. [ ] For dates touched by this run, call: `summarize`, `ops pipeline extract-facts`, `ops profile suggest`, `ops profile apply --yes` (if `--apply-profile=auto`), `ops pipeline characterize`, `ops pipeline review --apply` (limit to this run's batches).
-13. [ ] Implement `--retries`, `--progress` passthroughs to structured-output steps.
-14. [ ] Log derived artifacts updated; update telemetry counters.
+12. [x] For dates touched by this run, call: `summarize`, `ops pipeline extract-facts`, `ops profile suggest`, `ops profile apply --yes` (if `--apply-profile=auto`), `ops pipeline characterize`, `ops pipeline review --apply` (limit to this run's batches).
+13. [x] Implement `--retries`, `--progress` (with `rich`) passthroughs to structured-output steps.
+14. [x] Log derived artifacts updated; update telemetry counters.
 
 > Commit: `capture: derivation pipeline (summarize, facts, suggest/apply, characterize, review)`
 
