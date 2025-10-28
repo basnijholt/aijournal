@@ -1091,9 +1091,7 @@ documentation parity, and live-mode polish moving without blocking on LLM availa
          - Iterate on `extract_facts.md`, `profile_suggest.md`, and `characterize.md` so the model produces non-empty facts/suggestions on the seeded journal data.  
          - Add regression scripts (no fake mode) that run these prompts against `/tmp/aijournal_live_run_*` and save exemplar outputs.
       3. **chatd shutdown fix.** ✅ _2025-10-29: Retriever now uses a thread-safe SQLite connection guard (`check_same_thread=False` + lock) so chatd exits cleanly; regression covered by `tests/test_retriever.py::test_retriever_close_from_different_thread` and manual curl check._
-      4. **Chat feedback improvements.**  
-         - Tune the chat prompt so responses include claim citations when evidence exists, ensuring thumbs-up/down actually adjusts strengths.  
-         - Capture telemetry when no citations are found and surface guidance to the user.
+      4. **Chat feedback improvements.** ✅ _2025-10-29: Chat prompt now enforces `[claim:<id>]` markers and CLI telemetry records detected claim markers, warning when none are present so feedback adjustments only trigger when claims are cited._
       5. **Live runbook + model checks.**  
          - Detect missing models before command execution; prompt the operator to pull or switch to a known-good model (currently `gpt-oss:20b @ 192.168.1.143`).  
          - Document the full live rehearsal procedure, including how to rerun the command checklist and update the scoreboard.
