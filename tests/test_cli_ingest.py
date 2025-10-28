@@ -13,10 +13,6 @@ from aijournal.cli import app
 if TYPE_CHECKING:
     from pathlib import Path
 
-    import pytest
-
-runner = CliRunner()
-
 
 def _write_blog_post(tmp_path: Path, slug: str = "agentic-coding") -> Path:
     post = tmp_path / "sources" / f"{slug}.md"
@@ -47,18 +43,16 @@ def _read_yaml(path: Path) -> dict[str, object]:
 
 
 def test_ingest_creates_normalized_and_manifest(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    cli_workspace: Path,
+    cli_runner: CliRunner,
 ) -> None:
-    monkeypatch.chdir(tmp_path)
-    runner.invoke(app, ["init"])  # ensure config/profile scaffolding
-
-    post = _write_blog_post(tmp_path)
-    env = {"AIJOURNAL_FAKE_OLLAMA": "1"}
-    result = runner.invoke(app, ["ingest", str(post)], env=env)
+    post = _write_blog_post(cli_workspace)
+    result = cli_runner.invoke(app, ["ingest", str(post)])
 
     assert result.exit_code == 0, result.stdout
-    normalized = tmp_path / "data" / "normalized" / "2025-08-25" / "2025-08-25-agentic-coding.yaml"
+    normalized = (
+        cli_workspace / "data" / "normalized" / "2025-08-25" / "2025-08-25-agentic-coding.yaml"
+    )
     assert normalized.exists()
     normalized_data = _read_yaml(normalized)
     assert normalized_data["title"] == "Agentic Coding"
@@ -66,29 +60,28 @@ def test_ingest_creates_normalized_and_manifest(
     assert normalized_data["source_type"] == "external"
 
     digest = sha256(post.read_bytes()).hexdigest()
-    snapshot = tmp_path / "data" / "raw" / f"{digest}.md"
+    snapshot = cli_workspace / "data" / "raw" / f"{digest}.md"
     assert snapshot.exists()
 
-    manifest_path = tmp_path / "data" / "manifest" / "ingested.yaml"
+    manifest_path = cli_workspace / "data" / "manifest" / "ingested.yaml"
     manifest = _read_yaml(manifest_path)
     assert isinstance(manifest, list)
     assert manifest[0]["hash"] == digest
     assert manifest[0]["normalized"].endswith("2025-08-25-agentic-coding.yaml")
 
 
-def test_ingest_skips_duplicate_hash(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.chdir(tmp_path)
-    runner.invoke(app, ["init"])
-
-    post = _write_blog_post(tmp_path)
-    env = {"AIJOURNAL_FAKE_OLLAMA": "1"}
-    first = runner.invoke(app, ["ingest", str(post)], env=env)
+def test_ingest_skips_duplicate_hash(
+    cli_workspace: Path,
+    cli_runner: CliRunner,
+) -> None:
+    post = _write_blog_post(cli_workspace)
+    first = cli_runner.invoke(app, ["ingest", str(post)])
     assert first.exit_code == 0
 
-    second = runner.invoke(app, ["ingest", str(post)], env=env)
+    second = cli_runner.invoke(app, ["ingest", str(post)])
     assert second.exit_code == 0
     assert "already ingested" in second.stdout
 
-    manifest_path = tmp_path / "data" / "manifest" / "ingested.yaml"
+    manifest_path = cli_workspace / "data" / "manifest" / "ingested.yaml"
     manifest: list[dict[str, object]] = _read_yaml(manifest_path)
     assert len(manifest) == 1

@@ -7,8 +7,6 @@ from typer.testing import CliRunner
 
 from aijournal.cli import app
 
-runner = CliRunner()
-
 
 def _has_ollama_health_command() -> bool:
     return any(cmd.name == "ollama" for cmd in app.registered_commands)
@@ -27,18 +25,18 @@ def fake_ollama(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("HTTPS_PROXY", raising=False)
 
 
-def test_ollama_health_reports_models_and_default() -> None:
-    result = runner.invoke(app, ["ollama", "health"])
+def test_ollama_health_reports_models_and_default(cli_runner: CliRunner) -> None:
+    result = cli_runner.invoke(app, ["ollama", "health"])
     assert result.exit_code == 0, result.output
     normalized = result.output.lower()
     assert "models" in normalized
     assert "default" in normalized
 
 
-def test_ollama_health_is_idempotent() -> None:
-    first = runner.invoke(app, ["ollama", "health"])
+def test_ollama_health_is_idempotent(cli_runner: CliRunner) -> None:
+    first = cli_runner.invoke(app, ["ollama", "health"])
     assert first.exit_code == 0, first.output
 
-    second = runner.invoke(app, ["ollama", "health"])
+    second = cli_runner.invoke(app, ["ollama", "health"])
     assert second.exit_code == 0, second.output
     assert first.output == second.output

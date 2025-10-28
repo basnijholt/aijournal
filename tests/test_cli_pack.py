@@ -16,7 +16,6 @@ from tests.helpers import make_claim_atom
 if TYPE_CHECKING:
     from pathlib import Path
 
-runner = CliRunner()
 DATE = "2025-02-03"
 ENTRY_ID = "2025-02-03-sync-notes"
 PRIOR_DATE = "2025-02-02"
@@ -65,8 +64,8 @@ traits:
     )
 
 
-def _ensure_persona_core(tmp_path: Path) -> Path:
-    result = runner.invoke(app, ["persona", "build"])
+def _ensure_persona_core(tmp_path: Path, cli_runner: CliRunner) -> Path:
+    result = cli_runner.invoke(app, ["persona", "build"])
     assert result.exit_code == 0, result.output
     persona_path = tmp_path / "derived" / "persona" / "persona_core.yaml"
     assert persona_path.exists(), "persona_core.yaml should be created"
@@ -187,11 +186,14 @@ def _seed_journal_entry(
     return journal_path
 
 
-def test_pack_l1_uses_persona_core(cli_workspace: Path) -> None:
+def test_pack_l1_uses_persona_core(
+    cli_workspace: Path,
+    cli_runner: CliRunner,
+) -> None:
     _seed_profile(cli_workspace)
-    persona_path = _ensure_persona_core(cli_workspace)
+    persona_path = _ensure_persona_core(cli_workspace, cli_runner)
 
-    result = runner.invoke(app, ["pack", "--level", "L1", "--format", "yaml"])
+    result = cli_runner.invoke(app, ["pack", "--level", "L1", "--format", "yaml"])
     assert result.exit_code == 0, result.output
     payload = yaml.safe_load(result.stdout)
     files = payload.get("files", [])
@@ -199,13 +201,16 @@ def test_pack_l1_uses_persona_core(cli_workspace: Path) -> None:
     assert files[0]["path"] == str(persona_path.relative_to(cli_workspace))
 
 
-def test_pack_l2_includes_daily_artifacts(cli_workspace: Path) -> None:
+def test_pack_l2_includes_daily_artifacts(
+    cli_workspace: Path,
+    cli_runner: CliRunner,
+) -> None:
     _seed_profile(cli_workspace)
-    _ensure_persona_core(cli_workspace)
+    _ensure_persona_core(cli_workspace, cli_runner)
     entry_slug = _seed_daily_artifacts(cli_workspace)
     _seed_daily_artifacts(cli_workspace, day=PRIOR_DATE, entry_id=PRIOR_ENTRY_ID)
 
-    result = runner.invoke(app, ["pack", "--level", "L2", "--date", DATE])
+    result = cli_runner.invoke(app, ["pack", "--level", "L2", "--date", DATE])
     assert result.exit_code == 0
     payload = yaml.safe_load(result.stdout)
     paths = {entry["path"] for entry in payload.get("files", [])}
@@ -219,46 +224,54 @@ def test_pack_l2_includes_daily_artifacts(cli_workspace: Path) -> None:
 
 def test_pack_requires_persona_core(
     cli_workspace: Path,
+    cli_runner: CliRunner,
 ) -> None:
     _seed_profile(cli_workspace)
 
-    result = runner.invoke(app, ["pack", "--level", "L1"])
+    result = cli_runner.invoke(app, ["pack", "--level", "L1"])
     assert result.exit_code != 0
     assert "persona core" in result.output.lower()
 
 
 def test_pack_missing_profile_errors_for_l2(
     cli_workspace: Path,
+    cli_runner: CliRunner,
 ) -> None:
     _seed_profile(cli_workspace)
     _seed_daily_artifacts(cli_workspace)
-    _ensure_persona_core(cli_workspace)
+    _ensure_persona_core(cli_workspace, cli_runner)
     (cli_workspace / "profile" / "self_profile.yaml").unlink()
 
-    result = runner.invoke(app, ["pack", "--level", "L2", "--date", DATE])
+    result = cli_runner.invoke(app, ["pack", "--level", "L2", "--date", DATE])
     assert result.exit_code != 0
     assert "self_profile" in result.output.lower()
 
 
-def test_pack_warns_when_persona_stale(cli_workspace: Path) -> None:
+def test_pack_warns_when_persona_stale(
+    cli_workspace: Path,
+    cli_runner: CliRunner,
+) -> None:
     _seed_profile(cli_workspace)
-    _ensure_persona_core(cli_workspace)
+    _ensure_persona_core(cli_workspace, cli_runner)
     profile_path = cli_workspace / "profile" / "self_profile.yaml"
     existing = profile_path.read_text(encoding="utf-8")
     profile_path.write_text(existing + "\n# updated\n", encoding="utf-8")
 
-    result = runner.invoke(app, ["pack", "--level", "L1"])
+    result = cli_runner.invoke(app, ["pack", "--level", "L1"])
     assert result.exit_code == 0
     assert "persona core is stale" in result.output.lower()
 
 
-def test_pack_trims_to_budget(cli_workspace: Path) -> None:
+def test_pack_trims_to_budget(
+    cli_workspace: Path,
+    cli_runner: CliRunner,
+) -> None:
     _seed_profile(cli_workspace)
-    _ensure_persona_core(cli_workspace)
+    _ensure_persona_core(cli_workspace, cli_runner)
     big_text = "sentence " * 500
     _write(cli_workspace / "data" / "normalized" / DATE / "big.yaml", big_text)
 
-    result = runner.invoke(
+    result = cli_runner.invoke(
         app,
         ["pack", "--level", "L2", "--date", DATE, "--max-tokens", "50"],
     )
@@ -266,49 +279,61 @@ def test_pack_trims_to_budget(cli_workspace: Path) -> None:
     assert "trimmed" in result.output.lower()
 
 
-def test_pack_output_file_idempotent(cli_workspace: Path) -> None:
+def test_pack_output_file_idempotent(
+    cli_workspace: Path,
+    cli_runner: CliRunner,
+) -> None:
     _seed_profile(cli_workspace)
-    _ensure_persona_core(cli_workspace)
+    _ensure_persona_core(cli_workspace, cli_runner)
     out_path = cli_workspace / "derived" / "packs" / "l1.yaml"
 
-    first = runner.invoke(app, ["pack", "--level", "L1", "--output", str(out_path)])
+    first = cli_runner.invoke(app, ["pack", "--level", "L1", "--output", str(out_path)])
     assert first.exit_code == 0
     mtime = out_path.stat().st_mtime
 
-    second = runner.invoke(app, ["pack", "--level", "L1", "--output", str(out_path)])
+    second = cli_runner.invoke(app, ["pack", "--level", "L1", "--output", str(out_path)])
     assert second.exit_code == 0
     assert out_path.stat().st_mtime == mtime
 
 
-def test_pack_dry_run_lists_files(cli_workspace: Path) -> None:
+def test_pack_dry_run_lists_files(
+    cli_workspace: Path,
+    cli_runner: CliRunner,
+) -> None:
     _seed_profile(cli_workspace)
-    _ensure_persona_core(cli_workspace)
+    _ensure_persona_core(cli_workspace, cli_runner)
     _seed_daily_artifacts(cli_workspace)
 
-    result = runner.invoke(app, ["pack", "--level", "L2", "--dry-run"])
+    result = cli_runner.invoke(app, ["pack", "--level", "L2", "--dry-run"])
     assert result.exit_code == 0
     assert "derived/persona/persona_core.yaml" in result.output
     assert "profile/self_profile.yaml" in result.output
     assert "normalized" in result.output
 
 
-def test_pack_deterministic_order(cli_workspace: Path) -> None:
+def test_pack_deterministic_order(
+    cli_workspace: Path,
+    cli_runner: CliRunner,
+) -> None:
     _seed_profile(cli_workspace)
-    _ensure_persona_core(cli_workspace)
+    _ensure_persona_core(cli_workspace, cli_runner)
     _seed_daily_artifacts(cli_workspace)
 
-    first = runner.invoke(app, ["pack", "--level", "L2", "--date", DATE])
+    first = cli_runner.invoke(app, ["pack", "--level", "L2", "--date", DATE])
     assert first.exit_code == 0
-    second = runner.invoke(app, ["pack", "--level", "L2", "--date", DATE])
+    second = cli_runner.invoke(app, ["pack", "--level", "L2", "--date", DATE])
     assert second.exit_code == 0
     assert first.output == second.output
 
 
-def test_pack_json_format(cli_workspace: Path) -> None:
+def test_pack_json_format(
+    cli_workspace: Path,
+    cli_runner: CliRunner,
+) -> None:
     _seed_profile(cli_workspace)
-    _ensure_persona_core(cli_workspace)
+    _ensure_persona_core(cli_workspace, cli_runner)
 
-    result = runner.invoke(app, ["pack", "--level", "L1", "--format", "json"])
+    result = cli_runner.invoke(app, ["pack", "--level", "L1", "--format", "json"])
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
     assert payload["level"] == "L1"
@@ -316,14 +341,15 @@ def test_pack_json_format(cli_workspace: Path) -> None:
 
 def test_pack_l3_includes_advice_and_profile_suggestions(
     cli_workspace: Path,
+    cli_runner: CliRunner,
 ) -> None:
     _seed_profile(cli_workspace)
-    _ensure_persona_core(cli_workspace)
+    _ensure_persona_core(cli_workspace, cli_runner)
     _seed_daily_artifacts(cli_workspace)
     advice_path = _seed_advice(cli_workspace)
     suggestions_path = _seed_profile_suggestions(cli_workspace)
 
-    result = runner.invoke(app, ["pack", "--level", "L3", "--date", DATE])
+    result = cli_runner.invoke(app, ["pack", "--level", "L3", "--date", DATE])
     assert result.exit_code == 0
     payload = yaml.safe_load(result.stdout)
     files = [entry["path"] for entry in payload.get("files", [])]
@@ -333,16 +359,17 @@ def test_pack_l3_includes_advice_and_profile_suggestions(
 
 def test_pack_l4_history_days_includes_prior_context(
     cli_workspace: Path,
+    cli_runner: CliRunner,
 ) -> None:
     _seed_profile(cli_workspace)
-    _ensure_persona_core(cli_workspace)
+    _ensure_persona_core(cli_workspace, cli_runner)
     _seed_daily_artifacts(cli_workspace)
     prior_entry = _seed_daily_artifacts(cli_workspace, day=PRIOR_DATE, entry_id=PRIOR_ENTRY_ID)
     raw_path = _seed_journal_entry(cli_workspace, PRIOR_DATE, PRIOR_ENTRY_ID)
     config_path = _seed_config(cli_workspace)
     prompt_path = _seed_prompt(cli_workspace)
 
-    result = runner.invoke(
+    result = cli_runner.invoke(
         app,
         ["pack", "--level", "L4", "--date", DATE, "--history-days", "1"],
     )
@@ -359,13 +386,14 @@ def test_pack_l4_history_days_includes_prior_context(
 
 def test_pack_respects_token_estimator_config(
     cli_workspace: Path,
+    cli_runner: CliRunner,
 ) -> None:
     _seed_profile(cli_workspace)
     _seed_daily_artifacts(cli_workspace)
     _seed_config(cli_workspace, char_per_token=2.0)
-    _ensure_persona_core(cli_workspace)
+    _ensure_persona_core(cli_workspace, cli_runner)
 
-    result = runner.invoke(app, ["pack", "--level", "L2", "--date", DATE])
+    result = cli_runner.invoke(app, ["pack", "--level", "L2", "--date", DATE])
     assert result.exit_code == 0
     payload = yaml.safe_load(result.stdout)
     files = payload.get("files", [])
@@ -381,9 +409,10 @@ def test_pack_respects_token_estimator_config(
 
 def test_pack_l4_trimming_prioritizes_raw_journal_entries(
     cli_workspace: Path,
+    cli_runner: CliRunner,
 ) -> None:
     _seed_profile(cli_workspace)
-    _ensure_persona_core(cli_workspace)
+    _ensure_persona_core(cli_workspace, cli_runner)
     _seed_daily_artifacts(cli_workspace)
     _seed_config(cli_workspace)
     _seed_prompt(cli_workspace)
@@ -394,7 +423,7 @@ def test_pack_l4_trimming_prioritizes_raw_journal_entries(
         body=" ".join(["raw"] * 800),
     )
 
-    result = runner.invoke(
+    result = cli_runner.invoke(
         app,
         [
             "pack",
@@ -420,12 +449,13 @@ def test_pack_l4_trimming_prioritizes_raw_journal_entries(
 
 def test_pack_l4_handles_missing_optional_artifacts(
     cli_workspace: Path,
+    cli_runner: CliRunner,
 ) -> None:
     _seed_profile(cli_workspace)
-    _ensure_persona_core(cli_workspace)
+    _ensure_persona_core(cli_workspace, cli_runner)
     _seed_daily_artifacts(cli_workspace)
 
-    result = runner.invoke(
+    result = cli_runner.invoke(
         app,
         ["pack", "--level", "L4", "--date", DATE, "--history-days", "2"],
     )
@@ -435,14 +465,17 @@ def test_pack_l4_handles_missing_optional_artifacts(
     assert all("profile_suggestions" not in path for path in paths)
 
 
-def test_pack_l4_supports_json_output(cli_workspace: Path) -> None:
+def test_pack_l4_supports_json_output(
+    cli_workspace: Path,
+    cli_runner: CliRunner,
+) -> None:
     normalized_entry = _seed_daily_artifacts(cli_workspace)
     _seed_profile(cli_workspace)
-    _ensure_persona_core(cli_workspace)
+    _ensure_persona_core(cli_workspace, cli_runner)
     _seed_config(cli_workspace)
     _seed_prompt(cli_workspace, "history_context.md")
 
-    result = runner.invoke(
+    result = cli_runner.invoke(
         app,
         [
             "pack",
@@ -466,9 +499,10 @@ def test_pack_l4_supports_json_output(cli_workspace: Path) -> None:
 
 def test_pack_l4_dry_run_lists_expected_files(
     cli_workspace: Path,
+    cli_runner: CliRunner,
 ) -> None:
     _seed_profile(cli_workspace)
-    _ensure_persona_core(cli_workspace)
+    _ensure_persona_core(cli_workspace, cli_runner)
     _seed_daily_artifacts(cli_workspace)
     _seed_daily_artifacts(cli_workspace, day=PRIOR_DATE, entry_id=PRIOR_ENTRY_ID)
     _seed_advice(cli_workspace)
@@ -477,7 +511,7 @@ def test_pack_l4_dry_run_lists_expected_files(
     _seed_prompt(cli_workspace)
     _seed_journal_entry(cli_workspace, DATE, "focus-journal")
 
-    result = runner.invoke(
+    result = cli_runner.invoke(
         app,
         [
             "pack",
