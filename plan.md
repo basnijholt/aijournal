@@ -83,3 +83,40 @@ This builds on items 1 & 2 but isn’t strictly required once automatic detectio
 - Adjust `aijournal init` to create `workspace/` (or the configured root) and lay out subdirectories there.
 - Capture/backfill: detect legacy layout (existing `/data/` at root) and either (a) continue using it via compatibility mode, or (b) prompt the user / run migration.
 - Update CLI commands/tests to use the helper instead of hard-coded `Path("data")` references.
+
+---
+
+## 5. Capture Refactor Follow-Up (Six Commit Sequence)
+
+**Absolutely critical process reminder:** *Each* to-do below must be completed in its own commit, and the test suite **must** be green before and after every commit. No exceptions. Call this out in PR notes so the next agent doesn’t forget.
+
+### To-Do A — Create `capture/` package scaffold
+- Move stage-orchestration helpers out of `services/capture.py` into `src/aijournal/services/capture/__init__.py` (the orchestrator) plus `capture/stages/` submodules (`stage0_persist.py`, etc.).
+- Keep the orchestrator thin: import stage functions and pass the typed output objects around.
+- Update imports/tests accordingly. Commit once tests pass.
+
+### To-Do B — Shared helper module (`capture/utils.py`)
+- Lift reusable utilities (manifest handling, ingest fallback, `_relative_path`, etc.) into `capture/utils.py` to avoid duplication across stage modules.
+- Ensure both the orchestrator and the stage modules reference the shared helpers.
+- Run tests → commit.
+
+### To-Do C — Normalize skipped-stage handling
+- Introduce a helper (e.g., `record_skipped_stage(state, stage_id, name, reason)`) that wraps the noop result + duration bookkeeping.
+- Replace the repeated skip branches across stages with the helper for consistency.
+- Tests must stay green → commit.
+
+### To-Do D — Centralize telemetry emission
+- Create a small telemetry helper (`emit_stage_event(log_event, stage_name, op_result)`) in `capture/utils.py` (or similar) and use it for index/persona/pack done events.
+- Remove direct `log_event` payload duplication in stage code.
+- Verify tests → commit.
+
+### To-Do E — Focused stage tests
+- Add unit-level tests per stage helper (mocking external commands) so `tests/services/test_capture.py` is no longer the only coverage point.
+- Ensure new tests live under `tests/services/capture/` with clear naming.
+- Run full test suite → commit.
+
+### To-Do F — Trim `CaptureState`
+- After helpers return typed outputs, remove redundant fields from `CaptureState` (e.g., `index_rebuilt_flag`, `changed_dates` if no longer needed) and pass data through return values instead.
+- Re-run tests, confirm orchestrator still composes, and **commit**.
+
+> Remember: six commits, tests green every time. Document progress in this file (append short notes under each bullet) as tasks are completed.
