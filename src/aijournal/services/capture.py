@@ -212,6 +212,16 @@ class CaptureState:
         self.artifacts_changed[key] = self.artifacts_changed.get(key, 0) + 1
 
 
+class CharacterizeStageOutputs(NamedTuple):
+    result: OperationResult
+    review_result: OperationResult | None
+    duration_ms: float
+    new_batches: list[str]
+    applied_batches: list[str]
+    pending_batches: list[str]
+    review_candidates: list[str]
+
+
 def _record_stage(
     *,
     stage_results: list[StageResult],
@@ -1452,15 +1462,13 @@ def run_capture(
         )
 
     if changed_dates and stage_enabled(5):
-        (
-            characterize_result,
-            review_result,
-            characterize_duration,
-            characterize_paths,
-            review_applied,
-            review_pending,
-            review_candidates_generated,
-        ) = _run_characterize_stage_5(changed_dates, inputs, root)
+        characterize_outputs = _run_characterize_stage_5(changed_dates, inputs, root)
+        characterize_result = characterize_outputs.result
+        review_result = characterize_outputs.review_result
+        characterize_duration = characterize_outputs.duration_ms
+        characterize_paths = characterize_outputs.new_batches
+        review_applied = characterize_outputs.applied_batches
+        review_candidates_generated = characterize_outputs.review_candidates
         for path in characterize_paths:
             artifacts_changed["characterize"] = artifacts_changed.get("characterize", 0) + 1
         review_candidates.extend(review_candidates_generated)
@@ -2041,15 +2049,7 @@ def _run_characterize_stage_5(
     changed_dates: list[str],
     inputs: CaptureInput,
     root: Path,
-) -> tuple[
-    OperationResult,
-    OperationResult | None,
-    float,
-    list[str],
-    list[str],
-    list[str],
-    list[str],
-]:
+) -> CharacterizeStageOutputs:
     """Characterize entries and optionally apply review batches."""
 
     stage_start = perf_counter()
@@ -2171,14 +2171,14 @@ def _run_characterize_stage_5(
                 details=review_details,
             )
 
-    return (
-        characterize_result,
-        review_result,
-        duration_ms,
-        characterize_paths,
-        review_applied,
-        review_pending,
-        review_candidates,
+    return CharacterizeStageOutputs(
+        result=characterize_result,
+        review_result=review_result,
+        duration_ms=duration_ms,
+        new_batches=characterize_paths,
+        applied_batches=review_applied,
+        pending_batches=review_pending,
+        review_candidates=review_candidates,
     )
 
 
