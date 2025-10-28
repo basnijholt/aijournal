@@ -53,7 +53,10 @@ def _manifest_index(entries: Iterable[ManifestEntry]) -> dict[str, ManifestEntry
 
 
 def _relative_path(path: Path, root: Path) -> str:
-    return str(path.relative_to(root))
+    try:
+        return str(path.relative_to(root))
+    except ValueError:
+        return str(path)
 
 
 def _write_markdown_entry(path: Path, frontmatter: dict[str, object], body: str) -> None:
@@ -70,6 +73,23 @@ def _write_markdown_entry(path: Path, frontmatter: dict[str, object], body: str)
 def _write_yaml(path: Path, payload: dict[str, object]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
+
+
+def _load_existing_yaml(path: Path) -> dict[str, object] | None:
+    if not path.exists():
+        return None
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        return None
+    return data
+
+
+def _write_yaml_if_changed(path: Path, payload: dict[str, object]) -> bool:
+    existing = _load_existing_yaml(path)
+    if existing == payload:
+        return False
+    _write_yaml(path, payload)
+    return True
 
 
 def _ensure_unique_slug(root: Path, date_str: str, base_slug: str) -> str:
@@ -169,6 +189,71 @@ def _coerce_frontmatter_tags(raw: object) -> list[str]:
     return []
 
 
+def _normalize_markdown(
+    markdown_path: Path,
+    *,
+    root: Path,
+    source_hash: str,
+    source_type: str,
+) -> tuple[Path, bool]:
+    frontmatter, body = _split_frontmatter(markdown_path.read_text(encoding="utf-8"))
+
+    created_dt = _resolve_created_dt(frontmatter.get("created_at"), time_utils.now())
+    created_str = time_utils.format_timestamp(created_dt)
+    date_str = created_dt.strftime("%Y-%m-%d")
+
+    entry_id_raw = frontmatter.get("id") or frontmatter.get("slug")
+    if entry_id_raw is None:
+        entry_id_raw = markdown_path.stem
+    entry_id = str(entry_id_raw)
+
+    title_raw = frontmatter.get("title") or entry_id.replace("-", " ").title()
+    title = str(title_raw)
+
+    tags = _coerce_frontmatter_tags(frontmatter.get("tags"))
+    sections_raw = _scan_headings(body)
+    sections_models: list[JournalSection] = []
+    for section in sections_raw:
+        heading = str(section.get("heading", title))
+        level_raw = section.get("level", 1)
+        if isinstance(level_raw, (int, float, str)):
+            try:
+                level = int(level_raw)
+            except (TypeError, ValueError):
+                level = 1
+        else:
+            level = 1
+        sections_models.append(
+            JournalSection(
+                heading=heading,
+                level=level,
+                summary=None,
+            ),
+        )
+    summary_raw = frontmatter.get("summary")
+    summary_text = str(summary_raw) if summary_raw is not None else (body.strip() or None)
+    if not sections_models:
+        sections_models = [JournalSection(heading=title, level=1, summary=summary_text)]
+
+    normalized_entry = NormalizedEntry(
+        id=entry_id,
+        created_at=created_str,
+        source_path=_relative_path(markdown_path, root),
+        title=title,
+        tags=tags,
+        sections=sections_models,
+        summary=summary_text,
+        source_hash=source_hash,
+        source_type=source_type,
+    )
+    normalized_path = normalized_entry_path(root, date_str, entry_id)
+    changed = _write_yaml_if_changed(
+        normalized_path,
+        normalized_entry.model_dump(mode="python"),
+    )
+    return normalized_path, changed
+
+
 def _persist_text_entry(
     inputs: CaptureInput,
     root: Path,
@@ -225,24 +310,18 @@ def _persist_text_entry(
             deduped=True,
             changed=False,
             warnings=[],
+            source_hash=digest,
+            source_type=existing.source_type,
         )
 
     _write_markdown_entry(markdown_path, frontmatter, body_text)
 
-    normalized_path = normalized_entry_path(root, date_str, slug)
-    sections = [JournalSection(heading=title, level=1, summary=summary_text)]
-    normalized_entry = NormalizedEntry(
-        id=slug,
-        created_at=time_utils.format_timestamp(created_dt),
-        source_path=_relative_path(markdown_path, root),
-        title=title,
-        tags=frontmatter_tags,
-        sections=sections,
-        summary=summary_text,
+    normalized_path, normalized_changed = _normalize_markdown(
+        markdown_path,
+        root=root,
         source_hash=digest,
         source_type=inputs.source_type,
     )
-    _write_yaml(normalized_path, normalized_entry.model_dump(mode="python"))
 
     entry = _build_manifest_entry(
         digest=digest,
@@ -266,6 +345,8 @@ def _persist_text_entry(
         deduped=False,
         changed=True,
         warnings=[],
+        source_hash=digest,
+        source_type=inputs.source_type,
     )
 
 
@@ -290,6 +371,20 @@ def _split_frontmatter(text: str) -> tuple[dict[str, object], str]:
     if not isinstance(data, dict):
         data = {}
     return data, body
+
+
+def _scan_headings(text: str) -> list[dict[str, object]]:
+    sections: list[dict[str, object]] = []
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped.startswith("#"):
+            continue
+        hashes, _, heading = stripped.partition(" ")
+        if not heading:
+            continue
+        level = len(hashes)
+        sections.append({"heading": heading.strip(), "level": level})
+    return sections
 
 
 def _persist_file_entry(
@@ -318,6 +413,8 @@ def _persist_file_entry(
             deduped=True,
             changed=False,
             warnings=[],
+            source_hash=digest,
+            source_type=existing.source_type,
         )
 
     text = raw_bytes.decode("utf-8")
@@ -383,20 +480,12 @@ def _persist_file_entry(
 
     _write_markdown_entry(markdown_path, frontmatter_out, body)
 
-    normalized_path = normalized_entry_path(root, date_str, slug)
-    sections = [JournalSection(heading=title, level=1, summary=summary_text)]
-    normalized_entry = NormalizedEntry(
-        id=slug,
-        created_at=time_utils.format_timestamp(created_dt),
-        source_path=_relative_path(markdown_path, root),
-        title=title,
-        tags=tags,
-        sections=sections,
-        summary=summary_text,
+    normalized_path, normalized_changed = _normalize_markdown(
+        markdown_path,
+        root=root,
         source_hash=digest,
         source_type=inputs.source_type,
     )
-    _write_yaml(normalized_path, normalized_entry.model_dump(mode="python"))
 
     entry = _build_manifest_entry(
         digest=digest,
@@ -420,6 +509,8 @@ def _persist_file_entry(
         deduped=False,
         changed=True,
         warnings=[],
+        source_hash=digest,
+        source_type=inputs.source_type,
     )
 
 
@@ -474,6 +565,12 @@ class EntryResult(BaseModel):
     )
     changed: bool = Field(False, description="True when content or metadata changed on disk.")
     warnings: list[str] = Field(default_factory=list, description="Non-fatal issues encountered.")
+    source_hash: str | None = Field(
+        None, description="Hash of the Markdown content used for dedupe/normalization."
+    )
+    source_type: str | None = Field(
+        None, description="Source type recorded for the entry (journal/notes/blog)."
+    )
 
 
 class CaptureResult(BaseModel):
@@ -496,7 +593,7 @@ class CaptureResult(BaseModel):
     index_rebuilt: bool = Field(False, description="True when the index was fully rebuilt.")
     warnings: list[str] = Field(default_factory=list, description="Warnings raised during capture.")
     errors: list[str] = Field(default_factory=list, description="Fatal errors encountered.")
-    durations_ms: dict[str, int] = Field(
+    durations_ms: dict[str, float] = Field(
         default_factory=dict,
         description="Per-stage durations (milliseconds).",
     )
@@ -506,3 +603,30 @@ def run_capture(_input: CaptureInput) -> CaptureResult:
     """Execute the capture workflow (stub for Phase 2)."""
 
     raise NotImplementedError("capture service not implemented yet")
+
+
+def normalize_entries(entries: list[EntryResult], root: Path) -> dict[str, int]:
+    """Normalize Markdown entries that changed during capture."""
+
+    normalized = 0
+    for entry in entries:
+        if not entry.markdown_path:
+            continue
+        if not entry.changed and entry.normalized_path:
+            # Assume already normalized when unchanged.
+            continue
+        markdown_path = root / entry.markdown_path
+        if not markdown_path.exists():
+            continue
+        source_hash = entry.source_hash or _digest_bytes(markdown_path.read_bytes())
+        source_type = entry.source_type or "journal"
+        normalized_path, changed = _normalize_markdown(
+            markdown_path,
+            root=root,
+            source_hash=source_hash,
+            source_type=source_type,
+        )
+        if changed:
+            normalized += 1
+        entry.normalized_path = _relative_path(normalized_path, root)
+    return {"normalized": normalized}
