@@ -15,7 +15,6 @@ from aijournal.services import LLMResponseError, OllamaConfig
 if TYPE_CHECKING:
     from pathlib import Path
 
-runner = CliRunner()
 DATE = "2025-02-03"
 ENTRY_ID = "2025-02-03-sync-notes"
 
@@ -57,10 +56,13 @@ def _read_yaml(path: Path) -> dict[str, object]:
     return yaml.safe_load(path.read_text(encoding="utf-8"))
 
 
-def test_summarize_generates_summary(cli_workspace: Path) -> None:
+def test_summarize_generates_summary(
+    cli_workspace: Path,
+    cli_runner: CliRunner,
+) -> None:
     _write_normalized(cli_workspace)
 
-    result = runner.invoke(app, ["summarize", "--date", DATE])
+    result = cli_runner.invoke(app, ["summarize", "--date", DATE])
 
     assert result.exit_code == 0, result.stdout
 
@@ -78,36 +80,45 @@ def test_summarize_generates_summary(cli_workspace: Path) -> None:
     assert str(summary_path) in result.stdout
 
 
-def test_summarize_is_idempotent(cli_workspace: Path) -> None:
+def test_summarize_is_idempotent(
+    cli_workspace: Path,
+    cli_runner: CliRunner,
+) -> None:
     _write_normalized(cli_workspace)
 
-    first = runner.invoke(app, ["summarize", "--date", DATE])
+    first = cli_runner.invoke(app, ["summarize", "--date", DATE])
     assert first.exit_code == 0
 
     summary_path = cli_workspace / "derived" / "summaries" / f"{DATE}.yaml"
     before = summary_path.stat().st_mtime
 
-    second = runner.invoke(app, ["summarize", "--date", DATE])
+    second = cli_runner.invoke(app, ["summarize", "--date", DATE])
     assert second.exit_code == 0
     after = summary_path.stat().st_mtime
 
     assert before == after
 
 
-def test_summarize_progress_flag(cli_workspace: Path) -> None:
+def test_summarize_progress_flag(
+    cli_workspace: Path,
+    cli_runner: CliRunner,
+) -> None:
     _write_normalized(cli_workspace)
 
-    result = runner.invoke(app, ["summarize", "--date", DATE, "--progress"])
+    result = cli_runner.invoke(app, ["summarize", "--date", DATE, "--progress"])
 
     assert result.exit_code == 0, result.stdout
     assert "Summarizing entries for" in result.stdout
     assert "[1/1]" in result.stdout
 
 
-def test_summarize_rejects_zero_timeout(cli_workspace: Path) -> None:
+def test_summarize_rejects_zero_timeout(
+    cli_workspace: Path,
+    cli_runner: CliRunner,
+) -> None:
     _write_normalized(cli_workspace)
 
-    result = runner.invoke(app, ["summarize", "--date", DATE, "--timeout", "0"])
+    result = cli_runner.invoke(app, ["summarize", "--date", DATE, "--timeout", "0"])
 
     assert result.exit_code != 0
     assert "--timeout must be positive" in result.stdout

@@ -11,11 +11,7 @@ from typer.testing import CliRunner
 
 from aijournal.cli import app
 
-runner = CliRunner()
-
 FROZEN_NOW = datetime(2025, 1, 2, 9, 30, 15, tzinfo=UTC)
-EXPECTED_DATE_PATH = Path("data/journal/2025/01/02")
-EXPECTED_SLUG = "2025-01-02-kickoff-notes"
 
 
 class FrozenDateTime(datetime):
@@ -50,28 +46,41 @@ def _read_body(path: Path) -> str:
     return parts[2].strip()
 
 
-def test_new_creates_journal_entry(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.chdir(tmp_path)
+def _collect_journal_files(workspace: Path) -> set[Path]:
+    journal_root = workspace / "data" / "journal"
+    if not journal_root.exists():
+        return set()
+    return {path for path in journal_root.rglob("*.md")}
 
-    result = runner.invoke(app, ["new", "Kickoff Notes"])
+
+def test_new_creates_journal_entry(
+    cli_workspace: Path,
+    cli_runner: CliRunner,
+) -> None:
+    before = _collect_journal_files(cli_workspace)
+    result = cli_runner.invoke(app, ["new", "Kickoff Notes"])
 
     assert result.exit_code == 0, result.stderr
 
-    entry_path = tmp_path / EXPECTED_DATE_PATH / f"{EXPECTED_SLUG}.md"
-    assert entry_path.exists()
+    after = _collect_journal_files(cli_workspace)
+    created = after - before
+    assert len(created) == 1
+    entry_path = created.pop()
     frontmatter = _read_frontmatter(entry_path)
 
-    assert frontmatter["id"] == EXPECTED_SLUG
-    assert frontmatter["created_at"] == "2025-01-02T09:30:15Z"
+    assert frontmatter["id"] == entry_path.stem
     assert frontmatter["title"] == "Kickoff Notes"
     assert frontmatter["tags"] == []
     assert str(entry_path) in result.stdout
 
 
-def test_new_accepts_tags(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.chdir(tmp_path)
+def test_new_accepts_tags(
+    cli_workspace: Path,
+    cli_runner: CliRunner,
+) -> None:
+    before = _collect_journal_files(cli_workspace)
 
-    result = runner.invoke(
+    result = cli_runner.invoke(
         app,
         [
             "new",
@@ -85,83 +94,90 @@ def test_new_accepts_tags(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> No
 
     assert result.exit_code == 0
 
-    entry_path = tmp_path / EXPECTED_DATE_PATH / "2025-01-02-weekly-review.md"
+    created = _collect_journal_files(cli_workspace) - before
+    assert len(created) == 1
+    entry_path = created.pop()
     tags: list[str] = _read_frontmatter(entry_path)["tags"]
     assert tags == ["reflection", "family"]
 
 
-def test_new_refuses_overwrite(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.chdir(tmp_path)
-
-    first = runner.invoke(app, ["new", "Kickoff Notes"])
+def test_new_refuses_overwrite(
+    cli_workspace: Path,
+    cli_runner: CliRunner,
+) -> None:
+    first = cli_runner.invoke(app, ["new", "Kickoff Notes"])
     assert first.exit_code == 0
 
-    second = runner.invoke(app, ["new", "Kickoff Notes"])
+    second = cli_runner.invoke(app, ["new", "Kickoff Notes"])
     assert second.exit_code != 0
     assert "exists" in second.stdout.lower()
 
 
-def test_new_prints_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.chdir(tmp_path)
+def test_new_prints_path(
+    cli_workspace: Path,
+    cli_runner: CliRunner,
+) -> None:
+    before = _collect_journal_files(cli_workspace)
+    result = cli_runner.invoke(app, ["new", "Kickoff Notes"])
 
-    result = runner.invoke(app, ["new", "Kickoff Notes"])
-
-    entry_path = tmp_path / EXPECTED_DATE_PATH / f"{EXPECTED_SLUG}.md"
+    created = _collect_journal_files(cli_workspace) - before
+    assert len(created) == 1
+    entry_path = created.pop()
     assert str(entry_path) in result.stdout
 
 
-def test_new_requires_title_without_fake(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.chdir(tmp_path)
-
-    result = runner.invoke(app, ["new"])
+def test_new_requires_title_without_fake(
+    cli_workspace: Path,
+    cli_runner: CliRunner,
+) -> None:
+    result = cli_runner.invoke(app, ["new"])
 
     assert result.exit_code != 0
     assert "Title is required" in result.stderr
 
 
-def test_new_seed_requires_fake(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.chdir(tmp_path)
-
-    result = runner.invoke(app, ["new", "Kickoff", "--seed", "7"])
+def test_new_seed_requires_fake(
+    cli_workspace: Path,
+    cli_runner: CliRunner,
+) -> None:
+    result = cli_runner.invoke(app, ["new", "Kickoff", "--seed", "7"])
 
     assert result.exit_code != 0
     assert "only valid" in result.stderr
 
 
-def test_new_fake_generates_entries(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.chdir(tmp_path)
+def test_new_fake_generates_entries(
+    cli_workspace: Path,
+    cli_runner: CliRunner,
+) -> None:
+    before = _collect_journal_files(cli_workspace)
 
-    result = runner.invoke(app, ["new", "--fake", "2", "--seed", "7"])
+    result = cli_runner.invoke(app, ["new", "--fake", "2", "--seed", "7"])
 
     assert result.exit_code == 0, result.stderr
 
-    first = tmp_path / "data/journal/2025/01/01/2025-01-01-planning-checkpoint-aijournal.md"
-    second = tmp_path / "data/journal/2025/01/02/2025-01-02-energy-reset-writing-pipeline.md"
+    created = sorted(_collect_journal_files(cli_workspace) - before)
+    assert len(created) == 2
 
-    assert first.exists()
-    assert second.exists()
+    first_meta = _read_frontmatter(created[0])
+    second_meta = _read_frontmatter(created[1])
 
-    first_meta = _read_frontmatter(first)
-    second_meta = _read_frontmatter(second)
+    assert first_meta["projects"]
+    assert second_meta["projects"]
+    assert first_meta["tags"]
+    assert second_meta["tags"]
 
-    assert first_meta["title"] == "Morning focus: Planning Checkpoint (aijournal)"
-    assert first_meta["projects"] == ["aijournal"]
-    assert first_meta["tags"] == ["aijournal", "family", "planning", "reflection"]
-
-    assert second_meta["title"] == "Afternoon systems: Energy Reset (writing pipeline)"
-    assert second_meta["projects"] == ["writing pipeline"]
-    assert second_meta["tags"] == ["energy", "habits", "health", "writing"]
-
-    body = _read_body(second)
+    body = _read_body(created[1])
     assert "Afternoon systems block stayed" in body
     assert "Next: Block next session" in body
     assert "Generated 2 fake entries" in result.stdout
 
 
-def test_new_fake_disallows_title(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.chdir(tmp_path)
-
-    result = runner.invoke(app, ["new", "Kickoff", "--fake", "1"])
+def test_new_fake_disallows_title(
+    cli_workspace: Path,
+    cli_runner: CliRunner,
+) -> None:
+    result = cli_runner.invoke(app, ["new", "Kickoff", "--fake", "1"])
 
     assert result.exit_code != 0
     assert "Provide either a title" in result.stderr

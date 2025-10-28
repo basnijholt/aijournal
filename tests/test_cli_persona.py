@@ -14,9 +14,6 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 
-runner = CliRunner()
-
-
 def _seed_claims(workspace: Path) -> None:
     path = workspace / "profile" / "claims.yaml"
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -57,10 +54,13 @@ def _seed_claims(workspace: Path) -> None:
     path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
 
 
-def test_persona_build_generates_core(cli_workspace: Path) -> None:
+def test_persona_build_generates_core(
+    cli_workspace: Path,
+    cli_runner: CliRunner,
+) -> None:
     _seed_claims(cli_workspace)
 
-    result = runner.invoke(app, ["persona", "build"])
+    result = cli_runner.invoke(app, ["persona", "build"])
     assert result.exit_code == 0, result.stdout
 
     persona_path = cli_workspace / "derived" / "persona" / "persona_core.yaml"
@@ -76,10 +76,11 @@ def test_persona_build_generates_core(cli_workspace: Path) -> None:
 
 def test_persona_build_trims_when_budget_forced(
     cli_workspace: Path,
+    cli_runner: CliRunner,
 ) -> None:
     _seed_claims(cli_workspace)
 
-    result = runner.invoke(
+    result = cli_runner.invoke(
         app,
         [
             "persona",
@@ -105,11 +106,12 @@ def test_persona_build_trims_when_budget_forced(
 
 def test_persona_build_handles_empty_claims(
     cli_workspace: Path,
+    cli_runner: CliRunner,
 ) -> None:
     claims_path = cli_workspace / "profile" / "claims.yaml"
     claims_path.write_text("claims: []\n", encoding="utf-8")
 
-    result = runner.invoke(app, ["persona", "build"])
+    result = cli_runner.invoke(app, ["persona", "build"])
     assert result.exit_code == 0, result.stdout
     payload = yaml.safe_load(
         (cli_workspace / "derived" / "persona" / "persona_core.yaml").read_text(encoding="utf-8"),
@@ -120,10 +122,11 @@ def test_persona_build_handles_empty_claims(
 
 def test_persona_build_respects_min_claims(
     cli_workspace: Path,
+    cli_runner: CliRunner,
 ) -> None:
     _seed_claims(cli_workspace)
 
-    result = runner.invoke(
+    result = cli_runner.invoke(
         app,
         [
             "persona",
@@ -146,21 +149,23 @@ def test_persona_build_respects_min_claims(
 
 def test_persona_status_reports_fresh(
     cli_workspace: Path,
+    cli_runner: CliRunner,
 ) -> None:
     _seed_claims(cli_workspace)
-    build_result = runner.invoke(app, ["persona", "build"])
+    build_result = cli_runner.invoke(app, ["persona", "build"])
     assert build_result.exit_code == 0, build_result.stdout
 
-    status_result = runner.invoke(app, ["persona", "status"])
+    status_result = cli_runner.invoke(app, ["persona", "status"])
     assert status_result.exit_code == 0, status_result.output
     assert "up to date" in status_result.output.lower()
 
 
 def test_persona_status_detects_stale_profile(
     cli_workspace: Path,
+    cli_runner: CliRunner,
 ) -> None:
     _seed_claims(cli_workspace)
-    build_result = runner.invoke(app, ["persona", "build"])
+    build_result = cli_runner.invoke(app, ["persona", "build"])
     assert build_result.exit_code == 0, build_result.stdout
 
     claims_path = cli_workspace / "profile" / "claims.yaml"
@@ -175,6 +180,6 @@ def test_persona_status_detects_stale_profile(
     )
     claims_path.write_text(yaml.safe_dump(claims_payload, sort_keys=False), encoding="utf-8")
 
-    status_result = runner.invoke(app, ["persona", "status"])
+    status_result = cli_runner.invoke(app, ["persona", "status"])
     assert status_result.exit_code != 0
     assert "claims.yaml" in status_result.output

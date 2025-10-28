@@ -10,22 +10,15 @@ from typer.testing import CliRunner
 from aijournal.cli import app
 from tests.helpers import write_manifest, write_normalized_entry
 
-runner = CliRunner()
-
 
 @pytest.fixture(autouse=True)
 def _fake_mode_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("AIJOURNAL_FAKE_OLLAMA", "1")
 
 
-def _init_workspace(base: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.chdir(base)
-    init_result = runner.invoke(app, ["init"])
-    assert init_result.exit_code == 0, init_result.stdout
-
-
 def _build_index(
     base: Path,
+    cli_runner: CliRunner,
     *,
     day: str,
     entry_id: str,
@@ -47,27 +40,26 @@ def _build_index(
             {"id": entry_id, "hash": f"hash-{entry_id}", "source_type": source_type},
         ],
     )
-    rebuild = runner.invoke(
-        app,
-        ["index", "rebuild"],
-        env={"AIJOURNAL_FAKE_OLLAMA": "1"},
-    )
+    rebuild = cli_runner.invoke(app, ["index", "rebuild"])
     assert rebuild.exit_code == 0, rebuild.stdout
 
 
-def test_index_search_returns_results(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    _init_workspace(tmp_path, monkeypatch)
+def test_index_search_returns_results(
+    cli_workspace: Path,
+    cli_runner: CliRunner,
+) -> None:
     day = "2025-02-03"
     entry_id = "2025-02-03-focus-notes"
     _build_index(
-        tmp_path,
+        cli_workspace,
+        cli_runner,
         day=day,
         entry_id=entry_id,
         summary="Protected two focus blocks and captured deep work ideas.",
         tags=["focus", "planning"],
     )
 
-    result = runner.invoke(
+    result = cli_runner.invoke(
         app,
         ["index", "search", "deep work ideas", "--tags", "focus", "--top", "3"],
     )
@@ -78,16 +70,19 @@ def test_index_search_returns_results(tmp_path: Path, monkeypatch: pytest.Monkey
     assert "deep work ideas" in result.stdout
 
 
-def test_index_search_handles_no_matches(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    _init_workspace(tmp_path, monkeypatch)
+def test_index_search_handles_no_matches(
+    cli_workspace: Path,
+    cli_runner: CliRunner,
+) -> None:
     _build_index(
-        tmp_path,
+        cli_workspace,
+        cli_runner,
         day="2025-02-03",
         entry_id="2025-02-03-focus-notes",
         summary="Protected two focus blocks and captured deep work ideas.",
     )
 
-    result = runner.invoke(
+    result = cli_runner.invoke(
         app,
         ["index", "search", "nonexistent topic", "--tags", "missing-tag"],
     )
@@ -96,11 +91,10 @@ def test_index_search_handles_no_matches(tmp_path: Path, monkeypatch: pytest.Mon
 
 
 def test_index_search_errors_when_index_missing(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    cli_workspace: Path,
+    cli_runner: CliRunner,
 ) -> None:
-    _init_workspace(tmp_path, monkeypatch)
-
-    result = runner.invoke(app, ["index", "search", "anything"])
+    # workspace initialized but retrieval index not rebuilt
+    result = cli_runner.invoke(app, ["index", "search", "anything"])
     assert result.exit_code != 0
     assert "Retrieval index not available" in (result.stderr or "")

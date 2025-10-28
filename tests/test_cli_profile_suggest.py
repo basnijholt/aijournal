@@ -14,7 +14,6 @@ from tests.helpers import make_claim_atom
 if TYPE_CHECKING:
     from pathlib import Path
 
-runner = CliRunner()
 DATE = "2025-02-03"
 ENTRY_ID = "2025-02-03-sync-notes"
 
@@ -73,11 +72,15 @@ def _seed_profile(workspace: Path) -> None:
     _write_yaml(workspace / "profile" / "claims.yaml", claims)
 
 
-def _invoke(workspace: Path, extra_args: list[str] | None = None) -> tuple[str, Path, int]:
+def _invoke(
+    workspace: Path,
+    cli_runner: CliRunner,
+    extra_args: list[str] | None = None,
+) -> tuple[str, Path, int]:
     args = ["profile", "suggest", "--date", DATE]
     if extra_args:
         args.extend(extra_args)
-    result = runner.invoke(app, args)
+    result = cli_runner.invoke(app, args)
     assert result.exit_code == 0, result.output
     path = workspace / "derived" / "profile_suggestions" / f"{DATE}.yaml"
     assert path.exists()
@@ -86,11 +89,14 @@ def _invoke(workspace: Path, extra_args: list[str] | None = None) -> tuple[str, 
     return result.output, path, count
 
 
-def test_profile_suggest_writes_suggestions(cli_workspace: Path) -> None:
+def test_profile_suggest_writes_suggestions(
+    cli_workspace: Path,
+    cli_runner: CliRunner,
+) -> None:
     _seed_normalized(cli_workspace)
     _seed_profile(cli_workspace)
 
-    _, suggestions_path, _ = _invoke(cli_workspace)
+    _, suggestions_path, _ = _invoke(cli_workspace, cli_runner)
 
     data = yaml.safe_load(suggestions_path.read_text(encoding="utf-8"))
     assert data.get("upserts") or data.get("updates"), "Expected suggested changes"
@@ -100,14 +106,17 @@ def test_profile_suggest_writes_suggestions(cli_workspace: Path) -> None:
     assert meta.get("llm_model") == "fake-ollama"
 
 
-def test_profile_suggest_is_idempotent(cli_workspace: Path) -> None:
+def test_profile_suggest_is_idempotent(
+    cli_workspace: Path,
+    cli_runner: CliRunner,
+) -> None:
     _seed_normalized(cli_workspace)
     _seed_profile(cli_workspace)
 
-    _, suggestions_path, count_before = _invoke(cli_workspace)
+    _, suggestions_path, count_before = _invoke(cli_workspace, cli_runner)
     mtime_before = suggestions_path.stat().st_mtime
 
-    _, suggestions_path_again, count_after = _invoke(cli_workspace)
+    _, suggestions_path_again, count_after = _invoke(cli_workspace, cli_runner)
 
     assert suggestions_path_again == suggestions_path
     assert count_before == count_after
@@ -116,11 +125,12 @@ def test_profile_suggest_is_idempotent(cli_workspace: Path) -> None:
 
 def test_profile_suggest_progress_flag(
     cli_workspace: Path,
+    cli_runner: CliRunner,
 ) -> None:
     _seed_normalized(cli_workspace)
     _seed_profile(cli_workspace)
 
-    output, _, _ = _invoke(cli_workspace, ["--progress"])
+    output, _, _ = _invoke(cli_workspace, cli_runner, ["--progress"])
 
     assert "Generating profile suggestions" in output
     assert "[1/1]" in output

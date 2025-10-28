@@ -13,7 +13,6 @@ from aijournal.cli import app
 if TYPE_CHECKING:
     from pathlib import Path
 
-runner = CliRunner()
 FIXED_NOW = datetime(2025, 2, 1, tzinfo=UTC)
 
 
@@ -101,17 +100,20 @@ impact_weights:
     _write_yaml(workspace / "config" / "config.yaml", config)
 
 
-def _invoke(args: list[str]) -> str:
-    result = runner.invoke(app, args)
+def _invoke(args: list[str], cli_runner: CliRunner) -> str:
+    result = cli_runner.invoke(app, args)
     assert result.exit_code == 0, result.output
     return result.output
 
 
-def test_profile_status_ranks_items(cli_workspace: Path) -> None:
+def test_profile_status_ranks_items(
+    cli_workspace: Path,
+    cli_runner: CliRunner,
+) -> None:
     _seed_profile(cli_workspace)
     _write_config(cli_workspace)
 
-    output = _invoke(["profile", "status"])
+    output = _invoke(["profile", "status"], cli_runner)
 
     assert "values_motivations" in output
     assert "pref_mornings" in output
@@ -120,23 +122,27 @@ def test_profile_status_ranks_items(cli_workspace: Path) -> None:
 
 def test_profile_status_handles_missing_files(
     cli_workspace: Path,
+    cli_runner: CliRunner,
 ) -> None:
     for rel_path in ("profile/self_profile.yaml", "profile/claims.yaml"):
         target = cli_workspace / rel_path
         if target.exists():
             target.unlink()
 
-    result = runner.invoke(app, ["profile", "status"])
+    result = cli_runner.invoke(app, ["profile", "status"])
 
     assert result.exit_code == 0
     assert "No profile data" in result.output
 
 
-def test_profile_status_idempotent(cli_workspace: Path) -> None:
+def test_profile_status_idempotent(
+    cli_workspace: Path,
+    cli_runner: CliRunner,
+) -> None:
     _seed_profile(cli_workspace)
     _write_config(cli_workspace)
 
-    first = _invoke(["profile", "status"])
-    second = _invoke(["profile", "status"])
+    first = _invoke(["profile", "status"], cli_runner)
+    second = _invoke(["profile", "status"], cli_runner)
 
     assert first == second
