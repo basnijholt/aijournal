@@ -1,0 +1,1016 @@
+# aijournal — Capture Workflow & CLI Re‑org
+
+**Coding Agent Implementation Guide (Phased, Checklisted, Test‑Gated)**
+
+## 0) Objectives & Outcomes
+
+**Primary goals**
+
+1. Introduce a one‑step **`capture`** command that:
+
+   * Accepts raw text, editor input, files, or folders.
+   * Persists authoritative Markdown, **normalizes**, **derives** (summaries, micro‑facts, profile suggestions, characterize + review), and refreshes **index** + **persona** (and optionally packs)—**idempotently**.
+2. Reorganize the CLI to a friendly top level and tuck low‑level tools under **`ops`**:
+
+   * Everyday: `init`, `capture`, `chat`, `advise`, `status`, `serve chat`, `export pack`
+   * Advanced: `ops pipeline …`, `ops profile …`, `ops index …`, `ops persona …`, `ops feedback apply`, `ops system …`, `ops dev …`
+3. Maintain full transparency: all outputs continue to land in `data/…`, `profile/…`, `derived/…`.
+4. Preserve live‑mode constraints: `uv run …`; no hidden network calls beyond configured Ollama.
+5. Strengthen telemetry/observability for **capture** runs.
+
+**Non‑goals**
+
+* No changes to underlying models’ semantics beyond routing and orchestration.
+* No breaking of existing public file formats (Markdown/YAML under `data/`, `profile/`, `derived/`).
+
+---
+
+## 1) Ground Rules (Safety & Commit Discipline)
+
+* **Green after every step**: After each checklist item, run `uv run pytest`. Commit only when green.
+* **Small diffs**: No drive‑by cleanups. If you must fix a bug, do it in a separate, clearly labeled commit.
+* **Aliases over deletes**: Keep old commands as hidden aliases with warnings for 1–2 releases.
+* **Fake mode in CI/tests**: `AIJOURNAL_FAKE_OLLAMA=1` where appropriate to keep runs deterministic.
+
+---
+
+## 2) Final CLI Shape (Target)
+
+### Top‑level (Everyday)
+
+```
+aijournal
+  init
+  capture
+  chat
+  advise
+  status
+  serve chat
+  export pack
+  ops  # advanced tools live here
+```
+
+### Advanced (under `ops`)
+
+```
+aijournal ops pipeline normalize
+aijournal ops pipeline summarize
+aijournal ops pipeline extract-facts      # rename of 'facts'
+aijournal ops pipeline characterize
+aijournal ops pipeline review             # rename of 'review-updates'
+
+aijournal ops profile suggest
+aijournal ops profile apply
+aijournal ops profile status
+aijournal ops profile interview           # moved from top-level
+
+aijournal ops index rebuild
+aijournal ops index update                # rename of 'tail'
+aijournal ops index search
+
+aijournal ops persona build
+aijournal ops persona status
+
+aijournal ops feedback apply              # rename of 'feedback-apply'
+
+aijournal ops system doctor               # new: env checks
+aijournal ops system ollama health        # moved under system
+
+aijournal ops dev fixtures                # home for 'new --fake' (optional)
+```
+
+### Deprecations (hidden aliases with warnings)
+
+* `facts` → `ops pipeline extract-facts`
+* `review-updates` → `ops pipeline review`
+* `tail` → `ops index update`
+* `chatd` → `serve chat`
+* `pack` (top-level) → `export pack`
+* `interview` (top-level) → `ops profile interview`
+* `profile-status` → `status` (top-level) and `ops profile status`
+* `ingest` → `capture --from …`
+* `new` → `capture --edit/--text` (and optionally `ops dev fixtures` for `--fake`)
+
+---
+
+## 3) Detailed Specs
+
+### 3.1 `capture` — Behavior & Options
+
+**Intent:** One action to add/import content and refresh everything required to keep chat/advice in sync.
+
+**Option groups (`rich_help_panel`)**
+
+**INPUT**
+
+* `--text TEXT` (or STDIN)
+* `--from PATH ...` (files or directories)
+* `--edit` (open `$EDITOR` with scaffold)
+* `--source-type [journal|notes|blog]` (default: `journal`)
+
+**METADATA**
+
+* `-d, --date YYYY-MM-DD` (default: today; superseded by front matter `created_at`)
+* `-t, --tags TEXT` (repeatable; also inferred at normalize)
+* `--projects TEXT` (repeatable)
+* `--mood TEXT`
+
+**APPLY & REFRESH**
+
+* `--apply-profile [auto|review]` (default: `auto`)
+* `--rebuild [auto|always|skip]` (default: `auto`)
+
+  * `auto` = rebuild index/persona only if stale/missing or touched by this run
+* `--pack [L1|L3|L4]` (optional; emit pack if persona changed)
+
+**LLM & VALIDATION**
+
+* `--retries INT` (default: 1)
+* `--progress/--no-progress` (default: show)
+
+**DEBUG**
+
+* `--dry-run`
+
+**Idempotence**
+
+* If identical Markdown/front matter already exists → skip write.
+* If importing files, dedupe via SHA‑256 manifest; unchanged files are skipped.
+* Downstream derivation/refreshes are gated by input changes + mtimes.
+
+**Error handling**
+
+* **Preflight**: abort with actionable messages if:
+
+  * `AIJOURNAL_OLLAMA_HOST` missing in live mode
+  * SQLite compiled without `fts5`
+  * Annoy unavailable
+* **LLM**: honor `--retries`; if structured output fails after retries, mark **partial success** and continue to later steps unless `--strict` (future).
+
+**Telemetry**
+
+* NDJSON at `derived/logs/capture/<run_id>.jsonl` with per‑stage timings, counts, and warnings.
+
+### 3.2 Capture orchestrator (shared by CLI & Web)
+
+Create `src/aijournal/services/capture.py`:
+
+```python
+# services/capture.py
+from pydantic import BaseModel, Field
+from typing import List, Optional, Literal, Dict
+
+class CaptureInput(BaseModel):
+    source: Literal["stdin","editor","file","dir"]
+    text: Optional[str] = None
+    paths: List[str] = []
+    source_type: Literal["journal","notes","blog"] = "journal"
+    date: Optional[str] = None         # YYYY-MM-DD
+    title: Optional[str] = None
+    slug: Optional[str] = None
+    tags: List[str] = []
+    projects: List[str] = []
+    mood: Optional[str] = None
+    apply_profile: Literal["auto","review"] = "auto"
+    rebuild: Literal["auto","always","skip"] = "auto"
+    pack: Optional[Literal["L1","L3","L4"]] = None
+    retries: int = 1
+    progress: bool = True
+    dry_run: bool = False
+
+class EntryResult(BaseModel):
+    markdown_path: Optional[str]
+    normalized_path: Optional[str]
+    date: str
+    slug: str
+    deduped: bool = False
+    changed: bool = False
+    warnings: List[str] = []
+
+class CaptureResult(BaseModel):
+    run_id: str
+    entries: List[EntryResult]
+    artifacts_changed: Dict[str, int]   # { "normalized": n, "summaries": n, ... }
+    persona_stale_before: bool
+    persona_stale_after: bool
+    index_rebuilt: bool
+    warnings: List[str] = []
+    errors: List[str] = []
+    durations_ms: Dict[str, int]        # per-stage timing
+```
+
+**Sequence (per run)**
+
+1. **Preflight** (env & capability checks).
+2. **Persist**:
+
+   * stdin/editor/text → `data/journal/YYYY/MM/DD/<slug>.md` with front matter scaffold.
+   * file/dir → reuse existing ingest logic under the hood but **tagged** as a capture run (manifest).
+3. **Normalize** new/changed entries → `data/normalized/YYYY-MM-DD/<id>.yaml`.
+4. **Derive per date** (only dates touched by this run):
+
+   * `summarize` → `derived/summaries/<date>.yaml`
+   * `extract-facts` (old `facts`) → `derived/microfacts/<date>.yaml`
+   * `profile suggest` → `derived/profile_suggestions/<date>.yaml`
+   * If `apply_profile=auto`: `profile apply --date --yes`
+   * `characterize` → `derived/pending/profile_updates/<timestamp>.yaml`
+   * If `apply_profile=auto`: `pipeline review --apply` (only batches from this run)
+5. **Refresh**:
+
+   * Index: if missing → `index rebuild`; else → `index update` constrained to changed dates (or `--since 7d` fallback).
+   * Persona: `persona status`; if stale → `persona build`.
+   * Packs: if `--pack` and persona changed → `export pack -l Lx`.
+6. **Telemetry**: write NDJSON log; collect durations and changed paths.
+
+### 3.3 `status` (top‑level)
+
+Quick, human‑readable report:
+
+* Persona freshness: stale/fresh + source mtimes changed since last build.
+* Index health: files exist, meta.json integrity, ANN params (trees/k).
+* Pending updates: counts in `derived/pending/profile_updates/`.
+* Ollama reachability (host, listed models) **or** instruct to run `ops system ollama health`.
+* Exit 0 with summary; non‑zero for critical failures (`fts5` missing, etc.).
+
+### 3.4 `ops system doctor` (advanced)
+
+Machine‑readable JSON + human tips:
+
+* `AIJOURNAL_OLLAMA_HOST` present, reachable?
+* SQLite `fts5` compiled?
+* Annoy importable?
+* Writable paths in workspace?
+* Returns `ok: true/false`, with `checks: [{name, ok, hint}]`.
+
+### 3.5 Web API (optional in later phase)
+
+Extend current FastAPI server with **capture**:
+
+* `POST /capture` → accepts `CaptureInput` JSON; streams NDJSON per stage.
+* `POST /capture/import` (multipart) → zipped folder; same options.
+* `GET /runs/{run_id}` → returns `CaptureResult`.
+* Implementation reuses `CaptureOrchestrator`.
+
+---
+
+## 4) Phased Checklist (tick off & commit after each)
+
+> **Always**: `uv run pytest` → commit → proceed.
+
+### Phase 0 — Test hardening & fixtures (no behavior change)
+
+1. [ ] Ensure a shared `cli_workspace` fixture sets `AIJOURNAL_FAKE_OLLAMA=1`, chdirs to temp, runs `aijournal init`, and freezes time.
+2. [ ] Update CLI tests to use the fixture consistently (summarize, facts, persona, profile, pack, chat, advise, etc.).
+3. [ ] Add light snapshot‑independent asserts (key fields instead of full files).
+
+> Commit: `tests: unify CLI workspace fixture; freeze time; deterministic asserts`
+
+---
+
+### Phase 1 — CLI skeleton re‑org (aliases in place; no behavior change)
+
+4. [ ] Create Typer sub‑apps: `ops`, `ops.pipeline`, `ops.profile`, `ops.index`, `ops.persona`, `ops.feedback`, `ops.system`, `ops.dev`, `export`, `serve`.
+5. [ ] Register **top‑level**: `init`, `capture` (placeholder, not functional yet—print “Not implemented” and exit 2), `chat`, `advise`, `status` (placeholder), `serve chat`, `export pack`.
+6. [ ] Move low-level commands under `ops` with **aliases**:
+
+   * `facts`→`ops pipeline extract-facts`, `review-updates`→`ops pipeline review`, `index tail`→`ops index update`, `interview`→`ops profile interview`, `pack`→`export pack`, `chatd`→`serve chat`.
+7. [ ] Keep the **old names as hidden aliases** emitting a deprecation warning and forwarding to new handlers.
+
+> Commit: `cli: introduce top-level/ops layout; add hidden aliases with deprecation warnings`
+
+---
+
+### Phase 2 — `capture` v1 (Persist + Normalize only)
+
+8. [ ] Create `services/capture.py` with `CaptureInput`, `EntryResult`, `CaptureResult`; stub `run_capture()`.
+9. [ ] Implement **persist** for `--text`, `--edit`, `--from <file>` (single file), slug/date inference, duplicate detection.
+10. [ ] Implement **normalize** call(s) for newly persisted/changed entries.
+11. [ ] Write minimal telemetry (persist/normalize durations).
+
+> Commit: `capture: persist+normalize; schemas and minimal telemetry`
+
+---
+
+### Phase 3 — `capture` v2 (Derivation steps per date)
+
+12. [ ] For dates touched by this run, call: `summarize`, `ops pipeline extract-facts`, `ops profile suggest`, `ops profile apply --yes` (if `--apply-profile=auto`), `ops pipeline characterize`, `ops pipeline review --apply` (limit to this run's batches).
+13. [ ] Implement `--retries`, `--progress` passthroughs to structured-output steps.
+14. [ ] Log derived artifacts updated; update telemetry counters.
+
+> Commit: `capture: derivation pipeline (summarize, facts, suggest/apply, characterize, review)`
+
+---
+
+### Phase 4 — Retrieval & Persona refresh
+
+15. [ ] If index missing → `ops index rebuild`; else → `ops index update` (changed dates or `--since 7d`).
+16. [ ] Persona: `ops persona status`; if stale → `ops persona build`.
+17. [ ] If `--pack` chosen and persona changed → `export pack -l Lx`.
+
+> Commit: `capture: index update/rebuild and persona status/build; optional packing`
+
+---
+
+### Phase 5 — `status` & `ops system doctor`
+
+18. [ ] Implement `ops system doctor` (fts5, Annoy, Ollama host reachability, writable paths) with JSON + human output.
+19. [ ] Implement `status` summary (persona freshness, index presence/meta, pending updates count, Ollama reachability hint) with exit code policy.
+
+> Commit: `status + system doctor: aggregated health checks`
+
+---
+
+### Phase 6 — Import: folders, manifest, front matter
+
+20. [ ] Extend `capture --from` to accept directories; recurse for `*.md`.
+21. [ ] Reuse manifest (SHA-256) to dedupe; store raw snapshots if snapshotting is enabled.
+22. [ ] Detect and prefer front matter for `title`, `created_at`, `tags`, `projects`; fallback to file mtime and content inference.
+23. [ ] Resolve slug collisions deterministically (`-2`, `-3`, …); record alias in logs.
+
+> Commit: `capture: robust import (folders, manifest dedupe, front matter, collisions)`
+
+---
+
+### Phase 7 — Help text polish (rich panels) & docs
+
+24. [ ] Add `rich_help_panel` groupings to: `capture`, `chat`, `export pack`, and `ops pipeline …`.
+25. [ ] Update `README.md` & `docs/workflow.md`: show the new top‑level, everyday flow with `capture`; keep advanced section for `ops`.
+26. [ ] Add a `CLI_MIGRATION.md` with old→new mapping and sample commands.
+
+> Commit: `docs+help: capture-first workflows; advanced commands under ops; migration guide`
+
+---
+
+### Phase 8 — Telemetry (full) & log schema
+
+27. [ ] Implement full NDJSON logging at `derived/logs/capture/<run_id>.jsonl`:
+
+    * Event types: `preflight`, `persist`, `normalize`, `derive.summarize`, `derive.extract_facts`, `derive.profile_suggest`, `derive.profile_apply`, `derive.characterize`, `derive.review`, `index.update/rebuild`, `persona.status/build`, `pack`, `done`.
+    * Include timestamps, durations, counts, paths changed, retries, and warnings.
+28. [ ] Add unit test that reads the NDJSON and asserts expected events and minimal fields.
+
+> Commit: `telemetry: structured NDJSON for capture; unit test`
+
+---
+
+### Phase 9 — Web API (optional)
+
+29. [ ] Extend FastAPI app (`serve`) with `POST /capture` streaming NDJSON; reuse `CaptureOrchestrator`.
+30. [ ] Add `GET /runs/{run_id}`; return `CaptureResult`.
+31. [ ] Add tests with httpx client in fake mode; assert streamed events and final result.
+
+> Commit: `api: capture endpoints + tests`
+
+---
+
+### Phase 10 — Cleanup & Deprecation scaffold
+
+32. [ ] Ensure all old commands print a deprecation warning that points to the new path; mark as `hidden=True`.
+33. [ ] Final `ruff` cleanup, mypy pass, and green suite.
+
+> Commit: `final polish: deprecations, lint, typing`
+
+---
+
+## 5) Command Help Prototypes (what to render)
+
+### `aijournal --help` (concise)
+
+```
+Everyday
+  init          Initialize a workspace
+  capture       Add/import notes and refresh persona, claims, and index
+  chat          Ask a retrieval-backed question
+  advise        Get advice grounded in your profile
+  status        Check freshness & health
+  serve chat    Start the chat API server
+  export pack   Build a context pack (L1–L4)
+
+Advanced
+  ops pipeline  Normalize & derive (summaries, facts, characterize, review)
+  ops profile   Suggest/apply updates, status, interview probes
+  ops index     Rebuild/update/search the retrieval index
+  ops persona   Build/status for the persona core
+  ops feedback  Apply pending chat feedback
+  ops system    Doctor & Ollama helpers
+  ops dev       Fixtures (fake entries)
+```
+
+### `aijournal capture --help` (grouped)
+
+```
+INPUT
+  --text TEXT
+  --from PATH ...
+  --edit
+  --source-type [journal|notes|blog]
+
+METADATA
+  -d, --date YYYY-MM-DD
+  -t, --tags TEXT
+  --projects TEXT
+  --mood TEXT
+
+APPLY & REFRESH
+  --apply-profile [auto|review]
+  --rebuild [auto|always|skip]
+  --pack [L1|L3|L4]
+
+LLM & VALIDATION
+  --retries INTEGER
+  --progress / --no-progress
+
+DEBUG
+  --dry-run
+```
+
+### `aijournal chat --help` (grouped)
+
+```
+RETRIEVAL FILTERS
+  -k, --top INTEGER
+  --tags TEXT
+  --source TEXT
+  --date-from YYYY-MM-DD
+  --date-to   YYYY-MM-DD
+
+SESSION & SAVING
+  --session TEXT
+  --save / --no-save
+
+FEEDBACK
+  --feedback [up|down]
+```
+
+---
+
+## 6) Error Handling Matrix (capture)
+
+| Stage               | Failure                               | Behavior        | User message                                                              |
+| ------------------- | ------------------------------------- | --------------- | ------------------------------------------------------------------------- |
+| Preflight           | `fts5` missing                        | Abort           | “SQLite FTS5 is required. See README under ‘FTS5 is a hard requirement’.” |
+| Preflight           | Annoy not importable                  | Abort           | “Annoy index unavailable; reinstall deps.”                                |
+| Preflight           | Ollama host missing (live)            | Abort           | “Set `AIJOURNAL_OLLAMA_HOST=…` or enable fake mode for tests.”            |
+| Persist             | Path unwritable                       | Abort           | “Cannot write under data/journal/…; check permissions.”                   |
+| Normalize           | Parse failure                         | Warn + continue | “Normalized 0 entries for <path>; see logs.”                              |
+| Summarize/LLM steps | Structured JSON invalid after retries | Warn + continue | “Using degraded output; consider rerun with `--retries`.”                 |
+| Index update        | Missing artifacts                     | Rebuild         | “Index missing; performing full rebuild.”                                 |
+| Persona status      | Staleness check error                 | Rebuild         | “Persona freshness unknown; rebuilding.”                                  |
+
+---
+
+## 7) Idempotence & Duplicate Rules
+
+* Persist overwrite policy: **never overwrite** an existing slug; auto‑suffix with `-2`, `-3`,…
+* Import dedupe: skip if manifest already contains the file’s SHA‑256 with identical content.
+* Derivation per date: only run for affected dates; if existing derived artifact content is unchanged, do not bump timestamps to avoid pointless rebuilds.
+* Persona & pack only rebuild/emits when profile/claims mtimes changed.
+
+---
+
+## 8) Index & Persona Refresh Logic
+
+* **Index**:
+
+  * If `derived/index/index.db` or `annoy.index` missing → rebuild.
+  * Else run **update** with candidate set built from the normalized entries touched in this run (fallback to `--since 7d` if a targeted path isn’t available yet).
+* **Persona**:
+
+  * Use existing `persona status` check against recorded source mtimes.
+  * Rebuild only when stale.
+  * Packs are **opt‑in** via `--pack`.
+
+---
+
+## 9) Telemetry (capture NDJSON event schema)
+
+Example event:
+
+```json
+{
+  "event": "derive.extract_facts",
+  "run_id": "capture-20251027-153012-abc123",
+  "date": "2025-10-27",
+  "retries": 0,
+  "duration_ms": 412,
+  "artifacts": ["derived/microfacts/2025-10-27.yaml"],
+  "warnings": []
+}
+```
+
+**Required fields** for every event:
+
+* `event`, `run_id`, `ts`
+* `duration_ms`
+* `artifacts` (paths written/updated)
+* `counts` (optional)
+* `warnings` (optional)
+* `error` (optional, mutually exclusive with success)
+
+Final summary (`event: done`) includes:
+
+* `entries`: N created/updated/skipped
+* `artifacts_changed`: tallies by type
+* `persona_stale_before/after`
+* `index_rebuilt: bool`
+
+---
+
+## 10) Tests (what to add)
+
+* **Unit**
+
+  * `test_capture_persist_normalize.py`: text → markdown → normalized; idempotence on second run.
+  * `test_capture_import_folder.py`: mixed new/skipped via manifest; front matter precedence.
+  * `test_capture_derivation_steps.py`: verify derived file paths exist & schema stubs (fake mode).
+  * `test_capture_refresh.py`: persona/index rebuild/update behavior.
+  * `test_capture_telemetry.py`: parse NDJSON and assert event sequence.
+
+* **Integration (CLI)**
+
+  * `test_cli_capture_text.py`, `test_cli_capture_from_file.py`, `test_cli_capture_from_dir.py`.
+  * `test_cli_status_doctor.py`: check exit codes & key strings in output.
+
+* **API (optional phase)**
+
+  * `test_api_capture_stream.py`: httpx client consumes NDJSON; ensures final `done` event emitted.
+
+---
+
+## 11) Documentation updates
+
+* `README.md`:
+
+  * Replace “daily pipeline” for users with **`capture`** examples.
+  * Keep advanced pipeline as a footnote referencing `ops`.
+* `docs/workflow.md`:
+
+  * New quick path: `init → capture → chat/advise`.
+  * Advanced: dates and per‑stage commands under `ops`.
+* `ARCHITECTURE.md`:
+
+  * Add `CaptureOrchestrator` to services and telemetry to `derived/logs/capture/`.
+* Add `CLI_MIGRATION.md` table of old→new commands.
+
+---
+
+## 12) Definition of Done (acceptance)
+
+* Running `uv run aijournal capture --text "hello world"`:
+
+  * Writes `data/journal/... .md` and `data/normalized/... .yaml`.
+  * Produces derived files for the date.
+  * Refreshes index/persona as needed.
+  * Emits NDJSON log with the canonical event sequence.
+* `aijournal --help` matches the **target** structure.
+* Old commands still function via hidden aliases with deprecation warnings.
+* `status` & `ops system doctor` provide clear, accurate outputs.
+* All tests green; no regressions in existing suites.
+
+---
+
+## 13) Sample Commit Messages (use as-is)
+
+* `cli: introduce ops subtree and top-level everyday commands (aliases only)`
+* `capture: add schemas and persist+normalize path (phase 2)`
+* `capture: wire derivation steps; apply-profile=auto; retries/progress`
+* `capture: index update/rebuild + persona status/build; optional packs`
+* `status+doctor: add health checks and summarized output`
+* `capture: support folder import with manifest dedupe and front matter`
+* `help/docs: rich_help_panel groupings; README & workflow updates`
+* `telemetry: NDJSON event stream for capture + unit tests`
+* `api: POST /capture streaming NDJSON (optional)`
+* `cleanup: deprecation warnings, hidden aliases, ruff/mypy pass`
+
+---
+
+## 14) Old → New Mapping (include in `CLI_MIGRATION.md`)
+
+| Old              | New                                                    |       |           |
+| ---------------- | ------------------------------------------------------ | ----- | --------- |
+| `new`            | `capture --edit` / `capture --text`                    |       |           |
+| `ingest`         | `capture --from <files-or-folders> [--source-type blog | notes | journal]` |
+| `normalize`      | `ops pipeline normalize`                               |       |           |
+| `summarize`      | `ops pipeline summarize`                               |       |           |
+| `facts`          | `ops pipeline extract-facts`                           |       |           |
+| `characterize`   | `ops pipeline characterize`                            |       |           |
+| `review-updates` | `ops pipeline review`                                  |       |           |
+| `interview`      | `ops profile interview`                                |       |           |
+| `profile-status` | `status` (top) / `ops profile status`                  |       |           |
+| `pack`           | `export pack`                                          |       |           |
+| `chatd`          | `serve chat`                                           |       |           |
+| `feedback-apply` | `ops feedback apply`                                   |       |           |
+| `index tail`     | `ops index update`                                     |       |           |
+
+---
+
+## 15) Typer wiring hints (copy patterns)
+
+* Use `typing_extensions.Annotated` with `rich_help_panel="…"`.
+* Keep deprecated commands registered with `hidden=True` and a one‑line `typer.echo` warning that forwards to the new function.
+* One file per command group under `src/aijournal/commands/` with thin wrappers; orchestration logic lives in `services/` or `pipelines/`.
+
+---
+
+## 16) Open decision toggles (leave as constants for now)
+
+* Default `--apply-profile`: `auto` (current recommendation).
+* Default pack emission: **off** unless `--pack` is provided.
+* Index update scope: targeted to dates changed in run; fallback `--since 7d`.
+* Concurrency: coarse file lock during `capture` (optional; future).
+
+---
+
+### Appendix A — Minimal Typer signature for `capture`
+
+```python
+from typing_extensions import Annotated, Literal
+import typer
+
+@app.command(help="One-step add/import and refresh derived artifacts.")
+def capture(
+    text: Annotated[str|None, typer.Option("--text", rich_help_panel="INPUT")] = None,
+    from_path: Annotated[list[str]|None, typer.Option("--from", rich_help_panel="INPUT")] = None,
+    edit: Annotated[bool, typer.Option("--edit", rich_help_panel="INPUT")] = False,
+    source_type: Annotated[Literal["journal","notes","blog"], typer.Option("--source-type", rich_help_panel="INPUT")] = "journal",
+    date: Annotated[str|None, typer.Option("-d","--date", rich_help_panel="METADATA")] = None,
+    tags: Annotated[list[str], typer.Option("-t","--tags", rich_help_panel="METADATA")] = [],
+    projects: Annotated[list[str], typer.Option("--projects", rich_help_panel="METADATA")] = [],
+    mood: Annotated[str|None, typer.Option("--mood", rich_help_panel="METADATA")] = None,
+    apply_profile: Annotated[Literal["auto","review"], typer.Option("--apply-profile", rich_help_panel="APPLY & REFRESH")] = "auto",
+    rebuild: Annotated[Literal["auto","always","skip"], typer.Option("--rebuild", rich_help_panel="APPLY & REFRESH")] = "auto",
+    pack: Annotated[Literal["L1","L3","L4"]|None, typer.Option("--pack", rich_help_panel="APPLY & REFRESH")] = None,
+    retries: Annotated[int, typer.Option("--retries", rich_help_panel="LLM & VALIDATION")] = 1,
+    progress: Annotated[bool, typer.Option("--progress/--no-progress", rich_help_panel="LLM & VALIDATION")] = True,
+    dry_run: Annotated[bool, typer.Option("--dry-run", rich_help_panel="DEBUG")] = False,
+):
+    ...
+```
+
+
+
+# Addendum: Clarifications Required Before Coding
+
+*(Authoritative imports · Scoped review · No‑op semantics)*
+
+## A) **Authoritative storage for imports (files/folders)**
+
+**Goal**: After `capture --from …`, every imported Markdown results in an **authoritative journal file** under `data/journal/YYYY/MM/DD/<slug>.md`. Raw snapshots remain in `data/raw/` for provenance, but **the canonical source of truth for assistants is the journal file**.
+
+### A.1 Canonicalization rules (imports → journal)
+
+For each imported file:
+
+1. **Read & parse**
+
+   * Parse YAML front matter if present (title, date/created_at, tags, projects, mood).
+   * Compute content `sha256` (body only, normalized newlines).
+
+2. **Resolve date** *(clear precedence and overrides)*
+
+   * If `--force-date` **is provided**, use it for **all** files in this invocation.
+   * Else, use in order:
+
+     1. front matter `created_at`/`date` (if valid ISO date or date‑time),
+     2. CLI `--date` (fallback for items missing a date),
+     3. date parsed from path (regex `YYYY[-/_]MM[-/_]DD`),
+     4. file mtime (local),
+     5. **today**.
+   * Persist the **date** as an ISO 8601 date (not datetime) in front matter; retain precise `imported_at` in `origin`.
+
+3. **Resolve title/slug**
+
+   * Title: front matter `title` → first `# H1` → first non‑empty line (truncated 120 chars).
+   * Slug: slugify title; if collision on that **date**, suffix `-2`, `-3`, …
+
+4. **Write authoritative Markdown**
+
+   * Path: `data/journal/YYYY/MM/DD/<slug>.md`.
+   * Body: **verbatim** imported body (no reflow).
+   * Front matter (merge & normalize):
+
+     ```yaml
+     ---
+     id: <uuid>
+     created_at: YYYY-MM-DD
+     title: "<title>"
+     tags: [ ... ]        # merged: CLI tags + front matter tags (de-duplicated)
+     projects: [ ... ]    # merged similarly
+     mood: "<mood>"       # present only if known
+     source_type: "<journal|notes|blog>"
+     origin:
+       kind: import
+       original_path: "<abs_or_repo_relative_path>"
+       import_hash: "sha256:<hex>"
+       snapshot_path: "data/raw/<hex>.md"
+       imported_at: "<UTC ISO 8601 datetime>"
+       capture_run_id: "<run_id>"
+       front_matter_preserved: true
+     ---
+     <original body>
+     ```
+   * **Snapshot**: if snapshotting is enabled (default), also write `data/raw/<hex>.md`.
+
+5. **Manifest**
+
+   * Update/extend `data/manifest/ingested.yaml` with:
+
+     ```yaml
+     - import_hash: sha256:<hex>
+       original_path: <path>
+       canonical_journal_path: data/journal/YYYY/MM/DD/<slug>.md
+       source_type: blog|notes|journal
+       first_imported_at: <iso>
+       last_imported_at: <iso>   # updated if same file re-seen unchanged
+     ```
+   * If an **entry with the same `import_hash`** already maps to an existing `canonical_journal_path`, **skip** creating a second journal file; mark the new import as **deduped** and add a lightweight `aliases` list for reporting (optional).
+
+6. **Normalization**
+
+   * Normalize **the canonical journal file path** (not the raw snapshot) → `data/normalized/YYYY-MM-DD/<entry_id>.yaml`.
+   * Ensure normalized YAML includes:
+
+     ```yaml
+     source_path: data/journal/YYYY/MM/DD/<slug>.md
+     origin:
+       import_hash: sha256:<hex>
+       source_type: <…>
+     ```
+
+> **Important**: The importer **does not** leave imported notes as “raw‑only”; it **always** materializes a canonical `data/journal/...` file (unless deduped by identical hash).
+
+### A.2 Idempotence & updates
+
+* **Exact duplicate** (same `import_hash`): no new journal file; return `EntryResult(deduped=True, changed=False)`.
+* **Same original path, different content** (hash differs): treat as **new entry** (new slug with suffix) and record `origin.previous_hash` in front matter (optional) for traceability.
+
+### A.3 CLI flags added/clarified
+
+* `--force-date YYYY-MM-DD` *(new)*: override the date of **all** items in this capture.
+* `--date YYYY-MM-DD`: fallback for items without a date (no override when front matter has a valid date).
+* `--source-type journal|notes|blog`: carried into front matter and manifest.
+
+---
+
+## B) **Scoped review‑apply for this capture run**
+
+**Goal**: Auto‑apply **only** the pending batches created **by this capture**, never leftovers.
+
+### B.1 Tracking newly created batches
+
+For each date `D` involved in this capture:
+
+1. Snapshot **pre‑state**:
+   `S_pre = set(glob("derived/pending/profile_updates/*.yaml"))`
+2. Run `characterize --date D`.
+3. Snapshot **post‑state**:
+   `S_post = set(glob(...))`
+4. Compute `new_batches = S_post - S_pre`. Add them to `capture.new_batches`.
+
+Store the list in `CaptureResult` (e.g., `review_candidates: List[str]`).
+
+### B.2 Applying only those batches
+
+* **Preferred path (no CLI change needed)**: call review once per file:
+
+  ```
+  for f in new_batches:
+      ops pipeline review --file <f> --apply
+  ```
+
+  The current command accepts a single `--file`, so this is safe and explicit.
+
+* **Optional enhancement (future)**: extend `ops pipeline review` to accept `--file` **repeatable** or a `--files-from` file. Not required to start.
+
+### B.3 Tests to add
+
+* Produce two pending batches (simulate previous run). Ensure capture only applies the **new** one(s) created during this run. Assert the old batch remains pending.
+
+---
+
+## C) **“No work” should **not** fail the run**
+
+**Goal**: A command that has “nothing to do” (up‑to‑date artifacts, empty window) must yield **success (exit 0)** with a clear message and a structured result.
+
+### C.1 Service‑first orchestration
+
+* The **orchestrator** should call **service functions** where available (e.g., `index.update()`), not Typer CLI entry points, to avoid inheriting `Typer.Exit`.
+* If a service is not exposed yet, wrap the CLI function so it returns a **Python result object** instead of calling `raise typer.Exit(code)`. The CLI wrapper can still exit based on the result when invoked from the shell.
+
+### C.2 Standard result shape
+
+Adopt light result dataclasses/TypedDicts:
+
+```python
+class OperationResult(BaseModel):
+    changed: bool
+    message: str
+    details: dict = {}
+```
+
+* **No‑op**: `changed=False`, `message="nothing to do"`, **process returns normally**.
+* **Changed**: `changed=True`, `message="rebuilt index"`, plus details.
+* **Error**: raise a typed exception; the orchestrator decides whether to continue (partial) or abort (fatal).
+
+### C.3 Specific commands to audit & fix
+
+* `ops index update` (current `index tail`): return `changed: False` when the candidate set is empty or all already indexed; **do not** `Exit(1)`.
+* `ops persona status`: never non‑zero on freshness; provide a boolean + advisory message. Only `persona build` errors are fatal.
+* `ops pipeline normalize/summarize/extract-facts/characterize`: when no normalized entries for the date or no deltas, return success with `changed=False`.
+
+### C.4 Orchestrator policy
+
+* Record `changed` flags per stage in telemetry.
+* Continue on no‑op and proceed to subsequent steps (e.g., persona status/build may still be needed).
+
+---
+
+# Updated Implementation Plan (diff vs. previous guide)
+
+Below only shows **new/changed** items. Keep all other steps from the original guide.
+
+## Phase 1 — CLI skeleton (unchanged)
+
+*(aliases in place; no behavior change)*
+
+*No change to checkboxes.*
+
+---
+
+## Phase 2 — `capture` v1 (Persist + Normalize)
+
+**Changes**: implement **authoritative imports**.
+
+8. [ ] Create `services/capture.py` with `CaptureInput`, `EntryResult`, `CaptureResult`; stub `run_capture()`.
+
+9. [ ] Implement **persist** for:
+
+   * `--text`, `--edit`: create `data/journal/YYYY/MM/DD/<slug>.md` (front matter scaffold; no snapshot).
+   * `--from <file>` / `<dir>`: **canonicalize to `data/journal/...`** and also write `data/raw/<hash>.md`; update `data/manifest/ingested.yaml` with `canonical_journal_path`.
+   * **Dedup** by `import_hash` → skip new journal file; mark `EntryResult(deduped=True)`.
+
+10. [ ] Add flags: `--force-date` (new), `--date` (fallback), and retain `--source-type`. Implement date resolution precedence exactly as in §A.1.
+
+11. [ ] Run **normalize** on **canonical journal paths**. Ensure normalized YAML includes `source_path` pointing at the canonical journal file and includes `origin.import_hash` when available.
+
+12. [ ] Write minimal telemetry (persist/normalize durations; per‑entry `deduped/changed`).
+
+> Commit: `capture: authoritative imports (journal files + raw snapshots + manifest); persist+normalize`
+
+---
+
+## Phase 3 — `capture` v2 (Derivation + Scoped review)
+
+**Changes**: strictly apply only new batches.
+
+13. [ ] For each date touched, compute `new_batches` via pre/post directory diff around `characterize` (as in §B.1). Add to `CaptureResult.review_candidates`.
+
+14. [ ] If `--apply-profile=auto`, loop:
+
+```
+for f in review_candidates:
+    ops pipeline review --file <f> --apply
+```
+
+(No global “apply latest” call.)
+
+15. [ ] Pass `--retries`, `--progress` uniformly. Record which derived artifacts changed.
+
+> Commit: `capture: derivations + scoped review-apply for this run only`
+
+---
+
+## Phase 4 — Retrieval & Persona refresh
+
+**No change**, but ensure **no‑op semantics** below are honored.
+
+15–17 remain the same; ensure index/persona services return `OperationResult` and do not exit non‑zero on no‑op.
+
+> Commit: `capture: index/persona refresh using OperationResult (no-op returns success)`
+
+---
+
+## Phase 5 — `status` & `ops system doctor`
+
+*No change to content.*
+Ensure both commands **never** represent “no work” as an error.
+
+> Commit: `status+doctor: non-fatal no-op semantics`
+
+---
+
+## Phase 6 — Import: folders, manifest, front matter
+
+**Add explicit tests for authoritative journals**.
+
+20. [ ] Extend `capture --from` to folders; recurse for `*.md`.
+
+21. [ ] Ensure `data/manifest/ingested.yaml` holds `canonical_journal_path`. Skip creating a **second** journal file for identical `import_hash`.
+
+22. [ ] Front matter precedence and `--force-date` semantics verified (unit tests).
+
+23. [ ] Slug collision deterministic suffixing. Normalized YAML `source_path` points to canonical path.
+
+> Commit: `capture: folder imports create canonical journal files + dedupe; tests`
+
+---
+
+## Phase 7 — Help text polish & docs
+
+*Add explicit examples for imports writing journal files.*
+
+> Commit: `docs: capture imports produce canonical journal files; examples + migration notes`
+
+---
+
+## Phase 8 — Telemetry
+
+*Add `review_candidates` list to `CaptureResult`. Events should include each `review --file` application result.*
+
+> Commit: `telemetry: include new_batches and per-file review-apply events`
+
+---
+
+## Phase 10 — Cleanup & deprecations
+
+*No change*, but ensure any CLI wrappers that used `Typer.Exit(1)` on no‑op are converted to return `OperationResult(changed=False)`.
+
+> Commit: `ops: normalize no-op exit behavior; wrappers return OperationResult`
+
+---
+
+# Test Additions & Adjustments
+
+## Imports → Journal (authoritative)
+
+* `test_capture_import_creates_journal_and_snapshot.py`
+
+  * Arrange: file with front matter (`title`, `date`);
+  * Act: `capture --from file.md --source-type blog`;
+  * Assert:
+
+    * `data/journal/YYYY/MM/DD/<slug>.md` exists with `origin.import_hash`, `origin.snapshot_path`, `source_type`.
+    * `data/raw/<hash>.md` exists.
+    * `data/manifest/ingested.yaml` maps `import_hash` → `canonical_journal_path`.
+    * `data/normalized/...yaml` `source_path` equals canonical journal path.
+
+* `test_capture_import_duplicate_hash_dedupes.py`
+
+  * Run capture twice with same file. Assert second run reports `deduped=True` and **does not** create a new journal file.
+
+* `test_capture_import_force_date_overrides_all.py`
+
+  * Given file with its own date, run `--force-date 2025-01-01`. Assert `created_at` equals forced date.
+
+## Scoped Review
+
+* `test_capture_review_only_new_batches.py`
+
+  * Seed a stale pending batch (simulating previous run).
+  * Run `capture` producing a new batch.
+  * Assert only the new batch is applied; old one remains.
+
+## No‑op Semantics
+
+* `test_ops_index_update_noop_returns_success.py`
+
+  * Call when nothing changed; assert exit code 0 and `OperationResult(changed=False)`.
+
+* `test_capture_noop_pipeline_does_not_fail.py`
+
+  * With no normalized entries for date, ensure `capture` completes successfully with telemetry marking stages as no‑op.
+
+---
+
+# Developer Notes for Implementation
+
+* **Where to store “previous imports”**: optional field in front matter `origin.previous_hash` or a history list in the manifest. Not required for MVP; keep it simple unless needed.
+* **Symlinks/hardlinks?** Don’t rely on them; write full canonical files for portability.
+* **Paths stored in front matter**: use repo‑relative paths for stability (avoid machine‑absolute paths when possible).
+* **Timezones**: `imported_at` should be **UTC** ISO 8601; `created_at` is a **date string** (`YYYY-MM-DD`) per current schema.
+
+---
+
+# Updated Option Reference Snippets
+
+### `aijournal capture --help` (appenditions)
+
+```
+DATE OVERRIDES
+  --force-date YYYY-MM-DD       Force the same date for all inputs (overrides front matter)
+  -d, --date YYYY-MM-DD         Fallback date when input has none
+
+IMPORT BEHAVIOR
+  --source-type [journal|notes|blog]  Recorded in front matter + manifest
+  (Imports always create a canonical journal file under data/journal/…)
+```
+
+---
+
+This addendum resolves the three blockers:
+
+1. **Authoritative imports**: Imports now **always** produce a canonical `data/journal/...` file, with a raw snapshot and manifest mapping. Normalization uses the canonical path.
+2. **Scoped review**: Capture computes `new_batches` via directory diff and applies **only** those paths (per‑file `--file` calls). No accidental application of stale batches.
+3. **No‑op semantics**: Service‑first orchestration + `OperationResult` ensures “nothing to do” never kills the run. CLI wrappers remain friendly but won’t `Exit(1)` on no‑ops.
+
+Once you confirm, the coding agent can proceed using the original phased plan with these updates integrated.
