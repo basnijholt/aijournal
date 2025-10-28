@@ -1086,7 +1086,7 @@ documentation parity, and live-mode polish moving without blocking on LLM availa
       - Remaining issues: facts/suggestions still return empty payloads, chat feedback lacks claim-level references, and `chatd` shutdown continues to raise the SQLite cross-thread error.
       - Artefacts: refreshed summaries/microfacts, regenerated persona core + advice card, updated profile planning facet, packs within budget, chat transcripts recorded under `derived/chat_sessions/live-verify/`.
     - **Focused production to-dos (live mode only).**
-      1. **Structured-output hardening.** ✅ _2025-10-29: `run_ollama_agent` now sanitizes fenced JSON and logs the cleaned payload on validation errors (`src/aijournal/services/ollama.py`, tests in `tests/test_ollama_services.py`). Chat/advise flows now require dedicated Pydantic response models with no heuristic fallbacks (see `src/aijournal/services/chat.py`, `src/aijournal/cli.py`)._
+      1. **Structured-output hardening.** ✅ _2025-10-29: `run_ollama_agent` now sanitizes fenced JSON and logs the cleaned payload on validation errors (`src/aijournal/services/ollama.py`, tests in `tests/test_ollama_services.py`). Chat/advise flows now require dedicated Pydantic response models with no heuristic fallbacks (see `src/aijournal/services/chat.py`, `src/aijournal/cli.py`). Facts/profile prompts updated to leverage summaries/sections so live runs emit meaningful payloads._
       2. **Prompt calibration for gpt-oss:20b.**  
          - Iterate on `extract_facts.md`, `profile_suggest.md`, and `characterize.md` so the model produces non-empty facts/suggestions on the seeded journal data.  
          - Add regression scripts (no fake mode) that run these prompts against `/tmp/aijournal_live_run_*` and save exemplar outputs.

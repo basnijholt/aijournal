@@ -171,6 +171,8 @@ class SelfProfile(AijournalModel):
     decision_style: dict[str, Any] = Field(default_factory=dict)
     affect_energy: dict[str, Any] = Field(default_factory=dict)
     planning: dict[str, Any] = Field(default_factory=dict)
+    dashboard: dict[str, Any] = Field(default_factory=dict)
+    habits: dict[str, Any] = Field(default_factory=dict)
     social: dict[str, Any] = Field(default_factory=dict)
     boundaries_ethics: dict[str, Any] = Field(default_factory=dict)
     coaching_prefs: dict[str, Any] = Field(default_factory=dict)
