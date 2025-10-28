@@ -21,6 +21,7 @@ import yaml
 from pydantic import BaseModel, ValidationError
 from pydantic_ai import Agent
 
+from aijournal.commands.init import run_init as run_init_command
 from aijournal.fakes import (
     fake_profile_suggestions,
 )
@@ -97,10 +98,6 @@ from aijournal.services.retriever import RetrievalFilters, Retriever
 from aijournal.utils import time as time_utils
 from aijournal.utils.coercion import coerce_float, coerce_int
 from aijournal.utils.paths import (
-    AUTHORITATIVE_DIRS,
-    DERIVED_DIRS,
-    ensure_directories,
-    ensure_seed_files,
     find_data_root,
     normalized_entry_path,
     resolve_prompt_path,
@@ -1261,26 +1258,7 @@ def init(
     ),
 ) -> None:
     """Initialize the local aijournal layout."""
-    base = path or Path.cwd()
-    base.mkdir(parents=True, exist_ok=True)
-
-    dir_sets = (AUTHORITATIVE_DIRS, DERIVED_DIRS)
-    created_dirs = 0
-    total_dirs = 0
-    for rels in dir_sets:
-        created, total = ensure_directories(base, rels)
-        created_dirs += created
-        total_dirs += total
-
-    created_files, total_files = ensure_seed_files(base)
-
-    already_dirs = total_dirs - created_dirs
-    already_files = total_files - created_files
-
-    summary = (
-        f"Created {created_dirs} directories and {created_files} files under {base}. "
-        f"Already present: {already_dirs} directories and {already_files} files."
-    )
+    summary = run_init_command(path)
     typer.echo(summary)
 
 
