@@ -18,6 +18,13 @@ import typer
 import yaml
 from pydantic import ValidationError
 
+from aijournal.commands.facts import (
+    _characterization_context,
+    _manifest_by_id,
+)
+from aijournal.commands.facts import (
+    run_facts as run_facts_command,
+)
 from aijournal.commands.ingest import (
     _load_config,
     _load_manifest,
@@ -50,7 +57,6 @@ from aijournal.commands.summarize import (
 from aijournal.fakes import (
     fake_profile_suggestions,
 )
-from aijournal.ingest_agent import IngestSection
 from aijournal.io.chat_sessions import ChatSessionRecorder
 from aijournal.io.yaml_io import load_yaml_model, write_yaml_model
 from aijournal.models import (
@@ -64,8 +70,6 @@ from aijournal.models import (
     ClaimsFile,
     ClaimSignaturePayload,
     ClaimSource,
-    ClaimStatus,
-    ExtractedFactsResponse,
     FacetProposal,
     InterviewQuestion,
     InterviewSet,
@@ -93,7 +97,6 @@ from aijournal.pipelines import index as index_pipeline
 from aijournal.pipelines import normalization
 from aijournal.pipelines import pack as pack_pipeline
 from aijournal.pipelines import persona as persona_pipeline
-from aijournal.schema import SchemaValidationError, validate_schema
 from aijournal.services import (
     ChatService,
     ChatTurn,
@@ -173,18 +176,6 @@ PERSONA_DEFAULTS = {
 DEFAULT_CHAR_PER_TOKEN = 4.2
 
 
-def _clamp_strength(value: float | None, default: float = 0.6) -> float:
-    try:
-        strength = float(value) if value is not None else default
-    except (TypeError, ValueError):
-        strength = default
-    return max(0.0, min(1.0, strength))
-
-
-def _normalize_status(value: str | None) -> ClaimStatus:
-    return normalization.normalize_status(value)
-
-
 def _simple_suggestions_to_profile(
     simple: SimpleProfileSuggestionsResponse,
     *,
@@ -246,30 +237,8 @@ DEFAULT_TIMEOUT_SECONDS = 120.0
 DEFAULT_LLM_RETRIES = 1
 
 
-def _manifest_by_id(entries: Iterable[ManifestEntry]) -> dict[str, ManifestEntry]:
-    index: dict[str, ManifestEntry] = {}
-    for entry in entries:
-        entry_id = entry.id
-        if not entry_id:
-            continue
-        index[entry_id] = entry
-    return index
-
-
 def _normalize_created_at(value: Any) -> str:
     return normalization.normalize_created_at(value)
-
-
-def _normalize_tags(raw: Iterable[Any]) -> list[str]:
-    return normalization.normalize_tags(raw)
-
-
-def _clamp01(value: Any) -> float:
-    try:
-        numeric = float(value)
-    except (TypeError, ValueError):
-        numeric = 0.0
-    return max(0.0, min(1.0, numeric))
 
 
 def _coerce_timestamp(value: Any) -> str | None:
@@ -280,14 +249,6 @@ def _coerce_timestamp(value: Any) -> str | None:
         return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
     text = str(value)
     return text if text else None
-
-
-def _normalize_scope(raw: Any) -> Scope:
-    return normalization.normalize_scope(raw)
-
-
-def _normalize_sources(raw: Any) -> list[ClaimSource]:
-    return normalization.normalize_sources(raw)
 
 
 def _default_claim_sources(raw: ClaimAtom | dict[str, Any]) -> list[ClaimSource]:
@@ -303,19 +264,6 @@ def _default_claim_sources(raw: ClaimAtom | dict[str, Any]) -> list[ClaimSource]
         return []
     claim_id_str = str(claim_id)
     return [ClaimSource(entry_id=claim_id_str, spans=[])]
-
-
-def _normalize_provenance(
-    raw: Any,
-    *,
-    timestamp: str,
-    default_sources: Sequence[ClaimSource] | None,
-) -> Provenance:
-    return normalization.normalize_provenance(
-        raw,
-        timestamp=timestamp,
-        default_sources=default_sources,
-    )
 
 
 def _normalize_claim_atom(
@@ -368,23 +316,6 @@ def _build_claim_atom_from_entry(
     return _normalize_claim_atom(raw, timestamp=timestamp, default_sources=default_sources)
 
 
-def _clean_summary(
-    text: str | None,
-    fallback: str | None = None,
-) -> str | None:
-    return normalization.clean_summary(text, fallback)
-
-
-def _merge_sections(
-    primary: Iterable[IngestSection],
-    fallback: Iterable[dict[str, Any]],
-    *,
-    title: str,
-    limit: int = 6,
-) -> list[dict[str, Any]]:
-    return normalization.merge_sections(primary, fallback, title=title, limit=limit)
-
-
 def _load_normalized_entries_with_paths(root: Path, day: str) -> list[tuple[NormalizedEntry, Path]]:
     folder = root / "data" / "normalized" / day
     if not folder.exists():
@@ -393,10 +324,6 @@ def _load_normalized_entries_with_paths(root: Path, day: str) -> list[tuple[Norm
     for file in sorted(folder.glob("*.yaml")):
         entries.append((load_yaml_model(file, NormalizedEntry), file))
     return entries
-
-
-def _derived_microfacts_path(root: Path, day: str) -> Path:
-    return root / "derived" / "microfacts" / f"{day}.yaml"
 
 
 def _derived_advice_path(root: Path, day: str, question: str) -> Path:
@@ -492,35 +419,6 @@ def _profile_suggestions_payload(
     return suggestions
 
 
-def _characterization_context(
-    entries: Sequence[NormalizedEntry],
-    manifest_index: dict[str, ManifestEntry],
-) -> tuple[list[str], list[str], list[str], list[ClaimSource]]:
-    normalized_ids: list[str] = []
-    source_hashes: set[str] = set()
-    manifest_hashes: set[str] = set()
-    default_sources: list[ClaimSource] = []
-
-    for idx, entry in enumerate(entries):
-        entry_id = entry.id or f"entry-{idx + 1}"
-        normalized_ids.append(entry_id)
-        source_hash = entry.source_hash
-        if isinstance(source_hash, str) and source_hash:
-            source_hashes.add(source_hash)
-        manifest_entry = manifest_index.get(entry_id)
-        manifest_hash = manifest_entry.hash if manifest_entry else None
-        if manifest_hash:
-            manifest_hashes.add(str(manifest_hash))
-        default_sources.append(ClaimSource(entry_id=entry_id, spans=[]))
-
-    return (
-        normalized_ids,
-        sorted(source_hashes),
-        sorted(manifest_hashes),
-        default_sources,
-    )
-
-
 def _normalize_claim_proposals(
     raw_claims: Iterable[Any],
     *,
@@ -538,60 +436,6 @@ def _normalize_claim_proposals(
         default_sources=default_sources,
         timestamp=timestamp,
     )
-
-
-def _normalize_facet_proposals(
-    raw_facets: Iterable[Any],
-    *,
-    normalized_ids: list[str],
-    evidence_hashes: list[str],
-) -> list[FacetProposal]:
-    proposals: list[FacetProposal] = []
-    for raw in raw_facets:
-        if isinstance(raw, FacetProposal):
-            proposals.append(
-                FacetProposal(
-                    path=raw.path,
-                    value=raw.value,
-                    operation=raw.operation,
-                    method=raw.method,
-                    confidence=raw.confidence,
-                    review_after_days=raw.review_after_days,
-                    user_verified=raw.user_verified,
-                    normalized_ids=facts_pipeline.merge_unique(raw.normalized_ids, normalized_ids),
-                    evidence_hashes=facts_pipeline.merge_unique(
-                        raw.evidence_hashes, evidence_hashes
-                    ),
-                    rationale=raw.rationale,
-                ),
-            )
-            continue
-        payload = raw.model_dump(mode="python") if hasattr(raw, "model_dump") else raw
-        if not isinstance(payload, dict):
-            continue
-        path = payload.get("path") or payload.get("target")
-        if not path:
-            continue
-            proposals.append(
-                FacetProposal(
-                    path=str(path),
-                    value=payload.get("value"),
-                    operation=str(payload.get("operation") or "set"),
-                    method=str(payload.get("method") or "inferred"),
-                    confidence=coerce_float(payload.get("confidence")) or 0.55,
-                    review_after_days=coerce_int(payload.get("review_after_days")) or 90,
-                    user_verified=bool(payload.get("user_verified", False)),
-                    normalized_ids=facts_pipeline.merge_unique(
-                        payload.get("normalized_ids", []), normalized_ids
-                    ),
-                    evidence_hashes=facts_pipeline.merge_unique(
-                        payload.get("evidence_hashes", []), evidence_hashes
-                    ),
-                    rationale=str(payload.get("rationale") or payload.get("reason") or "").strip()
-                    or None,
-                ),
-            )
-    return proposals
 
 
 def _characterize_payload(
@@ -898,58 +742,21 @@ def facts(
 ) -> None:
     """Generate micro-facts from normalized entries."""
     root = Path.cwd()
-    entries = _load_normalized_entries(root, date)
-    if not entries:
-        typer.secho(f"No normalized entries for {date}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(1)
-
-    timeout_value = _validate_timeout(timeout)
-    _log_entry_progress(f"Extracting micro-facts for {date}", entries, progress)
-
-    config = _load_config(root)
-    manifest_entries = _load_manifest(_manifest_path(root))
-    manifest_index = _manifest_by_id(manifest_entries)
     _, claim_models = _load_profile_components(root)
-    context = _characterization_context(entries, manifest_index)
-    use_fake_llm = _use_fake_llm()
-
-    def request_microfacts() -> ExtractedFactsResponse:
-        return cast(
-            ExtractedFactsResponse,
-            _invoke_structured_llm(
-                "prompts/extract_facts.md",
-                {"date": date, "entries_json": _json_block(_entries_to_payload(entries))},
-                response_model=ExtractedFactsResponse,
-                agent_name="aijournal-facts",
-                config=config,
-                timeout=timeout_value,
-            ),
-        )
-
-    try:
-        facts_data = facts_pipeline.generate_microfacts(
-            entries,
-            date,
-            use_fake_llm=use_fake_llm,
-            structured_call=_structured_call_with_retry,
-            request_factory=request_microfacts,
-            retries=retries,
-            context=context,
-            manifest_index=manifest_index,
-        )
-    except LLMResponseError as exc:
-        typer.secho(f"Facts extraction failed: {exc}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(1)
-    facts_data.meta = _build_meta("prompts/extract_facts.md", config=config)
-    facts_data.preview = _build_claim_preview(
-        facts_data.claim_proposals,
-        [claim.model_copy(deep=True) for claim in claim_models],
-        timestamp=time_utils.format_timestamp(time_utils.now()),
+    preview, facts_path = run_facts_command(
+        date,
+        timeout=timeout,
+        retries=retries,
+        progress=progress,
+        claim_models=claim_models,
+        build_claim_preview=lambda proposals, claims, timestamp: _build_claim_preview(
+            proposals,
+            claims,
+            timestamp=timestamp,
+        ),
     )
-    facts_path = _derived_microfacts_path(root, date)
-    write_yaml_model(facts_path, facts_data)
-    if facts_data.preview:
-        _print_claim_preview(facts_data.preview)
+    if preview:
+        _print_claim_preview(preview)
     typer.echo(str(facts_path))
 
 
@@ -1651,23 +1458,6 @@ def persona_status() -> None:
         typer.echo(f"- {reason}", err=True)
     typer.echo("Run `aijournal persona build` to refresh.")
     raise typer.Exit(1)
-
-
-def _atomic_write(
-    path: Path,
-    payload: dict[str, Any],
-    *,
-    schema: str | None = None,
-) -> None:
-    if schema:
-        try:
-            validate_schema(schema, payload)
-        except SchemaValidationError as exc:
-            typer.secho(str(exc), fg=typer.colors.RED, err=True)
-            raise typer.Exit(1)
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
-    tmp.replace(path)
 
 
 def _impact_for(path: str, weights: dict[str, float]) -> float:
