@@ -171,7 +171,7 @@ _Pattern for each command group: first create `commands/<name>.py` with a thin `
 35. [x] Add `commands/chat.py`/`chatd.py` wrappers.  
     → `uv run pytest`
 
-36. [ ] Add `commands/advise.py`.  
+36. [x] Add `commands/advise.py`.  
     → `uv run pytest`
 
 37. [ ] Add `commands/characterize.py`.  
