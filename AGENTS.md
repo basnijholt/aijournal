@@ -48,7 +48,7 @@ Read these in order to understand the surfaces you will exercise. Each document 
 5. `docs/archive/PLAN-v0.3.md` — historical roadmap reference (skim only if you need context on past milestones).
 6. `CHANGELOG.md` — review “Unreleased” for behaviour changes since the last tagged run.
 7. `prompts/characterize.md`, `prompts/interview.md`, `prompts/advise.md` — structured-output contracts.
-8. `src/aijournal/commands/` & `src/aijournal/cli.py` — command runners now live under `commands/`, with `cli.py` providing thin Typer glue for `init`, `normalize`, `summarize`, `facts`, `profile ...`, `persona ...`, `index ...`, `pack`, `chat`, `chatd`, `advise`, `feedback-apply`.
+8. `src/aijournal/commands/` & `src/aijournal/cli.py` — command runners now live under `commands/`, with `cli.py` providing thin Typer glue for `init`, `capture`, `chat`, `advise`, `status`, `serve chat`, `export pack`, and the `ops.*` namespaces (pipeline/profile/index/persona/feedback/system/dev).
 9. `src/aijournal/pipelines/` — deterministic workflows backing summaries, facts, persona, characterize, packs, and advise.
 10. `src/aijournal/services/{chat.py, chat_api.py, feedback.py}` — chat orchestration, API streaming, feedback adjustments, telemetry.
 
@@ -75,32 +75,30 @@ Read these first to avoid surprises mid-run.
 
 ### 3.1 Seed the Workspace
 
-1. Create temp directory:
+1. Create a temp directory and scaffold the layout:
    ```bash
    export RUN_ROOT=/tmp/aijournal_live_run_$(date +%Y%m%d%H%M)
    uv run aijournal init --path "$RUN_ROOT"
-   ```
-   Directory structure: `config/`, `data/`, `profile/`, `derived/`, etc.
-
-2. Change into the run directory:
-   ```bash
    cd "$RUN_ROOT"
    ```
 
-3. Create at least five Markdown journal entries covering the last 7 days. Each entry needs front matter (`id`, `created_at`, `title`, `tags`, `projects`, `mood`) plus 3–4 paragraphs of body text. Write them manually—no fake flags.
-
-4. Normalize every journal:
+2. Capture at least five journal entries covering the last 7 days. Use `--edit` (opens `$EDITOR`) or `--text`/STDIN, making sure each entry includes rich front matter (tags, projects, mood) plus 3–4 paragraphs of body text. Example:
    ```bash
-   uv run aijournal normalize data/journal/YYYY/MM/DD/entry.md
+   uv run aijournal capture --edit --date 2025-10-26 --tags planning weekly-review --projects roadmap
    ```
-   - Ensure `data/normalized/<date>/<slug>.yaml` contains `summary` fields; add manually if normalization is sparse.
+   Repeat for the remaining days. `capture` writes canonical Markdown, snapshots the raw text, updates the manifest, normalizes the entry, and runs the downstream pipeline for the affected date.
 
-5. Optional ingestion (if external Markdown exists):
+3. To import existing folders of Markdown notes, rely on capture instead of the legacy ingest command:
    ```bash
-   uv run aijournal ingest /path/to/external.md
+   uv run aijournal capture --from ~/notes/weekly --source-type notes --projects roadmap
    ```
+   Capture dedupes by SHA-256 and always materializes `data/journal/YYYY/MM/DD/<slug>.md`; raw snapshots land in `data/raw/`, and `data/manifest/ingested.yaml` tracks the import hash.
 
-6. Maintain a manifest table (date, slug, tags) to reuse the correct dates later.
+4. If you need to stop early (e.g., persist + normalize only), use stage filters:
+   ```bash
+   uv run aijournal capture --from ~/notes/weekly --max-stage 1
+   ```
+   Resume later with `--min-stage 2` or run the specific `aijournal ops …` command that capture prints at the end of the run.
 
 ### 3.2 LLM & Prompt Warmups
 
@@ -117,7 +115,7 @@ Structured commands expect the model to mine existing fields (`summary`, `sectio
 - Updated instruction instructs the model to synthesize statements from summaries/sections when paragraphs are missing.
 - Validate outputs with:
   ```bash
-  uv run -- bash -lc "cd $RUN_ROOT && aijournal facts --date 2025-10-26"
+  uv run -- bash -lc "cd $RUN_ROOT && aijournal ops pipeline extract-facts --date 2025-10-26"
   ```
   The file `derived/microfacts/<date>.yaml` should contain facts plus claim proposals. If spans are empty, that's acceptable; we log the raw text upstream.
 
@@ -125,13 +123,13 @@ Structured commands expect the model to mine existing fields (`summary`, `sectio
 - Model now mines structured fields even without paragraphs. Expect claims such as “weekly planning resets align meals with training goals.”
 - Validate with:
   ```bash
-  uv run -- bash -lc "cd $RUN_ROOT && aijournal profile suggest --date 2025-10-26"
+  uv run -- bash -lc "cd $RUN_ROOT && aijournal ops profile suggest --date 2025-10-26"
   ```
   Output lives at `derived/profile_suggestions/<date>.yaml`.
 
 ### Characterize
-- After prompts produce meaningful payloads, run `aijournal characterize --date … --progress` to produce batches in `derived/pending/profile_updates/`.
-- `aijournal review-updates --file … --apply` now succeeds after extending `SelfProfile` with `planning`, `dashboard`, and `habits` facets.
+- After prompts produce meaningful payloads, run `aijournal ops pipeline characterize --date … --progress` to produce batches in `derived/pending/profile_updates/`.
+- `aijournal ops pipeline review --file … --apply` now succeeds after extending `SelfProfile` with `planning`, `dashboard`, and `habits` facets.
 
 ### Chat Prompt
 - It now enforces `[claim:<id>]` markers when persona claims exist. Feedback telemetry logs detected markers.
@@ -148,30 +146,33 @@ export AIJOURNAL_MODEL="gpt-oss:20b"
 export AIJOURNAL_OLLAMA_HOST="http://192.168.1.143:11434"
 ```
 
-1. `uv run aijournal summarize --date YYYY-MM-DD`
-2. `uv run aijournal facts --date YYYY-MM-DD`
-3. `uv run aijournal profile suggest --date YYYY-MM-DD`
-4. `uv run aijournal profile apply --date YYYY-MM-DD --yes`
-5. `uv run aijournal profile status`
-6. `uv run aijournal characterize --date YYYY-MM-DD --progress`
-7. `uv run aijournal review-updates --file derived/pending/profile_updates/<batch>.yaml --apply`
-8. (Repeat characterize/review for each new entry date)
-9. `uv run aijournal index rebuild`
-10. `uv run aijournal index search 'deep work sprint focus' --top 3 --tags focus`  
-    (example query that yields a match)
-11. `uv run aijournal persona build`
-12. `uv run aijournal persona status`
-13. `uv run aijournal interview --date YYYY-MM-DD`
-14. `uv run aijournal advise 'How should I prioritize habits this week?'`
-15. `uv run aijournal chat 'What progress did I make?' --session live-verify --top 3 --no-save`
-16. `uv run aijournal chat 'What progress did I make?' --session live-verify --feedback down --top 3 --no-save`
-17. `uv run aijournal chatd --host 127.0.0.1 --port 8055`  
+1. `uv run aijournal capture --text "Live rehearsal kickoff" --tags focus`
+2. `uv run aijournal capture --from notes/weekly --source-type notes --projects roadmap`
+3. `uv run aijournal capture --min-stage 2 --max-stage 5 --date YYYY-MM-DD` (rerun derivations only, if needed)
+4. `uv run aijournal status`
+5. `uv run aijournal chat 'What progress did I make?' --session live-verify --top 3`
+6. `uv run aijournal chat 'What progress did I make?' --session live-verify --feedback down --top 3`
+7. `uv run aijournal advise 'How should I prioritize habits this week?'`
+8. `uv run aijournal export pack --level L1 --format yaml`
+9. `uv run aijournal export pack --level L4 --date YYYY-MM-DD --history-days 1 --format json`
+10. `uv run aijournal serve chat --host 127.0.0.1 --port 8055`  
     - Hit `/chat` via curl or httpx in a separate process; confirm graceful shutdown (no stack trace).
-18. `uv run aijournal pack --level L1 --format yaml`
-19. `uv run aijournal pack --level L4 --date YYYY-MM-DD --history-days 1 --format json`
-20. `uv run aijournal feedback-apply`  
-    (applies pending feedback batches and archives them)
-21. `uv run aijournal ollama health`
+11. `uv run aijournal ops feedback apply`
+12. `uv run aijournal ops system ollama health`
+
+Advanced/manual checks (useful for troubleshooting specific stages):
+
+13. `uv run aijournal ops pipeline normalize data/journal/YYYY/MM/DD/<entry>.md`
+14. `uv run aijournal ops pipeline summarize --date YYYY-MM-DD`
+15. `uv run aijournal ops pipeline extract-facts --date YYYY-MM-DD`
+16. `uv run aijournal ops profile suggest --date YYYY-MM-DD`
+17. `uv run aijournal ops profile apply --date YYYY-MM-DD --yes`
+18. `uv run aijournal ops pipeline characterize --date YYYY-MM-DD --progress`
+19. `uv run aijournal ops pipeline review --file derived/pending/profile_updates/<batch>.yaml --apply`
+20. `uv run aijournal ops index rebuild`
+21. `uv run aijournal ops index search 'deep work sprint focus' --top 3 --tags focus`
+22. `uv run aijournal ops persona build`
+23. `uv run aijournal ops persona status`
 
 Maintain a run log capturing score, command, summary, artifacts, troubleshooting notes (e.g., `run_log.md` in the temp directory). This ensures reproducibility and provides evidence of the 350/350 score.
 
@@ -181,7 +182,7 @@ Maintain a run log capturing score, command, summary, artifacts, troubleshooting
 
 Feedback files accumulate under `derived/pending/profile_updates/feedback_*.yaml`. After reviewing them, run:
 ```bash
-uv run -- bash -lc "cd $RUN_ROOT && aijournal feedback-apply"
+uv run -- bash -lc "cd $RUN_ROOT && aijournal ops feedback apply"
 ```
 This command:
 - Updates matched claims in `profile/claims.yaml`
@@ -195,7 +196,7 @@ This command:
 
 The retriever now opens SQLite with `check_same_thread=False`, enabling clean shutdowns. To validate:
 ```bash
-uv run -- bash -lc "cd $RUN_ROOT && /Users/bas.nijholt/Downloads/aijournal/.venv/bin/aijournal chatd --host 127.0.0.1 --port 8055"
+uv run -- bash -lc "cd $RUN_ROOT && aijournal serve chat --host 127.0.0.1 --port 8055"
 ```
 In another shell:
 ```bash
@@ -213,9 +214,9 @@ Stop the server with SIGTERM or let it exit naturally; no `sqlite3.ProgrammingEr
 
 After profile updates, refresh persona and context bundles:
 ```bash
-uv run -- bash -lc "cd $RUN_ROOT && aijournal persona build"
-uv run -- bash -lc "cd $RUN_ROOT && aijournal pack --level L1 --format yaml"
-uv run -- bash -lc "cd $RUN_ROOT && aijournal pack --level L4 --date YYYY-MM-DD --history-days 1 --format json"
+uv run -- bash -lc "cd $RUN_ROOT && aijournal ops persona build"
+uv run -- bash -lc "cd $RUN_ROOT && aijournal export pack --level L1 --format yaml"
+uv run -- bash -lc "cd $RUN_ROOT && aijournal export pack --level L4 --date YYYY-MM-DD --history-days 1 --format json"
 ```
 These commands guarantee the chat/advice surfaces reflect the latest claims/facets.
 
@@ -232,13 +233,13 @@ These commands guarantee the chat/advice surfaces reflect the latest claims/face
 ## 10. Quick Checklist (TL;DR)
 
 1. Read required docs (README, workflow, architecture, prompts, key services).
-2. `aijournal init` into `/tmp/aijournal_live_run_*`; generate at least five detailed Markdown entries (with summaries).
-3. Normalize every entry (ensure summaries exist).
-4. Run structured commands (summarize, facts, profile suggest/apply, characterize, review-updates).
-5. Regenerate index (`index rebuild`) and verify at least one successful search.
-6. Rebuild persona and packs (`persona build`, `pack --level …`).
-7. Exercise chat (`chat`, `chat --feedback`, `chatd` + POST), confirm claim markers, apply feedback (`feedback-apply`).
-8. Run `ollama health` for provenance.
+2. `aijournal init` into `/tmp/aijournal_live_run_*`; capture at least five detailed entries with `aijournal capture --edit/--text` (or `--from`).
+3. Let capture drive normalization and derivations automatically; rerun specific stages with `--min/--max-stage` or `aijournal ops pipeline …` when inspecting issues.
+4. Verify downstream artifacts as needed (summaries, micro-facts, profile suggestions, characterize/review) via the `ops pipeline` commands.
+5. Regenerate index/persona when troubleshooting (`aijournal ops index rebuild`, `aijournal ops persona build`) and confirm searches succeed.
+6. Export packs with `aijournal export pack --level …` once persona is fresh.
+7. Exercise chat (`chat`, `chat --feedback`, `serve chat` + POST), confirm claim markers, apply feedback (`ops feedback apply`).
+8. Run `aijournal ops system ollama health` for provenance.
 9. Record everything in a run log; aim for 350/350.
 10. Run `uv run pytest` before committing any code changes.
 
