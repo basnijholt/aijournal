@@ -112,7 +112,12 @@ from aijournal.services import (
     resolve_ollama_host,
     run_ollama_agent,
 )
-from aijournal.services.capture import CaptureInput, run_capture
+from aijournal.services.capture import (
+    CAPTURE_MAX_STAGE,
+    CAPTURE_STAGES,
+    CaptureInput,
+    run_capture,
+)
 from aijournal.utils import time as time_utils
 from aijournal.utils.coercion import coerce_int
 from aijournal.utils.paths import (
@@ -150,6 +155,11 @@ serve_app = typer.Typer(help="Service runners and daemons.")
 
 app.add_typer(export_app, name="export")
 app.add_typer(serve_app, name="serve")
+
+CAPTURE_STAGE_LOOKUP = {stage.stage_id: stage for stage in CAPTURE_STAGES}
+CAPTURE_STAGE_TABLE = "\n".join(
+    f"[{stage.stage_id}] {stage.name} – {stage.description}" for stage in CAPTURE_STAGES
+)
 
 
 def _emit_deprecation(command: str, replacement: str | None = None) -> None:
@@ -243,6 +253,18 @@ def capture(
         help="Emit a context pack level when persona changes (L1|L3|L4).",
         rich_help_panel="APPLY & REFRESH",
     ),
+    min_stage: int = typer.Option(
+        0,
+        "--min-stage",
+        help=f"Lowest capture stage (0-{CAPTURE_MAX_STAGE}) to execute; capture always revalidates stages 0-1.",
+        rich_help_panel="STAGE CONTROL",
+    ),
+    max_stage: int = typer.Option(
+        CAPTURE_MAX_STAGE,
+        "--max-stage",
+        help=f"Highest capture stage (0-{CAPTURE_MAX_STAGE}) to execute. Stages:\n{CAPTURE_STAGE_TABLE}",
+        rich_help_panel="STAGE CONTROL",
+    ),
     retries: int = typer.Option(
         1,
         "--retries",
@@ -309,6 +331,19 @@ def capture(
             raise typer.Exit(code=2)
         pack_value = pack_upper
 
+    if not (0 <= min_stage <= CAPTURE_MAX_STAGE and 0 <= max_stage <= CAPTURE_MAX_STAGE):
+        typer.secho(
+            f"--min-stage/--max-stage must be between 0 and {CAPTURE_MAX_STAGE}.",
+            fg=typer.colors.RED,
+            err=True,
+        )
+        raise typer.Exit(code=2)
+    if min_stage > max_stage:
+        typer.secho(
+            "--min-stage cannot be greater than --max-stage.", fg=typer.colors.RED, err=True
+        )
+        raise typer.Exit(code=2)
+
     if from_paths:
         resolved_paths = [str(path.resolve()) for path in from_paths]
         contains_dir = any(path.is_dir() for path in from_paths)
@@ -335,6 +370,8 @@ def capture(
         progress=progress,
         dry_run=dry_run,
         snapshot=snapshot,
+        min_stage=min_stage,
+        max_stage=max_stage,
     )
 
     result = run_capture(capture_input)
@@ -358,6 +395,34 @@ def capture(
         typer.secho("Skipped duplicates:", fg=typer.colors.BLUE)
         for entry in deduped:
             typer.echo(f"  - {entry.date} / {entry.slug}")
+
+    completed_set = set(result.stages_completed)
+    if completed_set:
+        typer.secho("Stages completed:", fg=typer.colors.GREEN)
+        for idx in sorted(completed_set):
+            stage = CAPTURE_STAGE_LOOKUP.get(idx)
+            if stage:
+                typer.echo(f"  [{idx}] {stage.name}")
+
+    requested_range = range(result.min_stage, result.max_stage + 1)
+    pending = [idx for idx in requested_range if idx not in completed_set]
+    if pending:
+        typer.secho("Requested stages pending manual follow-up:", fg=typer.colors.YELLOW)
+        for idx in pending:
+            stage = CAPTURE_STAGE_LOOKUP.get(idx)
+            if not stage:
+                continue
+            manual = stage.manual.replace("\n", "\n    ")
+            typer.echo(f"  [{idx}] {stage.name} – {stage.description}\n    {manual}")
+
+    if result.max_stage < CAPTURE_MAX_STAGE:
+        typer.secho("Additional stages not requested in this run:", fg=typer.colors.BLUE)
+        for idx in range(result.max_stage + 1, CAPTURE_MAX_STAGE + 1):
+            stage = CAPTURE_STAGE_LOOKUP.get(idx)
+            if not stage:
+                continue
+            manual = stage.manual.replace("\n", "\n    ")
+            typer.echo(f"  [{idx}] {stage.name} – {stage.description}\n    {manual}")
 
     typer.echo(
         json.dumps(

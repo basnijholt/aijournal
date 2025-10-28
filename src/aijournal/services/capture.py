@@ -9,7 +9,7 @@ from datetime import UTC, datetime
 from hashlib import sha256
 from pathlib import Path
 from time import perf_counter
-from typing import Any, Literal
+from typing import Any, Literal, NamedTuple
 
 import typer
 import yaml
@@ -48,6 +48,73 @@ from aijournal.utils import time as time_utils
 from aijournal.utils.paths import normalized_entry_path
 
 MARKDOWN_SUFFIXES = {".md", ".markdown"}
+
+
+class CaptureStage(NamedTuple):
+    stage_id: int
+    name: str
+    description: str
+    manual: str
+
+
+CAPTURE_STAGES: list[CaptureStage] = [
+    CaptureStage(
+        0,
+        "persist",
+        "Write canonical Markdown, update manifest, and store optional raw snapshots.",
+        "Handled automatically by capture (no standalone command).",
+    ),
+    CaptureStage(
+        1,
+        "normalize",
+        "Emit normalized YAML for new or changed entries.",
+        "uv run aijournal ops pipeline normalize data/journal/YYYY/MM/DD/<entry>.md",
+    ),
+    CaptureStage(
+        2,
+        "summarize",
+        "Generate daily summaries for affected dates.",
+        "uv run aijournal ops pipeline summarize --date YYYY-MM-DD",
+    ),
+    CaptureStage(
+        3,
+        "extract_facts",
+        "Derive micro-facts and claim proposals for affected dates.",
+        "uv run aijournal ops pipeline extract-facts --date YYYY-MM-DD",
+    ),
+    CaptureStage(
+        4,
+        "profile_update",
+        "Generate profile suggestions and optionally apply them.",
+        "uv run aijournal ops profile suggest --date YYYY-MM-DD\nuv run aijournal ops profile apply --date YYYY-MM-DD --yes",
+    ),
+    CaptureStage(
+        5,
+        "characterize_review",
+        "Characterize entries and review new batches (auto-applied in capture).",
+        "uv run aijournal ops pipeline characterize --date YYYY-MM-DD\nuv run aijournal ops pipeline review --file <batch>.yaml --apply",
+    ),
+    CaptureStage(
+        6,
+        "index_refresh",
+        "Refresh the retrieval index for new evidence.",
+        "uv run aijournal ops index update --since 7d",
+    ),
+    CaptureStage(
+        7,
+        "persona_refresh",
+        "Rebuild persona core when profile data changes.",
+        "uv run aijournal ops persona build",
+    ),
+    CaptureStage(
+        8,
+        "pack",
+        "Emit context packs when requested (depends on --pack option).",
+        "uv run aijournal export pack --level Lx [--date YYYY-MM-DD]",
+    ),
+]
+
+CAPTURE_MAX_STAGE = CAPTURE_STAGES[-1].stage_id
 
 
 def _journal_path(root: Path, date_str: str, slug: str) -> Path:
@@ -911,6 +978,18 @@ class CaptureInput(BaseModel):
     progress: bool = Field(True, description="Whether to display progress indicators.")
     dry_run: bool = Field(False, description="Skip writes and report planned actions only.")
     snapshot: bool = Field(True, description="Store raw snapshots for file imports.")
+    min_stage: int = Field(
+        0,
+        ge=0,
+        le=CAPTURE_MAX_STAGE,
+        description="Lowest capture stage to execute (see stage table).",
+    )
+    max_stage: int = Field(
+        CAPTURE_MAX_STAGE,
+        ge=0,
+        le=CAPTURE_MAX_STAGE,
+        description="Highest capture stage to execute (see stage table).",
+    )
 
 
 class EntryResult(BaseModel):
@@ -965,6 +1044,16 @@ class CaptureResult(BaseModel):
         None,
         description="Relative path to the NDJSON telemetry log for this run.",
     )
+    min_stage: int = Field(0, description="Requested minimum stage executed.")
+    max_stage: int = Field(CAPTURE_MAX_STAGE, description="Requested maximum stage executed.")
+    stages_completed: list[int] = Field(
+        default_factory=list,
+        description="Capture stage indices that ran successfully.",
+    )
+    stages_skipped: list[int] = Field(
+        default_factory=list,
+        description="Capture stage indices skipped by stage filters.",
+    )
 
 
 def run_capture(
@@ -1000,6 +1089,21 @@ def run_capture(
         log_event({"event": "preflight", "status": "error", "error": msg})
         raise ValueError(msg)
 
+    requested_min_stage = max(0, min(inputs.min_stage, CAPTURE_MAX_STAGE))
+    requested_max_stage = max(0, min(inputs.max_stage, CAPTURE_MAX_STAGE))
+    if requested_min_stage > requested_max_stage:
+        msg = "min_stage cannot be greater than max_stage"
+        log_event({"event": "preflight", "status": "error", "error": msg})
+        raise ValueError(msg)
+
+    stages_completed: set[int] = set()
+    stages_skipped: set[int] = set()
+
+    def stage_enabled(stage_index: int) -> bool:
+        if stage_index <= 1:
+            return stage_index <= requested_max_stage
+        return requested_min_stage <= stage_index <= requested_max_stage
+
     manifest_entries: list[ManifestEntry] = []
     entry_results: list[EntryResult] = []
     durations_ms: dict[str, float] = {}
@@ -1007,67 +1111,94 @@ def run_capture(
     review_candidates: list[str] = []
 
     persist_start = perf_counter()
-    if inputs.source in {"stdin", "editor"}:
-        if not inputs.text:
-            msg = "capture text input requires non-empty text"
-            log_event({"event": "persist", "status": "error", "error": msg})
-            raise ValueError(msg)
-        entry_results.append(_persist_text_entry(inputs, root, manifest_entries))
+    if stage_enabled(0):
+        if inputs.source in {"stdin", "editor"}:
+            if not inputs.text:
+                msg = "capture text input requires non-empty text"
+                log_event({"event": "persist", "status": "error", "error": msg})
+                raise ValueError(msg)
+            entry_results.append(_persist_text_entry(inputs, root, manifest_entries))
+        else:
+            if not inputs.paths:
+                msg = "capture --from requires at least one path"
+                log_event({"event": "persist", "status": "error", "error": msg})
+                raise ValueError(msg)
+            files = _discover_markdown_files(inputs.paths)
+            if not files:
+                msg = "capture --from found no Markdown files"
+                log_event({"event": "persist", "status": "error", "error": msg})
+                raise ValueError(msg)
+            _ensure_manifest(manifest_entries, root)
+            manifest_idx = _manifest_index(manifest_entries)
+            for file_path in files:
+                entry_result = _persist_file_entry(
+                    inputs,
+                    root,
+                    manifest_entries,
+                    source_path=file_path,
+                    snapshot=inputs.snapshot,
+                    manifest_index=manifest_idx,
+                )
+                entry_results.append(entry_result)
+        durations_ms["persist"] = (perf_counter() - persist_start) * 1000.0
+        created_count = sum(1 for entry in entry_results if entry.changed and not entry.deduped)
+        deduped_count = sum(1 for entry in entry_results if entry.deduped)
+        log_event(
+            {
+                "event": "persist",
+                "status": "ok",
+                "duration_ms": round(durations_ms["persist"], 3),
+                "entries": len(entry_results),
+                "created": created_count,
+                "deduped": deduped_count,
+            }
+        )
+        stages_completed.add(0)
     else:
-        if not inputs.paths:
-            msg = "capture --from requires at least one path"
-            log_event({"event": "persist", "status": "error", "error": msg})
-            raise ValueError(msg)
-        files = _discover_markdown_files(inputs.paths)
-        if not files:
-            msg = "capture --from found no Markdown files"
-            log_event({"event": "persist", "status": "error", "error": msg})
-            raise ValueError(msg)
-        _ensure_manifest(manifest_entries, root)
-        manifest_idx = _manifest_index(manifest_entries)
-        for file_path in files:
-            entry_result = _persist_file_entry(
-                inputs,
-                root,
-                manifest_entries,
-                source_path=file_path,
-                snapshot=inputs.snapshot,
-                manifest_index=manifest_idx,
-            )
-            entry_results.append(entry_result)
-    durations_ms["persist"] = (perf_counter() - persist_start) * 1000.0
-    created_count = sum(1 for entry in entry_results if entry.changed and not entry.deduped)
-    deduped_count = sum(1 for entry in entry_results if entry.deduped)
-    log_event(
-        {
-            "event": "persist",
-            "status": "ok",
-            "duration_ms": round(durations_ms["persist"], 3),
-            "entries": len(entry_results),
-            "created": created_count,
-            "deduped": deduped_count,
-        }
-    )
+        durations_ms["persist"] = (perf_counter() - persist_start) * 1000.0
+        log_event(
+            {
+                "event": "persist",
+                "status": "skipped",
+                "reason": "stage filtered by --min-stage/--max-stage",
+            }
+        )
+        stages_skipped.add(0)
 
-    normalize_start = perf_counter()
-    artifact_counts = normalize_entries(entry_results, root) if entry_results else {}
-    durations_ms["normalize"] = (perf_counter() - normalize_start) * 1000.0
-    log_event(
-        {
-            "event": "normalize",
-            "status": "ok",
-            "duration_ms": round(durations_ms["normalize"], 3),
-            "artifacts": artifact_counts,
-        }
-    )
+    artifact_counts: dict[str, int] = {}
+    entries_changed = sum(1 for entry in entry_results if entry.changed and not entry.deduped)
+
+    if stage_enabled(1):
+        normalize_start = perf_counter()
+        artifact_counts = normalize_entries(entry_results, root) if entry_results else {}
+        durations_ms["normalize"] = (perf_counter() - normalize_start) * 1000.0
+        log_event(
+            {
+                "event": "normalize",
+                "status": "ok",
+                "duration_ms": round(durations_ms.get("normalize", 0.0), 3),
+                "artifacts": artifact_counts,
+            }
+        )
+        stages_completed.add(1)
+    else:
+        log_event(
+            {
+                "event": "normalize",
+                "status": "skipped",
+                "reason": "stage filtered by --min-stage/--max-stage",
+            }
+        )
+        stages_skipped.add(1)
 
     artifacts_changed = {key: value for key, value in artifact_counts.items() if value}
-    entries_changed = sum(1 for entry in entry_results if entry.changed and not entry.deduped)
     if entries_changed:
         artifacts_changed.setdefault("entries", entries_changed)
 
-    changed_dates = sorted(
-        {entry.date for entry in entry_results if entry.changed and not entry.deduped}
+    changed_dates = (
+        sorted({entry.date for entry in entry_results if entry.changed and not entry.deduped})
+        if stage_enabled(1)
+        else []
     )
 
     def _record_duration(stage: str, start: float) -> None:
@@ -1077,194 +1208,255 @@ def run_capture(
     def _warn(stage: str, exc: BaseException) -> None:
         warnings.append(f"{stage}: {exc}")
 
-    for date in changed_dates:
-        stage = "derive.summarize"
-        start = perf_counter()
-        summary_event = {"event": stage, "date": date}
-        try:
-            summary_path = run_summarize_command(
-                date,
-                timeout=DEFAULT_TIMEOUT_SECONDS,
-                retries=inputs.retries,
-                progress=inputs.progress,
-            )
-        except typer.Exit as exc:
-            if exc.exit_code not in (0,):
-                _warn(stage, exc)
-                log_event({**summary_event, "status": "error", "error": str(exc)})
-        except Exception as exc:  # pragma: no cover - defensive
-            _warn(stage, exc)
-            log_event({**summary_event, "status": "error", "error": str(exc)})
-        else:
-            artifacts_changed["summaries"] = artifacts_changed.get("summaries", 0) + 1
-            log_event(
-                {
-                    **summary_event,
-                    "status": "ok",
-                    "path": _relative_path(summary_path, root),
-                }
-            )
-        finally:
-            _record_duration(stage, start)
-
-        stage = "derive.extract_facts"
-        start = perf_counter()
-        facts_event = {"event": stage, "date": date}
-        try:
-            _, facts_path = run_facts(
-                date,
-                timeout=DEFAULT_TIMEOUT_SECONDS,
-                retries=inputs.retries,
-                progress=inputs.progress,
-                claim_models=_load_profile_components(root)[1],
-                build_claim_preview=_noop_preview,
-            )
-        except typer.Exit as exc:
-            if exc.exit_code not in (0,):
-                _warn(stage, exc)
-                log_event({**facts_event, "status": "error", "error": str(exc)})
-        except Exception as exc:  # pragma: no cover - defensive
-            _warn(stage, exc)
-            log_event({**facts_event, "status": "error", "error": str(exc)})
-        else:
-            if facts_path:
-                artifacts_changed["microfacts"] = artifacts_changed.get("microfacts", 0) + 1
-                log_event(
-                    {
-                        **facts_event,
-                        "status": "ok",
-                        "path": _relative_path(facts_path, root),
-                    }
-                )
-        finally:
-            _record_duration(stage, start)
-
-        stage = "derive.profile_suggest"
-        start = perf_counter()
-        suggestions_path: Path | None = None
-        suggest_event = {"event": stage, "date": date}
-        try:
-            suggestions_path = run_profile_suggest(
-                date,
-                timeout=DEFAULT_TIMEOUT_SECONDS,
-                retries=inputs.retries,
-                progress=inputs.progress,
-            )
-        except typer.Exit as exc:
-            if exc.exit_code not in (0,):
-                _warn(stage, exc)
-                log_event({**suggest_event, "status": "error", "error": str(exc)})
-        except Exception as exc:  # pragma: no cover - defensive
-            _warn(stage, exc)
-            log_event({**suggest_event, "status": "error", "error": str(exc)})
-        else:
-            artifacts_changed["profile_suggestions"] = (
-                artifacts_changed.get("profile_suggestions", 0) + 1
-            )
-            if suggestions_path:
-                log_event(
-                    {
-                        **suggest_event,
-                        "status": "ok",
-                        "path": _relative_path(suggestions_path, root),
-                    }
-                )
-        finally:
-            _record_duration(stage, start)
-
-        if inputs.apply_profile == "auto":
-            stage = "derive.profile_apply"
+    if changed_dates and stage_enabled(2):
+        stage2_ran = False
+        for date in changed_dates:
+            stage_name = "derive.summarize"
             start = perf_counter()
-            apply_event = {"event": stage, "date": date}
+            summary_event = {"event": stage_name, "date": date}
             try:
-                run_profile_apply(
+                summary_path = run_summarize_command(
                     date,
-                    suggestions_path=suggestions_path,
-                    auto_confirm=True,
+                    timeout=DEFAULT_TIMEOUT_SECONDS,
+                    retries=inputs.retries,
+                    progress=inputs.progress,
                 )
             except typer.Exit as exc:
                 if exc.exit_code not in (0,):
-                    _warn(stage, exc)
-                    log_event({**apply_event, "status": "error", "error": str(exc)})
+                    _warn(stage_name, exc)
+                    log_event({**summary_event, "status": "error", "error": str(exc)})
             except Exception as exc:  # pragma: no cover - defensive
-                _warn(stage, exc)
-                log_event({**apply_event, "status": "error", "error": str(exc)})
+                _warn(stage_name, exc)
+                log_event({**summary_event, "status": "error", "error": str(exc)})
             else:
-                artifacts_changed["profile"] = artifacts_changed.get("profile", 0) + 1
-                log_event({**apply_event, "status": "ok"})
-            finally:
-                _record_duration(stage, start)
-
-        pending_before = _pending_batches(root)
-        stage = "derive.characterize"
-        start = perf_counter()
-        created_batches: list[Path] = []
-        characterize_event = {"event": stage, "date": date}
-        try:
-            batch_path = run_characterize(
-                date,
-                timeout=DEFAULT_TIMEOUT_SECONDS,
-                retries=inputs.retries,
-                progress=inputs.progress,
-                build_claim_preview=_noop_preview,
-            )
-            created_batches.append(batch_path)
-        except typer.Exit as exc:
-            if exc.exit_code not in (0,):
-                _warn(stage, exc)
-                log_event({**characterize_event, "status": "error", "error": str(exc)})
-        except Exception as exc:  # pragma: no cover - defensive
-            _warn(stage, exc)
-            log_event({**characterize_event, "status": "error", "error": str(exc)})
-        else:
-            artifacts_changed["characterize"] = artifacts_changed.get("characterize", 0) + 1
-            for batch in created_batches:
+                stage2_ran = True
+                artifacts_changed["summaries"] = artifacts_changed.get("summaries", 0) + 1
                 log_event(
                     {
-                        **characterize_event,
+                        **summary_event,
                         "status": "ok",
-                        "path": _relative_path(batch, root),
+                        "path": _relative_path(summary_path, root),
                     }
                 )
-        finally:
-            _record_duration(stage, start)
+            finally:
+                _record_duration(stage_name, start)
+        if stage2_ran:
+            stages_completed.add(2)
+    elif not stage_enabled(2):
+        log_event(
+            {
+                "event": "derive.summarize",
+                "status": "skipped",
+                "reason": "stage filtered by --min-stage/--max-stage",
+            }
+        )
+        stages_skipped.add(2)
 
-        pending_after = _pending_batches(root)
-        new_batches = sorted(pending_after - pending_before)
-        for batch_path in created_batches:
-            if batch_path not in new_batches:
-                new_batches.append(batch_path)
+    if changed_dates and stage_enabled(3):
+        stage3_ran = False
+        for date in changed_dates:
+            stage_name = "derive.extract_facts"
+            start = perf_counter()
+            facts_event = {"event": stage_name, "date": date}
+            try:
+                _, facts_path = run_facts(
+                    date,
+                    timeout=DEFAULT_TIMEOUT_SECONDS,
+                    retries=inputs.retries,
+                    progress=inputs.progress,
+                    claim_models=_load_profile_components(root)[1],
+                    build_claim_preview=_noop_preview,
+                )
+            except typer.Exit as exc:
+                if exc.exit_code not in (0,):
+                    _warn(stage_name, exc)
+                    log_event({**facts_event, "status": "error", "error": str(exc)})
+            except Exception as exc:  # pragma: no cover - defensive
+                _warn(stage_name, exc)
+                log_event({**facts_event, "status": "error", "error": str(exc)})
+            else:
+                stage3_ran = True
+                if facts_path:
+                    artifacts_changed["microfacts"] = artifacts_changed.get("microfacts", 0) + 1
+                    log_event(
+                        {
+                            **facts_event,
+                            "status": "ok",
+                            "path": _relative_path(facts_path, root),
+                        }
+                    )
+            finally:
+                _record_duration(stage_name, start)
+        if stage3_ran:
+            stages_completed.add(3)
+    elif not stage_enabled(3):
+        log_event(
+            {
+                "event": "derive.extract_facts",
+                "status": "skipped",
+                "reason": "stage filtered by --min-stage/--max-stage",
+            }
+        )
+        stages_skipped.add(3)
 
-        review_candidates.extend(_relative_path(path, root) for path in new_batches)
+    suggestions_by_date: dict[str, Path | None] = {}
+    if changed_dates and stage_enabled(4):
+        stage4_ran = False
+        for date in changed_dates:
+            stage_name = "derive.profile_suggest"
+            start = perf_counter()
+            suggestions_path: Path | None = None
+            suggest_event = {"event": stage_name, "date": date}
+            try:
+                suggestions_path = run_profile_suggest(
+                    date,
+                    timeout=DEFAULT_TIMEOUT_SECONDS,
+                    retries=inputs.retries,
+                    progress=inputs.progress,
+                )
+            except typer.Exit as exc:
+                if exc.exit_code not in (0,):
+                    _warn(stage_name, exc)
+                    log_event({**suggest_event, "status": "error", "error": str(exc)})
+            except Exception as exc:  # pragma: no cover - defensive
+                _warn(stage_name, exc)
+                log_event({**suggest_event, "status": "error", "error": str(exc)})
+            else:
+                stage4_ran = True
+                suggestions_by_date[date] = suggestions_path
+                artifacts_changed["profile_suggestions"] = (
+                    artifacts_changed.get("profile_suggestions", 0) + 1
+                )
+                if suggestions_path:
+                    log_event(
+                        {
+                            **suggest_event,
+                            "status": "ok",
+                            "path": _relative_path(suggestions_path, root),
+                        }
+                    )
+            finally:
+                _record_duration(stage_name, start)
 
-        if inputs.apply_profile == "auto" and new_batches:
-            stage = "derive.review"
-            for batch_path in new_batches:
-                start = perf_counter()
-                review_event = {
-                    "event": stage,
-                    "path": _relative_path(batch_path, root),
-                }
+            if inputs.apply_profile == "auto" and suggestions_path is not None:
+                stage_apply = "derive.profile_apply"
+                start_apply = perf_counter()
+                apply_event = {"event": stage_apply, "date": date}
                 try:
-                    if _apply_profile_update_batch(root, batch_path):
-                        artifacts_changed["profile"] = artifacts_changed.get("profile", 0) + 1
-                        log_event({**review_event, "status": "applied"})
-                    else:
-                        log_event({**review_event, "status": "noop"})
+                    run_profile_apply(
+                        date,
+                        suggestions_path=suggestions_path,
+                        auto_confirm=True,
+                    )
+                except typer.Exit as exc:
+                    if exc.exit_code not in (0,):
+                        _warn(stage_apply, exc)
+                        log_event({**apply_event, "status": "error", "error": str(exc)})
                 except Exception as exc:  # pragma: no cover - defensive
-                    _warn(stage, exc)
-                    log_event({**review_event, "status": "error", "error": str(exc)})
+                    _warn(stage_apply, exc)
+                    log_event({**apply_event, "status": "error", "error": str(exc)})
+                else:
+                    artifacts_changed["profile"] = artifacts_changed.get("profile", 0) + 1
+                    log_event({**apply_event, "status": "ok"})
                 finally:
-                    _record_duration(stage, start)
-        elif new_batches:
-            for batch_path in new_batches:
-                log_event(
-                    {
-                        "event": "derive.review",
-                        "path": _relative_path(batch_path, root),
-                        "status": "pending",
-                    }
+                    _record_duration(stage_apply, start_apply)
+        if stage4_ran:
+            stages_completed.add(4)
+    elif not stage_enabled(4):
+        log_event(
+            {
+                "event": "derive.profile_suggest",
+                "status": "skipped",
+                "reason": "stage filtered by --min-stage/--max-stage",
+            }
+        )
+        stages_skipped.add(4)
+
+    if changed_dates and stage_enabled(5):
+        stage5_ran = False
+        for date in changed_dates:
+            pending_before = _pending_batches(root)
+            stage_name = "derive.characterize"
+            start = perf_counter()
+            created_batches: list[Path] = []
+            characterize_event = {"event": stage_name, "date": date}
+            try:
+                batch_path = run_characterize(
+                    date,
+                    timeout=DEFAULT_TIMEOUT_SECONDS,
+                    retries=inputs.retries,
+                    progress=inputs.progress,
+                    build_claim_preview=_noop_preview,
                 )
+                created_batches.append(batch_path)
+            except typer.Exit as exc:
+                if exc.exit_code not in (0,):
+                    _warn(stage_name, exc)
+                    log_event({**characterize_event, "status": "error", "error": str(exc)})
+            except Exception as exc:  # pragma: no cover - defensive
+                _warn(stage_name, exc)
+                log_event({**characterize_event, "status": "error", "error": str(exc)})
+            else:
+                stage5_ran = True
+                artifacts_changed["characterize"] = artifacts_changed.get("characterize", 0) + 1
+                for batch in created_batches:
+                    log_event(
+                        {
+                            **characterize_event,
+                            "status": "ok",
+                            "path": _relative_path(batch, root),
+                        }
+                    )
+            finally:
+                _record_duration(stage_name, start)
+
+            pending_after = _pending_batches(root)
+            new_batches = sorted(pending_after - pending_before)
+            for batch_path in created_batches:
+                if batch_path not in new_batches:
+                    new_batches.append(batch_path)
+
+            review_candidates.extend(_relative_path(path, root) for path in new_batches)
+
+            if inputs.apply_profile == "auto" and new_batches:
+                stage_review = "derive.review"
+                for batch_path in new_batches:
+                    start_review = perf_counter()
+                    review_event = {
+                        "event": stage_review,
+                        "path": _relative_path(batch_path, root),
+                    }
+                    try:
+                        if _apply_profile_update_batch(root, batch_path):
+                            artifacts_changed["profile"] = artifacts_changed.get("profile", 0) + 1
+                            log_event({**review_event, "status": "applied"})
+                        else:
+                            log_event({**review_event, "status": "noop"})
+                    except Exception as exc:  # pragma: no cover - defensive
+                        _warn(stage_review, exc)
+                        log_event({**review_event, "status": "error", "error": str(exc)})
+                    finally:
+                        _record_duration(stage_review, start_review)
+            elif new_batches:
+                for batch_path in new_batches:
+                    log_event(
+                        {
+                            "event": "derive.review",
+                            "path": _relative_path(batch_path, root),
+                            "status": "pending",
+                        }
+                    )
+        if stage5_ran:
+            stages_completed.add(5)
+    elif not stage_enabled(5):
+        log_event(
+            {
+                "event": "derive.characterize",
+                "status": "skipped",
+                "reason": "stage filtered by --min-stage/--max-stage",
+            }
+        )
+        stages_skipped.add(5)
 
     if inputs.apply_profile != "auto" and "profile" not in artifacts_changed:
         artifacts_changed.setdefault("profile", 0)
@@ -1274,7 +1466,7 @@ def run_capture(
     persona_stale_after = False
     persona_changed = False
 
-    if changed_dates:
+    if changed_dates and stage_enabled(6):
         stage = "refresh.index"
         start = perf_counter()
         index_message = ""
@@ -1312,7 +1504,19 @@ def run_capture(
                 "message": index_message,
             }
         )
+        if not index_error:
+            stages_completed.add(6)
+    elif not stage_enabled(6):
+        log_event(
+            {
+                "event": "index.update",
+                "status": "skipped",
+                "reason": "stage filtered by --min-stage/--max-stage",
+            }
+        )
+        stages_skipped.add(6)
 
+    if stage_enabled(7):
         stage = "refresh.persona"
         start = perf_counter()
         persona_event = {"event": "persona.status"}
@@ -1362,8 +1566,19 @@ def run_capture(
                     "status": "ok" if persona_changed else "noop",
                 }
             )
+        if not persona_error:
+            stages_completed.add(7)
+    else:
+        log_event(
+            {
+                "event": "persona.status",
+                "status": "skipped",
+                "reason": "stage filtered by --min-stage/--max-stage",
+            }
+        )
+        stages_skipped.add(7)
 
-    if inputs.pack and persona_changed:
+    if inputs.pack and persona_changed and stage_enabled(8):
         stage = "refresh.pack"
         start = perf_counter()
         level = inputs.pack.upper()
@@ -1400,6 +1615,17 @@ def run_capture(
                 "output": _relative_path(pack_output, root),
             }
         )
+        if not pack_error:
+            stages_completed.add(8)
+    elif inputs.pack and not stage_enabled(8):
+        log_event(
+            {
+                "event": "pack",
+                "status": "skipped",
+                "reason": "stage filtered by --min-stage/--max-stage",
+            }
+        )
+        stages_skipped.add(8)
 
     for entry in entry_results:
         if entry.warnings:
@@ -1413,6 +1639,10 @@ def run_capture(
             "warnings": warnings,
             "artifacts_changed": artifacts_changed,
             "review_candidates": review_candidates,
+            "min_stage": requested_min_stage,
+            "max_stage": requested_max_stage,
+            "stages_completed": sorted(stages_completed),
+            "stages_skipped": sorted(stages_skipped),
         }
     )
 
@@ -1427,6 +1657,10 @@ def run_capture(
         warnings=warnings,
         review_candidates=review_candidates,
         telemetry_path=telemetry_rel,
+        min_stage=requested_min_stage,
+        max_stage=requested_max_stage,
+        stages_completed=sorted(stages_completed),
+        stages_skipped=sorted(stages_skipped),
     )
 
     _write_capture_result(root, result)
@@ -1459,3 +1693,16 @@ def normalize_entries(entries: list[EntryResult], root: Path) -> dict[str, int]:
             normalized += 1
         entry.normalized_path = _relative_path(normalized_path, root)
     return {"normalized": normalized}
+
+
+__all__ = [
+    "CaptureStage",
+    "CAPTURE_STAGES",
+    "CAPTURE_MAX_STAGE",
+    "CaptureInput",
+    "EntryResult",
+    "CaptureResult",
+    "load_capture_result",
+    "normalize_entries",
+    "run_capture",
+]

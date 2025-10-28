@@ -114,6 +114,22 @@ aijournal capture --from notes/weekly --source-type notes --tag planning --proje
 
 The command recurses for `*.md`/`*.markdown`, dedupes via SHA-256, and logs slug collisions with deterministic `-2`, `-3`, … suffixes.
 
+Capture now supports staged execution so you can stop early or resume manual pipelines:
+
+| Stage | Name                 | What happens                                                         | Manual equivalent |
+| ----- | -------------------- | -------------------------------------------------------------------- | ----------------- |
+| 0     | persist              | Write canonical Markdown, manifest entry, optional snapshots         | handled by capture |
+| 1     | normalize            | Emit `data/normalized/YYYY-MM-DD/*.yaml`                             | `uv run aijournal ops pipeline normalize data/journal/YYYY/MM/DD/<entry>.md` |
+| 2     | summarize            | Generate `derived/summaries/<date>.yaml`                             | `uv run aijournal ops pipeline summarize --date YYYY-MM-DD` |
+| 3     | extract_facts        | Produce micro-facts/claim proposals                                   | `uv run aijournal ops pipeline extract-facts --date YYYY-MM-DD` |
+| 4     | profile_update       | Suggest (and optionally apply) profile changes                        | `uv run aijournal ops profile suggest --date YYYY-MM-DD`<br>`uv run aijournal ops profile apply --date YYYY-MM-DD --yes` |
+| 5     | characterize_review  | Characterize entries and review pending batches                       | `uv run aijournal ops pipeline characterize --date YYYY-MM-DD`<br>`uv run aijournal ops pipeline review --file <batch>.yaml --apply` |
+| 6     | index_refresh        | Update/rebuild retrieval index                                        | `uv run aijournal ops index update --since 7d` |
+| 7     | persona_refresh      | Rebuild persona core when profile data changes                        | `uv run aijournal ops persona build` |
+| 8     | pack                 | Emit packs when `--pack` is provided                                  | `uv run aijournal export pack --level Lx [--date YYYY-MM-DD]` |
+
+Use `--max-stage` to stop after a given stage (e.g., `aijournal capture --from notes --max-stage 1` to normalize only). `--min-stage` lets you request a subset of downstream stages, while stages 0–1 always re-run to keep canonical files in sync (existing entries dedupe quickly). After every run the CLI prints any pending stages and the manual commands to finish them if you prefer the classic step-by-step workflow.
+
 ### Generate fake entries (fixtures / demos)
 
 ```sh
