@@ -119,12 +119,39 @@ from aijournal.utils.paths import (
 app = typer.Typer(help="Local-first personal journal utilities.")
 profile_app = typer.Typer(help="Profile utilities.")
 ollama_app = typer.Typer(help="Ollama helpers.")
+index_app = typer.Typer(help="Retrieval index utilities.")
+persona_app = typer.Typer(help="Persona utilities.")
+
 app.add_typer(profile_app, name="profile")
 app.add_typer(ollama_app, name="ollama")
-index_app = typer.Typer(help="Retrieval index utilities.")
 app.add_typer(index_app, name="index")
-persona_app = typer.Typer(help="Persona utilities.")
 app.add_typer(persona_app, name="persona")
+
+# Phase 1 scaffold: advanced operations namespace and placeholder groups.
+ops_app = typer.Typer(help="Advanced operations namespace.")
+ops_pipeline_app = typer.Typer(help="Pipeline tools (normalize, summarize, characterize).")
+ops_profile_app = typer.Typer(help="Profile management utilities.")
+ops_index_app = typer.Typer(help="Index maintenance utilities.")
+ops_persona_app = typer.Typer(help="Persona workflows.")
+ops_feedback_app = typer.Typer(help="Feedback processing utilities.")
+ops_system_app = typer.Typer(help="System diagnostics and doctor helpers.")
+ops_dev_app = typer.Typer(help="Developer fixtures and helpers.")
+
+ops_app.add_typer(ops_pipeline_app, name="pipeline")
+ops_app.add_typer(ops_profile_app, name="profile")
+ops_app.add_typer(ops_index_app, name="index")
+ops_app.add_typer(ops_persona_app, name="persona")
+ops_app.add_typer(ops_feedback_app, name="feedback")
+ops_app.add_typer(ops_system_app, name="system")
+ops_app.add_typer(ops_dev_app, name="dev")
+
+app.add_typer(ops_app, name="ops")
+
+export_app = typer.Typer(help="Context export utilities.")
+serve_app = typer.Typer(help="Service runners and daemons.")
+
+app.add_typer(export_app, name="export")
+app.add_typer(serve_app, name="serve")
 
 
 @app.callback()
