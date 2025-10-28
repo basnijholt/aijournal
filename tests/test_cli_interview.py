@@ -14,16 +14,6 @@ from aijournal.models import InterviewQuestion, InterviewSet
 DATE = "2025-02-03"
 
 
-def _has_interview_command() -> bool:
-    return any(cmd.name == "interview" for cmd in app.registered_commands)
-
-
-@pytest.fixture(autouse=True)
-def skip_if_missing() -> None:
-    if not _has_interview_command():
-        pytest.skip("interview command not available yet")
-
-
 @pytest.fixture(autouse=True)
 def fake_mode(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("AIJOURNAL_FAKE_OLLAMA", "1")
