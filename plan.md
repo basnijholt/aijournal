@@ -94,11 +94,16 @@ This builds on items 1 & 2 but isn’t strictly required once automatic detectio
 - Move stage-orchestration helpers out of `services/capture.py` into `src/aijournal/services/capture/__init__.py` (the orchestrator) plus `capture/stages/` submodules (`stage0_persist.py`, etc.).
 - Keep the orchestrator thin: import stage functions and pass the typed output objects around.
 - Update imports/tests accordingly. Commit once tests pass.
+- ✅ 2025-10-28: Split `capture.py` into `capture/__init__.py` plus nine `capture/stages/stage*_*.py` modules; orchestrator now imports stage helpers and all tests pass (`uv run pytest`).
 
 ### To-Do B — Shared helper module (`capture/utils.py`)
-- Lift reusable utilities (manifest handling, ingest fallback, `_relative_path`, etc.) into `capture/utils.py` to avoid duplication across stage modules.
-- Ensure both the orchestrator and the stage modules reference the shared helpers.
-- Run tests → commit.
+- **Goal:** centralize all pure helper functions that multiple stages touch so each stage module stays focused on orchestration and typed outputs.
+- **Execution steps:**
+  1. Inventory helpers currently duplicated across `capture/__init__.py` and the stage modules (manifest path builders, YAML/JSON write helpers, relative-path formatting, ingest fallbacks, etc.).
+  2. Create `src/aijournal/services/capture/utils.py` with cohesive, well-named functions grouped by purpose (filesystem, manifest, ingest, telemetry adapters) and document expected inputs/outputs.
+  3. Update each stage module and the orchestrator to import from `capture.utils` instead of re-defining helpers; ensure imports remain acyclic.
+  4. Remove the old helper definitions from their original locations to prevent drift.
+- **Definition of done:** `capture/utils.py` houses the shared helpers, no stage redefines them, `uv run pytest` passes, and this note is updated with a completion date.
 
 ### To-Do C — Normalize skipped-stage handling
 - Introduce a helper (e.g., `record_skipped_stage(state, stage_id, name, reason)`) that wraps the noop result + duration bookkeeping.
