@@ -11,7 +11,7 @@ if TYPE_CHECKING:
     from .. import CaptureInput, PersistStage0Outputs
 
 
-def _run_persist_stage_0(
+def run_persist_stage_0(
     inputs: CaptureInput,
     root: Path,
     manifest_entries: list[ManifestEntry],

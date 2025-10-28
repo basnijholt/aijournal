@@ -10,7 +10,7 @@ if TYPE_CHECKING:
     from .. import CaptureInput, SummarizeStage2Outputs
 
 
-def _run_summarize_stage_2(
+def run_summarize_stage_2(
     changed_dates: list[str],
     inputs: CaptureInput,
     root: Path,

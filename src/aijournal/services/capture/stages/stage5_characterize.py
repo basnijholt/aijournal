@@ -10,7 +10,7 @@ if TYPE_CHECKING:
     from .. import CaptureInput, CharacterizeStage5Outputs
 
 
-def _run_characterize_stage_5(
+def run_characterize_stage_5(
     changed_dates: list[str],
     inputs: CaptureInput,
     root: Path,

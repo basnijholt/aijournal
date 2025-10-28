@@ -11,7 +11,7 @@ if TYPE_CHECKING:
     from .. import CaptureInput, PersonaStage7Outputs
 
 
-def _run_persona_stage_7(
+def run_persona_stage_7(
     inputs: CaptureInput,
     root: Path,
     artifacts_changed: dict[str, int],
