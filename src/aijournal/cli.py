@@ -27,7 +27,6 @@ from pydantic_ai import Agent
 
 from aijournal.fakes import (
     fake_advise,
-    fake_characterize,
     fake_profile_suggestions,
 )
 from aijournal.ingest_agent import (
@@ -77,6 +76,7 @@ from aijournal.models import (
     SimpleSuggestion,
     SummaryMeta,
 )
+from aijournal.pipelines import characterize as characterize_pipeline
 from aijournal.pipelines import facts as facts_pipeline
 from aijournal.pipelines import normalization
 from aijournal.pipelines import persona as persona_pipeline
@@ -1269,72 +1269,49 @@ def _characterize_payload(
     retries: int = DEFAULT_LLM_RETRIES,
 ) -> tuple[ProfileUpdateProposals, list[str]]:
     claim_timestamp = time_utils.format_timestamp(time_utils.now())
-    (
-        normalized_ids,
-        evidence_hashes,
-        manifest_hashes,
-        default_sources,
-    ) = _characterization_context(entries, manifest_index)
+    context = _characterization_context(entries, manifest_index)
+    target_date = date or time_utils.created_date(claim_timestamp)
+    manifest_payload = _json_block(
+        {key: entry.model_dump(mode="python") for key, entry in manifest_index.items()},
+    )
 
-    fake_mode = _use_fake_llm()
-    raw_claims: list[Any]
-    raw_facets: list[Any]
-    if not fake_mode:
-        manifest_payload = _json_block(
-            {key: entry.model_dump(mode="python") for key, entry in manifest_index.items()},
-        )
-        target_date = date or time_utils.created_date(claim_timestamp)
-        response = cast(
+    def request_characterize() -> CharacterizeResponse:
+        return cast(
             CharacterizeResponse,
-            _structured_call_with_retry(
-                lambda: _invoke_structured_llm(
-                    "prompts/characterize.md",
-                    {
-                        "date": target_date,
-                        "entries_json": _json_block(_entries_to_payload(entries)),
-                        "profile_json": _json_block(profile),
-                        "claims_json": _json_block(
-                            {"claims": [claim.model_dump(mode="python") for claim in claims]}
-                        ),
-                        "manifest_json": manifest_payload,
-                    },
-                    response_model=CharacterizeResponse,
-                    agent_name="aijournal-characterize",
-                    config=config,
-                    timeout=timeout,
-                ),
-                retries=retries,
-                label=f"characterize {target_date}",
+            _invoke_structured_llm(
+                "prompts/characterize.md",
+                {
+                    "date": target_date,
+                    "entries_json": _json_block(_entries_to_payload(entries)),
+                    "profile_json": _json_block(profile),
+                    "claims_json": _json_block(
+                        {"claims": [claim.model_dump(mode="python") for claim in claims]}
+                    ),
+                    "manifest_json": manifest_payload,
+                },
+                response_model=CharacterizeResponse,
+                agent_name="aijournal-characterize",
+                config=config,
+                timeout=timeout,
             ),
         )
-        raw_claims = [proposal.model_dump(mode="python") for proposal in response.claims]
-        raw_facets = [proposal.model_dump(mode="python") for proposal in response.facets]
-        prompts = [prompt for prompt in response.interview_prompts if prompt]
-    else:
-        base = fake_characterize(
-            entries,
-            profile,
-            claims,
-            build_claim=_build_claim_atom_from_entry,
-        )
-        raw_claims = base.claims
-        raw_facets = base.facets
-        prompts = []
 
-    claims_payload = _normalize_claim_proposals(
-        raw_claims,
-        normalized_ids=normalized_ids,
-        evidence_hashes=evidence_hashes,
-        manifest_hashes=manifest_hashes,
-        default_sources=default_sources,
-        timestamp=claim_timestamp,
+    proposals, prompts = characterize_pipeline.generate_characterization(
+        entries,
+        profile,
+        claims,
+        use_fake_llm=_use_fake_llm(),
+        structured_call=_structured_call_with_retry,
+        request_factory=request_characterize,
+        retries=retries,
+        label=f"characterize {target_date}",
+        context=context,
+        claim_timestamp=claim_timestamp,
+        build_claim=_build_claim_atom_from_entry,
+        normalize_claims=_normalize_claim_proposals,
+        normalize_facets=characterize_pipeline.normalize_facet_proposals,
     )
-    facets_payload = _normalize_facet_proposals(
-        raw_facets,
-        normalized_ids=normalized_ids,
-        evidence_hashes=evidence_hashes,
-    )
-    return ProfileUpdateProposals(claims=claims_payload, facets=facets_payload), prompts
+    return proposals, prompts
 
 
 def _advice_identifier(question: str) -> str:
