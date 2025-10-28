@@ -19,12 +19,17 @@ This document distills everything learned while executing the full aijournal CLI
 
 ## 1. Required Reading Before Touching Code
 
-1. `README.md` — understand usage patterns, fake vs live mode.
-2. `PLAN.md` (especially §1.3, §11, §22) — project goals and acceptance criteria.
-3. `CHANGELOG.md` — skim “Unreleased” to know current behaviour.
-4. `prompts/characterize.md`, `prompts/interview.md`, `prompts/advise.md` — structured-output contracts.
-5. `src/aijournal/cli.py` — Typer entry points: `init`, `normalize`, `summarize`, `facts`, `profile ...`, `persona ...`, `index ...`, `pack`, `chat`, `chatd`, `advise`, `feedback-apply`.
-6. `src/aijournal/services/{chat.py, chat_api.py, feedback.py}` — chat orchestration, API streaming, feedback adjustments, telemetry.
+Read these in order to understand the surfaces you will exercise. Each document targets a different audience; together they give the full picture.
+
+1. `README.md` — product overview and quick workflow.
+2. `docs/workflow.md` — day-to-day command sequence with `uv run` examples.
+3. `ARCHITECTURE.md` — current system design, memory layers, retrieval, prompts, and quality targets.
+4. `CONTRIBUTING.md` — development environment setup, testing, linting.
+5. `docs/archive/PLAN-v0.3.md` — historical roadmap reference (skim only if you need context on past milestones).
+6. `CHANGELOG.md` — review “Unreleased” for behaviour changes since the last tagged run.
+7. `prompts/characterize.md`, `prompts/interview.md`, `prompts/advise.md` — structured-output contracts.
+8. `src/aijournal/cli.py` — Typer entry points: `init`, `normalize`, `summarize`, `facts`, `profile ...`, `persona ...`, `index ...`, `pack`, `chat`, `chatd`, `advise`, `feedback-apply`.
+9. `src/aijournal/services/{chat.py, chat_api.py, feedback.py}` — chat orchestration, API streaming, feedback adjustments, telemetry.
 
 Read these first to avoid surprises mid-run.
 
@@ -32,7 +37,7 @@ Read these first to avoid surprises mid-run.
 
 ## 2. Standing Constraints
 
-- **Always** run commands via `uv run -- bash -lc '…'` so the project virtualenv and deps are active.
+- **Always** run commands via `uv run …` (e.g., `uv run aijournal summarize …`) so the project virtualenv and deps stay active. Use `uv run -- bash -lc '…'` only when you need to wrap multiple shell operations.
 - **Never** set `AIJOURNAL_FAKE_OLLAMA=1` during the live rehearsal; the acceptance criteria explicitly reject fake fixtures.
 - **LLM server** must already host `gpt-oss:20b` and `nomic-embed-text`. Verify with:
   ```bash
@@ -51,24 +56,29 @@ Read these first to avoid surprises mid-run.
 1. Create temp directory:
    ```bash
    export RUN_ROOT=/tmp/aijournal_live_run_$(date +%Y%m%d%H%M)
-   uv run -- bash -lc "aijournal init --path $RUN_ROOT"
+   uv run aijournal init --path "$RUN_ROOT"
    ```
    Directory structure: `config/`, `data/`, `profile/`, `derived/`, etc.
 
-2. Create at least five Markdown journal entries covering the last 7 days. Each entry needs front matter (`id`, `created_at`, `title`, `tags`, `projects`, `mood`) plus 3–4 paragraphs of body text. Write them manually—no fake flags.
-
-3. Normalize every journal:
+2. Change into the run directory:
    ```bash
-   uv run -- bash -lc "cd $RUN_ROOT && aijournal normalize data/journal/YYYY/MM/DD/entry.md"
+   cd "$RUN_ROOT"
+   ```
+
+3. Create at least five Markdown journal entries covering the last 7 days. Each entry needs front matter (`id`, `created_at`, `title`, `tags`, `projects`, `mood`) plus 3–4 paragraphs of body text. Write them manually—no fake flags.
+
+4. Normalize every journal:
+   ```bash
+   uv run aijournal normalize data/journal/YYYY/MM/DD/entry.md
    ```
    - Ensure `data/normalized/<date>/<slug>.yaml` contains `summary` fields; add manually if normalization is sparse.
 
-4. Optional ingestion (if external Markdown exists):
+5. Optional ingestion (if external Markdown exists):
    ```bash
-   uv run -- bash -lc "cd $RUN_ROOT && aijournal ingest /path/to/external.md"
+   uv run aijournal ingest /path/to/external.md
    ```
 
-5. Maintain a manifest table (date, slug, tags) to reuse the correct dates later.
+6. Maintain a manifest table (date, slug, tags) to reuse the correct dates later.
 
 ### 3.2 LLM & Prompt Warmups
 
@@ -116,30 +126,30 @@ export AIJOURNAL_MODEL="gpt-oss:20b"
 export AIJOURNAL_OLLAMA_HOST="http://192.168.1.143:11434"
 ```
 
-1. `uv run -- bash -lc "cd $RUN_ROOT && aijournal summarize --date YYYY-MM-DD"`
-2. `uv run -- bash -lc "cd $RUN_ROOT && aijournal facts --date YYYY-MM-DD --timeout 180"`
-3. `uv run -- bash -lc "cd $RUN_ROOT && aijournal profile suggest --date YYYY-MM-DD --timeout 180"`
-4. `uv run -- bash -lc "cd $RUN_ROOT && aijournal profile apply --date YYYY-MM-DD --yes"`
-5. `uv run -- bash -lc "cd $RUN_ROOT && aijournal profile status"`
-6. `uv run -- bash -lc "cd $RUN_ROOT && aijournal characterize --date YYYY-MM-DD --progress --timeout 240"`
-7. `uv run -- bash -lc "cd $RUN_ROOT && aijournal review-updates --file derived/pending/profile_updates/<batch>.yaml --apply"`
+1. `uv run aijournal summarize --date YYYY-MM-DD`
+2. `uv run aijournal facts --date YYYY-MM-DD --timeout 180`
+3. `uv run aijournal profile suggest --date YYYY-MM-DD --timeout 180`
+4. `uv run aijournal profile apply --date YYYY-MM-DD --yes`
+5. `uv run aijournal profile status`
+6. `uv run aijournal characterize --date YYYY-MM-DD --progress --timeout 240`
+7. `uv run aijournal review-updates --file derived/pending/profile_updates/<batch>.yaml --apply`
 8. (Repeat characterize/review for each new entry date)
-9. `uv run -- bash -lc "cd $RUN_ROOT && aijournal index rebuild"`
-10. `uv run -- bash -lc "cd $RUN_ROOT && aijournal index search 'deep work sprint focus' --top 3 --tags focus"`  
+9. `uv run aijournal index rebuild`
+10. `uv run aijournal index search 'deep work sprint focus' --top 3 --tags focus`  
     (example query that yields a match)
-11. `uv run -- bash -lc "cd $RUN_ROOT && aijournal persona build"`
-12. `uv run -- bash -lc "cd $RUN_ROOT && aijournal persona status"`
-13. `uv run -- bash -lc "cd $RUN_ROOT && aijournal interview --date YYYY-MM-DD"`
-14. `uv run -- bash -lc "cd $RUN_ROOT && aijournal advise 'How should I prioritize habits this week?'"`
-15. `uv run -- bash -lc "cd $RUN_ROOT && /Users/bas.nijholt/Downloads/aijournal/.venv/bin/aijournal chat 'What progress did I make?' --session live-verify --top 3 --no-save"`
-16. `uv run -- bash -lc "cd $RUN_ROOT && /Users/bas.nijholt/Downloads/aijournal/.venv/bin/aijournal chat 'What progress did I make?' --session live-verify --feedback down --top 3 --no-save"`
-17. `uv run -- bash -lc "cd $RUN_ROOT && /Users/bas.nijholt/Downloads/aijournal/.venv/bin/aijournal chatd --host 127.0.0.1 --port 8055"`  
+11. `uv run aijournal persona build`
+12. `uv run aijournal persona status`
+13. `uv run aijournal interview --date YYYY-MM-DD`
+14. `uv run aijournal advise 'How should I prioritize habits this week?'`
+15. `uv run aijournal chat 'What progress did I make?' --session live-verify --top 3 --no-save`
+16. `uv run aijournal chat 'What progress did I make?' --session live-verify --feedback down --top 3 --no-save`
+17. `uv run aijournal chatd --host 127.0.0.1 --port 8055`  
     - Hit `/chat` via curl or httpx in a separate process; confirm graceful shutdown (no stack trace).
-18. `uv run -- bash -lc "cd $RUN_ROOT && aijournal pack --level L1 --format yaml"`
-19. `uv run -- bash -lc "cd $RUN_ROOT && aijournal pack --level L4 --date YYYY-MM-DD --history-days 1 --format json"`
-20. `uv run -- bash -lc "cd $RUN_ROOT && aijournal feedback-apply"`  
+18. `uv run aijournal pack --level L1 --format yaml`
+19. `uv run aijournal pack --level L4 --date YYYY-MM-DD --history-days 1 --format json`
+20. `uv run aijournal feedback-apply`  
     (applies pending feedback batches and archives them)
-21. `uv run -- bash -lc "cd $RUN_ROOT && aijournal ollama health"`
+21. `uv run aijournal ollama health`
 
 Maintain a run log capturing score, command, summary, artifacts, troubleshooting notes (e.g., `run_log.md` in the temp directory). This ensures reproducibility and provides evidence of the 350/350 score.
 
@@ -199,7 +209,7 @@ These commands guarantee the chat/advice surfaces reflect the latest claims/face
 
 ## 10. Quick Checklist (TL;DR)
 
-1. Read required docs (README, PLAN, prompts, key services).
+1. Read required docs (README, workflow, architecture, prompts, key services).
 2. `aijournal init` into `/tmp/aijournal_live_run_*`; generate at least five detailed Markdown entries (with summaries).
 3. Normalize every entry (ensure summaries exist).
 4. Run structured commands (summarize, facts, profile suggest/apply, characterize, review-updates).

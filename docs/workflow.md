@@ -20,12 +20,18 @@ This guide explains how the main commands fit together, the order in which to ru
    ```  
    This creates the directory layout (`data/`, `profile/`, `derived/`, etc.).
 
-2. **Author entries**  
+2. **Enter the workspace**  
+   ```bash
+   cd /path/to/my_journal
+   ```  
+   All subsequent commands assume you run them from this directory with `uv run aijournal ...`.
+
+3. **Author entries**  
    Add Markdown journal files under `data/journal/YYYY/MM/DD/slug.md`. Each entry should have front matter (`id`, `created_at`, `title`, `tags`, `projects`, `mood`) and a body with a few paragraphs.
 
-3. **Normalize entries**  
+4. **Normalize entries**  
    ```bash
-   uv run -- bash -lc 'cd /path/to/my_journal && aijournal normalize data/journal/2025/10/26/slug.md'
+   uv run aijournal normalize data/journal/2025/10/26/slug.md
    ```  
    Normalized YAML lives in `data/normalized/YYYY-MM-DD/`. Check that `summary` fields exist; add one manually if the auto-normalizer doesn’t infer it.
 
@@ -37,12 +43,12 @@ Once you have normalized entries for a given day, run the following commands **i
 
 | Step | Command | Purpose | Output |
 |------|---------|---------|--------|
-| 1 | `aijournal summarize --date YYYY-MM-DD` | Creates a daily narrative | `derived/summaries/YYYY-MM-DD.yaml` |
-| 2 | `aijournal facts --date YYYY-MM-DD` | Generates micro-facts and claim proposals | `derived/microfacts/YYYY-MM-DD.yaml` |
-| 3 | `aijournal profile suggest --date YYYY-MM-DD` | Suggests new claims/facets | `derived/profile_suggestions/YYYY-MM-DD.yaml` |
-| 4 | `aijournal profile apply --date YYYY-MM-DD --yes` | Applies suggestions (if any) | Updates `profile/claims.yaml` / `self_profile.yaml` |
-| 5 | `aijournal characterize --date YYYY-MM-DD --progress` | Consolidates updates & interview prompts | `derived/pending/profile_updates/*.yaml` |
-| 6 | `aijournal review-updates --file <batch> --apply` | Merges pending updates into the profile | Updates `profile/` files |
+| 1 | `uv run aijournal summarize --date YYYY-MM-DD` | Creates a daily narrative | `derived/summaries/YYYY-MM-DD.yaml` |
+| 2 | `uv run aijournal facts --date YYYY-MM-DD` | Generates micro-facts and claim proposals | `derived/microfacts/YYYY-MM-DD.yaml` |
+| 3 | `uv run aijournal profile suggest --date YYYY-MM-DD` | Suggests new claims/facets | `derived/profile_suggestions/YYYY-MM-DD.yaml` |
+| 4 | `uv run aijournal profile apply --date YYYY-MM-DD --yes` | Applies suggestions (if any) | Updates `profile/claims.yaml` / `self_profile.yaml` |
+| 5 | `uv run aijournal characterize --date YYYY-MM-DD --progress` | Consolidates updates & interview prompts | `derived/pending/profile_updates/*.yaml` |
+| 6 | `uv run aijournal review-updates --file <batch> --apply` | Merges pending updates into the profile | Updates `profile/` files |
 
 > Tip: repeat steps 5–6 for each batch the characterize step produces.
 
@@ -54,23 +60,23 @@ After the daily pipeline, refresh the artifacts used by chat, search, and advice
 
 1. **Rebuild the search index**  
    ```bash
-   uv run -- bash -lc 'cd /path/to/my_journal && aijournal index rebuild'
+   uv run aijournal index rebuild
    ```  
    Artifacts appear in `derived/index/`.
 
 2. **Run a smoke search** (optional but verifies the index)  
    ```bash
-   uv run -- bash -lc 'cd /path/to/my_journal && aijournal index search "deep work sprint focus" --top 3'
+   uv run aijournal index search "deep work sprint focus" --top 3
    ```
 
 3. **Regenerate the persona core**  
    ```bash
-   uv run -- bash -lc 'cd /path/to/my_journal && aijournal persona build'
+   uv run aijournal persona build
    ```
 
 4. **Pack the context bundle**  
    ```bash
-   uv run -- bash -lc 'cd /path/to/my_journal && aijournal pack --level L1 --format yaml'
+   uv run aijournal pack --level L1 --format yaml
    ```
    Use `--level L4` when you need a larger bundle for external assistants.
 
@@ -82,36 +88,36 @@ With the profile, index, and packs up to date you can use the interactive comman
 
 - **Chat (CLI)**  
   ```bash
-  uv run -- bash -lc 'cd /path/to/my_journal && aijournal chat "What progress did I make yesterday?" --session daily-review --top 3'
+  uv run aijournal chat "What progress did I make yesterday?" --session daily-review --top 3
   ```  
   Add `--feedback up|down` to nudge claim strengths. Chat automatically saves transcripts when `--save` is enabled (default).
 
 - **Chat daemon (API)**  
   ```bash
-  uv run -- bash -lc 'cd /path/to/my_journal && aijournal chatd --host 127.0.0.1 --port 8055'
+  uv run aijournal chatd --host 127.0.0.1 --port 8055
   ```  
   Use `curl` or `httpx` to POST to `/chat`.
 
 - **Advisor**  
   ```bash
-  uv run -- bash -lc 'cd /path/to/my_journal && aijournal advise "How should I prioritise habits this week?"'
+  uv run aijournal advise "How should I prioritise habits this week?"
   ```
 
 - **Feedback batches**  
   When you review chat feedback later, apply it in bulk:
   ```bash
-  uv run -- bash -lc 'cd /path/to/my_journal && aijournal feedback-apply'
-  ```
+  uv run aijournal feedback-apply
+   ```
 
 ---
 
 ## 6. Optional / Advanced Commands
 
-- `aijournal ingest <path>` — normalize external Markdown (blog posts, etc.).
-- `aijournal profile status` — shows review priorities after applying updates.
-- `aijournal interview --date YYYY-MM-DD` — generates follow-up questions for that day’s entries.
-- `aijournal pack --level L4 --date YYYY-MM-DD --history-days N --format json` — build a long-horizon pack for external assistants.
-- `aijournal ollama health` — verifies available models on the Ollama host.
+- `uv run aijournal ingest <path>` — normalize external Markdown (blog posts, etc.).
+- `uv run aijournal profile status` — shows review priorities after applying updates.
+- `uv run aijournal interview --date YYYY-MM-DD` — generates follow-up questions for that day’s entries.
+- `uv run aijournal pack --level L4 --date YYYY-MM-DD --history-days N --format json` — build a long-horizon pack for external assistants.
+- `uv run aijournal ollama health` — verifies available models on the Ollama host.
 
 ---
 
