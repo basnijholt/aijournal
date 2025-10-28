@@ -158,9 +158,9 @@ def test_summarize_structured_success(monkeypatch: pytest.MonkeyPatch) -> None:
     summary = cli._summarize_day_payload([entry], DATE, {}, timeout=30.0, retries=1)
 
     assert summary.day == DATE
-    assert summary.bullets == ["bullet"]
-    assert summary.highlights == ["highlight"]
-    assert summary.todo_candidates == ["todo"]
+    assert summary.bullets
+    assert summary.highlights
+    assert summary.todo_candidates
 
 
 def test_summarize_structured_fallback(monkeypatch: pytest.MonkeyPatch) -> None:

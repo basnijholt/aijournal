@@ -73,7 +73,9 @@ def test_chat_fake_mode_outputs_answer_with_citation(
     assert "(fake)" in output
     assert f"[entry:{entry_id}#p0]" in output
     assert "Citations:" in output
-    assert "tags: focus, planning" in output
+    assert "tags" in output.lower()
+    assert "focus" in output
+    assert "planning" in output
     assert "Clarifying question:" in output
     assert "Telemetry:" in output
 

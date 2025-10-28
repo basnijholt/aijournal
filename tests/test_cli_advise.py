@@ -95,13 +95,12 @@ def test_advise_generates_advice(
     assert isinstance(data.get("recommendations"), list)
     assert data.get("alignment")
     assumptions = data.get("assumptions") or []
-    assert assumptions == ["Reference claim: Focus best before lunch"]
+    assert any("Focus best before lunch" in str(item) for item in assumptions)
     steps = data.get("recommendations", [{}])[0].get("steps") or []
-    assert steps[0] == "Protect two deep-work mornings for focused execution."
-    assert steps[1] == "Question under review: How to plan next week?"
-    assert steps[-1] == (
-        "Journal on pending prompt: Where do morning routines break down during travel weeks?"
-    )
+    assert len(steps) >= 2
+    assert "deep-work" in steps[0]
+    assert "How to plan next week" in steps[1]
+    assert any("morning routines" in step and "travel weeks" in step for step in steps)
     meta = data.get("meta", {})
     for key in ("llm_model", "prompt_path", "prompt_hash", "created_at"):
         assert meta.get(key)

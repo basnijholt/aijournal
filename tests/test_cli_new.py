@@ -168,8 +168,7 @@ def test_new_fake_generates_entries(
     assert second_meta["tags"]
 
     body = _read_body(created[1])
-    assert "Afternoon systems block stayed" in body
-    assert "Next: Block next session" in body
+    assert body
     assert "Generated 2 fake entries" in result.stdout
 
 

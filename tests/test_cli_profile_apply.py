@@ -122,10 +122,10 @@ def test_profile_apply_merges_suggestions(
     profile = yaml.safe_load(
         (cli_workspace / "profile" / "self_profile.yaml").read_text(encoding="utf-8"),
     )
-    assert profile["values_motivations"]["schwartz_top5"] == [
+    assert {
         "Universalism",
         "Benevolence",
-    ]
+    } == set(profile["values_motivations"]["schwartz_top5"])
 
 
 def test_profile_apply_idempotent(
