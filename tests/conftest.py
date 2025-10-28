@@ -1,0 +1,28 @@
+"""Shared pytest fixtures for CLI integration tests."""
+
+from __future__ import annotations
+
+from datetime import UTC, datetime
+from pathlib import Path
+
+import pytest
+from typer.testing import CliRunner
+
+from aijournal.cli import app
+
+_FIXED_NOW = datetime(2025, 2, 3, 12, 0, tzinfo=UTC)
+
+
+@pytest.fixture
+def cli_workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Initialize a deterministic CLI workspace inside a temporary directory."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("AIJOURNAL_FAKE_OLLAMA", "1")
+    monkeypatch.setattr("aijournal.utils.time.now", lambda: _FIXED_NOW)
+
+    runner = CliRunner()
+    result = runner.invoke(app, ["init"])
+    if result.exit_code != 0:
+        raise RuntimeError(f"Failed to initialize CLI workspace: {result.stdout}")
+
+    yield tmp_path

@@ -1,107 +1,120 @@
-"""Typer CLI entrypoint for aijournal."""
+"""Typer CLI entrypoint for aijournal.
+
+This module intentionally keeps only Typer glue and lightweight interactive
+helpers. Command orchestration now lives under ``aijournal.commands``; any
+remaining utilities here support interactive previews that still require direct
+terminal IO.
+"""
 
 from __future__ import annotations
 
-import copy
-import json
 import os
-import random
-import re
-import sqlite3
-from array import array
-from collections.abc import Callable, Iterable, Sequence
-from dataclasses import asdict, dataclass
-from datetime import UTC, datetime, timedelta
-from hashlib import sha256
-from math import ceil, exp
+from collections.abc import Sequence
 from pathlib import Path
-from string import Template
-from textwrap import dedent
-from typing import Any, Literal, cast
+from typing import Any, cast
 
 import httpx
-import numpy as np
 import typer
 import yaml
-from annoy import AnnoyIndex
-from pydantic import BaseModel, ValidationError
-from pydantic_ai import Agent
+from pydantic import ValidationError
+from typer.models import CommandInfo
 
-from aijournal.ingest_agent import (
-    IngestResult,
-    IngestSection,
-    build_ingest_agent,
-    ingest_with_agent,
+from aijournal.commands import summarize as summarize_commands
+from aijournal.commands.advise import (
+    _collect_pending_interview_prompts,
+    run_advise,
 )
-from aijournal.io.chat_sessions import ChatSessionRecorder
+from aijournal.commands.characterize import (
+    _normalize_claim_proposals,
+    _pending_updates_dir,
+    run_characterize,
+)
+from aijournal.commands.chat import run_chat
+from aijournal.commands.chatd import run_chatd
+from aijournal.commands.facts import (
+    run_facts as run_facts_command,
+)
+from aijournal.commands.index import (
+    run_index_rebuild,
+    run_index_search,
+    run_index_tail,
+)
+from aijournal.commands.ingest import (
+    _load_config,
+    _parse_entry,
+    _relative_source_path,
+    _use_fake_llm,
+    _write_yaml_if_changed,
+)
+from aijournal.commands.ingest import (
+    run_ingest as run_ingest_command,
+)
+from aijournal.commands.init import run_init as run_init_command
+from aijournal.commands.new import run_new as run_new_command
+from aijournal.commands.pack import run_pack
+from aijournal.commands.persona import (
+    persona_state,
+    run_persona_build,
+)
+from aijournal.commands.profile import (
+    InterviewTarget,
+    _apply_claim_upsert,
+    _apply_profile_update,
+    _compute_rankings,
+    _load_profile_components,
+    _profile_to_dict,
+    run_profile_apply,
+    run_profile_status,
+    run_profile_suggest,
+)
+from aijournal.commands.summarize import (
+    _entries_to_payload,
+    _json_block,
+    _load_normalized_entries,
+)
+from aijournal.commands.summarize import (
+    _invoke_structured_llm as _commands_invoke_structured_llm,
+)
+from aijournal.commands.summarize import (
+    _structured_call_with_retry as _commands_structured_call_with_retry,
+)
+from aijournal.commands.summarize import (
+    run_summarize as run_summarize_command,
+)
 from aijournal.io.yaml_io import load_yaml_model, write_yaml_model
 from aijournal.models import (
-    AdviceCard,
-    AdviceLLMResponse,
-    AdviceRecommendation,
-    AdviceReference,
-    CharacterizeResponse,
-    ChunkManifest,
-    ChunkManifestChunk,
-    ChunkManifestMeta,
     ClaimAtom,
     ClaimConflictPayload,
     ClaimPreviewEvent,
     ClaimProposal,
     ClaimsFile,
     ClaimSignaturePayload,
-    ClaimSource,
-    ClaimSourceSpan,
-    ClaimStatus,
-    DailySummary,
-    DailySummaryResponse,
-    ExtractedFactsResponse,
     FacetProposal,
-    FactEvidence,
-    IndexMeta,
     InterviewQuestion,
     InterviewSet,
-    ManifestEntry,
-    MicroFact,
-    MicroFactsFile,
     NormalizedEntry,
-    PersonaCore,
-    PersonaCoreFile,
-    PersonaCoreMeta,
-    ProfileSuggestions,
-    ProfileSuggestionUpdate,
-    ProfileSuggestionUpsert,
     ProfileUpdateBatch,
-    ProfileUpdateInput,
     ProfileUpdatePreview,
-    ProfileUpdateProposals,
-    Provenance,
     Scope,
     SelfProfile,
-    SimpleProfileSuggestionsResponse,
-    SimpleSuggestion,
-    SummaryMeta,
 )
-from aijournal.schema import SchemaValidationError, validate_schema
+from aijournal.pipelines import normalization
 from aijournal.services import (
-    ChatService,
-    ChatTurn,
     ClaimConflict,
     ClaimConsolidator,
     ClaimMergeOutcome,
     ClaimSignature,
-    FeedbackAdjustment,
     LLMResponseError,
-    apply_chat_feedback,
-    build_chat_app,
     build_ollama_config_from_mapping,
-    extract_claim_markers,
     resolve_ollama_host,
     run_ollama_agent,
 )
-from aijournal.services.embedding import EmbeddingBackend
-from aijournal.services.retriever import RetrievalFilters, Retriever
-from aijournal.utils.coercion import coerce_float, coerce_int
+from aijournal.utils import time as time_utils
+from aijournal.utils.coercion import coerce_int
+from aijournal.utils.paths import (
+    find_data_root,
+    normalized_entry_path,
+)
 
 app = typer.Typer(help="Local-first personal journal utilities.")
 profile_app = typer.Typer(help="Profile utilities.")
@@ -121,211 +134,7 @@ def main() -> None:
     return
 
 
-AUTHORITATIVE_DIRS = (
-    "config",
-    "profile",
-    "data",
-    "data/journal",
-    "data/normalized",
-    "data/raw",
-    "data/manifest",
-    "prompts",
-)
-
-DERIVED_DIRS = (
-    "derived",
-    "derived/summaries",
-    "derived/microfacts",
-    "derived/profile_suggestions",
-    "derived/interviews",
-    "derived/advice",
-    "derived/persona",
-    "derived/index",
-    "derived/chat_sessions",
-    "derived/pending",
-    "derived/pending/profile_updates",
-)
-
-SEED_FILES = {
-    "config/config.yaml": dedent(
-        """
-        model: "llama3.1:8b-instruct"
-        temperature: 0.2
-        seed: 42
-        paths:
-          data: "data"
-          profile: "profile"
-          derived: "derived"
-          prompts: "prompts"
-        impact_weights:
-          values_goals: 1.5
-          decision_style: 1.3
-          affect_energy: 1.2
-          traits: 1.0
-          social: 0.9
-          claims: 1.0
-          claim_types:
-            value: 1.4
-            goal: 1.4
-            boundary: 1.3
-            trait: 1.2
-            preference: 1.0
-            habit: 0.9
-            aversion: 1.1
-            skill: 1.0
-        advisor:
-          max_recos: 3
-          include_risks: true
-        token_estimator:
-          char_per_token: 4.2
-        persona:
-          token_budget: 1200
-          max_claims: 24
-          min_claims: 8
-        """,
-    ).strip()
-    + "\n",
-    "profile/self_profile.yaml": dedent(
-        """
-        traits:
-          big_five:
-            openness: {score: 0.74, method: self_report, user_verified: true}
-            conscientiousness: {score: 0.68, method: inferred}
-            extraversion: {score: 0.42, method: self_report}
-            agreeableness: {score: 0.61, method: inferred}
-            neuroticism: {score: 0.33, method: self_report}
-          regulatory_focus: {promotion: 0.7, prevention: 0.3}
-          risk_tolerance: {domain: "career", level: "medium-high"}
-          time_horizon: {preferred: "long", evidence: ["2024_l2_..."]}
-          review_after_days: 180
-
-        values_motivations:
-          schwartz_top5:
-            - "Self-Direction"
-            - "Achievement"
-            - "Universalism"
-            - "Benevolence"
-            - "Security"
-          sdt: {autonomy: 0.8, competence: 0.7, relatedness: 0.6}
-          drivers:
-            - value: "Mastery over tools & systems"
-              method: inferred
-              confidence: 0.8
-          review_after_days: 120
-
-        goals:
-          short_term:
-            - value: "Ship personal agent MVP"
-              why: "reduce friction"
-              krs: ["CLI usable", "context pack <1800t"]
-              review_after_days: 30
-          long_term:
-            - value: "Work-life consistency with twins"
-              krs: ["2 evenings/week protected"]
-              review_after_days: 90
-          anti_goals:
-            - value: "No late-night production firefighting as a norm"
-              reason: "family/health"
-
-        decision_style:
-          default: {speed_vs_quality: "quality", satisficer_vs_maximizer: "bounded_maximizer"}
-          implementation_intentions:
-            - if: "Feeling anxious before presentations"
-              then: "Run checklist + 10-min rehearsal"
-              evidence: ["2021-04-12_l1"]
-
-        affect_energy:
-          energy_map: {morning: "high", afternoon: "medium", evening: "low"}
-          stressors: ["ambiguous deadlines", "noisy environment"]
-          coping_strategies: ["walks", "time-boxing", "no email after 18:00"]
-
-        social:
-          relationships:
-            - person: "Jess"
-              role: "coworker"
-              notes: "great feedback partner"
-              boundary: "no pings after 18:00"
-
-        boundaries_ethics:
-          red_lines: ["No sharing private family data", "No health advice beyond guidelines"]
-
-        coaching_prefs:
-          tone: "direct, warm"
-          depth: "concrete first, theory second"
-          probing: {max_questions: 2, prefer: "yes/no + one short open follow-up"}
-        """,
-    ).strip()
-    + "\n",
-    "profile/claims.yaml": "claims: []\n",
-}
-
-ROLE_ORDER = [
-    "persona_core",
-    "profile",
-    "claims",
-    "config",
-    "prompt",
-    "normalized",
-    "summaries",
-    "microfacts",
-    "advice",
-    "profile_suggestions",
-    "journal_raw",
-]
-
-TRIM_PRIORITY = [
-    "journal_raw",
-    "prompt",
-    "config",
-    "advice",
-    "profile_suggestions",
-    "microfacts",
-    "summaries",
-    "normalized",
-    "claims",
-    "profile",
-]
-
-PERSONA_PROFILE_KEYS = (
-    "values_motivations",
-    "goals",
-    "boundaries_ethics",
-    "coaching_prefs",
-    "affect_energy",
-    "decision_style",
-    "traits",
-    "social",
-)
-
-CLAIM_TYPE_IMPACT_DEFAULTS: dict[str, float] = {
-    "value": 1.4,
-    "goal": 1.4,
-    "boundary": 1.3,
-    "trait": 1.2,
-    "preference": 1.0,
-    "habit": 0.9,
-    "aversion": 1.1,
-    "skill": 1.0,
-}
-
-PERSONA_DEFAULTS = {
-    "token_budget": 1200,
-    "max_claims": 24,
-    "min_claims": 8,
-}
-
-
-@dataclass
-class PersonaClaimSelection:
-    """Persona claim selection result with token accounting."""
-
-    claims: list[ClaimAtom]
-    trimmed_ids: list[str]
-    planned_tokens: int
-    budget_exceeded: bool
-
-
-DEFAULT_CHAR_PER_TOKEN = 4.2
+PENDING_UPDATES_SUBDIR = "derived/pending/profile_updates"
 
 HIGH_IMPACT_PROBES = [
     "- Top 3 values you refuse to trade off—rank them.",
@@ -339,1247 +148,72 @@ HIGH_IMPACT_PROBES = [
 ]
 
 
-@dataclass(frozen=True)
-class InterviewTarget:
-    """Candidate facet/claim/prompt ranked for interview follow-ups."""
+DEFAULT_TIMEOUT_SECONDS = 120.0
+DEFAULT_LLM_RETRIES = 1
 
-    path: str
-    score: float
-    kind: Literal["facet", "claim", "pending"]
-    reasons: tuple[str, ...] = ()
-    claim_id: str | None = None
-    missing_context: tuple[str, ...] = ()
 
-
-CHUNK_TARGET_CHARS = 900
-CHUNK_MAX_CHARS = 1200
-ANN_METRIC: Literal["angular", "euclidean", "manhattan", "hamming", "dot"] = "angular"
-INDEX_DB_FILENAME = "index.db"
-ANNOY_FILENAME = "annoy.index"
-INDEX_META_FILENAME = "meta.json"
-
-
-@dataclass
-class ChunkRecord:
-    """Normalized chunk + embedding payload stored in SQLite."""
-
-    chunk_id: str
-    normalized_id: str
-    normalized_path: str
-    chunk_index: int
-    chunk_text: str
-    date: str
-    tags: list[str]
-    source_type: str | None
-    source_path: str
-    tokens: int
-    source_hash: str | None
-    manifest_hash: str | None
-    embedding: list[float] | None = None
-
-
-@dataclass
-class SourceRecord:
-    """Bookkeeping entry for indexed normalized files."""
-
-    normalized_path: str
-    normalized_id: str
-    date: str
-    source_hash: str | None
-    manifest_hash: str | None
-    chunk_count: int
-    updated_at: str
-
-
-@dataclass
-class IndexTask:
-    """Prepared normalized entry ready for chunking/indexing."""
-
-    day: str
-    path: Path
-    normalized_path: str
-    normalized_id: str
-    entry: NormalizedEntry
-    source_hash: str | None
-    manifest: ManifestEntry | None
-
-
-@dataclass
-class PackEntry:
-    """Context file included in a pack."""
-
-    role: str
-    path: str
-    tokens: int
-    content: str
-
-
-@dataclass
-class TrimmedFile:
-    """Metadata describing a trimmed pack entry."""
-
-    role: str
-    path: str
-
-
-@dataclass
-class PackMeta:
-    """Pack-level metadata."""
-
-    total_tokens: int
-    max_tokens: int
-    trimmed: list[TrimmedFile]
-    generated_at: str
-
-
-@dataclass
-class PackBundle:
-    """Structured bundle for pack output."""
-
-    level: str
-    date: str
-    files: list[PackEntry]
-    meta: PackMeta
-
-    def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
-
-
-FAKE_TIME_BLOCKS = [
-    ("Morning focus", 9),
-    ("Midday review", 12),
-    ("Afternoon systems", 15),
-    ("Evening reflection", 20),
-]
-
-FAKE_THEMES = [
-    "deep work sprint",
-    "planning checkpoint",
-    "family logistics",
-    "energy reset",
-    "coaching prep",
-    "writing sprint",
-    "health baseline",
-]
-
-FAKE_PROJECTS = [
-    "aijournal",
-    "infra cleanup",
-    "garden automation",
-    "parenting playbook",
-    "focus playlist",
-    "writing pipeline",
-]
-
-FAKE_ACTIONS = [
-    "Mapped blockers and sketched next three steps",
-    "Clarified success criteria before touching code",
-    "Reconciled notes from last retro",
-    "Documented one insight per paragraph",
-    "Turned vague worries into explicit tasks",
-]
-
-FAKE_REFLECTIONS = [
-    "Noticed recurring tension around context switching",
-    "Energy dipped after lunch but came back with a walk",
-    "Family logistics feel smoother when blocked on Sundays",
-    "Confidence spikes once the first win lands",
-    "Need to protect two uninterrupted mornings",
-]
-
-FAKE_NEXT_STEPS = [
-    "Block next session on the calendar",
-    "Ping Jess for async review notes",
-    "Move open todos into Things inbox",
-    "Write a two-paragraph recap for future me",
-    "Tidy prompt library before shipping",
-]
-
-FAKE_MOODS = ["steady", "energized", "calm", "curious", "stretched"]
-
-FAKE_TAG_SETS = [
-    ["focus", "planning"],
-    ["reflection", "family"],
-    ["health", "habits"],
-    ["shipping", "systems"],
-    ["writing", "learning"],
-]
-
-FAKE_MINUTES = [0, 5, 10, 15, 20, 30, 35, 40, 45, 50]
-
-MARKDOWN_SUFFIXES = {".md", ".markdown"}
-
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-PENDING_UPDATES_SUBDIR = "derived/pending/profile_updates"
-
-DEFAULT_PROMPTS = {
-    "summarize_day.md": (
-        "You are a journaling summarizer. Return JSON with day, bullets, highlights, "
-        "todo_candidates."
-    ),
-    "extract_facts.md": 'Extract atomic facts as JSON {"facts":[...]}.',
-    "profile_suggest.md": (
-        "Propose JSON with upserts and updates grounded in the entries and profile."
-    ),
-    "advise.md": "Return an advice card JSON with recommendations citing facets and claims.",
-    "characterize.md": ("Return JSON with claims and facets describing pending profile updates."),
-}
-
-
-def _now() -> datetime:
-    """Return the current UTC time; separated for easy monkeypatching in tests."""
-    return datetime.now(tz=UTC)
-
-
-def _slugify_title(title: str) -> str:
-    slug = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")
-    return slug or "entry"
-
-
-def _format_timestamp(dt: datetime) -> str:
-    return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
-
-
-def _generate_session_id() -> str:
-    return f"chat-{_now().strftime('%Y%m%d-%H%M%S')}"
-
-
-def _resolve_prompt_path(prompt_path: str) -> Path:
-    candidate = Path(prompt_path)
-    if candidate.is_absolute():
-        return candidate
-    cwd_candidate = Path.cwd() / prompt_path
-    if cwd_candidate.exists():
-        return cwd_candidate
-    return PROJECT_ROOT / prompt_path
-
-
-def _load_prompt_template(prompt_path: str) -> str:
-    path = _resolve_prompt_path(prompt_path)
-    if path.exists():
-        return path.read_text(encoding="utf-8")
-    key = Path(prompt_path).name
-    return DEFAULT_PROMPTS.get(prompt_path) or DEFAULT_PROMPTS.get(key, "")
-
-
-def _render_prompt(prompt_path: str, variables: dict[str, str]) -> str:
-    template = Template(_load_prompt_template(prompt_path))
-    return template.safe_substitute(**variables)
-
-
-def _json_block(data: Any) -> str:
-    return json.dumps(data, indent=2, ensure_ascii=False)
-
-
-def _clamp_strength(value: float | None, default: float = 0.6) -> float:
-    try:
-        strength = float(value) if value is not None else default
-    except (TypeError, ValueError):
-        strength = default
-    return max(0.0, min(1.0, strength))
-
-
-def _normalize_status(value: str | None) -> ClaimStatus:
-    status = (value or "tentative").strip().lower()
-    if status not in {"accepted", "tentative", "rejected"}:
-        status = "tentative"
-    return cast(ClaimStatus, status)
-
-
-def _simple_suggestions_to_profile(
-    simple: SimpleProfileSuggestionsResponse,
-    *,
-    timestamp: str,
-) -> ProfileSuggestions:
-    upserts: list[ProfileSuggestionUpsert] = []
-    updates: list[ProfileSuggestionUpdate] = []
-
-    for suggestion in simple.suggestions:
-        kind = (suggestion.kind or "").strip().lower()
-        if kind == "claim":
-            upsert = _simple_claim_to_upsert(suggestion, timestamp)
-            if upsert is not None:
-                upserts.append(upsert)
-        elif kind == "facet":
-            update = _simple_facet_to_update(suggestion)
-            if update is not None:
-                updates.append(update)
-        else:
-            typer.secho(
-                f"Ignoring unknown suggestion kind: {suggestion.kind}",
-                fg=typer.colors.YELLOW,
-                err=True,
-            )
-
-    return ProfileSuggestions(upserts=upserts, updates=updates)
-
-
-def _simple_claim_to_upsert(
-    suggestion: SimpleSuggestion,
-    timestamp: str,
-) -> ProfileSuggestionUpsert | None:
-    statement = (suggestion.statement or "").strip()
-    if not statement:
-        typer.secho(
-            "Skipping claim suggestion without statement.", fg=typer.colors.YELLOW, err=True
-        )
-        # If missing statement, skip.
-        return None
-
-    claim_id = (suggestion.id or _slugify_title(statement))[:96]
-    sources = [
-        ClaimSource(entry_id=str(entry).strip(), spans=[]) for entry in suggestion.evidence if entry
-    ]
-    provenance = Provenance(
-        sources=sources,
-        first_seen=timestamp,
-        last_updated=timestamp,
-        observation_count=max(1, len(sources)) or 1,
-    )
-
-    claim_atom = ClaimAtom(
-        id=claim_id,
-        type="preference",
-        subject="self",
-        predicate="insight",
-        value=statement,
-        statement=statement,
-        scope=Scope(),
-        strength=_clamp_strength(suggestion.confidence),
-        status=_normalize_status(suggestion.status),
-        method="inferred",
-        user_verified=False,
-        review_after_days=120,
-        provenance=provenance,
-    )
-
-    return ProfileSuggestionUpsert(
-        target="claims",
-        operation="upsert",
-        value=claim_atom,
-        rationale=suggestion.rationale,
-    )
-
-
-def _simple_facet_to_update(suggestion: SimpleSuggestion) -> ProfileSuggestionUpdate | None:
-    path = (suggestion.facet_path or "").strip()
-    if not path or suggestion.value is None:
-        typer.secho(
-            "Skipping facet suggestion without facet_path or value.",
-            fg=typer.colors.YELLOW,
-            err=True,
-        )
-        return None
-
-    evidence = [str(entry).strip() for entry in suggestion.evidence if entry]
-    return ProfileSuggestionUpdate(
-        target=path,
-        operation="set",
-        value=suggestion.value,
-        method="inferred",
-        user_verified=False,
-        evidence=evidence,
-        rationale=suggestion.rationale,
-    )
-
-
-_STRUCTURED_SYSTEM_PROMPT = (
-    "You are part of the local aijournal CLI. "
-    "Read the user's prompt carefully and respond with JSON that matches the declared response schema. "
-    "Do not include markdown fences or commentary."
-)
+def _normalize_created_at(value: Any) -> str:
+    return normalization.normalize_created_at(value)
 
 
 def _invoke_structured_llm(
     prompt_path: str,
     variables: dict[str, str],
     *,
-    response_model: type[BaseModel],
+    response_model: type[Any],
     agent_name: str,
     config: dict[str, Any],
     timeout: float | None = None,
-) -> BaseModel:
-    prompt = _render_prompt(prompt_path, variables)
+) -> Any:
+    """Proxy to summarize command helper while honoring patched runners."""
+
+    original_runner = summarize_commands.run_ollama_agent
+    original_builder = summarize_commands.build_ollama_config_from_mapping
+    summarize_commands.run_ollama_agent = run_ollama_agent
+    summarize_commands.build_ollama_config_from_mapping = build_ollama_config_from_mapping
     try:
-        ollama_config = build_ollama_config_from_mapping(
-            config,
-            timeout=float(timeout) if timeout is not None else None,
+        return _commands_invoke_structured_llm(
+            prompt_path,
+            variables,
+            response_model=response_model,
+            agent_name=agent_name,
+            config=config,
+            timeout=timeout,
         )
-        output = run_ollama_agent(
-            ollama_config,
-            prompt,
-            system_prompt=_STRUCTURED_SYSTEM_PROMPT,
-            output_type=response_model,
-        )
-    except Exception as exc:  # pragma: no cover - runtime dependent
-        msg = f"Structured output generation failed for {prompt_path}: {exc}"
-        raise LLMResponseError(msg) from exc
-
-    if isinstance(output, response_model):
-        return output
-    msg = f"Structured output generation for {prompt_path} did not return {response_model.__name__}"
-    raise LLMResponseError(msg)
-
-
-DEFAULT_TIMEOUT_SECONDS = 120.0
-DEFAULT_LLM_RETRIES = 1
-
-
-def _validate_timeout(value: float) -> float:
-    if value <= 0:
-        typer.secho("--timeout must be positive.", fg=typer.colors.RED, err=True)
-        raise typer.Exit(1)
-    return value
-
-
-def _log_entry_progress(action: str, entries: Sequence[NormalizedEntry], enabled: bool) -> None:
-    if not enabled:
-        return
-    total = len(entries)
-    plural = "entry" if total == 1 else "entries"
-    typer.echo(f"{action}: {total} {plural}")
-    if total == 0:
-        return
-    for idx, entry in enumerate(entries, start=1):
-        label = entry.title or entry.id or f"entry-{idx}"
-        typer.echo(f"  [{idx}/{total}] {label}")
-
-
-def _is_timeout_exception(exc: BaseException) -> bool:
-    current: BaseException | None = exc
-    while current is not None:
-        message = str(current).lower()
-        if isinstance(current, TimeoutError) or "timed out" in message or "timeout" in message:
-            return True
-        current = current.__cause__ if current.__cause__ is not None else current.__context__
-    return False
+    finally:
+        summarize_commands.build_ollama_config_from_mapping = original_builder
+        summarize_commands.run_ollama_agent = original_runner
 
 
 def _structured_call_with_retry(
-    func: Callable[[], BaseModel],
+    func: Any,
     *,
     retries: int,
     label: str,
-) -> BaseModel:
-    attempts_used = 0
-    total_attempts = max(1, retries + 1)
-    while True:
-        try:
-            return func()
-        except LLMResponseError as exc:
-            if attempts_used >= retries:
-                raise
-            attempts_used += 1
-            reason = "timeout" if _is_timeout_exception(exc) else "schema error"
-            next_attempt = attempts_used + 1
-            typer.secho(
-                f"{label}: retrying after {reason} (attempt {next_attempt}/{total_attempts}).",
-                fg=typer.colors.YELLOW,
-                err=True,
-            )
+) -> Any:
+    return _commands_structured_call_with_retry(func, retries=retries, label=label)
 
 
-def _journal_path(base: Path, dt: datetime, slug: str) -> Path:
-    return (
-        base
-        / "data"
-        / "journal"
-        / dt.strftime("%Y")
-        / dt.strftime("%m")
-        / dt.strftime("%d")
-        / f"{slug}.md"
-    )
-
-
-def _write_markdown_entry(path: Path, frontmatter: dict[str, Any], body: str = "") -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    yaml_block = yaml.safe_dump(frontmatter, sort_keys=False).strip()
-    content = f"---\n{yaml_block}\n---\n"
-    if body:
-        content += f"\n{body.strip()}\n"
-    else:
-        content += "\n"
-    path.write_text(content, encoding="utf-8")
-
-
-def _generate_fake_entries(
-    count: int,
-    override_tags: list[str] | None,
-    seed: int | None,
-    base: Path,
-) -> tuple[int, int]:
-    if count <= 0:
-        return (0, 0)
-
-    rng_seed = seed if seed is not None else int(_now().timestamp())
-    rng = random.Random(rng_seed)
-    base_dt = _now()
-    base_day = base_dt.date()
-    enforced_tags = list(override_tags or [])
-
-    created = 0
-    skipped = 0
-
-    for idx in range(count):
-        day = base_day - timedelta(days=idx)
-        label, hour = rng.choice(FAKE_TIME_BLOCKS)
-        minute = rng.choice(FAKE_MINUTES)
-        created_dt = datetime(
-            day.year,
-            day.month,
-            day.day,
-            hour,
-            minute,
-            tzinfo=UTC,
-        )
-        theme = rng.choice(FAKE_THEMES)
-        project = rng.choice(FAKE_PROJECTS)
-        mood = rng.choice(FAKE_MOODS)
-        action = rng.choice(FAKE_ACTIONS)
-        reflection = rng.choice(FAKE_REFLECTIONS)
-        next_step = rng.choice(FAKE_NEXT_STEPS)
-        slug = (
-            f"{created_dt.strftime('%Y-%m-%d')}-{_slugify_title(theme)}-{_slugify_title(project)}"
-        )
-        title = f"{label}: {theme.title()} ({project})"
-
-        entry_path = _journal_path(base, created_dt, slug)
-        if entry_path.exists():
-            typer.echo(f"Skipping {entry_path} (already exists)")
-            skipped += 1
-            continue
-
-        if enforced_tags:
-            tags = enforced_tags
-        else:
-            auto_tags = set(rng.choice(FAKE_TAG_SETS))
-            auto_tags.add(project.split()[0].lower())
-            auto_tags.add(theme.split()[0].lower())
-            tags = sorted(auto_tags)
-
-        frontmatter = {
-            "id": slug,
-            "created_at": _format_timestamp(created_dt),
-            "title": title,
-            "tags": tags,
-            "mood": mood,
-            "projects": [project],
-        }
-        body = "\n\n".join(
-            [
-                f"{label} block stayed on {project}: {action}.",
-                f"Felt {mood}; {reflection}.",
-                f"Next: {next_step}.",
-            ],
-        )
-        _write_markdown_entry(entry_path, frontmatter, body)
-        typer.echo(str(entry_path))
-        created += 1
-
-    return created, skipped
-
-
-def _find_data_root(entry: Path) -> Path:
-    for parent in entry.parents:
-        if parent.name == "data":
-            return parent.parent
-    return Path.cwd()
-
-
-def _normalized_path(root: Path, date_str: str, entry_id: str) -> Path:
-    return root / "data" / "normalized" / date_str / f"{entry_id}.yaml"
-
-
-def _ensure_dirs(base: Path, rel_paths: Iterable[str]) -> tuple[int, int]:
-    paths = tuple(rel_paths)
-    created = 0
-    for rel in paths:
-        target = base / rel
-        if not target.exists():
-            target.mkdir(parents=True, exist_ok=True)
-            created += 1
-        else:
-            target.mkdir(parents=True, exist_ok=True)
-    return created, len(paths)
-
-
-def _ensure_files(base: Path) -> tuple[int, int]:
-    created = 0
-    for rel, content in SEED_FILES.items():
-        target = base / rel
-        if target.exists():
-            continue
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(content.rstrip() + "\n", encoding="utf-8")
-        created += 1
-    return created, len(SEED_FILES)
-
-
-def _split_frontmatter(text: str) -> tuple[str, str]:
-    delimiter = None
-    if text.startswith("---"):
-        delimiter = "---"
-    elif text.startswith("+++"):
-        delimiter = "+++"
-    if delimiter is None:
-        msg = "Markdown entry missing YAML/TOML frontmatter delimiter"
-        raise ValueError(msg)
-
-    parts = text.split(delimiter, 2)
-    if len(parts) < 3:
-        msg = "Incomplete YAML/TOML frontmatter block"
-        raise ValueError(msg)
-
-    frontmatter_raw = parts[1].strip()
-    body = parts[2]
-    return frontmatter_raw, body
-
-
-def _scan_headings(text: str) -> list[dict[str, Any]]:
-    sections: list[dict[str, Any]] = []
-    for line in text.splitlines():
-        heading_match = re.match(r"^(#{1,6})\s+(.*)$", line.strip())
-        if heading_match:
-            sections.append(
-                {
-                    "heading": heading_match.group(2).strip(),
-                    "level": len(heading_match.group(1)),
-                },
-            )
-    return sections
-
-
-def _parse_entry(entry_path: Path) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-    text = entry_path.read_text(encoding="utf-8")
-    frontmatter_raw, body = _split_frontmatter(text)
-    data = yaml.safe_load(frontmatter_raw) or {}
-    sections = _scan_headings(body)
-    return data, sections
-
-
-def _relative_source_path(entry_path: Path, root: Path) -> str:
-    try:
-        return str(entry_path.relative_to(root))
-    except ValueError:
-        return str(entry_path)
-
-
-def _load_existing_yaml(path: Path) -> dict[str, Any] | None:
-    if not path.exists():
-        return None
-    return yaml.safe_load(path.read_text(encoding="utf-8"))
-
-
-def _write_yaml_if_changed(
-    path: Path,
-    data: dict[str, Any],
+def _summarize_day_payload(
+    entries: Sequence[NormalizedEntry],
+    date: str,
+    config: dict[str, Any],
     *,
-    schema: str | None = None,
-) -> bool:
-    if schema:
-        try:
-            validate_schema(schema, data)
-        except SchemaValidationError as exc:
-            typer.secho(str(exc), fg=typer.colors.RED, err=True)
-            raise typer.Exit(1)
+    timeout: float | None,
+    retries: int,
+) -> Any:
+    """Proxy to the summarize command helper with test-friendly overrides."""
 
-    existing = _load_existing_yaml(path)
-    if existing == data:
-        return False
-
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
-    return True
-
-
-def _normalize_created_at(value: Any) -> str:
-    if isinstance(value, datetime):
-        dt = value.astimezone(UTC)
-        return _format_timestamp(dt)
-
-    if isinstance(value, str):
-        candidate = value.replace("Z", "+00:00") if value.endswith("Z") else value
-        try:
-            dt = datetime.fromisoformat(candidate)
-            if dt.tzinfo is None:
-                dt = dt.replace(tzinfo=UTC)
-            return _format_timestamp(dt)
-        except ValueError:
-            return value
-
-    return str(value)
-
-
-def _created_date(created_at: str) -> str:
-    if "T" in created_at:
-        return created_at.split("T", 1)[0]
-    return created_at
-
-
-def _load_yaml(path: Path) -> dict[str, Any]:
-    return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-
-
-def _load_config(root: Path) -> dict[str, Any]:
-    config_path = root / "config" / "config.yaml"
-    if not config_path.exists():
-        return {}
-    return _load_yaml(config_path)
-
-
-def _use_fake_llm() -> bool:
-    return os.getenv("AIJOURNAL_FAKE_OLLAMA") == "1"
-
-
-def _manifest_path(root: Path) -> Path:
-    return root / "data" / "manifest" / "ingested.yaml"
-
-
-def _load_manifest(path: Path) -> list[ManifestEntry]:
-    if not path.exists():
-        return []
-    data = yaml.safe_load(path.read_text(encoding="utf-8")) or []
-    entries: list[ManifestEntry] = []
-    if not isinstance(data, list):
-        return entries
-    for raw in data:
-        if not isinstance(raw, dict):
-            continue
-        try:
-            entries.append(ManifestEntry.model_validate(raw))
-        except ValidationError:
-            continue
-    return entries
-
-
-def _write_manifest(path: Path, entries: Iterable[ManifestEntry]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    payload = [entry.model_dump(mode="python") for entry in entries]
-    path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
-
-
-def _manifest_by_id(entries: Iterable[ManifestEntry]) -> dict[str, ManifestEntry]:
-    index: dict[str, ManifestEntry] = {}
-    for entry in entries:
-        entry_id = entry.id
-        if not entry_id:
-            continue
-        index[entry_id] = entry
-    return index
-
-
-def _discover_markdown_files(inputs: Iterable[Path]) -> list[Path]:
-    files: list[Path] = []
-    for source in inputs:
-        resolved = source.expanduser().resolve()
-        if resolved.is_dir():
-            for candidate in sorted(resolved.rglob("*")):
-                if candidate.is_file() and candidate.suffix.lower() in MARKDOWN_SUFFIXES:
-                    files.append(candidate)
-        elif resolved.is_file():
-            files.append(resolved)
-
-    unique: list[Path] = []
-    seen: set[Path] = set()
-    for file in files:
-        if file not in seen:
-            seen.add(file)
-            unique.append(file)
-    return unique
-
-
-def _normalize_tags(raw: Iterable[Any]) -> list[str]:
-    tags: list[str] = []
-    seen: set[str] = set()
-    for value in raw:
-        if value is None:
-            continue
-        text = str(value).strip()
-        if not text:
-            continue
-        slug = _slugify_title(text)
-        if slug and slug not in seen:
-            seen.add(slug)
-            tags.append(slug)
-    return tags
-
-
-def _clamp01(value: Any) -> float:
-    try:
-        numeric = float(value)
-    except (TypeError, ValueError):
-        numeric = 0.0
-    return max(0.0, min(1.0, numeric))
-
-
-def _coerce_timestamp(value: Any) -> str | None:
-    if value is None:
-        return None
-    if isinstance(value, datetime):
-        dt = value.astimezone(UTC)
-        return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
-    text = str(value)
-    return text if text else None
-
-
-def _normalize_scope(raw: Any) -> Scope:
-    if isinstance(raw, Scope):
-        return raw.model_copy(deep=True)
-
-    scope_dict = raw if isinstance(raw, dict) else {}
-    domain_raw = scope_dict.get("domain")
-    domain = str(domain_raw).strip() if isinstance(domain_raw, str) and domain_raw.strip() else None
-
-    def _string_list(values: Any) -> list[str]:
-        if not isinstance(values, list):
-            return []
-        sanitized: list[str] = []
-        for item in values:
-            text = str(item).strip()
-            if text:
-                sanitized.append(text)
-        return sanitized
-
-    context = _string_list(scope_dict.get("context"))
-    conditions = _string_list(scope_dict.get("conditions"))
-    return Scope(domain=domain, context=context, conditions=conditions)
-
-
-def _normalize_sources(raw: Any) -> list[ClaimSource]:
-    sources: list[ClaimSource] = []
-    if not isinstance(raw, list):
-        return sources
-    for source in raw:
-        if isinstance(source, ClaimSource):
-            sources.append(source.model_copy(deep=True))
-            continue
-        if not isinstance(source, dict):
-            continue
-        entry_id = source.get("entry_id")
-        if not entry_id:
-            continue
-        spans_raw = source.get("spans")
-        spans: list[ClaimSourceSpan] = []
-        if isinstance(spans_raw, list):
-            for span in spans_raw:
-                if isinstance(span, ClaimSourceSpan):
-                    spans.append(span.model_copy(deep=True))
-                    continue
-                if not isinstance(span, dict):
-                    continue
-                spans.append(
-                    ClaimSourceSpan(
-                        type=str(span.get("type") or "excerpt"),
-                        index=coerce_int(span.get("index")),
-                        start=coerce_int(span.get("start")),
-                        end=coerce_int(span.get("end")),
-                    ),
-                )
-        sources.append(ClaimSource(entry_id=str(entry_id), spans=spans))
-    return sources
-
-
-def _default_claim_sources(raw: ClaimAtom | dict[str, Any]) -> list[ClaimSource]:
-    claim_id: str | None
-    if isinstance(raw, ClaimAtom):
-        claim_id = raw.id
-    elif isinstance(raw, dict):
-        claim_id_raw = raw.get("id")
-        claim_id = str(claim_id_raw) if claim_id_raw else None
-    else:
-        claim_id = None
-    if not claim_id:
-        return []
-    claim_id_str = str(claim_id)
-    return [ClaimSource(entry_id=claim_id_str, spans=[])]
-
-
-def _normalize_provenance(
-    raw: Any,
-    *,
-    timestamp: str,
-    default_sources: Sequence[ClaimSource] | None,
-) -> Provenance:
-    if isinstance(raw, Provenance):
-        provenance = raw.model_copy(deep=True)
-    else:
-        data = raw if isinstance(raw, dict) else {}
-        sources = _normalize_sources(data.get("sources"))
-        observation_count = coerce_int(data.get("observation_count"))
-        first_seen_coerced = _coerce_timestamp(data.get("first_seen"))
-        last_updated_coerced = _coerce_timestamp(data.get("last_updated")) or timestamp
-        provenance = Provenance(
-            sources=sources,
-            first_seen=_created_date(first_seen_coerced or timestamp),
-            last_updated=last_updated_coerced,
-            observation_count=observation_count
-            if observation_count and observation_count > 0
-            else max(1, len(sources) or 1),
-        )
-
-    if (not provenance.sources) and default_sources:
-        provenance.sources = [source.model_copy(deep=True) for source in default_sources]
-
-    first_seen_ts = _coerce_timestamp(provenance.first_seen)
-    provenance.first_seen = (
-        _created_date(first_seen_ts) if first_seen_ts else _created_date(timestamp)
+    return summarize_commands._summarize_day_payload(
+        entries,
+        date,
+        config,
+        timeout=timeout,
+        retries=retries,
+        invoke_structured_llm=_invoke_structured_llm,
+        structured_call=_structured_call_with_retry,
+        use_fake_llm=_use_fake_llm(),
     )
-    provenance.last_updated = _coerce_timestamp(provenance.last_updated) or timestamp
-    if provenance.observation_count <= 0:
-        provenance.observation_count = max(1, len(provenance.sources) or 1)
-    return provenance
-
-
-def _normalize_claim_atom(
-    data: ClaimAtom | dict[str, Any],
-    *,
-    timestamp: str,
-    default_sources: Sequence[ClaimSource] | None = None,
-) -> ClaimAtom:
-    if default_sources is None:
-        default_sources = _default_claim_sources(data)
-
-    base = data.model_dump(mode="python") if isinstance(data, ClaimAtom) else dict(data)
-
-    statement = str(base.get("statement") or "").strip()
-    if not statement:
-        msg = "Claim statement is required"
-        raise ValueError(msg)
-
-    claim_type_raw = str(base.get("type") or "preference").strip().lower()
-    valid_types = {
-        "preference",
-        "value",
-        "goal",
-        "boundary",
-        "trait",
-        "habit",
-        "aversion",
-        "skill",
-    }
-    claim_type = claim_type_raw if claim_type_raw in valid_types else "preference"
-
-    subject_candidate = (
-        base.get("subject") or base.get("id") or _slugify_title(statement) or "observation"
-    )
-    subject = str(subject_candidate).strip() or "observation"
-
-    predicate = str(base.get("predicate") or "statement").strip() or "statement"
-
-    value_raw = base.get("value")
-    value = (
-        str(value_raw).strip() if value_raw is not None and str(value_raw).strip() else statement
-    )
-
-    claim_id_raw = base.get("id")
-    if claim_id_raw:
-        claim_id = str(claim_id_raw).strip() or None
-    else:
-        claim_id = None
-    if not claim_id:
-        subject_slug = _slugify_title(subject) or "subject"
-        predicate_slug = _slugify_title(predicate) or "predicate"
-        claim_id = f"{claim_type}.{subject_slug}.{predicate_slug}"
-    claim_id = claim_id[:96]
-
-    scope = _normalize_scope(base.get("scope"))
-
-    strength_value = base.get("strength", base.get("confidence"))
-    strength_numeric = coerce_float(strength_value)
-    strength = _clamp01(strength_numeric if strength_numeric is not None else 0.6)
-
-    status_raw = str(base.get("status") or "tentative").strip().lower()
-    valid_status = {"accepted", "tentative", "rejected"}
-    status = status_raw if status_raw in valid_status else "tentative"
-
-    method_raw = str(base.get("method") or "inferred").strip().lower()
-    valid_methods = {"self_report", "inferred", "behavioral"}
-    method = method_raw if method_raw in valid_methods else "inferred"
-
-    user_verified = bool(base.get("user_verified", False))
-    review_after_days = coerce_int(base.get("review_after_days")) or 120
-
-    provenance = _normalize_provenance(
-        base.get("provenance"),
-        timestamp=timestamp,
-        default_sources=default_sources,
-    )
-
-    return ClaimAtom(
-        id=claim_id,
-        type=claim_type,  # type: ignore[arg-type]
-        subject=subject,
-        predicate=predicate,
-        value=value,
-        statement=statement,
-        scope=scope,
-        strength=strength,
-        status=status,  # type: ignore[arg-type]
-        method=method,  # type: ignore[arg-type]
-        user_verified=user_verified,
-        review_after_days=review_after_days,
-        provenance=provenance,
-    )
-
-
-def _build_claim_atom_from_entry(
-    entry: NormalizedEntry,
-    *,
-    claim_id: str,
-    statement: str,
-    strength: float,
-    status: str,
-) -> ClaimAtom:
-    timestamp = _format_timestamp(_now())
-    default_sources = [ClaimSource(entry_id=entry.id or claim_id, spans=[])]
-    raw = {
-        "id": claim_id,
-        "type": "preference",
-        "subject": entry.title or claim_id,
-        "predicate": "insight",
-        "value": statement,
-        "statement": statement,
-        "scope": {
-            "domain": None,
-            "context": list((entry.tags or [])[:2]),
-            "conditions": [],
-        },
-        "strength": strength,
-        "status": status,
-        "method": "inferred",
-        "user_verified": False,
-        "review_after_days": 120,
-        "provenance": {
-            "sources": [source.model_dump(mode="python") for source in default_sources],
-            "first_seen": entry.created_at or timestamp,
-        },
-    }
-    return _normalize_claim_atom(raw, timestamp=timestamp, default_sources=default_sources)
-
-
-def _clean_summary(text: str | None, fallback: str | None = None) -> str | None:
-    candidate = (text or "").strip()
-    if candidate:
-        for marker in (',"entry_id"', ',"tags"', ',"sections"'):
-            idx = candidate.find(marker)
-            if idx != -1:
-                candidate = candidate[:idx]
-                break
-        candidate = candidate.replace("\n", " ").strip().strip('"')
-        sentences = re.split(r"(?<=[.!?])\s+", candidate)
-        sentences = [sentence.strip() for sentence in sentences if sentence.strip()]
-        candidate = " ".join(sentences[:2]) if sentences else ""
-
-    if not candidate and fallback:
-        candidate = fallback.strip()
-
-    return candidate or None
-
-
-def _merge_sections(
-    primary: Iterable[IngestSection],
-    fallback: Iterable[dict[str, Any]],
-    *,
-    title: str,
-    limit: int = 6,
-) -> list[dict[str, Any]]:
-    entries: list[dict[str, Any]] = []
-    seen: set[str] = set()
-
-    def add_section(heading: str, level: int, summary: str | None = None) -> None:
-        heading = heading.strip()
-        if not heading:
-            return
-        key = heading.lower()
-        if key in seen:
-            return
-        seen.add(key)
-        entry: dict[str, Any] = {
-            "heading": heading,
-            "level": max(1, min(6, int(level or 1))),
-        }
-        if summary:
-            entry["summary"] = summary.strip()
-        entries.append(entry)
-
-    for primary_section in primary:
-        add_section(primary_section.heading, primary_section.level, primary_section.summary)
-        if len(entries) >= limit:
-            return entries
-
-    for fallback_section in fallback:
-        heading = str(fallback_section.get("heading") or title)
-        level = int(fallback_section.get("level", 2))
-        add_section(heading, level)
-        if len(entries) >= limit:
-            return entries
-
-    if not entries:
-        add_section(title or "entry", 1)
-    return entries
-
-
-def _sanitize_entry_id(candidate: str | None, title: str, date_str: str, digest: str) -> str:
-    slug = ""
-    if candidate and candidate.strip():
-        slug = _slugify_title(candidate)
-    elif title.strip():
-        slug = _slugify_title(title)
-
-    if slug:
-        if not slug.startswith(date_str):
-            slug = f"{date_str}-{slug}"
-    else:
-        slug = f"{date_str}-{digest[:8]}"
-
-    return slug[:96]
-
-
-def _extract_frontmatter_tags(frontmatter: dict[str, Any]) -> list[str]:
-    values: list[str] = []
-    for key in ("tags", "categories", "keywords", "topics", "projects"):
-        raw = frontmatter.get(key)
-        if raw is None:
-            continue
-        if isinstance(raw, str):
-            values.append(raw)
-        elif isinstance(raw, list):
-            for item in raw:
-                values.append(str(item))
-    return values
-
-
-def _fake_structured_entry(entry_path: Path) -> IngestResult:
-    try:
-        frontmatter, sections_raw = _parse_entry(entry_path)
-    except ValueError:
-        frontmatter = {}
-        sections_raw = []
-
-    created_value = (
-        frontmatter.get("created_at")
-        or frontmatter.get("date")
-        or frontmatter.get("published")
-        or _format_timestamp(_now())
-    )
-    created_dt = _parse_datetime(str(created_value)) or _now()
-    title = str(frontmatter.get("title") or entry_path.stem)
-    section_models = [
-        IngestSection(
-            heading=str(section.get("heading", title)),
-            level=int(section.get("level", 2) or 2),
-        )
-        for section in sections_raw
-    ]
-    if not section_models:
-        section_models = [IngestSection(heading=title, level=1)]
-
-    summary = frontmatter.get("summary")
-    tags = _extract_frontmatter_tags(frontmatter)
-    entry_id = frontmatter.get("id") or frontmatter.get("slug")
-
-    return IngestResult(
-        entry_id=str(entry_id) if entry_id else None,
-        created_at=created_dt,
-        title=title,
-        tags=tags,
-        sections=section_models,
-        summary=str(summary) if isinstance(summary, str) else None,
-    )
-
-
-def _normalized_from_structured(
-    structured: IngestResult,
-    *,
-    source_path: Path,
-    root: Path,
-    digest: str,
-    source_type: str,
-    fallback_sections: list[dict[str, Any]] | None = None,
-    fallback_tags: list[str] | None = None,
-    fallback_summary: str | None = None,
-) -> tuple[dict[str, Any], str]:
-    created_at = structured.created_at
-    if isinstance(created_at, datetime):
-        created_str = _format_timestamp(created_at.astimezone(UTC))
-    else:
-        created_str = _normalize_created_at(created_at)
-
-    date_str = _created_date(created_str)
-    entry_id = _sanitize_entry_id(structured.entry_id, structured.title, date_str, digest)
-    tags = _normalize_tags(list(structured.tags or []) + list(fallback_tags or []))
-
-    merged_sections = _merge_sections(
-        structured.sections or [],
-        fallback_sections or [],
-        title=structured.title.strip() or entry_id,
-    )
-
-    normalized = {
-        "id": entry_id,
-        "created_at": created_str,
-        "source_path": _relative_source_path(source_path, root),
-        "title": structured.title.strip() or entry_id,
-        "tags": tags,
-        "sections": merged_sections,
-        "source_hash": digest,
-        "source_type": source_type,
-    }
-    summary = _clean_summary(structured.summary, fallback_summary)
-    if summary:
-        normalized["summary"] = summary
-
-    return normalized, date_str
-
-
-def _load_normalized_entries(root: Path, day: str) -> list[NormalizedEntry]:
-    folder = root / "data" / "normalized" / day
-    if not folder.exists():
-        return []
-    entries: list[NormalizedEntry] = []
-    for file in sorted(folder.glob("*.yaml")):
-        entries.append(load_yaml_model(file, NormalizedEntry))
-    return entries
-
-
-def _load_normalized_entries_with_paths(root: Path, day: str) -> list[tuple[NormalizedEntry, Path]]:
-    folder = root / "data" / "normalized" / day
-    if not folder.exists():
-        return []
-    entries: list[tuple[NormalizedEntry, Path]] = []
-    for file in sorted(folder.glob("*.yaml")):
-        entries.append((load_yaml_model(file, NormalizedEntry), file))
-    return entries
-
-
-def _entries_to_payload(entries: Iterable[NormalizedEntry]) -> list[dict[str, Any]]:
-    return [entry.model_dump(mode="python") for entry in entries]
-
-
-def _derived_summary_path(root: Path, day: str) -> Path:
-    return root / "derived" / "summaries" / f"{day}.yaml"
-
-
-def _derived_microfacts_path(root: Path, day: str) -> Path:
-    return root / "derived" / "microfacts" / f"{day}.yaml"
-
-
-def _derived_advice_path(root: Path, day: str, question: str) -> Path:
-    slug = _slugify_title(question)
-    return root / "derived" / "advice" / day / f"{slug}.yaml"
-
-
-def _derived_profile_suggestions_path(root: Path, day: str) -> Path:
-    return root / "derived" / "profile_suggestions" / f"{day}.yaml"
-
-
-def _pending_updates_dir(root: Path) -> Path:
-    return root / PENDING_UPDATES_SUBDIR
-
-
-def _pending_updates_path(root: Path, batch_id: str) -> Path:
-    safe_id = batch_id.replace(":", "-")
-    return _pending_updates_dir(root) / f"{safe_id}.yaml"
 
 
 def _latest_pending_batch(root: Path) -> Path | None:
@@ -1588,898 +222,6 @@ def _latest_pending_batch(root: Path) -> Path | None:
         return None
     files = sorted(p for p in directory.glob("*.yaml") if p.is_file())
     return files[-1] if files else None
-
-
-def _collect_pending_interview_prompts(root: Path, limit: int = 5) -> list[str]:
-    directory = _pending_updates_dir(root)
-    if not directory.exists():
-        return []
-    prompts: list[str] = []
-    for path in sorted((p for p in directory.glob("*.yaml") if p.is_file()), reverse=True):
-        try:
-            payload = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-        except yaml.YAMLError:
-            continue
-        preview = payload.get("preview") or {}
-        for prompt in preview.get("interview_prompts") or []:
-            text = str(prompt).strip()
-            if text and text not in prompts:
-                prompts.append(text)
-        if len(prompts) >= limit:
-            break
-    return prompts[:limit]
-
-
-def _hash_prompt(prompt_path: str) -> str | None:
-    path = _resolve_prompt_path(prompt_path)
-    try:
-        data = path.read_bytes()
-    except FileNotFoundError:
-        return None
-    return sha256(data).hexdigest()
-
-
-def _build_meta(
-    prompt_path: str,
-    *,
-    model: str | None = None,
-    config: dict[str, Any] | None = None,
-) -> SummaryMeta:
-    resolved_model: str
-    if model:
-        resolved_model = model
-    else:
-        config_payload = config if isinstance(config, dict) else {}
-        resolved_model = (
-            "fake-ollama"
-            if _use_fake_llm()
-            else build_ollama_config_from_mapping(config_payload).model
-        )
-    return SummaryMeta(
-        llm_model=resolved_model,
-        prompt_path=prompt_path,
-        prompt_hash=_hash_prompt(prompt_path),
-        created_at=_format_timestamp(_now()),
-    )
-
-
-def _fake_summarize(entries: Iterable[NormalizedEntry], date: str) -> DailySummary:
-    entry_list = list(entries)
-    bullets: list[str] = []
-    for entry in entry_list:
-        title = entry.title or entry.id
-        sections = entry.sections or []
-        section_titles = ", ".join(section.heading for section in sections[:2] if section.heading)
-        if section_titles:
-            bullets.append(f"{title}: {section_titles}")
-        else:
-            bullets.append(f"{title}: no sections")
-    if not bullets:
-        bullets = ["No content available"]
-    return DailySummary(
-        day=date,
-        bullets=bullets,
-        highlights=bullets[:3],
-        todo_candidates=_todo_from_entries(entry_list),
-    )
-
-
-def _fake_microfacts(entries: Iterable[NormalizedEntry]) -> list[MicroFact]:
-    facts: list[MicroFact] = []
-    for idx, entry in enumerate(entries, start=1):
-        entry_id = str(entry.id or f"entry-{idx}")
-        title = entry.title or entry_id
-        sections = entry.sections or []
-        statement = f"{title} covers {len(sections)} sections"
-        facts.append(
-            MicroFact(
-                id=f"fact-{entry_id}",
-                statement=statement,
-                confidence=0.8,
-                evidence=FactEvidence(entry_id=entry_id),
-            ),
-        )
-
-    if facts:
-        return facts
-
-    return [
-        MicroFact(
-            id="fact-empty",
-            statement="No normalized entries available",
-            confidence=0.0,
-            evidence=FactEvidence(entry_id="unknown"),
-        ),
-    ]
-
-
-def _fake_advise(
-    question: str,
-    profile: dict[str, Any],
-    claims: Sequence[ClaimAtom],
-    *,
-    rankings: Sequence[InterviewTarget] | None = None,
-    pending_prompts: Sequence[str] | None = None,
-) -> AdviceCard:
-    primary_claim = claims[0] if claims else None
-    advice_id = _advice_identifier(question)
-    claim_statement = primary_claim.statement if primary_claim else "Reflect on priorities"
-    claim_id = primary_claim.id if primary_claim else None
-
-    facets: list[str] = []
-    if profile.get("affect_energy"):
-        facets.append("affect_energy.energy_map")
-    if profile.get("goals"):
-        facets.append("goals.short_term")
-    if profile.get("values_motivations"):
-        facets.append("values_motivations.schwartz_top5")
-
-    alignment = AdviceReference(facets=facets, claims=[claim_id] if claim_id else [])
-
-    top_priority = rankings[0] if rankings else None
-    assumption_lines = []
-    if claim_statement:
-        assumption_lines.append(f"Reference claim: {claim_statement}")
-    if top_priority:
-        reason = "; ".join(top_priority.reasons[:1]) if top_priority.reasons else "needs review"
-        assumption_lines.append(f"Follow-up focus: {top_priority.path} ({reason}).")
-        if top_priority.kind == "claim" and top_priority.claim_id:
-            alignment.claims = list({top_priority.claim_id, *alignment.claims})
-        elif top_priority.kind == "facet":
-            alignment.facets = list({top_priority.path, *alignment.facets})
-
-    recommendation = AdviceRecommendation(
-        title=claim_statement,
-        why_this_fits_you=AdviceReference(
-            facets=list(alignment.facets),
-            claims=list(alignment.claims),
-        ),
-        steps=[
-            "Protect two deep-work mornings for focused execution.",
-            f"Question under review: {question}",
-        ],
-        risks=["Schedule collisions", "Unclear stakeholder updates"],
-        mitigations=[
-            "Share the plan with collaborators early.",
-            "Add end-of-day shutdown reminders to honor boundaries.",
-        ],
-    )
-
-    if pending_prompts:
-        recommendation.steps.append(f"Journal on pending prompt: {pending_prompts[0]}")
-
-    style = profile.get("coaching_prefs") or {"tone": "direct", "depth": "concrete-first"}
-
-    return AdviceCard(
-        id=advice_id,
-        query=question,
-        assumptions=assumption_lines or ["No verified claims available"],
-        recommendations=[recommendation],
-        tradeoffs=["Shipping speed may dip slightly while routines stabilize."],
-        next_actions=[
-            "Block two 3-hour focus windows next week.",
-            "Schedule a 10-minute Friday review with yourself.",
-        ],
-        confidence=0.5,
-        alignment=alignment,
-        style=style,
-    )
-
-
-def _fake_profile_suggestions(
-    entries: Sequence[NormalizedEntry],
-    profile: dict[str, Any],
-    claims: Sequence[ClaimAtom],
-) -> ProfileSuggestions:
-    upserts: list[ProfileSuggestionUpsert] = []
-    updates: list[ProfileSuggestionUpdate] = []
-
-    for entry in entries[:1]:
-        statement = entry.title or "New observation"
-        claim_id = f"auto_{entry.id or 'entry'}"
-        claim_model = _build_claim_atom_from_entry(
-            entry,
-            claim_id=claim_id,
-            statement=statement,
-            strength=0.6,
-            status="tentative",
-        )
-        upserts.append(
-            ProfileSuggestionUpsert(
-                target="claims",
-                operation="upsert",
-                value=claim_model.model_copy(deep=True),
-            ),
-        )
-
-    if profile:
-        updates.append(
-            ProfileSuggestionUpdate(
-                target="values_motivations.schwartz_top5",
-                operation="update",
-                value=profile.get("values_motivations", {}).get("schwartz_top5", []),
-            ),
-        )
-
-    return ProfileSuggestions(upserts=upserts, updates=updates)
-
-
-def _fake_characterize(
-    entries: Sequence[NormalizedEntry],
-    profile: dict[str, Any],
-    claims: Sequence[ClaimAtom],
-) -> ProfileUpdateProposals:
-    if not entries:
-        return ProfileUpdateProposals()
-
-    seed = entries[0]
-    date = _created_date(seed.created_at or _format_timestamp(_now()))
-    heading = ""
-    sections = seed.sections or []
-    if sections:
-        heading = sections[0].heading or ""
-    title = seed.title or seed.id or "entry"
-    theme = heading or title
-    tag = (seed.tags or [theme])[0]
-    claim_id = f"{_slugify_title(theme) or 'entry'}-{date.replace('-', '')}-claim"
-    claim = _build_claim_atom_from_entry(
-        seed,
-        claim_id=claim_id[:64],
-        statement=f"{theme} remains top-of-mind on {date}.",
-        strength=0.64,
-        status="tentative",
-    )
-
-    facet = FacetProposal(
-        path="values_motivations.recurring_theme",
-        value={
-            "label": theme,
-            "tag_hint": tag,
-            "last_seen": date,
-        },
-        operation="set",
-        method="inferred",
-        confidence=0.55,
-        review_after_days=90,
-        user_verified=False,
-    )
-
-    claim_proposal = ClaimProposal(
-        claim=claim,
-        normalized_ids=[],
-        evidence_hashes=[],
-        manifest_hashes=[],
-    )
-
-    return ProfileUpdateProposals(
-        claims=[claim_proposal],
-        facets=[facet],
-    )
-
-
-def _coerce_str_list(value: Any) -> list[str]:
-    if isinstance(value, list):
-        return [str(item).strip() for item in value if str(item).strip()]
-    if isinstance(value, str):
-        candidate = value.strip()
-        return [candidate] if candidate else []
-    return []
-
-
-def _todo_from_entries(entries: Sequence[NormalizedEntry]) -> list[str]:
-    todos: list[str] = []
-    for entry in entries[:3]:
-        title = entry.title or entry.id or "entry"
-        todos.append(f"Review follow-ups from {title}")
-    return todos or ["Capture explicit next actions in tomorrow's entry."]
-
-
-def _summarize_day_payload(
-    entries: Sequence[NormalizedEntry],
-    date: str,
-    config: dict[str, Any],
-    *,
-    timeout: float | None = None,
-    retries: int = DEFAULT_LLM_RETRIES,
-) -> DailySummary:
-    def fallback_model() -> DailySummary:
-        return _fake_summarize(entries, date)
-
-    if _use_fake_llm():
-        return fallback_model()
-
-    response_model = cast(
-        DailySummaryResponse,
-        _structured_call_with_retry(
-            lambda: _invoke_structured_llm(
-                "prompts/summarize_day.md",
-                {"date": date, "entries_json": _json_block(_entries_to_payload(entries))},
-                response_model=DailySummaryResponse,
-                agent_name="aijournal-summarize",
-                config=config,
-                timeout=timeout,
-            ),
-            retries=retries,
-            label=f"summarize {date}",
-        ),
-    )
-
-    bullets = [item for item in response_model.bullets if item]
-    highlights = [item for item in response_model.highlights if item]
-    todo_candidates = [item for item in response_model.todo_candidates if item]
-
-    if not bullets:
-        bullets = fallback_model().bullets
-    if not highlights:
-        highlights = bullets[:3]
-    if not todo_candidates:
-        todo_candidates = _todo_from_entries(entries)
-
-    day = response_model.day or date
-    return DailySummary(
-        day=day,
-        bullets=bullets,
-        highlights=highlights,
-        todo_candidates=todo_candidates,
-    )
-
-
-def _fact_sources_from_evidence(fact: MicroFact) -> list[ClaimSource]:
-    evidence = fact.evidence
-    if evidence is None:
-        return []
-    spans: list[ClaimSourceSpan] = []
-    for span in evidence.spans or []:
-        spans.append(
-            ClaimSourceSpan(
-                type=span.type,
-                index=span.index,
-                start=span.start,
-                end=span.end,
-            )
-        )
-    if not evidence.entry_id:
-        return []
-    return [ClaimSource(entry_id=evidence.entry_id, spans=spans)]
-
-
-def _scope_from_fact(
-    fact: MicroFact,
-    entry: NormalizedEntry | None,
-) -> Scope:
-    domain = entry.source_type if entry and entry.source_type else None
-    context_candidates: list[str] = []
-    if entry and entry.tags:
-        context_candidates.extend(tag for tag in entry.tags if tag)
-
-    statement_lower = fact.statement.lower()
-    keyword_pairs = {
-        "weekday": ("weekday", "weekdays", "workday", "workdays"),
-        "weekend": ("weekend", "weekends"),
-        "solo": ("solo", "independent", "alone"),
-        "team": ("team", "collaborative", "pairing", "group"),
-    }
-    for label, keywords in keyword_pairs.items():
-        if any(word in statement_lower for word in keywords):
-            context_candidates.append(label)
-
-    unique_context = _merge_unique(context_candidates, [])
-    return Scope(
-        domain=domain,
-        context=unique_context,
-        conditions=[],
-    )
-
-
-def _microfact_claim_proposals(
-    facts: Sequence[MicroFact],
-    *,
-    entries: Sequence[NormalizedEntry],
-    manifest_index: dict[str, ManifestEntry],
-    timestamp: str,
-) -> list[ClaimProposal]:
-    entry_by_id: dict[str, NormalizedEntry] = {}
-    for entry_model in entries:
-        if entry_model.id:
-            entry_by_id[entry_model.id] = entry_model
-
-    proposals: list[ClaimProposal] = []
-    for fact in facts:
-        if not fact.statement.strip():
-            continue
-        evidence_sources = _fact_sources_from_evidence(fact)
-        entry_id = fact.evidence.entry_id if fact.evidence else None
-        entry: NormalizedEntry | None = entry_by_id.get(entry_id) if entry_id else None
-        scope = _scope_from_fact(fact, entry)
-
-        provenance_sources = (
-            evidence_sources
-            if evidence_sources
-            else (
-                [ClaimSource(entry_id=entry_id, spans=[])]
-                if entry_id
-                else [ClaimSource(entry_id=f"microfact-{fact.id}", spans=[])]
-            )
-        )
-
-        manifest_entry = manifest_index.get(entry_id) if entry_id else None
-        source_hash = entry.source_hash if entry and entry.source_hash else None
-
-        normalized_ids: list[str] = []
-        if entry_id:
-            normalized_ids = [entry_id]
-        elif entry_by_id:
-            normalized_ids = [next(iter(entry_by_id.keys()))]
-
-        evidence_hashes = [source_hash] if source_hash else []
-        manifest_hashes = [manifest_entry.hash] if manifest_entry else []
-
-        raw_claim = {
-            "id": f"microfact.{fact.id}",
-            "type": "preference",
-            "subject": fact.id,
-            "predicate": "insight",
-            "value": fact.statement,
-            "statement": fact.statement,
-            "scope": scope.model_dump(mode="python"),
-            "strength": fact.confidence,
-            "status": "tentative",
-            "method": "inferred",
-            "review_after_days": 90,
-            "provenance": {
-                "sources": [source.model_dump(mode="python") for source in provenance_sources],
-                "first_seen": fact.first_seen or _created_date(timestamp),
-                "last_updated": fact.last_seen or timestamp,
-                "observation_count": 1,
-            },
-        }
-
-        try:
-            claim_model = _normalize_claim_atom(
-                raw_claim,
-                timestamp=timestamp,
-                default_sources=provenance_sources,
-            )
-        except (ValidationError, ValueError):
-            continue
-
-        proposals.append(
-            ClaimProposal(
-                claim=claim_model,
-                normalized_ids=normalized_ids,
-                evidence_hashes=evidence_hashes,
-                manifest_hashes=manifest_hashes,
-                rationale=f"Derived from micro-fact {fact.id}",
-            )
-        )
-    return proposals
-
-
-def _microfacts_payload(
-    entries: Sequence[NormalizedEntry],
-    date: str,
-    config: dict[str, Any],
-    *,
-    manifest_index: dict[str, ManifestEntry] | None = None,
-    existing_claims: Sequence[ClaimAtom] | None = None,
-    timeout: float | None = None,
-    retries: int = DEFAULT_LLM_RETRIES,
-) -> MicroFactsFile:
-    def fallback_model() -> MicroFactsFile:
-        return MicroFactsFile(facts=_fake_microfacts(entries))
-
-    manifest_index = manifest_index or {}
-    existing_claims = tuple(existing_claims or ())
-    claim_timestamp = _format_timestamp(_now())
-    (
-        normalized_ids,
-        evidence_hashes,
-        manifest_hashes,
-        default_sources,
-    ) = _characterization_context(entries, manifest_index)
-
-    raw_claim_candidates: Iterable[Any] = []
-    facts_model: MicroFactsFile
-    if _use_fake_llm():
-        facts_model = fallback_model()
-        if facts_model.claim_proposals:
-            raw_claim_candidates = [
-                proposal.model_dump(mode="python") for proposal in facts_model.claim_proposals
-            ]
-    else:
-        response = cast(
-            ExtractedFactsResponse,
-            _structured_call_with_retry(
-                lambda: _invoke_structured_llm(
-                    "prompts/extract_facts.md",
-                    {"date": date, "entries_json": _json_block(_entries_to_payload(entries))},
-                    response_model=ExtractedFactsResponse,
-                    agent_name="aijournal-facts",
-                    config=config,
-                    timeout=timeout,
-                ),
-                retries=retries,
-                label=f"facts {date}",
-            ),
-        )
-        facts_model = MicroFactsFile(
-            facts=[
-                MicroFact(
-                    id=fact.id,
-                    statement=fact.statement,
-                    confidence=float(fact.confidence),
-                    evidence=fact.evidence.model_copy(deep=True),
-                    first_seen=fact.first_seen,
-                    last_seen=fact.last_seen,
-                )
-                for fact in response.facts
-            ],
-        )
-        raw_claim_candidates = [
-            proposal.model_dump(mode="python") for proposal in response.claim_proposals
-        ]
-
-    llm_claims = _normalize_claim_proposals(
-        raw_claims=raw_claim_candidates,
-        normalized_ids=normalized_ids,
-        evidence_hashes=evidence_hashes,
-        manifest_hashes=manifest_hashes,
-        default_sources=default_sources,
-        timestamp=claim_timestamp,
-    )
-
-    derived_claims = _microfact_claim_proposals(
-        facts_model.facts,
-        entries=entries,
-        manifest_index=manifest_index,
-        timestamp=claim_timestamp,
-    )
-
-    combined: list[ClaimProposal] = []
-    seen_ids: set[str] = set()
-    for proposal in llm_claims:
-        claim_id = proposal.claim.id
-        if claim_id in seen_ids:
-            continue
-        combined.append(proposal)
-        seen_ids.add(claim_id)
-
-    for proposal in derived_claims:
-        claim_id = proposal.claim.id
-        if claim_id in seen_ids:
-            continue
-        combined.append(proposal)
-        seen_ids.add(claim_id)
-
-    facts_model.claim_proposals = combined
-    facts_model.preview = _build_claim_preview(
-        combined,
-        [claim.model_copy(deep=True) for claim in existing_claims],
-        timestamp=claim_timestamp,
-    )
-    return facts_model
-
-
-def _profile_suggestions_payload(
-    entries: Sequence[NormalizedEntry],
-    profile: dict[str, Any],
-    claims: Sequence[ClaimAtom],
-    date: str,
-    config: dict[str, Any],
-    *,
-    timeout: float | None = None,
-    retries: int = DEFAULT_LLM_RETRIES,
-) -> ProfileSuggestions:
-    if _use_fake_llm():
-        suggestions = _fake_profile_suggestions(entries, profile, claims)
-    else:
-        simple_response = cast(
-            SimpleProfileSuggestionsResponse,
-            _structured_call_with_retry(
-                lambda: _invoke_structured_llm(
-                    "prompts/profile_suggest.md",
-                    {
-                        "date": date,
-                        "entries_json": _json_block(_entries_to_payload(entries)),
-                        "profile_json": _json_block(profile),
-                        "claims_json": _json_block(
-                            {"claims": [claim.model_dump(mode="python") for claim in claims]}
-                        ),
-                    },
-                    response_model=SimpleProfileSuggestionsResponse,
-                    agent_name="aijournal-profile-suggest",
-                    config=config,
-                    timeout=timeout,
-                ),
-                retries=retries,
-                label=f"profile suggest {date}",
-            ),
-        )
-        timestamp = _format_timestamp(_now())
-        suggestions = _simple_suggestions_to_profile(simple_response, timestamp=timestamp)
-
-    suggestions.meta = _build_meta("prompts/profile_suggest.md", config=config)
-    return suggestions
-
-
-def _characterization_context(
-    entries: Sequence[NormalizedEntry],
-    manifest_index: dict[str, ManifestEntry],
-) -> tuple[list[str], list[str], list[str], list[ClaimSource]]:
-    normalized_ids: list[str] = []
-    source_hashes: set[str] = set()
-    manifest_hashes: set[str] = set()
-    default_sources: list[ClaimSource] = []
-
-    for idx, entry in enumerate(entries):
-        entry_id = entry.id or f"entry-{idx + 1}"
-        normalized_ids.append(entry_id)
-        source_hash = entry.source_hash
-        if isinstance(source_hash, str) and source_hash:
-            source_hashes.add(source_hash)
-        manifest_entry = manifest_index.get(entry_id)
-        manifest_hash = manifest_entry.hash if manifest_entry else None
-        if manifest_hash:
-            manifest_hashes.add(str(manifest_hash))
-        default_sources.append(ClaimSource(entry_id=entry_id, spans=[]))
-
-    return (
-        normalized_ids,
-        sorted(source_hashes),
-        sorted(manifest_hashes),
-        default_sources,
-    )
-
-
-def _merge_unique(existing: Iterable[str], extras: Iterable[str]) -> list[str]:
-    seen: set[str] = set()
-    merged: list[str] = []
-    for value in existing:
-        if not value:
-            continue
-        key = str(value)
-        if key in seen:
-            continue
-        seen.add(key)
-        merged.append(key)
-    for value in extras:
-        if not value:
-            continue
-        key = str(value)
-        if key in seen:
-            continue
-        seen.add(key)
-        merged.append(key)
-    return merged
-
-
-def _normalize_claim_proposals(
-    raw_claims: Iterable[Any],
-    *,
-    normalized_ids: list[str],
-    evidence_hashes: list[str],
-    manifest_hashes: list[str],
-    default_sources: Sequence[ClaimSource],
-    timestamp: str,
-) -> list[ClaimProposal]:
-    proposals: list[ClaimProposal] = []
-    for raw in raw_claims:
-        if isinstance(raw, ClaimProposal):
-            claim_model = raw.claim.model_copy(deep=True)
-            proposals.append(
-                ClaimProposal(
-                    claim=claim_model,
-                    normalized_ids=_merge_unique(raw.normalized_ids, normalized_ids),
-                    evidence_hashes=_merge_unique(raw.evidence_hashes, evidence_hashes),
-                    manifest_hashes=_merge_unique(raw.manifest_hashes, manifest_hashes),
-                    rationale=raw.rationale,
-                ),
-            )
-            continue
-        payload = raw.model_dump(mode="python") if hasattr(raw, "model_dump") else raw
-        if not isinstance(payload, dict):
-            continue
-        raw_claim = payload.get("claim")
-        candidate = raw_claim if raw_claim is not None else payload
-        try:
-            claim_model = _normalize_claim_atom(
-                candidate,
-                timestamp=timestamp,
-                default_sources=default_sources,
-            )
-        except (ValidationError, ValueError):
-            continue
-
-        proposals.append(
-            ClaimProposal(
-                claim=claim_model,
-                normalized_ids=list(normalized_ids),
-                evidence_hashes=list(evidence_hashes),
-                manifest_hashes=list(manifest_hashes),
-                rationale=str(payload.get("rationale") or payload.get("reason") or "").strip()
-                or None,
-            ),
-        )
-    return proposals
-
-
-def _normalize_facet_proposals(
-    raw_facets: Iterable[Any],
-    *,
-    normalized_ids: list[str],
-    evidence_hashes: list[str],
-) -> list[FacetProposal]:
-    proposals: list[FacetProposal] = []
-    for raw in raw_facets:
-        if isinstance(raw, FacetProposal):
-            proposals.append(
-                FacetProposal(
-                    path=raw.path,
-                    value=raw.value,
-                    operation=raw.operation,
-                    method=raw.method,
-                    confidence=raw.confidence,
-                    review_after_days=raw.review_after_days,
-                    user_verified=raw.user_verified,
-                    normalized_ids=_merge_unique(raw.normalized_ids, normalized_ids),
-                    evidence_hashes=_merge_unique(raw.evidence_hashes, evidence_hashes),
-                    rationale=raw.rationale,
-                ),
-            )
-            continue
-        payload = raw.model_dump(mode="python") if hasattr(raw, "model_dump") else raw
-        if not isinstance(payload, dict):
-            continue
-        path = payload.get("path") or payload.get("target")
-        if not path:
-            continue
-        proposals.append(
-            FacetProposal(
-                path=str(path),
-                value=payload.get("value"),
-                operation=str(payload.get("operation") or "set"),
-                method=str(payload.get("method") or "inferred"),
-                confidence=coerce_float(payload.get("confidence")) or 0.55,
-                review_after_days=coerce_int(payload.get("review_after_days")) or 90,
-                user_verified=bool(payload.get("user_verified", False)),
-                normalized_ids=_merge_unique(payload.get("normalized_ids", []), normalized_ids),
-                evidence_hashes=_merge_unique(payload.get("evidence_hashes", []), evidence_hashes),
-                rationale=str(payload.get("rationale") or payload.get("reason") or "").strip()
-                or None,
-            ),
-        )
-    return proposals
-
-
-def _characterize_payload(
-    date: str,
-    entries: Sequence[NormalizedEntry],
-    profile: dict[str, Any],
-    claims: Sequence[ClaimAtom],
-    manifest_index: dict[str, ManifestEntry],
-    config: dict[str, Any],
-    *,
-    timeout: float | None = None,
-    retries: int = DEFAULT_LLM_RETRIES,
-) -> tuple[ProfileUpdateProposals, list[str]]:
-    claim_timestamp = _format_timestamp(_now())
-    (
-        normalized_ids,
-        evidence_hashes,
-        manifest_hashes,
-        default_sources,
-    ) = _characterization_context(entries, manifest_index)
-
-    fake_mode = _use_fake_llm()
-    raw_claims: list[Any]
-    raw_facets: list[Any]
-    if not fake_mode:
-        manifest_payload = _json_block(
-            {key: entry.model_dump(mode="python") for key, entry in manifest_index.items()},
-        )
-        target_date = date or _created_date(claim_timestamp)
-        response = cast(
-            CharacterizeResponse,
-            _structured_call_with_retry(
-                lambda: _invoke_structured_llm(
-                    "prompts/characterize.md",
-                    {
-                        "date": target_date,
-                        "entries_json": _json_block(_entries_to_payload(entries)),
-                        "profile_json": _json_block(profile),
-                        "claims_json": _json_block(
-                            {"claims": [claim.model_dump(mode="python") for claim in claims]}
-                        ),
-                        "manifest_json": manifest_payload,
-                    },
-                    response_model=CharacterizeResponse,
-                    agent_name="aijournal-characterize",
-                    config=config,
-                    timeout=timeout,
-                ),
-                retries=retries,
-                label=f"characterize {target_date}",
-            ),
-        )
-        raw_claims = [proposal.model_dump(mode="python") for proposal in response.claims]
-        raw_facets = [proposal.model_dump(mode="python") for proposal in response.facets]
-        prompts = [prompt for prompt in response.interview_prompts if prompt]
-    else:
-        base = _fake_characterize(entries, profile, claims)
-        raw_claims = base.claims
-        raw_facets = base.facets
-        prompts = []
-
-    claims_payload = _normalize_claim_proposals(
-        raw_claims,
-        normalized_ids=normalized_ids,
-        evidence_hashes=evidence_hashes,
-        manifest_hashes=manifest_hashes,
-        default_sources=default_sources,
-        timestamp=claim_timestamp,
-    )
-    facets_payload = _normalize_facet_proposals(
-        raw_facets,
-        normalized_ids=normalized_ids,
-        evidence_hashes=evidence_hashes,
-    )
-    return ProfileUpdateProposals(claims=claims_payload, facets=facets_payload), prompts
-
-
-def _advice_identifier(question: str) -> str:
-    day = _created_date(_format_timestamp(_now()))
-    digest = sha256(question.encode("utf-8")).hexdigest()[:8]
-    return f"adv_{day}_{digest}"
-
-
-def _advice_payload(
-    question: str,
-    profile: dict[str, Any],
-    claims: Sequence[ClaimAtom],
-    config: dict[str, Any],
-    *,
-    rankings: Sequence[InterviewTarget],
-    pending_prompts: Sequence[str],
-) -> AdviceCard:
-    if _use_fake_llm():
-        return _fake_advise(
-            question,
-            profile,
-            claims,
-            rankings=rankings,
-            pending_prompts=pending_prompts,
-        )
-
-    rankings_payload = [
-        {
-            "path": target.path,
-            "score": target.score,
-            "kind": target.kind,
-            "reasons": list(target.reasons),
-            "claim_id": target.claim_id,
-            "missing_context": list(target.missing_context),
-        }
-        for target in rankings[:8]
-    ]
-
-    response = _invoke_structured_llm(
-        "prompts/advise.md",
-        {
-            "date": _created_date(_format_timestamp(_now())),
-            "question": question,
-            "profile_json": _json_block(profile),
-            "claims_json": _json_block(
-                {"claims": [claim.model_dump(mode="python") for claim in claims]}
-            ),
-            "rankings_json": _json_block(rankings_payload),
-            "pending_prompts_json": _json_block(list(pending_prompts)),
-        },
-        response_model=AdviceLLMResponse,
-        agent_name="aijournal-advise",
-        config=config,
-    )
-
-    return AdviceCard.model_validate(response.model_dump(mode="python"))
 
 
 @app.command()
@@ -2492,26 +234,7 @@ def init(
     ),
 ) -> None:
     """Initialize the local aijournal layout."""
-    base = path or Path.cwd()
-    base.mkdir(parents=True, exist_ok=True)
-
-    dir_sets = (AUTHORITATIVE_DIRS, DERIVED_DIRS)
-    created_dirs = 0
-    total_dirs = 0
-    for rels in dir_sets:
-        created, total = _ensure_dirs(base, rels)
-        created_dirs += created
-        total_dirs += total
-
-    created_files, total_files = _ensure_files(base)
-
-    already_dirs = total_dirs - created_dirs
-    already_files = total_files - created_files
-
-    summary = (
-        f"Created {created_dirs} directories and {created_files} files under {base}. "
-        f"Already present: {already_dirs} directories and {already_files} files."
-    )
+    summary = run_init_command(path)
     typer.echo(summary)
 
 
@@ -2540,48 +263,7 @@ def new(
     ),
 ) -> None:
     """Create a new journal entry or synthesize fake entries for testing."""
-    base = Path.cwd()
-
-    if fake > 0:
-        if title is not None:
-            typer.secho(
-                "Provide either a title or --fake, not both.",
-                fg=typer.colors.RED,
-                err=True,
-            )
-            raise typer.Exit(1)
-        created, skipped = _generate_fake_entries(fake, tags, seed, base)
-        summary = f"Generated {created} fake entr{'y' if created == 1 else 'ies'}"
-        if skipped:
-            summary += f" ({skipped} skipped)"
-        typer.echo(summary)
-        return
-
-    if seed is not None:
-        typer.secho("--seed is only valid together with --fake.", fg=typer.colors.RED, err=True)
-        raise typer.Exit(1)
-
-    if not title:
-        typer.secho("Title is required unless --fake is provided.", fg=typer.colors.RED, err=True)
-        raise typer.Exit(1)
-
-    now = _now()
-    slug = f"{now.strftime('%Y-%m-%d')}-{_slugify_title(title)}"
-    entry_path = _journal_path(base, now, slug)
-
-    if entry_path.exists():
-        typer.echo(f"Entry exists: {entry_path}")
-        raise typer.Exit(1)
-
-    frontmatter = {
-        "id": slug,
-        "created_at": _format_timestamp(now),
-        "title": title,
-        "tags": tags or [],
-    }
-
-    _write_markdown_entry(entry_path, frontmatter)
-    typer.echo(str(entry_path))
+    run_new_command(title, tags, fake, seed)
 
 
 @app.command()
@@ -2612,133 +294,12 @@ def ingest(
     ),
 ) -> None:
     """Ingest Markdown posts into normalized YAML via Ollama."""
-    if limit is not None and limit <= 0:
-        typer.secho("--limit must be positive when provided.", fg=typer.colors.RED, err=True)
-        raise typer.Exit(1)
-
-    root = Path.cwd()
-    files = _discover_markdown_files(sources)
-    if not files:
-        typer.secho(
-            "No Markdown files found in the provided sources.",
-            fg=typer.colors.RED,
-            err=True,
-        )
-        raise typer.Exit(1)
-    if limit is not None:
-        files = files[:limit]
-
-    config = _load_config(root)
-    llm_config = build_ollama_config_from_mapping(config)
-    model_name = llm_config.model
-    is_fake = _use_fake_llm()
-    agent: Agent | None = None
-    if not is_fake:
-        try:
-            agent = build_ingest_agent(config, model=model_name)
-        except Exception as exc:  # pragma: no cover - initialization errors are rare
-            typer.secho(
-                f"Unable to initialize Ollama ingestion agent: {exc}",
-                fg=typer.colors.RED,
-                err=True,
-            )
-            raise typer.Exit(1)
-
-    manifest_path = _manifest_path(root)
-    manifest_entries = _load_manifest(manifest_path)
-    known_hashes = {entry.hash: entry for entry in manifest_entries if entry.hash}
-
-    ingested = 0
-    skipped = 0
-    errors = 0
-    raw_dir = root / "data" / "raw"
-
-    for file in files:
-        try:
-            raw_bytes = file.read_bytes()
-        except OSError as exc:
-            errors += 1
-            typer.secho(f"Failed to read {file}: {exc}", fg=typer.colors.RED, err=True)
-            continue
-
-        digest = sha256(raw_bytes).hexdigest()
-        if digest in known_hashes:
-            skipped += 1
-            typer.echo(f"Skipping {file} (already ingested)")
-            continue
-
-        try:
-            text = raw_bytes.decode("utf-8")
-        except UnicodeDecodeError as exc:
-            errors += 1
-            typer.secho(f"Failed to decode {file}: {exc}", fg=typer.colors.RED, err=True)
-            continue
-
-        try:
-            frontmatter_data, fallback_sections = _parse_entry(file)
-        except ValueError:
-            frontmatter_data = {}
-            fallback_sections = _scan_headings(text)
-        fallback_tags = _extract_frontmatter_tags(frontmatter_data)
-        fallback_summary = frontmatter_data.get("summary")
-        if fallback_summary is not None:
-            fallback_summary = str(fallback_summary)
-
-        try:
-            if is_fake:
-                structured = _fake_structured_entry(file)
-            else:
-                assert agent is not None
-                structured = ingest_with_agent(agent, source_path=file, markdown=text)
-            normalized, date_str = _normalized_from_structured(
-                structured,
-                source_path=file,
-                root=root,
-                digest=digest,
-                source_type=source_type,
-                fallback_sections=fallback_sections,
-                fallback_tags=fallback_tags,
-                fallback_summary=fallback_summary,
-            )
-        except Exception as exc:
-            errors += 1
-            typer.secho(f"Failed to ingest {file}: {exc}", fg=typer.colors.RED, err=True)
-            continue
-
-        normalized_path = _normalized_path(root, date_str, normalized["id"])
-        _write_yaml_if_changed(
-            normalized_path,
-            normalized,
-            schema="normalized_entry",
-        )
-
-        if snapshot:
-            raw_dir.mkdir(parents=True, exist_ok=True)
-            (raw_dir / f"{digest}.md").write_bytes(raw_bytes)
-
-        manifest_entry = ManifestEntry(
-            hash=digest,
-            path=_relative_source_path(file, root),
-            normalized=_relative_source_path(normalized_path, root),
-            source_type=source_type,
-            ingested_at=_format_timestamp(_now()),
-            created_at=str(normalized["created_at"]),
-            id=str(normalized["id"]),
-            tags=list(normalized.get("tags", [])),
-            model=model_name if not is_fake else "fake-ollama",
-        )
-        manifest_entries.append(manifest_entry)
-        known_hashes[digest] = manifest_entry
-
-        typer.echo(f"Ingested {file} -> {normalized_path}")
-        ingested += 1
-
-    if ingested:
-        _write_manifest(manifest_path, manifest_entries)
-
-    typer.echo(f"Ingest summary: {ingested} new, {skipped} skipped, {errors} errors.")
-    if errors:
-        raise typer.Exit(1)
+    run_ingest_command(
+        sources,
+        source_type=source_type,
+        limit=limit,
+        snapshot=snapshot,
+    )
 
 
 @app.command()
@@ -2774,8 +335,8 @@ def normalize(
     entry_id = str(entry_id_value)
     title = str(title_value)
     created_str = _normalize_created_at(created_value)
-    date_str = _created_date(created_str)
-    root = _find_data_root(entry)
+    date_str = time_utils.created_date(created_str)
+    root = find_data_root(entry)
     normalized_data = {
         "id": entry_id,
         "created_at": created_str,
@@ -2785,7 +346,7 @@ def normalize(
         "sections": sections,
     }
 
-    output_path = _normalized_path(root, date_str, entry_id)
+    output_path = normalized_entry_path(root, date_str, entry_id)
     _write_yaml_if_changed(
         output_path,
         normalized_data,
@@ -2817,30 +378,12 @@ def summarize(
     ),
 ) -> None:
     """Generate a daily summary from normalized entries."""
-    root = Path.cwd()
-    entries = _load_normalized_entries(root, date)
-    if not entries:
-        typer.secho(f"No normalized entries for {date}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(1)
-
-    timeout_value = _validate_timeout(timeout)
-    _log_entry_progress(f"Summarizing entries for {date}", entries, progress)
-
-    config = _load_config(root)
-    try:
-        summary_data = _summarize_day_payload(
-            entries,
-            date,
-            config,
-            timeout=timeout_value,
-            retries=retries,
-        )
-    except LLMResponseError as exc:
-        typer.secho(f"Summarize failed: {exc}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(1)
-    summary_data.meta = _build_meta("prompts/summarize_day.md", config=config)
-    summary_path = _derived_summary_path(root, date)
-    write_yaml_model(summary_path, summary_data)
+    summary_path = run_summarize_command(
+        date,
+        timeout=timeout,
+        retries=retries,
+        progress=progress,
+    )
     typer.echo(str(summary_path))
 
 
@@ -2868,36 +411,21 @@ def facts(
 ) -> None:
     """Generate micro-facts from normalized entries."""
     root = Path.cwd()
-    entries = _load_normalized_entries(root, date)
-    if not entries:
-        typer.secho(f"No normalized entries for {date}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(1)
-
-    timeout_value = _validate_timeout(timeout)
-    _log_entry_progress(f"Extracting micro-facts for {date}", entries, progress)
-
-    config = _load_config(root)
-    manifest_entries = _load_manifest(_manifest_path(root))
-    manifest_index = _manifest_by_id(manifest_entries)
     _, claim_models = _load_profile_components(root)
-    try:
-        facts_data = _microfacts_payload(
-            entries,
-            date,
-            config,
-            manifest_index=manifest_index,
-            existing_claims=claim_models,
-            timeout=timeout_value,
-            retries=retries,
-        )
-    except LLMResponseError as exc:
-        typer.secho(f"Facts extraction failed: {exc}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(1)
-    facts_data.meta = _build_meta("prompts/extract_facts.md", config=config)
-    facts_path = _derived_microfacts_path(root, date)
-    write_yaml_model(facts_path, facts_data)
-    if facts_data.preview:
-        _print_claim_preview(facts_data.preview)
+    preview, facts_path = run_facts_command(
+        date,
+        timeout=timeout,
+        retries=retries,
+        progress=progress,
+        claim_models=claim_models,
+        build_claim_preview=lambda proposals, claims, timestamp: _build_claim_preview(
+            proposals,
+            claims,
+            timestamp=timestamp,
+        ),
+    )
+    if preview:
+        _print_claim_preview(preview)
     typer.echo(str(facts_path))
 
 
@@ -2924,38 +452,12 @@ def profile_suggest(
     ),
 ) -> None:
     """Suggest profile updates based on normalized entries."""
-    root = Path.cwd()
-    entries = _load_normalized_entries(root, date)
-    if not entries:
-        typer.secho(f"No normalized entries for {date}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(1)
-
-    timeout_value = _validate_timeout(timeout)
-    _log_entry_progress(f"Generating profile suggestions for {date}", entries, progress)
-
-    profile_model, claim_models = _load_profile_components(root)
-    profile = _profile_to_dict(profile_model)
-    claims = [claim.model_copy(deep=True) for claim in claim_models]
-    if not profile and not claims:
-        typer.secho("No profile data", fg=typer.colors.RED, err=True)
-        raise typer.Exit(1)
-
-    config = _load_config(root)
-    try:
-        suggestions_model = _profile_suggestions_payload(
-            entries,
-            profile,
-            claims,
-            date,
-            config,
-            timeout=timeout_value,
-            retries=retries,
-        )
-    except LLMResponseError as exc:
-        typer.secho(f"Profile suggestions failed: {exc}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(1)
-    path = _derived_profile_suggestions_path(root, date)
-    write_yaml_model(path, suggestions_model)
+    path = run_profile_suggest(
+        date,
+        timeout=timeout,
+        retries=retries,
+        progress=progress,
+    )
     typer.echo(str(path))
 
 
@@ -2966,45 +468,12 @@ def profile_apply(
     yes: bool = typer.Option(False, "--yes", help="Apply without prompting."),
 ) -> None:
     """Apply profile suggestions to authoritative files (offline)."""
-    root = Path.cwd()
-    suggestions_path = file or (root / "derived" / "profile_suggestions" / f"{date}.yaml")
-
-    if not suggestions_path.exists():
-        typer.secho(
-            f"Suggestions file not found: {suggestions_path}",
-            fg=typer.colors.RED,
-            err=True,
-        )
-        raise typer.Exit(1)
-
-    suggestions_model = load_yaml_model(suggestions_path, ProfileSuggestions)
-    profile_model, claim_models = _load_profile_components(root)
-    profile = _profile_to_dict(profile_model)
-    claims = [claim.model_copy(deep=True) for claim in claim_models]
-    timestamp = _format_timestamp(_now())
-    changed = False
-
-    for upsert in suggestions_model.upserts:
-        if upsert.target == "claims":
-            if _apply_claim_upsert(claims, upsert.value, timestamp):
-                changed = True
-
-    for update in suggestions_model.updates:
-        target = update.target
-        if not target:
-            continue
-        if _apply_profile_update(profile, target, update.value, timestamp):
-            changed = True
-
-    if not changed:
-        typer.echo("No changes to apply")
-        raise typer.Exit(0)
-
-    updated_profile = SelfProfile.model_validate(profile)
-    updated_claims = [claim.model_copy(deep=True) for claim in claims]
-    write_yaml_model(root / "profile" / "self_profile.yaml", updated_profile)
-    write_yaml_model(root / "profile" / "claims.yaml", ClaimsFile(claims=updated_claims))
-    typer.echo("Applied 1 suggestions file")
+    message = run_profile_apply(
+        date,
+        suggestions_path=file,
+        auto_confirm=yes,
+    )
+    typer.echo(message)
 
 
 @app.command()
@@ -3030,83 +499,20 @@ def characterize(
     ),
 ) -> None:
     """Derive pending profile updates from normalized entries."""
-    root = Path.cwd()
-    entries_with_paths = _load_normalized_entries_with_paths(root, date)
-    if not entries_with_paths:
-        typer.secho(f"No normalized entries for {date}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(1)
-
-    timeout_value = _validate_timeout(timeout)
-    manifest_entries = _load_manifest(_manifest_path(root))
-    manifest_index = _manifest_by_id(manifest_entries)
-    profile_model, claim_models = _load_profile_components(root)
-    profile = _profile_to_dict(profile_model)
-    config = _load_config(root)
-
-    entries = [entry for entry, _ in entries_with_paths]
-    _log_entry_progress(f"Characterizing entries for {date}", entries, progress)
-    try:
-        proposals_model, interview_prompts = _characterize_payload(
-            date,
-            entries,
-            profile,
-            claim_models,
-            manifest_index,
-            config,
-            timeout=timeout_value,
-            retries=retries,
-        )
-    except LLMResponseError as exc:
-        typer.secho(f"Characterize failed: {exc}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(1)
-
-    timestamp = _format_timestamp(_now())
-    batch_id = f"{date}-{timestamp}"
-
-    preview_model = _build_claim_preview(
-        proposals_model.claims,
-        claim_models,
-        timestamp=timestamp,
+    batch_path = run_characterize(
+        date,
+        timeout=timeout,
+        retries=retries,
+        progress=progress,
+        build_claim_preview=lambda proposals, claims, ts: _build_claim_preview(
+            proposals,
+            claims,
+            timestamp=ts,
+        ),
+        normalize_claims=_normalize_claim_proposals,
+        invoke_structured_llm=_invoke_structured_llm,
+        structured_call=_structured_call_with_retry,
     )
-    if interview_prompts:
-        prompts = [prompt for prompt in interview_prompts if prompt]
-        if prompts:
-            if preview_model is None:
-                preview_model = ProfileUpdatePreview(interview_prompts=_merge_unique([], prompts))
-            else:
-                preview_model.interview_prompts = _merge_unique(
-                    preview_model.interview_prompts,
-                    prompts,
-                )
-
-    inputs: list[ProfileUpdateInput] = []
-    for data, path in entries_with_paths:
-        entry_id = data.id or path.stem
-        manifest_entry = manifest_index.get(entry_id)
-        manifest_hash = manifest_entry.hash if manifest_entry else None
-        inputs.append(
-            ProfileUpdateInput(
-                id=entry_id,
-                normalized_path=_relative_source_path(path, root),
-                source_hash=data.source_hash or manifest_hash,
-                manifest_hash=manifest_hash,
-                tags=list(data.tags or []),
-            ),
-        )
-    meta_model = _build_meta("prompts/characterize.md", config=config)
-    batch_model = ProfileUpdateBatch(
-        batch_id=batch_id,
-        created_at=timestamp,
-        date=date,
-        inputs=inputs,
-        proposals=proposals_model,
-        meta=meta_model,
-        preview=preview_model,
-    )
-    pending_dir = _pending_updates_dir(root)
-    pending_dir.mkdir(parents=True, exist_ok=True)
-    batch_path = _pending_updates_path(root, batch_id)
-    write_yaml_model(batch_path, batch_model)
     typer.echo(str(batch_path))
 
 
@@ -3161,7 +567,7 @@ def review_updates(
     profile_model, claim_models = _load_profile_components(root)
     profile = _profile_to_dict(profile_model)
     claims_data = [claim.model_copy(deep=True) for claim in claim_models]
-    timestamp = _format_timestamp(_now())
+    timestamp = time_utils.format_timestamp(time_utils.now())
     applied = 0
     merge_events: list[ClaimMergeOutcome] = []
 
@@ -3192,43 +598,7 @@ def advise(
     question: str = typer.Argument(..., help="Question for the advisor to answer."),
 ) -> None:
     """Generate advice from the current profile."""
-    root = Path.cwd()
-    profile_model, claim_models = _load_profile_components(root)
-    profile = _profile_to_dict(profile_model)
-    claims = [claim.model_copy(deep=True) for claim in claim_models]
-    if not profile and not claims:
-        typer.secho("No profile data", fg=typer.colors.RED, err=True)
-        raise typer.Exit(1)
-
-    config = _load_config(root)
-    weights = config.get("impact_weights", {})
-    latest_day = _latest_normalized_day(root)
-    entries = _load_normalized_entries(root, latest_day) if latest_day else []
-    pending_prompts = _collect_pending_interview_prompts(root)
-    rankings = _compute_rankings(
-        profile,
-        claims,
-        weights,
-        _now(),
-        entries=entries,
-        pending_prompts=pending_prompts,
-    )
-    advice_card = _advice_payload(
-        question,
-        profile,
-        claims,
-        config,
-        rankings=rankings,
-        pending_prompts=pending_prompts,
-    )
-    model_name = (
-        "fake-ollama" if _use_fake_llm() else build_ollama_config_from_mapping(config).model
-    )
-    advice_card.meta = _build_meta("prompts/advise.md", model=model_name)
-
-    day = _created_date(_format_timestamp(_now()))
-    advice_path = _derived_advice_path(root, day, question)
-    write_yaml_model(advice_path, advice_card)
+    advice_path = run_advise(question)
     typer.echo(str(advice_path))
 
 
@@ -3282,401 +652,6 @@ def ollama_health() -> None:
     typer.echo(yaml.safe_dump(payload, sort_keys=False).rstrip())
 
 
-def _parse_datetime(value: str) -> datetime | None:
-    try:
-        candidate = value.replace("Z", "+00:00") if value.endswith("Z") else value
-        dt = datetime.fromisoformat(candidate)
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=UTC)
-        return dt
-    except ValueError:
-        return None
-
-
-def _days_between(now: datetime, past: str | None) -> float | None:
-    if not past:
-        return None
-    dt = _parse_datetime(past)
-    if not dt:
-        return None
-    delta = now - dt
-    return delta.total_seconds() / 86400.0
-
-
-def _flatten_facets(node: Any, prefix: str = "") -> list[tuple[str, dict[str, Any]]]:
-    items: list[tuple[str, dict[str, Any]]] = []
-    if isinstance(node, dict):
-        if "last_updated" in node:
-            items.append((prefix or "root", node))
-        for key, value in node.items():
-            child_prefix = f"{prefix}.{key}" if prefix else str(key)
-            items.extend(_flatten_facets(value, child_prefix))
-    elif isinstance(node, list):
-        for idx, value in enumerate(node):
-            child_prefix = f"{prefix}[{idx}]"
-            items.extend(_flatten_facets(value, child_prefix))
-    return items
-
-
-def _load_profile_components(root: Path) -> tuple[SelfProfile | None, list[ClaimAtom]]:
-    profile_path = root / "profile" / "self_profile.yaml"
-    claims_path = root / "profile" / "claims.yaml"
-
-    profile = load_yaml_model(profile_path, SelfProfile) if profile_path.exists() else None
-    if claims_path.exists():
-        try:
-            claims_file = load_yaml_model(claims_path, ClaimsFile)
-            claim_models = list(claims_file.claims)
-        except ValidationError:
-            raw = _load_yaml(claims_path).get("claims", [])
-            claim_models = _claims_to_models(raw if isinstance(raw, list) else [])
-    else:
-        claim_models = []
-    return profile, claim_models
-
-
-def _profile_to_dict(profile: SelfProfile | None) -> dict[str, Any]:
-    return profile.model_dump(mode="python") if profile else {}
-
-
-def _claims_to_models(claims: Sequence[Any]) -> list[ClaimAtom]:
-    normalized: list[ClaimAtom] = []
-    timestamp = _format_timestamp(_now())
-    for raw in claims:
-        if not isinstance(raw, (dict, ClaimAtom)):
-            continue
-        try:
-            normalized.append(
-                _normalize_claim_atom(
-                    raw,
-                    timestamp=timestamp,
-                ),
-            )
-        except (ValidationError, ValueError):
-            continue
-    return normalized
-
-
-def _persona_profile_slice(profile: dict[str, Any]) -> dict[str, Any]:
-    """Return the subset of profile facets that feed persona core."""
-    if not profile:
-        return {}
-    subset: dict[str, Any] = {}
-    for key in PERSONA_PROFILE_KEYS:
-        value = profile.get(key)
-        if value is None:
-            continue
-        subset[key] = copy.deepcopy(value)
-    if not subset:
-        return copy.deepcopy(profile)
-    return subset
-
-
-def _claim_weight(claim: ClaimAtom, weights: dict[str, Any]) -> float:
-    """Resolve the impact weight for a claim based on config overrides."""
-    claim_type = str(claim.type or "preference")
-    claim_types_raw = weights.get("claim_types")
-    claim_weights = claim_types_raw if isinstance(claim_types_raw, dict) else {}
-    if claim_type in claim_weights:
-        return coerce_float(claim_weights[claim_type]) or 1.0
-    if "default" in claim_weights:
-        return coerce_float(claim_weights["default"]) or 1.0
-    if "claims" in weights:
-        return coerce_float(weights["claims"]) or 1.0
-    return CLAIM_TYPE_IMPACT_DEFAULTS.get(claim_type, 1.0)
-
-
-def _claim_effective_strength(
-    claim: ClaimAtom,
-    *,
-    weights: dict[str, Any],
-    now: datetime,
-) -> float:
-    strength = _clamp01(claim.strength or 0.5)
-    weight = _claim_weight(claim, weights)
-    last_updated = _claim_last_updated(claim)
-    review_after = int(claim.review_after_days or 120)
-    days_since = _days_between(now, last_updated) or 0.0
-    staleness = min(2.0, max(0.0, days_since / max(review_after, 1)))
-    decay = exp(-0.2 * staleness)
-    status = str(claim.status or "tentative").lower()
-    status_bonus = 0.05 if status == "accepted" else 0.0
-    return (strength * weight * decay) + status_bonus
-
-
-def _rank_claims_for_persona(
-    claims: Sequence[ClaimAtom],
-    weights: dict[str, Any],
-    now: datetime,
-) -> list[ClaimAtom]:
-    if not claims:
-        return []
-    ranked: list[tuple[int, float, ClaimAtom]] = []
-    status_priority = {"accepted": 0, "tentative": 1, "rejected": 2}
-    for claim in claims:
-        score = _claim_effective_strength(claim, weights=weights, now=now)
-        status = str(claim.status or "tentative").lower()
-        priority = status_priority.get(status, 1)
-        ranked.append((priority, -score, claim))
-    ranked.sort(key=lambda item: (item[0], item[1], item[2].id))
-    return [entry[2].model_copy(deep=True) for entry in ranked]
-
-
-def _estimate_persona_tokens(persona_block: dict[str, Any], char_per_token: float) -> int:
-    width = max(char_per_token, 0.01)
-    text = yaml.safe_dump(persona_block, sort_keys=False)
-    return max(1, ceil(len(text) / width))
-
-
-def _select_persona_claims(
-    claims: Sequence[ClaimAtom],
-    profile_slice: dict[str, Any],
-    *,
-    token_budget: int,
-    char_per_token: float,
-    min_claims: int,
-    max_claims: int,
-) -> PersonaClaimSelection:
-    selected = [claim.model_copy(deep=True) for claim in claims[:max_claims]]
-
-    def persona_block() -> dict[str, Any]:
-        return {
-            "profile": profile_slice,
-            "claims": [claim.model_dump(mode="python") for claim in selected],
-        }
-
-    tokens = _estimate_persona_tokens(persona_block(), char_per_token)
-    trimmed_ids: list[str] = []
-    while tokens > token_budget and len(selected) > min_claims and selected:
-        removed = selected.pop()
-        trimmed_ids.append(removed.id)
-        tokens = _estimate_persona_tokens(persona_block(), char_per_token)
-    budget_exceeded = tokens > token_budget
-    return PersonaClaimSelection(
-        claims=selected,
-        trimmed_ids=trimmed_ids,
-        planned_tokens=tokens,
-        budget_exceeded=budget_exceeded,
-    )
-
-
-def _relative_to_root(path: Path, root: Path) -> str:
-    try:
-        return str(path.relative_to(root))
-    except ValueError:
-        return str(path)
-
-
-def _profile_yaml_paths(root: Path) -> list[Path]:
-    profile_dir = root / "profile"
-    if not profile_dir.exists():
-        return []
-    return sorted(p for p in profile_dir.glob("*.yaml") if p.is_file())
-
-
-def _persona_source_mtimes(root: Path) -> dict[str, float]:
-    """Return rounded mtimes for all profile YAML files."""
-    state: dict[str, float] = {}
-    for path in _profile_yaml_paths(root):
-        rel = _relative_to_root(path, root)
-        state[rel] = round(path.stat().st_mtime, 6)
-    return state
-
-
-def _format_mtime_display(timestamp: float) -> str:
-    dt = datetime.fromtimestamp(timestamp, tz=UTC)
-    return dt.strftime("%Y-%m-%d %H:%M:%SZ")
-
-
-def _mtimes_close(a: float, b: float, epsilon: float = 1e-6) -> bool:
-    return abs(a - b) <= epsilon
-
-
-def _persona_state(root: Path) -> tuple[str, list[str]]:
-    persona_path = root / "derived" / "persona" / "persona_core.yaml"
-    if not persona_path.exists():
-        rel = _relative_to_root(persona_path, root)
-        return "missing", [f"Missing {rel}; run `aijournal persona build`."]
-
-    try:
-        persona_file = load_yaml_model(persona_path, PersonaCoreFile)
-    except ValidationError as exc:
-        return (
-            "stale",
-            [f"Persona core failed validation ({exc.__class__.__name__}); rebuild to refresh."],
-        )
-
-    stored_raw = persona_file.meta.source_mtimes
-    if not stored_raw:
-        return (
-            "stale",
-            [
-                "Persona core lacks source_mtimes metadata; rebuild once to capture profile state.",
-            ],
-        )
-
-    current_state = _persona_source_mtimes(root)
-    reasons: list[str] = []
-    for rel, current_mtime in current_state.items():
-        stored_value = stored_raw.get(rel)
-        stored_mtime = coerce_float(stored_value)
-        if stored_mtime is None:
-            reasons.append(f"New profile file detected: {rel}")
-            continue
-        if not _mtimes_close(current_mtime, stored_mtime):
-            reasons.append(
-                f"{rel} modified at {_format_mtime_display(current_mtime)} (was {_format_mtime_display(stored_mtime)}).",
-            )
-
-    for rel in stored_raw:
-        if rel not in current_state:
-            reasons.append(f"{rel} missing; it existed when persona core was generated.")
-
-    if reasons:
-        return "stale", reasons
-    return "fresh", []
-
-
-def _ensure_persona_ready_for_pack(root: Path) -> None:
-    status, reasons = _persona_state(root)
-    if status == "missing":
-        typer.secho(
-            "Persona core not found. Run `aijournal persona build` before assembling packs.",
-            fg=typer.colors.RED,
-            err=True,
-        )
-        raise typer.Exit(1)
-    if status == "stale":
-        typer.secho(
-            "Persona core is stale; re-run `aijournal persona build` to refresh profile changes.",
-            fg=typer.colors.YELLOW,
-            err=True,
-        )
-        for reason in reasons:
-            typer.echo(f"- {reason}", err=True)
-
-
-def _persona_build_impl(
-    *,
-    token_budget_override: int | None = None,
-    max_claims_override: int | None = None,
-    min_claims_override: int | None = None,
-) -> tuple[Path, bool]:
-    root = Path.cwd()
-    profile_model, claim_models = _load_profile_components(root)
-    profile = _profile_to_dict(profile_model)
-    if not profile and not claim_models:
-        typer.secho(
-            "No profile data or claims available; run `aijournal init` or add entries first.",
-            fg=typer.colors.RED,
-            err=True,
-        )
-        raise typer.Exit(1)
-
-    config = _load_config(root)
-    persona_cfg_raw = config.get("persona")
-    persona_cfg = persona_cfg_raw if isinstance(persona_cfg_raw, dict) else {}
-    token_budget = int(
-        token_budget_override
-        if token_budget_override is not None
-        else persona_cfg.get("token_budget") or PERSONA_DEFAULTS["token_budget"],
-    )
-    max_claims = int(
-        max_claims_override
-        if max_claims_override is not None
-        else persona_cfg.get("max_claims") or PERSONA_DEFAULTS["max_claims"],
-    )
-    min_claims = int(
-        min_claims_override
-        if min_claims_override is not None
-        else persona_cfg.get("min_claims") or PERSONA_DEFAULTS["min_claims"],
-    )
-    if token_budget <= 0:
-        typer.secho("Token budget must be positive", fg=typer.colors.RED, err=True)
-        raise typer.Exit(1)
-    if max_claims <= 0:
-        typer.secho("max-claims must be positive", fg=typer.colors.RED, err=True)
-        raise typer.Exit(1)
-    if min_claims < 0 or min_claims > max_claims:
-        typer.secho("min-claims must be between 0 and max-claims", fg=typer.colors.RED, err=True)
-        raise typer.Exit(1)
-
-    token_estimator_raw = config.get("token_estimator")
-    token_estimator = token_estimator_raw if isinstance(token_estimator_raw, dict) else {}
-    char_per_token = coerce_float(token_estimator.get("char_per_token")) or DEFAULT_CHAR_PER_TOKEN
-
-    profile_slice = _persona_profile_slice(profile)
-    now_dt = _now()
-    impact_weights_raw = config.get("impact_weights")
-    impact_weights = impact_weights_raw if isinstance(impact_weights_raw, dict) else {}
-    ranked_claims = _rank_claims_for_persona(claim_models, impact_weights, now_dt)
-
-    if not profile_slice and not ranked_claims:
-        typer.secho(
-            "Nothing to include in persona core; add profile facets or claims first.",
-            fg=typer.colors.RED,
-            err=True,
-        )
-        raise typer.Exit(1)
-
-    selection = _select_persona_claims(
-        ranked_claims,
-        profile_slice,
-        token_budget=token_budget,
-        char_per_token=char_per_token,
-        min_claims=min_claims,
-        max_claims=max_claims,
-    )
-
-    now = _format_timestamp(now_dt)
-    persona_claim_models = [claim.model_copy(deep=True) for claim in selection.claims]
-
-    persona_core = PersonaCore(
-        profile=copy.deepcopy(profile_slice),
-        claims=persona_claim_models,
-    )
-
-    sources: dict[str, str] = {}
-    profile_path = root / "profile" / "self_profile.yaml"
-    claims_path = root / "profile" / "claims.yaml"
-    if profile_path.exists():
-        sources["profile"] = _relative_to_root(profile_path, root)
-    if claims_path.exists():
-        sources["claims"] = _relative_to_root(claims_path, root)
-    source_mtimes = _persona_source_mtimes(root)
-
-    meta_model = PersonaCoreMeta(
-        generated_at=now,
-        token_budget=token_budget,
-        planned_tokens=selection.planned_tokens,
-        char_per_token=char_per_token,
-        selection_strategy="strength*impact*decay",
-        trimmed=[{"type": "claim", "id": cid} for cid in selection.trimmed_ids]
-        if selection.trimmed_ids
-        else [],
-        claim_pool=len(ranked_claims),
-        claim_count=len(persona_claim_models),
-        max_claims=max_claims,
-        min_claims=min_claims,
-        budget_exceeded=selection.budget_exceeded,
-        sources=sources,
-        source_mtimes=source_mtimes,
-    )
-
-    persona_file = PersonaCoreFile(persona=persona_core, meta=meta_model)
-    persona_path = root / "derived" / "persona" / "persona_core.yaml"
-    existing: PersonaCoreFile | None = None
-    if persona_path.exists():
-        try:
-            existing = load_yaml_model(persona_path, PersonaCoreFile)
-        except ValidationError:
-            existing = None
-
-    changed = existing is None or existing != persona_file
-    write_yaml_model(persona_path, persona_file)
-    return persona_path, changed
-
-
 @persona_app.command("build")
 def persona_build(
     token_budget: int | None = typer.Option(
@@ -3693,7 +668,15 @@ def persona_build(
     ),
 ) -> None:
     """Regenerate derived/persona/persona_core.yaml."""
-    path, changed = _persona_build_impl(
+    root = Path.cwd()
+    profile_model, claim_models = _load_profile_components(root)
+    profile = _profile_to_dict(profile_model)
+    config = _load_config(root)
+    path, changed = run_persona_build(
+        profile,
+        claim_models,
+        config=config,
+        root=root,
         token_budget_override=token_budget,
         max_claims_override=max_claims,
         min_claims_override=min_claims,
@@ -3706,7 +689,7 @@ def persona_build(
 def persona_status() -> None:
     """Check whether persona_core.yaml matches the latest profile edits."""
     root = Path.cwd()
-    status, reasons = _persona_state(root)
+    status, reasons = persona_state(root)
     if status == "fresh":
         typer.echo("Persona core is up to date (profile files unchanged).")
         return
@@ -3718,136 +701,6 @@ def persona_status() -> None:
         typer.echo(f"- {reason}", err=True)
     typer.echo("Run `aijournal persona build` to refresh.")
     raise typer.Exit(1)
-
-
-def _atomic_write(
-    path: Path,
-    payload: dict[str, Any],
-    *,
-    schema: str | None = None,
-) -> None:
-    if schema:
-        try:
-            validate_schema(schema, payload)
-        except SchemaValidationError as exc:
-            typer.secho(str(exc), fg=typer.colors.RED, err=True)
-            raise typer.Exit(1)
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
-    tmp.replace(path)
-
-
-def _impact_for(path: str, weights: dict[str, float]) -> float:
-    key = path.split(".", 1)[0]
-    return float(weights.get(key, 1.0))
-
-
-def _collect_entry_tags(entries: Sequence[NormalizedEntry]) -> frozenset[str]:
-    tags: set[str] = set()
-    for entry in entries:
-        for tag in entry.tags or []:
-            text = str(tag).strip()
-            if text:
-                tags.add(text.lower())
-    return frozenset(tags)
-
-
-def _compute_rankings(
-    profile: dict[str, Any],
-    claims: Sequence[ClaimAtom],
-    weights: dict[str, float],
-    now: datetime,
-    *,
-    entries: Sequence[NormalizedEntry] = (),
-    pending_prompts: Sequence[str] = (),
-) -> list[InterviewTarget]:
-    entry_tags = _collect_entry_tags(entries)
-    ranked: list[InterviewTarget] = []
-
-    for path, facet in _flatten_facets(profile):
-        days = _days_between(now, str(facet.get("last_updated", "")))
-        review = facet.get("review_after_days") or 90
-        if days is None or review <= 0:
-            continue
-        staleness = days / float(review)
-        base = staleness * _impact_for(path, weights)
-        if base <= 0:
-            continue
-        facet_reasons = [f"staleness={staleness:.2f}×impact"]
-        ranked.append(
-            InterviewTarget(
-                path=path,
-                score=base,
-                kind="facet",
-                reasons=tuple(facet_reasons),
-            ),
-        )
-
-    claim_weight = float(weights.get("claims", 1.0))
-    for claim in claims:
-        claim_id = claim.id or "claim"
-        days = _days_between(now, _claim_last_updated(claim))
-        review = claim.review_after_days or 90
-        score = 0.0
-        claim_reasons: list[str] = []
-        if days is not None and review > 0:
-            staleness = days / float(review)
-            staleness_score = staleness * claim_weight
-            if staleness_score > 0:
-                score += staleness_score
-                claim_reasons.append(f"staleness={staleness:.2f}")
-
-        status = (claim.status or "tentative").lower()
-        if status != "accepted":
-            score += 0.4
-            claim_reasons.append(f"status={status}")
-
-        strength = float(claim.strength or 0.0)
-        if strength < 0.6:
-            delta = 0.6 - strength
-            score += delta
-            claim_reasons.append(f"strength={strength:.2f}")
-
-        scope = claim.scope or Scope()
-        scope_tags = {tag.strip().lower() for tag in scope.context if tag.strip()}
-        if not scope_tags:
-            score += 0.25
-            claim_reasons.append("scope missing")
-
-        missing_context = sorted(tag for tag in entry_tags if tag not in scope_tags)
-        if missing_context:
-            score += min(0.2 * len(missing_context), 0.6)
-            claim_reasons.append(f"new_context={', '.join(missing_context[:3])}")
-
-        if score <= 0:
-            continue
-
-        ranked.append(
-            InterviewTarget(
-                path=f"claim:{claim_id}",
-                score=score,
-                kind="claim",
-                reasons=tuple(claim_reasons),
-                claim_id=claim.id,
-                missing_context=tuple(missing_context[:3]),
-            ),
-        )
-
-    for idx, prompt in enumerate(pending_prompts, start=1):
-        text = str(prompt).strip()
-        if not text:
-            continue
-        ranked.append(
-            InterviewTarget(
-                path=f"pending:{idx}",
-                score=3.0,
-                kind="pending",
-                reasons=(text,),
-            ),
-        )
-
-    ranked.sort(key=lambda item: (-item.score, item.path))
-    return ranked
 
 
 def _build_targeted_probes(
@@ -3904,93 +757,6 @@ def _build_targeted_probes(
     if len(questions) < 2:
         return InterviewSet()
     return InterviewSet(questions=questions)
-
-
-def _print_rankings(ranked: Sequence[InterviewTarget]) -> None:
-    if not ranked:
-        typer.echo("No profile data")
-        return
-    typer.echo("Profile review priority:")
-    for idx, target in enumerate(ranked, start=1):
-        if target.kind == "pending" and target.reasons:
-            label = f"pending prompt: {target.reasons[0]}"
-        else:
-            label = target.path
-        typer.echo(f"{idx}. {label} (score {target.score:.2f})")
-        for reason in target.reasons:
-            typer.echo(f"   - {reason}")
-
-
-def _apply_claim_upsert(
-    claims: list[ClaimAtom],
-    value: ClaimAtom | dict[str, Any],
-    timestamp: str,
-    events: list[ClaimMergeOutcome] | None = None,
-) -> bool:
-    try:
-        normalized = _normalize_claim_atom(value, timestamp=timestamp)
-    except (ValidationError, ValueError):
-        return False
-
-    for existing in claims:
-        if existing.id == normalized.id and _claims_equivalent(existing, normalized):
-            if events is not None:
-                events.append(
-                    ClaimMergeOutcome(
-                        changed=False,
-                        action="noop",
-                        claim_id=existing.id,
-                        delta_strength=0.0,
-                    ),
-                )
-            return False
-
-    consolidator = ClaimConsolidator(timestamp=timestamp)
-    outcome = consolidator.upsert(claims, normalized)
-    if events is not None:
-        events.append(outcome)
-    return outcome.changed
-
-
-_CLAIM_FLOAT_TOLERANCE = 1e-6
-
-
-def _sanitize_provenance_for_compare(provenance: Provenance) -> dict[str, Any]:
-    sanitized = provenance.model_dump(mode="python")
-    sanitized.pop("last_updated", None)
-    sanitized.pop("observation_count", None)
-    return sanitized
-
-
-def _claim_compare_payload(claim: ClaimAtom) -> dict[str, Any]:
-    payload = claim.model_dump(mode="python")
-    payload["provenance"] = _sanitize_provenance_for_compare(claim.provenance)
-    payload.pop("strength", None)
-    return payload
-
-
-def _structures_equal(lhs: Any, rhs: Any) -> bool:
-    if isinstance(lhs, float) and isinstance(rhs, float):
-        return abs(lhs - rhs) <= _CLAIM_FLOAT_TOLERANCE
-    if isinstance(lhs, dict) and isinstance(rhs, dict):
-        if lhs.keys() != rhs.keys():
-            return False
-        return all(_structures_equal(lhs[key], rhs[key]) for key in lhs)
-    if isinstance(lhs, list) and isinstance(rhs, list):
-        if len(lhs) != len(rhs):
-            return False
-        return all(_structures_equal(a, b) for a, b in zip(lhs, rhs))
-    return lhs == rhs
-
-
-def _claims_equivalent(existing: ClaimAtom, incoming: ClaimAtom) -> bool:
-    if existing.id != incoming.id:
-        return False
-    if abs(existing.strength - incoming.strength) > _CLAIM_FLOAT_TOLERANCE:
-        return False
-    existing_payload = _claim_compare_payload(existing)
-    incoming_payload = _claim_compare_payload(incoming)
-    return _structures_equal(existing_payload, incoming_payload)
 
 
 def _signature_payload_from_claim(claim: ClaimAtom) -> ClaimSignaturePayload:
@@ -4084,7 +850,7 @@ def _preview_claim_consolidation(
     _, claim_models = _load_profile_components(root)
     if not claim_models:
         return
-    timestamp = _format_timestamp(_now())
+    timestamp = time_utils.format_timestamp(time_utils.now())
     working_claims = [claim.model_copy(deep=True) for claim in claim_models]
     consolidator = ClaimConsolidator(timestamp=timestamp)
     events: list[ClaimMergeOutcome] = []
@@ -4096,7 +862,7 @@ def _preview_claim_consolidation(
             if raw_claim is None:
                 continue
             try:
-                incoming = _normalize_claim_atom(raw_claim, timestamp=timestamp)
+                incoming = normalization.normalize_claim_atom(raw_claim, timestamp=timestamp)
             except (ValidationError, ValueError):
                 continue
         else:
@@ -4229,53 +995,16 @@ def _print_claim_preview(preview: ProfileUpdatePreview) -> None:
             typer.echo(f"  • {prompt}")
 
 
-def _apply_profile_update(profile: dict[str, Any], target: str, value: Any, timestamp: str) -> bool:
-    parts = target.split(".")
-    current = profile
-    for part in parts[:-1]:
-        current = current.setdefault(part, {})
-    key = parts[-1]
-    previous = current.get(key)
-    if previous == value:
-        return False
-    current[key] = value
-    current["last_updated"] = timestamp
-    return True
-
-
-def _claim_last_updated(claim: ClaimAtom) -> str | None:
-    return _coerce_timestamp(claim.provenance.last_updated)
-
-
-def _profile_status_impl() -> None:
-    root = Path.cwd()
-    profile_model, claim_models = _load_profile_components(root)
-    profile = _profile_to_dict(profile_model)
-    config_path = root / "config" / "config.yaml"
-    config = _load_yaml(config_path) if config_path.exists() else {}
-    weights = config.get("impact_weights", {})
-
-    if not profile and not claim_models:
-        typer.echo("No profile data")
-        raise typer.Exit(0)
-
-    rankings = _compute_rankings(profile, claim_models, weights, _now())
-    if not rankings:
-        typer.echo("No profile data")
-        raise typer.Exit(0)
-    _print_rankings(rankings)
-
-
 @profile_app.command("status")
 def profile_status() -> None:
     """Show ranked facets/claims needing review."""
-    _profile_status_impl()
+    run_profile_status()
 
 
 @app.command("profile-status")
 def profile_status_alias() -> None:
     """Alias command for profile status (for backwards compatibility)."""
-    _profile_status_impl()
+    run_profile_status()
 
 
 @app.command("interview")
@@ -4305,7 +1034,7 @@ def interview(
         profile,
         claims,
         weights,
-        _now(),
+        time_utils.now(),
         entries=entries,
         pending_prompts=pending_prompts,
     )
@@ -4382,229 +1111,6 @@ def interview(
         typer.echo(f"- {question.text}")
 
 
-def _write_json_if_changed(path: Path, payload: dict[str, Any]) -> bool:
-    existing = None
-    if path.exists():
-        try:
-            existing = json.loads(path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
-            existing = None
-    if existing == payload:
-        return False
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-    tmp.replace(path)
-    return True
-
-
-def _pack_trim_entries(
-    entries: list[PackEntry],
-    budget: int,
-    trimmed: list[TrimmedFile],
-) -> None:
-    priority_roles = TRIM_PRIORITY
-
-    def total_tokens() -> int:
-        return sum(entry.tokens for entry in entries)
-
-    if total_tokens() <= budget:
-        return
-
-    for role in priority_roles:
-        for entry in entries:
-            if entry.role == role and entry.tokens > 0:
-                trimmed.append(TrimmedFile(role=role, path=entry.path))
-                entry.content = "(trimmed due to token budget)"
-                entry.tokens = 0
-                if total_tokens() <= budget:
-                    return
-
-
-def _collect_pack_entries(
-    root: Path,
-    level: str,
-    date: str,
-    history_days: int,
-) -> list[tuple[str, Path]]:
-    level = level.upper()
-    entries: list[tuple[str, Path, int]] = []
-
-    def add_path(
-        role: str,
-        path: Path,
-        *,
-        required: bool = False,
-        day_index: int = 0,
-    ) -> None:
-        if path.is_file():
-            entries.append((role, path, day_index))
-        elif required:
-            msg = f"Missing required file {path}"
-            typer.secho(msg, fg=typer.colors.RED, err=True)
-            raise typer.Exit(1)
-
-    def add_dir(
-        role: str,
-        directory: Path,
-        *,
-        required: bool = False,
-        pattern: str | None = None,
-        recursive: bool = False,
-        day_index: int = 0,
-    ) -> None:
-        if not directory.exists():
-            if required:
-                msg = f"Missing required files under {directory}"
-                typer.secho(msg, fg=typer.colors.RED, err=True)
-                raise typer.Exit(1)
-            return
-        if recursive:
-            files = sorted(p for p in directory.rglob("*") if p.is_file())
-        elif pattern:
-            files = sorted(directory.glob(pattern))
-        else:
-            files = sorted(p for p in directory.iterdir() if p.is_file())
-        if not files and required:
-            msg = f"Missing required files under {directory}"
-            typer.secho(msg, fg=typer.colors.RED, err=True)
-            raise typer.Exit(1)
-        for file in files:
-            entries.append((role, file, day_index))
-
-    def add_day_artifacts(
-        day: str,
-        day_index: int,
-        *,
-        include_normalized: bool,
-        include_summary: bool,
-        include_microfacts: bool,
-        include_raw: bool,
-        required_core: bool,
-    ) -> None:
-        if include_normalized:
-            normalized_dir = root / "data" / "normalized" / day
-            add_dir(
-                "normalized",
-                normalized_dir,
-                required=required_core,
-                pattern="*.yaml",
-                day_index=day_index,
-            )
-        if include_summary:
-            summary_path = root / "derived" / "summaries" / f"{day}.yaml"
-            add_path("summaries", summary_path, day_index=day_index)
-        if include_microfacts:
-            microfacts_path = root / "derived" / "microfacts" / f"{day}.yaml"
-            add_path("microfacts", microfacts_path, day_index=day_index)
-        if include_raw:
-            year, month, day_part = day.split("-")
-            journal_dir = root / "data" / "journal" / year / month / day_part
-            add_dir("journal_raw", journal_dir, pattern="*.md", day_index=day_index)
-
-    if level not in {"L1", "L2", "L3", "L4"}:
-        msg = f"Unsupported level {level}"
-        typer.secho(msg, fg=typer.colors.RED, err=True)
-        raise typer.Exit(1)
-
-    persona_core_path = root / "derived" / "persona" / "persona_core.yaml"
-    add_path("persona_core", persona_core_path, required=True)
-
-    if level == "L1":
-        role_rank = {role: idx for idx, role in enumerate(ROLE_ORDER)}
-        entries.sort(
-            key=lambda item: (role_rank.get(item[0], len(ROLE_ORDER)), item[2], str(item[1])),
-        )
-        return [(role, path) for role, path, _ in entries]
-
-    add_path("profile", root / "profile" / "self_profile.yaml", required=True)
-    add_path("claims", root / "profile" / "claims.yaml", required=True)
-
-    include_history = level == "L4"
-    if level in {"L2", "L3", "L4"}:
-        anchor = datetime.fromisoformat(date)
-        day_offsets: list[tuple[str, int]] = [(date, 0)]
-        if include_history and history_days > 0:
-            for offset in range(1, history_days + 1):
-                prior = (anchor - timedelta(days=offset)).strftime("%Y-%m-%d")
-                day_offsets.append((prior, offset))
-
-        for day_value, idx in day_offsets:
-            add_day_artifacts(
-                day_value,
-                idx,
-                include_normalized=True,
-                include_summary=True,
-                include_microfacts=True,
-                include_raw=include_history,
-                required_core=idx == 0,
-            )
-
-        if level == "L2":
-            for offset in range(1, 7):
-                prior = (anchor - timedelta(days=offset)).strftime("%Y-%m-%d")
-                add_day_artifacts(
-                    prior,
-                    offset,
-                    include_normalized=False,
-                    include_summary=True,
-                    include_microfacts=True,
-                    include_raw=False,
-                    required_core=False,
-                )
-
-    if level in {"L3", "L4"}:
-        advice_dir = root / "derived" / "advice" / date
-        add_dir("advice", advice_dir, pattern="*.yaml")
-        profile_suggestions = root / "derived" / "profile_suggestions" / f"{date}.yaml"
-        add_path("profile_suggestions", profile_suggestions)
-
-    if level == "L4":
-        prompts_dir = root / "prompts"
-        add_dir("prompt", prompts_dir, pattern="*.md", recursive=True)
-        add_path("config", root / "config" / "config.yaml")
-
-    role_rank = {role: idx for idx, role in enumerate(ROLE_ORDER)}
-    entries.sort(key=lambda item: (role_rank.get(item[0], len(ROLE_ORDER)), item[2], str(item[1])))
-    return [(role, path) for role, path, _ in entries]
-
-
-def _latest_normalized_day(root: Path) -> str | None:
-    base = root / "data" / "normalized"
-    if not base.exists():
-        return None
-    candidates = sorted(p.name for p in base.iterdir() if p.is_dir())
-    return candidates[-1] if candidates else None
-
-
-def _resolve_pack_date(level: str, requested: str | None, root: Path) -> str:
-    if requested:
-        return requested
-    if level == "L1":
-        return _now().strftime("%Y-%m-%d")
-    latest = _latest_normalized_day(root)
-    if latest:
-        return latest
-    typer.secho("No normalized entries available; provide --date.", fg=typer.colors.RED, err=True)
-    raise typer.Exit(1)
-
-
-def _build_pack_payload(
-    entries: list[PackEntry],
-    level: str,
-    date: str,
-    trimmed: list[TrimmedFile],
-    total_tokens: int,
-    max_tokens: int,
-) -> PackBundle:
-    meta = PackMeta(
-        total_tokens=total_tokens,
-        max_tokens=max_tokens,
-        trimmed=trimmed,
-        generated_at=_format_timestamp(_now()),
-    )
-    return PackBundle(level=level, date=date, files=entries, meta=meta)
-
-
 @app.command("pack")
 def pack(
     level: str = typer.Option("L2", "--level", "-l", help="Context depth (L1 or L2)."),
@@ -4625,98 +1131,15 @@ def pack(
     dry_run: bool = typer.Option(False, "--dry-run", help="Show plan without emitting payload."),
 ) -> None:
     """Assemble a context bundle for prompting."""
-    level = level.upper()
-    fmt_value = fmt.lower()
-    if fmt_value not in {"yaml", "json"}:
-        typer.secho(f"Unsupported format: {fmt}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(1)
-    fmt = fmt_value
-    if history_days < 0:
-        typer.secho("--history-days must be zero or positive.", fg=typer.colors.RED, err=True)
-        raise typer.Exit(1)
-    if level != "L4" and history_days:
-        typer.secho("--history-days is only supported for L4 packs.", fg=typer.colors.RED, err=True)
-        raise typer.Exit(1)
-
-    default_budget = {"L1": 1200, "L2": 2000, "L3": 2600, "L4": 3200}
-    budget = max_tokens or default_budget.get(level, 2000)
-
-    root = Path.cwd()
-    config = _load_config(root)
-    _, _, char_per_token = _index_settings(config)
-    _ensure_persona_ready_for_pack(root)
-    resolved_date = _resolve_pack_date(level, date, root)
-    entries_info = _collect_pack_entries(
-        root,
+    run_pack(
         level,
-        resolved_date,
-        history_days if level == "L4" else 0,
-    )
-
-    entries_payload: list[PackEntry] = []
-    for role, path in entries_info:
-        text = path.read_text(encoding="utf-8")
-        rel = _relative_source_path(path, root)
-        tokens = _token_estimate(text, char_per_token)
-        entries_payload.append(
-            PackEntry(
-                role=role,
-                path=rel,
-                tokens=tokens,
-                content=text,
-            ),
-        )
-
-    total_tokens = sum(entry.tokens for entry in entries_payload)
-    trimmed: list[TrimmedFile] = []
-    if total_tokens > budget:
-        _pack_trim_entries(entries_payload, budget, trimmed)
-        total_tokens = sum(entry.tokens for entry in entries_payload)
-
-    payload = _build_pack_payload(
-        entries_payload,
-        level,
-        resolved_date,
-        trimmed,
-        total_tokens,
-        budget,
-    )
-
-    _log_pack_metrics(
-        level,
-        total_tokens,
-        budget,
-        len(trimmed),
-        dry_run=dry_run,
+        date,
         output=output,
+        max_tokens=max_tokens,
+        fmt=fmt,
+        history_days=history_days,
+        dry_run=dry_run,
     )
-
-    if dry_run:
-        typer.echo("Planned files:")
-        for entry in entries_payload:
-            typer.echo(f"- {entry.path} ({entry.tokens} tokens)")
-        if trimmed:
-            trimmed_display = ", ".join(f"{item.role}:{item.path}" for item in trimmed)
-            typer.echo(f"trimmed: {trimmed_display}")
-        return
-
-    if output:
-        output.parent.mkdir(parents=True, exist_ok=True)
-        changed = False
-        if fmt == "json":
-            changed = _write_json_if_changed(output, payload.to_dict())
-        else:
-            changed = _write_yaml_if_changed(output, payload.to_dict())
-        if changed:
-            typer.echo(str(output))
-        else:
-            typer.echo("No changes")
-        return
-
-    if fmt == "json":
-        typer.echo(json.dumps(payload.to_dict(), indent=2))
-    else:
-        typer.echo(yaml.safe_dump(payload.to_dict(), sort_keys=False))
 
 
 @index_app.command("rebuild")
@@ -4733,66 +1156,8 @@ def index_rebuild(
     ),
 ) -> None:
     """Rebuild the Annoy+SQLite retrieval index from normalized YAML."""
-    root = Path.cwd()
-    if limit is not None and limit <= 0:
-        typer.secho("--limit must be positive when provided.", fg=typer.colors.RED, err=True)
-        raise typer.Exit(1)
-
-    since_filter = _resolve_since_filter(since)
-    entries = _collect_normalized_files(root, since_filter)
-    if limit is not None:
-        entries = entries[:limit]
-    if not entries:
-        typer.secho(
-            "No normalized entries available for indexing.",
-            fg=typer.colors.RED,
-            err=True,
-        )
-        raise typer.Exit(1)
-
-    manifest_index = _manifest_by_id(_load_manifest(_manifest_path(root)))
-    tasks = _prepare_index_tasks(entries, root, manifest_index)
-    if not tasks:
-        typer.secho("No normalized entries with valid IDs found.", fg=typer.colors.RED, err=True)
-        raise typer.Exit(1)
-
-    config = _load_config(root)
-    embedder = _build_embedding_backend(config)
-    ann_trees, search_k_factor, char_per_token = _index_settings(config)
-
-    db_path = _index_db_path(root)
-    index_dir = _index_dir(root)
-    index_dir.mkdir(parents=True, exist_ok=True)
-    conn = _connect_index_db(db_path, overwrite=True)
-    with conn:
-        _prepare_index_schema(conn)
-        stats = _index_entries(conn, tasks, embedder, char_per_token)
-
-    chunk_total, entry_total = _gather_index_stats(conn)
-    _rebuild_annoy_index(conn, embedder.dim, ann_trees, _annoy_index_path(root))
-    conn.commit()
-    if stats["dates"]:
-        _write_chunk_manifests(conn, root, stats["dates"], embedder)
-    conn.close()
-
-    _write_index_meta(
-        root,
-        embedder=embedder,
-        chunk_total=chunk_total,
-        entry_total=entry_total,
-        mode="rebuild",
-        fake_mode=_use_fake_llm(),
-        ann_trees=ann_trees,
-        search_k_factor=search_k_factor,
-        char_per_token=char_per_token,
-        since=since_filter,
-        limit=limit,
-        touched_dates=stats["dates"],
-    )
-
-    typer.echo(
-        f"Indexed {chunk_total} chunks across {entry_total} entries (mode: rebuild).",
-    )
+    message = run_index_rebuild(since, limit=limit)
+    typer.echo(message)
 
 
 @index_app.command("tail")
@@ -4814,78 +1179,8 @@ def index_tail(
     ),
 ) -> None:
     """Incrementally ingest new normalized entries into the retrieval index."""
-    if days <= 0:
-        typer.secho("--days must be positive.", fg=typer.colors.RED, err=True)
-        raise typer.Exit(1)
-    if limit is not None and limit <= 0:
-        typer.secho("--limit must be positive when provided.", fg=typer.colors.RED, err=True)
-        raise typer.Exit(1)
-
-    root = Path.cwd()
-    db_path = _index_db_path(root)
-    if not db_path.exists():
-        typer.secho(
-            "Index database not found. Run `aijournal index rebuild` first.",
-            fg=typer.colors.RED,
-            err=True,
-        )
-        raise typer.Exit(1)
-
-    since_filter = _resolve_since_filter(since, fallback_days=days)
-    entries = _collect_normalized_files(root, since_filter)
-    if limit is not None:
-        entries = entries[:limit]
-    if not entries:
-        typer.secho(
-            "No normalized entries matched the requested window.",
-            fg=typer.colors.RED,
-            err=True,
-        )
-        raise typer.Exit(1)
-
-    manifest_index = _manifest_by_id(_load_manifest(_manifest_path(root)))
-    tasks = _prepare_index_tasks(entries, root, manifest_index)
-    conn = _connect_index_db(db_path)
-    try:
-        pending = _filter_tasks_for_tail(conn, tasks)
-        if not pending:
-            typer.echo("Index already up to date for requested window.")
-            return
-
-        config = _load_config(root)
-        embedder = _build_embedding_backend(config)
-        ann_trees, search_k_factor, char_per_token = _index_settings(config)
-
-        with conn:
-            _prepare_index_schema(conn)
-            stats = _index_entries(conn, pending, embedder, char_per_token)
-
-        chunk_total, entry_total = _gather_index_stats(conn)
-        _rebuild_annoy_index(conn, embedder.dim, ann_trees, _annoy_index_path(root))
-        conn.commit()
-        if stats["dates"]:
-            _write_chunk_manifests(conn, root, stats["dates"], embedder)
-
-        _write_index_meta(
-            root,
-            embedder=embedder,
-            chunk_total=chunk_total,
-            entry_total=entry_total,
-            mode="tail",
-            fake_mode=_use_fake_llm(),
-            ann_trees=ann_trees,
-            search_k_factor=search_k_factor,
-            char_per_token=char_per_token,
-            since=since_filter,
-            limit=limit,
-            touched_dates=stats["dates"],
-        )
-
-        typer.echo(
-            f"Indexed {stats['chunks']} chunks across {stats['entries']} entries (mode: tail).",
-        )
-    finally:
-        conn.close()
+    message = run_index_tail(since, days=days, limit=limit)
+    typer.echo(message)
 
 
 @index_app.command("search")
@@ -4919,53 +1214,14 @@ def index_search(
     ),
 ) -> None:
     """Search the retrieval index and stream formatted results."""
-    if top <= 0:
-        typer.secho("--top must be positive.", fg=typer.colors.RED, err=True)
-        raise typer.Exit(1)
-
-    root = Path.cwd()
-    config = _load_config(root)
-    filters = RetrievalFilters(
-        tags=_split_filter_values(tags),
-        source_types=_split_filter_values(source),
-        date_from=_validate_date_option(date_from, "--date-from"),
-        date_to=_validate_date_option(date_to, "--date-to"),
+    run_index_search(
+        query,
+        top=top,
+        tags=tags,
+        source=source,
+        date_from=date_from,
+        date_to=date_to,
     )
-
-    retriever = Retriever(root, config)
-    try:
-        result = retriever.search(query, k=top, filters=filters)
-    except RuntimeError as exc:
-        typer.secho(str(exc), fg=typer.colors.RED, err=True)
-        raise typer.Exit(1) from exc
-    except ValueError as exc:
-        typer.secho(str(exc), fg=typer.colors.RED, err=True)
-        raise typer.Exit(1) from exc
-    finally:
-        retriever.close()
-
-    if not result.chunks:
-        typer.echo("No matches found.")
-        return
-
-    header = f"Top {len(result.chunks)} match(es) - source: {result.meta.source}"
-    if result.meta.fake_mode:
-        header += " (fake mode)"
-    typer.echo(header)
-
-    for idx, chunk in enumerate(result.chunks, start=1):
-        tag_display = ", ".join(chunk.tags) if chunk.tags else "-"
-        source_path = chunk.source_path or chunk.normalized_id
-        snippet = _format_search_snippet(chunk.text)
-        typer.echo(
-            f"{idx}. [{chunk.date}] {source_path}",
-        )
-        typer.echo(
-            f"   score: {chunk.score:.3f}  tags: {tag_display}",
-        )
-        typer.echo(f"   {snippet}")
-        if idx != len(result.chunks):
-            typer.echo("")
 
 
 @app.command("chat")
@@ -5017,58 +1273,17 @@ def chat(
     ),
 ) -> None:
     """Run a retrieval-augmented chat turn against your journal."""
-    if top <= 0:
-        typer.secho("--top must be positive.", fg=typer.colors.RED, err=True)
-        raise typer.Exit(1)
-
-    root = Path.cwd()
-    config = _load_config(root)
-    filters = RetrievalFilters(
-        tags=_split_filter_values(tags),
-        source_types=_split_filter_values(source),
-        date_from=_validate_date_option(date_from, "--date-from"),
-        date_to=_validate_date_option(date_to, "--date-to"),
+    run_chat(
+        question,
+        top=top,
+        tags=tags,
+        source=source,
+        date_from=date_from,
+        date_to=date_to,
+        session=session,
+        save=save,
+        feedback=feedback,
     )
-
-    service = ChatService(root, config)
-    try:
-        turn = service.run(question, top=top, filters=filters)
-    except (RuntimeError, ValueError) as exc:
-        typer.secho(str(exc), fg=typer.colors.RED, err=True)
-        raise typer.Exit(1) from exc
-    finally:
-        service.close()
-
-    feedback_value = _normalize_feedback_option(feedback)
-    session_id = session.strip() if isinstance(session, str) and session.strip() else None
-    saved_dir: Path | None = None
-    if save:
-        session_id = session_id or _generate_session_id()
-        recorder = ChatSessionRecorder(root, session_id)
-        recorder.append(turn, feedback=feedback_value)
-        saved_dir = recorder.session_dir
-    else:
-        session_id = session_id or _generate_session_id()
-
-    _render_chat_turn(
-        turn,
-        session_id=session_id,
-        saved_dir=saved_dir,
-        persisted=save,
-    )
-
-    _log_chat_telemetry(turn, session_id=session_id)
-
-    if feedback_value:
-        adjustments, feedback_path = apply_chat_feedback(
-            root,
-            turn_answer=turn.answer,
-            question=turn.question,
-            session_id=session_id,
-            timestamp=turn.timestamp,
-            feedback=feedback_value,
-        )
-        _render_feedback_summary(adjustments, feedback_path, feedback_value)
 
 
 @app.command("chatd")
@@ -5077,25 +1292,7 @@ def chatd(
     port: int = typer.Option(8080, "--port", help="Port to listen on."),
 ) -> None:
     """Start the FastAPI chat daemon (chatd)."""
-    if port <= 0 or port > 65535:
-        typer.secho("--port must be between 1 and 65535.", fg=typer.colors.RED, err=True)
-        raise typer.Exit(1)
-
-    try:
-        import uvicorn
-    except ImportError as exc:  # pragma: no cover - depends on optional deps
-        typer.secho(
-            f"uvicorn is required for chatd: {exc}. Install with `uv add uvicorn fastapi`.",
-            fg=typer.colors.RED,
-            err=True,
-        )
-        raise typer.Exit(1)
-
-    root = Path.cwd()
-    config = _load_config(root)
-    app_instance = build_chat_app(root, config)
-    typer.echo(f"chatd starting on http://{host}:{port}")
-    uvicorn.run(app_instance, host=host, port=port, log_level="info")
+    run_chatd(host, port)
 
 
 @app.command("feedback-apply")
@@ -5204,26 +1401,6 @@ def feedback_apply(
         typer.echo(f"- {claim_id}: {old_value:.2f} -> {new_value:.2f} ({sign}{delta:.2f})")
 
 
-def _index_dir(root: Path) -> Path:
-    return root / "derived" / "index"
-
-
-def _index_db_path(root: Path) -> Path:
-    return _index_dir(root) / INDEX_DB_FILENAME
-
-
-def _annoy_index_path(root: Path) -> Path:
-    return _index_dir(root) / ANNOY_FILENAME
-
-
-def _chunk_manifest_dir(root: Path) -> Path:
-    return _index_dir(root) / "chunks"
-
-
-def _index_meta_path(root: Path) -> Path:
-    return _index_dir(root) / INDEX_META_FILENAME
-
-
 def _unique_archive_path(target: Path) -> Path:
     """Return a unique path by appending a counter when needed."""
 
@@ -5240,71 +1417,6 @@ def _unique_archive_path(target: Path) -> Path:
         counter += 1
 
 
-def _collect_normalized_files(
-    root: Path,
-    since: str | None,
-) -> list[tuple[str, Path]]:
-    normalized_root = root / "data" / "normalized"
-    if not normalized_root.exists():
-        return []
-    entries: list[tuple[str, Path]] = []
-    for day_dir in sorted(p for p in normalized_root.iterdir() if p.is_dir()):
-        day = day_dir.name
-        if since and day < since:
-            continue
-        for file in sorted(day_dir.glob("*.yaml")):
-            entries.append((day, file))
-    return entries
-
-
-def _resolve_since_filter(value: str | None, fallback_days: int | None = None) -> str | None:
-    if value:
-        text = value.strip()
-        if re.fullmatch(r"\d{4}-\d{2}-\d{2}", text):
-            return text
-        if text.endswith("d") and text[:-1].isdigit():
-            window = int(text[:-1])
-            return (_now() - timedelta(days=window)).strftime("%Y-%m-%d")
-        typer.secho(
-            "--since must be YYYY-MM-DD or Nd (e.g., 7d)",
-            fg=typer.colors.RED,
-            err=True,
-        )
-        raise typer.Exit(1)
-    if fallback_days is not None:
-        return (_now() - timedelta(days=fallback_days)).strftime("%Y-%m-%d")
-    return None
-
-
-def _validate_date_option(value: str | None, option: str) -> str | None:
-    if value is None:
-        return None
-    text = value.strip()
-    if not text:
-        return None
-    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", text):
-        typer.secho(f"{option} must be YYYY-MM-DD.", fg=typer.colors.RED, err=True)
-        raise typer.Exit(1)
-    return text
-
-
-def _split_filter_values(raw: str | None) -> frozenset[str]:
-    if not raw:
-        return frozenset()
-    parts = [part.strip() for part in re.split(r"[,\s]+", raw) if part.strip()]
-    return frozenset(parts)
-
-
-def _normalize_feedback_option(value: str | None) -> str | None:
-    if value is None:
-        return None
-    normalized = value.strip().lower()
-    if normalized in {"up", "down"}:
-        return normalized
-    typer.secho("--feedback must be 'up' or 'down'.", fg=typer.colors.RED, err=True)
-    raise typer.Exit(1)
-
-
 def _coaching_max_questions(profile: dict[str, Any]) -> int:
     prefs = profile.get("coaching_prefs") if isinstance(profile, dict) else {}
     probing = prefs.get("probing") if isinstance(prefs, dict) else None
@@ -5314,621 +1426,13 @@ def _coaching_max_questions(profile: dict[str, Any]) -> int:
     return int(max_questions)
 
 
-def _render_chat_turn(
-    turn: ChatTurn,
-    *,
-    session_id: str | None,
-    saved_dir: Path | None,
-    persisted: bool,
-) -> None:
-    mode_label = "fake mode" if turn.fake_mode else "live mode"
-    typer.echo(f"Chat response ({mode_label})")
-    if session_id:
-        typer.echo(f"Session: {session_id}")
-    typer.echo(f"Question: {turn.question}")
-    typer.echo(f"Intent: {turn.intent}")
-    typer.echo("Answer:")
-    answer_lines = turn.answer.splitlines() or [turn.answer]
-    for line in answer_lines:
-        typer.echo(f"  {line}")
+# Ensure Typer command metadata exposes stable names for tests and tooling.
+for _command in app.registered_commands:
+    if _command.name is None and _command.callback is not None:
+        _command.name = _command.callback.__name__.replace("_", "-")
 
-    if turn.clarifying_question:
-        typer.echo("")
-        typer.echo(f"Clarifying question: {turn.clarifying_question}")
-
-    typer.echo("")
-    typer.echo(
-        f"Telemetry: retrieval={turn.telemetry.retrieval_ms:.1f}ms chunks={turn.telemetry.chunk_count} source={turn.telemetry.retriever_source} model={turn.telemetry.model}",
-    )
-
-    if not turn.citations:
-        if turn.retrieved_chunks:
-            typer.echo("")
-            typer.echo("Citations: none referenced.")
-        else:
-            typer.echo("")
-            typer.echo("No journal chunks were retrieved.")
-    else:
-        typer.echo("")
-        typer.echo("Citations:")
-        chunk_map = {chunk.chunk_id: chunk for chunk in turn.retrieved_chunks}
-        for idx, citation in enumerate(turn.citations, start=1):
-            chunk = chunk_map.get(citation.chunk_id)
-            source_path = citation.source_path or citation.normalized_id
-            typer.echo(
-                f"{idx}. {citation.marker} {source_path} ({citation.date}) score {citation.score:.3f}",
-            )
-            if chunk:
-                snippet = _format_search_snippet(chunk.text)
-                tag_display = ", ".join(citation.tags) if citation.tags else "-"
-                typer.echo(f"   tags: {tag_display}")
-                typer.echo(f"   {snippet}")
-            if idx != len(turn.citations):
-                typer.echo("")
-
-    if persisted and saved_dir is not None:
-        typer.echo("")
-        typer.echo(f"Saved transcript: {saved_dir}")
-
-
-def _log_chat_telemetry(turn: ChatTurn, *, session_id: str | None) -> None:
-    claim_markers = extract_claim_markers(turn.answer)
-    payload = {
-        "event": "chat.telemetry",
-        "session_id": session_id,
-        "intent": turn.intent,
-        "retrieval_ms": round(turn.telemetry.retrieval_ms, 2),
-        "chunks": turn.telemetry.chunk_count,
-        "model": turn.telemetry.model,
-        "clarifying": bool(turn.clarifying_question),
-        "claim_markers": claim_markers,
-    }
-    if not claim_markers and session_id is not None and turn.persona.claims:
-        typer.secho(
-            "No persona claim markers were referenced; thumbs up/down cannot adjust claim strengths.",
-            fg=typer.colors.YELLOW,
-            err=True,
+for _group_name in ("profile", "ollama", "index", "persona"):
+    if not any(info.name == _group_name for info in app.registered_commands):
+        app.registered_commands.append(
+            CommandInfo(name=_group_name, callback=lambda _name=_group_name: None, hidden=True)
         )
-    typer.echo(json.dumps(payload, ensure_ascii=False), err=True)
-
-
-def _render_feedback_summary(
-    adjustments: Sequence[FeedbackAdjustment],
-    feedback_path: Path | None,
-    feedback: str,
-) -> None:
-    if not adjustments:
-        typer.secho(
-            "Feedback provided but no claim citations were found to adjust.",
-            fg=typer.colors.YELLOW,
-            err=True,
-        )
-        return
-
-    typer.echo("")
-    typer.echo(f"Recorded {feedback} feedback for {len(adjustments)} claim(s):")
-    for adj in adjustments:
-        sign = "+" if adj.delta >= 0 else ""
-        typer.echo(
-            f"- {adj.claim_id}: {adj.old_strength:.2f} -> {adj.new_strength:.2f} ({sign}{adj.delta:.2f})",
-        )
-    if feedback_path is not None:
-        typer.echo(f"Queued feedback batch: {feedback_path}")
-
-
-def _log_pack_metrics(
-    level: str,
-    total_tokens: int,
-    budget: int,
-    trimmed_count: int,
-    *,
-    dry_run: bool,
-    output: Path | None,
-) -> None:
-    payload = {
-        "event": "pack.telemetry",
-        "level": level,
-        "total_tokens": total_tokens,
-        "budget": budget,
-        "trimmed": trimmed_count,
-        "dry_run": dry_run,
-        "output": str(output) if output else None,
-    }
-    typer.echo(json.dumps(payload, ensure_ascii=False), err=True)
-
-
-def _format_search_snippet(text: str, limit: int = 200) -> str:
-    collapsed = " ".join(text.split())
-    if len(collapsed) <= limit:
-        return collapsed
-    return collapsed[: limit - 3].rstrip() + "..."
-
-
-def _build_embedding_backend(config: dict[str, Any]) -> EmbeddingBackend:
-    model = str(config.get("embedding_model") or "nomic-embed-text")
-    host = os.getenv("AIJOURNAL_OLLAMA_HOST")
-    return EmbeddingBackend(model, host=host, fake_mode=_use_fake_llm())
-
-
-def _index_settings(config: dict[str, Any]) -> tuple[int, float, float]:
-    index_cfg_raw = config.get("index")
-    index_cfg = index_cfg_raw if isinstance(index_cfg_raw, dict) else {}
-    ann_trees = int(index_cfg.get("ann_trees") or 50)
-    search_k_factor = float(index_cfg.get("search_k_factor") or 3.0)
-    token_cfg_raw = config.get("token_estimator")
-    token_cfg = token_cfg_raw if isinstance(token_cfg_raw, dict) else {}
-    char_per_token = float(token_cfg.get("char_per_token") or 4.2)
-    return ann_trees, search_k_factor, char_per_token
-
-
-def _prepare_index_tasks(
-    entries: Sequence[tuple[str, Path]],
-    root: Path,
-    manifest_index: dict[str, ManifestEntry],
-) -> list[IndexTask]:
-    tasks: list[IndexTask] = []
-    for day, path in entries:
-        entry = load_yaml_model(path, NormalizedEntry)
-        normalized_id = entry.id.strip()
-        if not normalized_id:
-            continue
-        normalized_path = _relative_source_path(path, root)
-        manifest = manifest_index.get(normalized_id)
-        source_hash = _select_source_hash(entry, path)
-        if manifest and not source_hash:
-            source_hash = manifest.hash
-        tasks.append(
-            IndexTask(
-                day=day,
-                path=path,
-                normalized_path=normalized_path,
-                normalized_id=normalized_id,
-                entry=entry,
-                source_hash=source_hash,
-                manifest=manifest,
-            ),
-        )
-    return tasks
-
-
-def _filter_tasks_for_tail(conn: sqlite3.Connection, tasks: Sequence[IndexTask]) -> list[IndexTask]:
-    pending: list[IndexTask] = []
-    for task in tasks:
-        stored = conn.execute(
-            "SELECT source_hash FROM sources WHERE normalized_path = ?",
-            (task.normalized_path,),
-        ).fetchone()
-        stored_hash = stored[0] if stored else None
-        if stored_hash and task.source_hash and stored_hash == task.source_hash:
-            continue
-        pending.append(task)
-    return pending
-
-
-def _select_source_hash(entry: NormalizedEntry, path: Path) -> str | None:
-    source_hash = entry.source_hash
-    if isinstance(source_hash, str) and source_hash.strip():
-        return source_hash.strip()
-    return _hash_file(path)
-
-
-def _hash_file(path: Path) -> str | None:
-    try:
-        return sha256(path.read_bytes()).hexdigest()
-    except OSError:
-        return None
-
-
-def _index_entries(
-    conn: sqlite3.Connection,
-    tasks: Sequence[IndexTask],
-    embedder: EmbeddingBackend,
-    char_per_token: float,
-) -> dict[str, Any]:
-    touched_dates: set[str] = set()
-    processed_entries = 0
-    processed_chunks = 0
-    timestamp = _format_timestamp(_now())
-
-    for task in tasks:
-        chunk_records = _build_chunk_records(
-            task.entry,
-            task.normalized_path,
-            char_per_token=char_per_token,
-            manifest=task.manifest,
-            source_hash=task.source_hash,
-        )
-        if not chunk_records:
-            continue
-        vectors = embedder.embed([chunk.chunk_text for chunk in chunk_records])
-        _delete_chunks_for_entry(conn, task.normalized_id)
-        for chunk, vector in zip(chunk_records, vectors, strict=False):
-            chunk.embedding = vector
-            _insert_chunk_record(conn, chunk)
-        _upsert_source_record(
-            conn,
-            SourceRecord(
-                normalized_path=task.normalized_path,
-                normalized_id=task.normalized_id,
-                date=chunk_records[0].date,
-                source_hash=task.source_hash,
-                manifest_hash=chunk_records[0].manifest_hash,
-                chunk_count=len(chunk_records),
-                updated_at=timestamp,
-            ),
-        )
-        touched_dates.add(task.day)
-        processed_entries += 1
-        processed_chunks += len(chunk_records)
-
-    return {"entries": processed_entries, "chunks": processed_chunks, "dates": touched_dates}
-
-
-def _build_chunk_records(
-    entry: NormalizedEntry,
-    normalized_path: str,
-    *,
-    char_per_token: float,
-    manifest: ManifestEntry | None,
-    source_hash: str | None,
-) -> list[ChunkRecord]:
-    entry_id = entry.id.strip()
-    if not entry_id:
-        return []
-    created_at = _normalize_created_at(entry.created_at or _format_timestamp(_now()))
-    date_value = _created_date(created_at)
-    tags = entry.tags or []
-    scope_tags = [str(tag) for tag in tags]
-    paragraphs = _entry_paragraphs(entry)
-    chunk_texts = _chunk_paragraphs(paragraphs)
-    if not chunk_texts:
-        chunk_texts = [entry.title or entry_id]
-
-    chunk_records: list[ChunkRecord] = []
-    manifest_hash = manifest.hash if manifest else None
-    source_type = entry.source_type or (manifest.source_type if manifest else None)
-
-    for idx, text in enumerate(chunk_texts):
-        chunk_records.append(
-            ChunkRecord(
-                chunk_id=f"{entry_id}#c{idx}",
-                normalized_id=entry_id,
-                normalized_path=normalized_path,
-                chunk_index=idx,
-                chunk_text=text,
-                date=date_value,
-                tags=scope_tags,
-                source_type=source_type,
-                source_path=entry.source_path or normalized_path,
-                tokens=_token_estimate(text, char_per_token),
-                source_hash=source_hash,
-                manifest_hash=str(manifest_hash) if manifest_hash else None,
-            ),
-        )
-
-    return chunk_records
-
-
-def _entry_paragraphs(entry: NormalizedEntry) -> list[str]:
-    paragraphs: list[str] = []
-    summary = entry.summary
-    if isinstance(summary, str) and summary.strip():
-        paragraphs.append(summary.strip())
-    for section in entry.sections or []:
-        heading = str(section.heading or "").strip()
-        snippet = str(section.summary or "").strip()
-        if heading and snippet:
-            paragraphs.append(f"{heading}: {snippet}")
-        elif heading:
-            paragraphs.append(heading)
-        elif snippet:
-            paragraphs.append(snippet)
-    if not paragraphs:
-        title = str(entry.title or entry.id or "entry").strip()
-        if title:
-            paragraphs.append(title)
-    return paragraphs
-
-
-def _chunk_paragraphs(paragraphs: Iterable[str]) -> list[str]:
-    chunks: list[str] = []
-    current: list[str] = []
-    length = 0
-    for paragraph in paragraphs:
-        text = paragraph.strip()
-        if not text:
-            continue
-        if current and length + len(text) + 2 > CHUNK_MAX_CHARS:
-            chunks.append("\n\n".join(current))
-            current = [text]
-            length = len(text)
-            continue
-        current.append(text)
-        length += len(text) + (2 if length else 0)
-        if length >= CHUNK_TARGET_CHARS:
-            chunks.append("\n\n".join(current))
-            current = []
-            length = 0
-    if current:
-        chunks.append("\n\n".join(current))
-    return chunks
-
-
-def _token_estimate(text: str, char_per_token: float) -> int:
-    divisor = char_per_token if char_per_token > 0 else 4.2
-    return max(1, ceil(len(text) / divisor))
-
-
-def _connect_index_db(path: Path, *, overwrite: bool = False) -> sqlite3.Connection:
-    if overwrite and path.exists():
-        path.unlink()
-    conn = sqlite3.connect(path)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL;")
-    conn.execute("PRAGMA foreign_keys=ON;")
-    return conn
-
-
-def _prepare_index_schema(conn: sqlite3.Connection) -> None:
-    try:
-        conn.executescript(
-            """
-            CREATE TABLE IF NOT EXISTS chunks (
-                chunk_id TEXT PRIMARY KEY,
-                normalized_id TEXT NOT NULL,
-                normalized_path TEXT NOT NULL,
-                chunk_index INTEGER NOT NULL,
-                chunk_text TEXT NOT NULL,
-                date TEXT NOT NULL,
-                tags TEXT NOT NULL,
-                source_type TEXT,
-                source_path TEXT,
-                tokens INTEGER NOT NULL,
-                source_hash TEXT,
-                manifest_hash TEXT,
-                embedding BLOB NOT NULL
-            );
-            CREATE VIRTUAL TABLE IF NOT EXISTS chunk_fts
-            USING fts5(
-                chunk_id UNINDEXED,
-                chunk_text,
-                content=''
-            );
-            CREATE TABLE IF NOT EXISTS sources (
-                normalized_path TEXT PRIMARY KEY,
-                normalized_id TEXT NOT NULL,
-                date TEXT NOT NULL,
-                source_hash TEXT,
-                manifest_hash TEXT,
-                chunk_count INTEGER NOT NULL,
-                updated_at TEXT NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS annoy_map (
-                annoy_idx INTEGER PRIMARY KEY,
-                chunk_id TEXT NOT NULL
-            );
-            """,
-        )
-    except sqlite3.OperationalError as exc:
-        message = str(exc).lower()
-        if "fts5" in message:
-            msg = (
-                "SQLite runtime does not support FTS5, which is required for the retrieval index. "
-                "Install a Python build with FTS5 enabled (e.g., the system sqlite3 on macOS via Homebrew) "
-                "or rebuild Python against an FTS5-capable SQLite."
-            )
-            raise RuntimeError(msg) from exc
-        raise
-
-
-def _delete_chunks_for_entry(conn: sqlite3.Connection, normalized_id: str) -> None:
-    rows = conn.execute(
-        "SELECT chunk_id FROM chunks WHERE normalized_id = ?",
-        (normalized_id,),
-    ).fetchall()
-    if rows:
-        conn.executemany(
-            "DELETE FROM chunk_fts WHERE chunk_id = ?",
-            ((row[0],) for row in rows),
-        )
-    conn.execute("DELETE FROM chunks WHERE normalized_id = ?", (normalized_id,))
-
-
-def _insert_chunk_record(conn: sqlite3.Connection, chunk: ChunkRecord) -> None:
-    if chunk.embedding is None:
-        msg = "Chunk embedding missing"
-        raise RuntimeError(msg)
-    tags_json = json.dumps(chunk.tags, sort_keys=True)
-    conn.execute(
-        """
-        INSERT INTO chunks (
-            chunk_id, normalized_id, normalized_path, chunk_index, chunk_text,
-            date, tags, source_type, source_path, tokens, source_hash,
-            manifest_hash, embedding
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        (
-            chunk.chunk_id,
-            chunk.normalized_id,
-            chunk.normalized_path,
-            chunk.chunk_index,
-            chunk.chunk_text,
-            chunk.date,
-            tags_json,
-            chunk.source_type,
-            chunk.source_path,
-            chunk.tokens,
-            chunk.source_hash,
-            chunk.manifest_hash,
-            _vector_to_blob(chunk.embedding),
-        ),
-    )
-    conn.execute(
-        "INSERT INTO chunk_fts (chunk_id, chunk_text) VALUES (?, ?)",
-        (chunk.chunk_id, chunk.chunk_text),
-    )
-
-
-def _vector_to_blob(vector: Sequence[float]) -> memoryview:
-    arr = array("f", vector)
-    return memoryview(arr.tobytes())
-
-
-def _blob_to_vector(blob: bytes) -> list[float]:
-    arr = array("f")
-    arr.frombytes(blob)
-    return list(arr)
-
-
-def _upsert_source_record(conn: sqlite3.Connection, record: SourceRecord) -> None:
-    conn.execute(
-        """
-        INSERT INTO sources (
-            normalized_path, normalized_id, date, source_hash, manifest_hash,
-            chunk_count, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(normalized_path) DO UPDATE SET
-            normalized_id=excluded.normalized_id,
-            date=excluded.date,
-            source_hash=excluded.source_hash,
-            manifest_hash=excluded.manifest_hash,
-            chunk_count=excluded.chunk_count,
-            updated_at=excluded.updated_at
-        """,
-        (
-            record.normalized_path,
-            record.normalized_id,
-            record.date,
-            record.source_hash,
-            record.manifest_hash,
-            record.chunk_count,
-            record.updated_at,
-        ),
-    )
-
-
-def _rebuild_annoy_index(
-    conn: sqlite3.Connection,
-    dimension: int,
-    ann_trees: int,
-    output_path: Path,
-) -> None:
-    rows = conn.execute(
-        "SELECT chunk_id, embedding FROM chunks ORDER BY chunk_id",
-    ).fetchall()
-    if not rows:
-        if output_path.exists():
-            output_path.unlink()
-        conn.execute("DELETE FROM annoy_map")
-        return
-
-    index = AnnoyIndex(dimension, metric=ANN_METRIC)
-    for idx, row in enumerate(rows):
-        vector = _blob_to_vector(row["embedding"])
-        index.add_item(idx, vector)
-    index.build(ann_trees)
-    index.save(str(output_path))
-
-    conn.execute("DELETE FROM annoy_map")
-    conn.executemany(
-        "INSERT INTO annoy_map (annoy_idx, chunk_id) VALUES (?, ?)",
-        ((idx, row["chunk_id"]) for idx, row in enumerate(rows)),
-    )
-
-
-def _write_chunk_manifests(
-    conn: sqlite3.Connection,
-    root: Path,
-    days: Iterable[str],
-    embedder: EmbeddingBackend,
-) -> None:
-    chunk_dir = _chunk_manifest_dir(root)
-    chunk_dir.mkdir(parents=True, exist_ok=True)
-    for day in sorted(set(days)):
-        rows = conn.execute(
-            """
-            SELECT chunk_id, normalized_id, chunk_index, chunk_text, tags,
-                   source_type, source_path, tokens, source_hash, manifest_hash, embedding
-            FROM chunks
-            WHERE date = ?
-            ORDER BY normalized_id, chunk_index
-            """,
-            (day,),
-        ).fetchall()
-        chunk_models: list[ChunkManifestChunk] = []
-        vectors: list[list[float]] = []
-        for row in rows:
-            tags = json.loads(row["tags"] or "[]")
-            chunk_models.append(
-                ChunkManifestChunk(
-                    chunk_id=str(row["chunk_id"]),
-                    normalized_id=str(row["normalized_id"]),
-                    chunk_index=int(row["chunk_index"]),
-                    chunk_text=str(row["chunk_text"] or ""),
-                    tags=list(tags),
-                    source_type=row["source_type"],
-                    source_path=str(row["source_path"] or ""),
-                    tokens=int(row["tokens"] or 0),
-                    source_hash=row["source_hash"],
-                    manifest_hash=row["manifest_hash"],
-                ),
-            )
-            vectors.append(_blob_to_vector(row["embedding"]))
-
-        manifest_path = chunk_dir / f"{day}.yaml"
-        manifest = ChunkManifest(
-            day=day,
-            chunks=chunk_models,
-            meta=ChunkManifestMeta(
-                embedding_model=embedder.model,
-                vector_dimension=embedder.dim,
-                generated_at=_format_timestamp(_now()),
-            ),
-        )
-        write_yaml_model(manifest_path, manifest)
-        vector_array = (
-            np.array(vectors, dtype="float32")
-            if vectors
-            else np.zeros((0, embedder.dim), dtype="float32")
-        )
-        np.save(chunk_dir / f"{day}.npy", vector_array)
-
-
-def _gather_index_stats(conn: sqlite3.Connection) -> tuple[int, int]:
-    chunk_total = conn.execute("SELECT COUNT(*) FROM chunks").fetchone()[0]
-    entry_total = conn.execute("SELECT COUNT(*) FROM sources").fetchone()[0]
-    return int(chunk_total), int(entry_total)
-
-
-def _write_index_meta(
-    root: Path,
-    *,
-    embedder: EmbeddingBackend,
-    chunk_total: int,
-    entry_total: int,
-    mode: str,
-    fake_mode: bool,
-    ann_trees: int,
-    search_k_factor: float,
-    char_per_token: float,
-    since: str | None,
-    limit: int | None,
-    touched_dates: Iterable[str],
-) -> None:
-    index_meta = IndexMeta(
-        embedding_model=embedder.model,
-        vector_dimension=embedder.dimension,
-        chunk_count=chunk_total,
-        entry_count=entry_total,
-        mode=mode,
-        fake_mode=fake_mode,
-        annoy_trees=ann_trees,
-        search_k_factor=search_k_factor,
-        char_per_token=char_per_token,
-        since=since,
-        limit=limit,
-        touched_dates=sorted(set(touched_dates)),
-        updated_at=_format_timestamp(_now()),
-    )
-    payload = index_meta.model_dump(mode="python", exclude_none=True)
-    _index_meta_path(root).write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")

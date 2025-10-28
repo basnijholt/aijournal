@@ -31,12 +31,13 @@ Decompose the 5.8k LOC `cli.py` and 700 LOC `models/__init__.py` into modular pa
 ## Refactor Checklist
 
 > **Rule:** After every numbered task, run the full suite (`uv run pytest`). Commit only when the suite is green.
+> **Note:** Make a dedicated commit immediately after completing each individual step.
 
 ---
 
 ## Phase 0 · Harden CLI Tests
 
-1. Add `tests/conftest.py` fixture `cli_workspace(tmp_path, monkeypatch)`:
+1. [x] Add `tests/conftest.py` fixture `cli_workspace(tmp_path, monkeypatch)`:
    - `monkeypatch.chdir(tmp_path)` so commands run inside the temporary workspace
    - set `AIJOURNAL_FAKE_OLLAMA=1`
    - run `aijournal init` to seed the directory structure
@@ -44,58 +45,58 @@ Decompose the 5.8k LOC `cli.py` and 700 LOC `models/__init__.py` into modular pa
    - `yield tmp_path` for callers  
    → `uv run pytest`
 
-2. Update `tests/test_cli_summarize.py` to use `cli_workspace`, drop duplicated setup, and assert key fields instead of full snapshots.  
+2. [x] Update `tests/test_cli_summarize.py` to use `cli_workspace`, drop duplicated setup, and assert key fields instead of full snapshots.  
    → `uv run pytest`
 
-3. Update `tests/test_cli_facts.py` to use `cli_workspace`; assert claim proposals and preview events deterministically.  
+3. [x] Update `tests/test_cli_facts.py` to use `cli_workspace`; assert claim proposals and preview events deterministically.  
    → `uv run pytest`
 
-4. Update `tests/test_cli_advise.py` to use `cli_workspace`; assert assumptions/steps instead of filename checks.  
+4. [x] Update `tests/test_cli_advise.py` to use `cli_workspace`; assert assumptions/steps instead of filename checks.  
    → `uv run pytest`
 
-5. Repeat deterministic setup/assertions for remaining CLI suites that spin workspaces (`test_cli_pack`, `test_cli_persona`, `test_cli_profile_*`, etc.).  
+5. [x] Repeat deterministic setup/assertions for remaining CLI suites that spin workspaces (`test_cli_pack`, `test_cli_persona`, `test_cli_profile_*`, etc.).  
    → `uv run pytest`
 
 ---
 
 ## Phase 1 · Utilities Foundation (No Behavior Change)
 
-6. Expand `src/aijournal/utils/__init__.py` with a short docstring explaining it houses stateless, project-wide helpers.  
+6. [x] Expand `src/aijournal/utils/__init__.py` with a short docstring explaining it houses stateless, project-wide helpers.  
    → `uv run pytest`
 
-7. Move path constants/mappers from `cli.py` into `utils/paths.py`; update imports.  
+7. [x] Move path constants/mappers from `cli.py` into `utils/paths.py`; update imports.  
    → `uv run pytest`
 
-8. Move time/format helpers (`now()`, `format_timestamp`, slug helpers, session id) into `utils/time.py`; update code/tests.  
+8. [x] Move time/format helpers (`now()`, `format_timestamp`, slug helpers, session id) into `utils/time.py`; update code/tests.  
    → `uv run pytest`
 
-9. Adjust fixtures/tests to patch the new location (`aijournal.utils.time`).  
+9. [x] Adjust fixtures/tests to patch the new location (`aijournal.utils.time`).  
    → `uv run pytest`
 
 ---
 
 ## Phase 2 · Models Decomposition
 
-10. Create `models/authoritative.py` (ManifestEntry, JournalEntry, NormalizedEntry, ClaimsFile, SelfProfile, etc.) and re-export in `models/__init__.py` (keep `claim_atoms.py`/`base.py` imports consistent).  
+10. [x] Create `models/authoritative.py` (ManifestEntry, JournalEntry, NormalizedEntry, ClaimsFile, SelfProfile, etc.) and re-export in `models/__init__.py` (keep `claim_atoms.py`/`base.py` imports consistent).  
     → `uv run pytest`
 
-11. Create `models/derived.py` (DailySummary, MicroFactsFile, AdviceCard, PersonaCore*, IndexMeta, …) and re-export.  
+11. [x] Create `models/derived.py` (DailySummary, MicroFactsFile, AdviceCard, PersonaCore*, IndexMeta, …) and re-export.  
     → `uv run pytest`
 
-12. Create `models/responses.py` (DailySummaryResponse, ExtractedFactsResponse, CharacterizeResponse, SimpleProfileSuggestionsResponse, …); update imports.  
+12. [x] Create `models/responses.py` (DailySummaryResponse, ExtractedFactsResponse, CharacterizeResponse, SimpleProfileSuggestionsResponse, …); update imports.  
     → `uv run pytest`
 
-13. Update `aijournal/schema.py` registry to use new modules.  
+13. [x] Update `aijournal/schema.py` registry to use new modules.  
     → `uv run pytest`
 
 ---
 
 ## Phase 3 · Domain Support Modules
 
-14. Create `src/aijournal/fakes.py` (or `fakes/__init__.py`) and move `_fake_*` generators from `cli.py`; update CLI/tests.  
+14. [x] Create `src/aijournal/fakes.py` (or `fakes/__init__.py`) and move `_fake_*` generators from `cli.py`; update CLI/tests.  
     → `uv run pytest`
 
-15. Confirm fake outputs remain deterministic; tweak tests if needed.  
+15. [x] Confirm fake outputs remain deterministic; tweak tests if needed.  
     → `uv run pytest`
 
 ---
@@ -104,31 +105,31 @@ Decompose the 5.8k LOC `cli.py` and 700 LOC `models/__init__.py` into modular pa
 
 _For each pipeline: (1) add the new module + unit test, commit; (2) update the CLI to call it, commit (re-run `uv run pytest` after each). Include module docstrings clarifying that pipelines orchestrate services and I/O for a single use case._
 
-16. Create `pipelines/__init__.py` with a docstring distinguishing pipelines from services (pipelines orchestrate; services provide reusable capabilities).  
+16. [x] Create `pipelines/__init__.py` with a docstring distinguishing pipelines from services (pipelines orchestrate; services provide reusable capabilities).  
     → `uv run pytest`
 
-17. Add `pipelines/normalization.py`; move `_normalize_*`, `_simple_claim_to_upsert`, `_clean_summary`, etc., from `cli.py`; add unit tests (e.g., `_normalize_claim_atom`).  
+17. [x] Add `pipelines/normalization.py`; move `_normalize_*`, `_simple_claim_to_upsert`, `_clean_summary`, etc., from `cli.py`; add unit tests (e.g., `_normalize_claim_atom`).  
     → `uv run pytest`
 
-18. Add `pipelines/summarize.py` (`generate_summary`), refactor CLI to call it, add `tests/pipelines/test_summarize.py`.  
+18. [x] Add `pipelines/summarize.py` (`generate_summary`), refactor CLI to call it, add `tests/pipelines/test_summarize.py`.  
     → `uv run pytest`
 
-19. Add `pipelines/facts.py` (`generate_microfacts`), update CLI/tests.  
+19. [x] Add `pipelines/facts.py` (`generate_microfacts`), update CLI/tests.  
     → `uv run pytest`
 
-20. Add `pipelines/persona.py`, update CLI/tests.  
+20. [x] Add `pipelines/persona.py`, update CLI/tests.  
     → `uv run pytest`
 
-21. Add `pipelines/characterize.py`, update CLI/tests.  
+21. [x] Add `pipelines/characterize.py`, update CLI/tests.  
     → `uv run pytest`
 
-22. Add `pipelines/advise.py`, update CLI/tests.  
+22. [x] Add `pipelines/advise.py`, update CLI/tests.  
     → `uv run pytest`
 
-23. Add `pipelines/index.py`, update CLI/tests.  
+23. [x] Add `pipelines/index.py`, update CLI/tests.  
     → `uv run pytest`
 
-24. Add `pipelines/pack.py`, update CLI/tests.  
+24. [x] Add `pipelines/pack.py`, update CLI/tests.  
     → `uv run pytest`
 
 ---
@@ -137,59 +138,59 @@ _For each pipeline: (1) add the new module + unit test, commit; (2) update the C
 
 _Pattern for each command group: first create `commands/<name>.py` with a thin `run_*` wrapper replicated from `cli.py`, commit; then switch the Typer command to call it, commit._
 
-25. Create `commands/__init__.py` (docstring: commands host CLI orchestration logic).  
+25. [x] Create `commands/__init__.py` (docstring: commands host CLI orchestration logic).  
     → `uv run pytest`
 
-26. Add `commands/init.py` with `run_init(...)`; Typer wrapper calls it.  
+26. [x] Add `commands/init.py` with `run_init(...)`; Typer wrapper calls it.  
     → `uv run pytest`
 
-27. Add `commands/new.py` with `run_new(...)`; update tests.  
+27. [x] Add `commands/new.py` with `run_new(...)`; update tests.  
     → `uv run pytest`
 
-28. Add `commands/ingest.py`; move ingest orchestration and ensure dependent tests use the new path.  
+28. [x] Add `commands/ingest.py`; move ingest orchestration and ensure dependent tests use the new path.  
     → `uv run pytest`
 
-29. Add `commands/summarize.py` to orchestrate IO + pipeline; thin CLI wrapper.  
+29. [x] Add `commands/summarize.py` to orchestrate IO + pipeline; thin CLI wrapper.  
     → `uv run pytest`
 
-30. Add `commands/facts.py`.  
+30. [x] Add `commands/facts.py`.  
     → `uv run pytest`
 
-31. Add `commands/persona.py`.  
+31. [x] Add `commands/persona.py`.  
     → `uv run pytest`
 
-32. Add `commands/profile.py` (suggest/apply/status).  
+32. [x] Add `commands/profile.py` (suggest/apply/status).  
     → `uv run pytest`
 
-33. Add `commands/index.py`.  
+33. [x] Add `commands/index.py`.  
     → `uv run pytest`
 
-34. Add `commands/pack.py`.  
+34. [x] Add `commands/pack.py`.  
     → `uv run pytest`
 
-35. Add `commands/chat.py`/`chatd.py` wrappers.  
+35. [x] Add `commands/chat.py`/`chatd.py` wrappers.  
     → `uv run pytest`
 
-36. Add `commands/advise.py`.  
+36. [x] Add `commands/advise.py`.  
     → `uv run pytest`
 
-37. Add `commands/characterize.py`.  
+37. [x] Add `commands/characterize.py`.  
     → `uv run pytest`
 
 ---
 
 ## Phase 6 · Final Polish
 
-38. Run `ruff --select F401,F841 --fix` (commit resulting cleanup).  
+38. [x] Run `ruff --select F401,F841 --fix` (commit resulting cleanup).  
     → `uv run pytest`
 
-39. Review `cli.py` to ensure it’s mostly Typer glue + docstrings; adjust comments.  
+39. [x] Review `cli.py` to ensure it’s mostly Typer glue + docstrings; adjust comments.  
     → `uv run pytest`
 
-40. Update docs (README/PLAN) to describe the new module layout (include distinction between services vs. pipelines).  
+40. [x] Update docs (README/PLAN) to describe the new module layout (include distinction between services vs. pipe[ ] lines).  
     → `uv run pytest`
 
-41. Confirm CLI smoke/integration tests remain in place to guard end-to-end behaviour.  
+41. [x] Confirm CLI smoke/integration tests remain in place to guard end-to-end behaviour (full `tests/test_cli_*` suite still green).  
     → `uv run pytest`
 
 ---

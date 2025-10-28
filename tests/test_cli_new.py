@@ -32,9 +32,7 @@ class FrozenDateTime(datetime):
 
 @pytest.fixture(autouse=True)
 def freeze_datetime(monkeypatch: pytest.MonkeyPatch) -> None:
-    import aijournal.cli as cli_module
-
-    monkeypatch.setattr(cli_module, "_now", lambda: FROZEN_NOW, raising=False)
+    monkeypatch.setattr("aijournal.utils.time.now", lambda: FROZEN_NOW, raising=False)
 
 
 def _read_frontmatter(path: Path) -> dict[str, object]:
