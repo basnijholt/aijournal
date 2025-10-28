@@ -122,6 +122,7 @@ This builds on items 1 & 2 but isn’t strictly required once automatic detectio
 - Add unit-level tests per stage helper (mocking external commands) so `tests/services/test_capture.py` is no longer the only coverage point.
 - Ensure new tests live under `tests/services/capture/` with clear naming.
 - Run full test suite → commit.
+- ✅ 2025-10-28: Added `test_stage_summarize` (success/failure) and `test_stage_persona` (build/no-op) with command stubs and green `uv run pytest`.
 
 ### To-Do F — Trim `CaptureState`
 - After helpers return typed outputs, remove redundant fields from `CaptureState` (e.g., `index_rebuilt_flag`, `changed_dates` if no longer needed) and pass data through return values instead.
