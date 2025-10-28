@@ -5,9 +5,12 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 from pathlib import Path
+from threading import RLock
 from typing import TYPE_CHECKING, Any
 
 from annoy import AnnoyIndex
@@ -73,6 +76,7 @@ class Retriever:
         self.annoy_path = self.index_dir / "annoy.index"
         self.meta_path = self.index_dir / "meta.json"
         self._meta = self._load_meta()
+        self._conn_lock = RLock()
         self._conn: sqlite3.Connection | None = None
         self._annoy: AnnoyIndex | None = None
         self._embedder_instance: EmbeddingBackend | None = None
@@ -127,20 +131,21 @@ class Retriever:
         if not indices:
             return []
 
-        conn = self._connection()
-        mapping = self._load_annoy_map(conn)
         distance_map = dict(zip(indices, distances, strict=False))
         chunk_ids: list[str] = []
-        for idx in indices:
-            chunk_id = mapping.get(idx)
-            if chunk_id:
-                chunk_ids.append(chunk_id)
-        if not chunk_ids:
-            return []
+        with self._conn_guard() as conn:
+            mapping = self._load_annoy_map(conn)
+            for idx in indices:
+                chunk_id = mapping.get(idx)
+                if chunk_id:
+                    chunk_ids.append(chunk_id)
+            if not chunk_ids:
+                return []
+            rows = self._fetch_chunks(conn, chunk_ids)
 
-        rows = self._fetch_chunks(conn, chunk_ids)
         scored: list[RetrievedChunk] = []
         today = datetime.now(tz=UTC).date()
+        inverse_map = mapping.inverse
         for chunk_id in chunk_ids:
             row = rows.get(chunk_id)
             if not row:
@@ -148,7 +153,7 @@ class Retriever:
             chunk_date = row["date"]
             if not self._passes_filters(chunk_date, row["tags"], row["source_type"], filters):
                 continue
-            annoy_idx = mapping.inverse.get(chunk_id)
+            annoy_idx = inverse_map.get(chunk_id)
             distance = 1.0 if annoy_idx is None else distance_map.get(annoy_idx, 1.0)
             cosine = max(0.0, 1.0 - distance)
             recency = self._recency_score(chunk_date, today)
@@ -162,9 +167,10 @@ class Retriever:
     # Helpers
     # ------------------------------------------------------------------
     def close(self) -> None:
-        if self._conn is not None:
-            self._conn.close()
-            self._conn = None
+        with self._conn_lock:
+            if self._conn is not None:
+                self._conn.close()
+                self._conn = None
         self._annoy = None
 
     def _load_meta(self) -> IndexMeta:
@@ -181,10 +187,15 @@ class Retriever:
 
     def _connection(self) -> sqlite3.Connection:
         if self._conn is None:
-            conn = sqlite3.connect(self.db_path)
+            conn = sqlite3.connect(self.db_path, check_same_thread=False)
             conn.row_factory = sqlite3.Row
             self._conn = conn
         return self._conn
+
+    @contextmanager
+    def _conn_guard(self) -> Iterator[sqlite3.Connection]:
+        with self._conn_lock:
+            yield self._connection()
 
     def _annoy_index(self) -> AnnoyIndex:
         if self._annoy is None:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 from typing import TYPE_CHECKING
 
 import pytest
@@ -95,3 +96,41 @@ def test_retriever_errors_when_index_missing(
     ):
         retriever.search("reflection", k=1, filters=filters)
     retriever.close()
+
+
+def test_retriever_close_from_different_thread(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    init_result = runner.invoke(app, ["init"])
+    assert init_result.exit_code == 0, init_result.stdout
+    day = "2025-02-05"
+    entry_id = "2025-02-05-focus-notes"
+    _bootstrap_index(
+        tmp_path,
+        day=day,
+        entry_id=entry_id,
+        summary="Captured focus rituals",
+    )
+
+    config = yaml.safe_load((tmp_path / "config" / "config.yaml").read_text(encoding="utf-8"))
+    retriever = Retriever(tmp_path, config)
+
+    # Opening a connection in the main thread
+    result = retriever.search("focus", k=1)
+    assert result.chunks
+
+    errors: list[BaseException] = []
+
+    def _close() -> None:
+        try:
+            retriever.close()
+        except BaseException as exc:  # pragma: no cover - diagnostic
+            errors.append(exc)
+
+    thread = threading.Thread(target=_close)
+    thread.start()
+    thread.join()
+
+    assert not errors, f"Unexpected errors closing retriever: {errors!r}"
