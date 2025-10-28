@@ -29,7 +29,7 @@
 
 * **Green after every step**: After each checklist item, run `uv run pytest`. Commit only when green.
 * **Small diffs**: No drive‑by cleanups. If you must fix a bug, do it in a separate, clearly labeled commit.
-* **Aliases over deletes**: Keep old commands as hidden aliases with warnings for 1–2 releases.
+* **Intentional breakage is acceptable**: There is no public user base yet, so we can drop obsolete commands outright as long as the migration is clearly documented.
 * **Fake mode in CI/tests**: `AIJOURNAL_FAKE_OLLAMA=1` where appropriate to keep runs deterministic.
 
 ---
@@ -79,7 +79,9 @@ aijournal ops system ollama health        # moved under system
 aijournal ops dev fixtures                # home for 'new --fake' (optional)
 ```
 
-### Deprecations (hidden aliases with warnings)
+### Command removals / renames (documented only)
+
+The legacy verbs disappear in this reorg; update docs, tests, and `CLI_MIGRATION.md` so contributors can map the old names:
 
 * `facts` → `ops pipeline extract-facts`
 * `review-updates` → `ops pipeline review`
@@ -267,16 +269,13 @@ Extend current FastAPI server with **capture**:
 
 ---
 
-### Phase 1 — CLI skeleton re‑org (aliases in place; no behavior change)
+### Phase 1 — CLI skeleton re‑org (rename/remove legacy verbs)
 
 4. [ ] Create Typer sub‑apps: `ops`, `ops.pipeline`, `ops.profile`, `ops.index`, `ops.persona`, `ops.feedback`, `ops.system`, `ops.dev`, `export`, `serve`.
 5. [ ] Register **top‑level**: `init`, `capture` (placeholder, not functional yet—print “Not implemented” and exit 2), `chat`, `advise`, `status` (placeholder), `serve chat`, `export pack`.
-6. [ ] Move low-level commands under `ops` with **aliases**:
+6. [ ] Move low-level commands into the new sub-apps, removing the legacy entry points entirely (document the change in `CLI_MIGRATION.md` and tests).
 
-   * `facts`→`ops pipeline extract-facts`, `review-updates`→`ops pipeline review`, `index tail`→`ops index update`, `interview`→`ops profile interview`, `pack`→`export pack`, `chatd`→`serve chat`.
-7. [ ] Keep the **old names as hidden aliases** emitting a deprecation warning and forwarding to new handlers.
-
-> Commit: `cli: introduce top-level/ops layout; add hidden aliases with deprecation warnings`
+> Commit: `cli: introduce top-level/ops layout; drop legacy command names`
 
 ---
 
@@ -525,6 +524,7 @@ Final summary (`event: done`) includes:
   * `test_capture_derivation_steps.py`: verify derived file paths exist & schema stubs (fake mode).
   * `test_capture_refresh.py`: persona/index rebuild/update behavior.
   * `test_capture_telemetry.py`: parse NDJSON and assert event sequence.
+  * `test_journal_entry_origin_schema.py`: validate the expanded `JournalEntry` (`source_type`, `origin`, date-only `created_at`) and matching normalized payloads.
 
 * **Integration (CLI)**
 
@@ -550,7 +550,11 @@ Final summary (`event: done`) includes:
 * `ARCHITECTURE.md`:
 
   * Add `CaptureOrchestrator` to services and telemetry to `derived/logs/capture/`.
-* Add `CLI_MIGRATION.md` table of old→new commands.
+* `agents.md`:
+
+  * Rework the live-mode rehearsal to use the new everyday vs. `ops` command layout.
+  * Link to `CLI_MIGRATION.md` so future operators can translate old command names.
+* Add `CLI_MIGRATION.md` table of old→new commands (cross-reference it from the docs above).
 
 ---
 
@@ -562,8 +566,7 @@ Final summary (`event: done`) includes:
   * Produces derived files for the date.
   * Refreshes index/persona as needed.
   * Emits NDJSON log with the canonical event sequence.
-* `aijournal --help` matches the **target** structure.
-* Old commands still function via hidden aliases with deprecation warnings.
+* `aijournal --help` matches the **target** structure (legacy commands removed).
 * `status` & `ops system doctor` provide clear, accurate outputs.
 * All tests green; no regressions in existing suites.
 
@@ -571,7 +574,7 @@ Final summary (`event: done`) includes:
 
 ## 13) Sample Commit Messages (use as-is)
 
-* `cli: introduce ops subtree and top-level everyday commands (aliases only)`
+* `cli: introduce ops subtree and top-level everyday commands`
 * `capture: add schemas and persist+normalize path (phase 2)`
 * `capture: wire derivation steps; apply-profile=auto; retries/progress`
 * `capture: index update/rebuild + persona status/build; optional packs`
@@ -580,7 +583,7 @@ Final summary (`event: done`) includes:
 * `help/docs: rich_help_panel groupings; README & workflow updates`
 * `telemetry: NDJSON event stream for capture + unit tests`
 * `api: POST /capture streaming NDJSON (optional)`
-* `cleanup: deprecation warnings, hidden aliases, ruff/mypy pass`
+* `cleanup: final lint/mypy pass and polish`
 
 ---
 
@@ -676,7 +679,7 @@ For each imported file:
      3. date parsed from path (regex `YYYY[-/_]MM[-/_]DD`),
      4. file mtime (local),
      5. **today**.
-   * Persist the **date** as an ISO 8601 date (not datetime) in front matter; retain precise `imported_at` in `origin`.
+   * Persist the **date** as an ISO 8601 date (not datetime) in front matter; retain precise `imported_at` in `origin`. This is a deliberate schema change: we’ll migrate all seeded content and validators to expect date-only strings so we are free from legacy timestamp handling.
 
 3. **Resolve title/slug**
 
@@ -831,9 +834,24 @@ Below only shows **new/changed** items. Keep all other steps from the original g
 
 ## Phase 1 — CLI skeleton (unchanged)
 
-*(aliases in place; no behavior change)*
+*Checklist already updated above to drop legacy commands; nothing further to tweak here.*
 
-*No change to checkboxes.*
+---
+
+## Phase 1b — Schema & seed updates (new)
+
+* [ ] Extend `JournalEntry` (and related schema helpers) to support the new front-matter shape:
+
+* add `source_type: Literal[...] | None`
+* add `origin: OriginMetadata` (new Pydantic model capturing `kind`, `original_path`, `import_hash`, `snapshot_path`, `imported_at`, `capture_run_id`, `front_matter_preserved`)
+
+Mirror the relevant fields on `NormalizedEntry` (`origin.import_hash`, `origin.source_type`) so downstream consumers can rely on structured provenance.
+
+* [ ] Convert all seeded sample entries (`data/journal/**/*`) to the new **date-only** `created_at` format (`YYYY-MM-DD`). Update normalization, pipelines, and tests to expect date strings (no timestamps). This is a breaking change but acceptable (no external users yet); make the migration explicit in a helper script if needed.
+
+* [ ] Update normalization/ingest helpers and schema validation (`schema.validate_schema("journal_entry", ...)`) so they accept the richer front matter. Adjust or add unit tests to cover the new fields and date-only format.
+
+* [ ] Document the schema change in `CLI_MIGRATION.md` / CHANGELOG (unreleased) to guide contributors pulling main.
 
 ---
 
