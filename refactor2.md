@@ -321,10 +321,10 @@ Extend current FastAPI server with **capture**:
 
 ### Phase 6 — Import: folders, manifest, front matter
 
-20. [ ] Extend `capture --from` to accept directories; recurse for `*.md`.
-21. [ ] Reuse manifest (SHA-256) to dedupe; store raw snapshots if snapshotting is enabled.
-22. [ ] Detect and prefer front matter for `title`, `created_at`, `tags`, `projects`; fallback to file mtime and content inference.
-23. [ ] Resolve slug collisions deterministically (`-2`, `-3`, …); record alias in logs.
+20. [x] Extend `capture --from` to accept directories; recurse for `*.md`.
+21. [x] Reuse manifest (SHA-256) to dedupe; store raw snapshots if snapshotting is enabled.
+22. [x] Detect and prefer front matter for `title`, `created_at`, `tags`, `projects`; fallback to file mtime and content inference.
+23. [x] Resolve slug collisions deterministically (`-2`, `-3`, …); record alias in logs.
 
 > Commit: `capture: robust import (folders, manifest dedupe, front matter, collisions)`
 
@@ -332,9 +332,9 @@ Extend current FastAPI server with **capture**:
 
 ### Phase 7 — Help text polish (rich panels) & docs
 
-24. [ ] Add `rich_help_panel` groupings to: `capture`, `chat`, `export pack`, and `ops pipeline …`.
-25. [ ] Update `README.md` & `docs/workflow.md`: show the new top‑level, everyday flow with `capture`; keep advanced section for `ops`.
-26. [ ] Add a `CLI_MIGRATION.md` with old→new mapping and sample commands.
+24. [x] Add `rich_help_panel` groupings to: `capture`, `chat`, `export pack`, and `ops pipeline …`.
+25. [x] Update `README.md` & `docs/workflow.md`: show the new top‑level, everyday flow with `capture`; keep advanced section for `ops`.
+26. [x] Add a `CLI_MIGRATION.md` with old→new mapping and sample commands.
 
 > Commit: `docs+help: capture-first workflows; advanced commands under ops; migration guide`
 
@@ -342,11 +342,11 @@ Extend current FastAPI server with **capture**:
 
 ### Phase 8 — Telemetry (full) & log schema
 
-27. [ ] Implement full NDJSON logging at `derived/logs/capture/<run_id>.jsonl`:
+27. [x] Implement full NDJSON logging at `derived/logs/capture/<run_id>.jsonl`:
 
     * Event types: `preflight`, `persist`, `normalize`, `derive.summarize`, `derive.extract_facts`, `derive.profile_suggest`, `derive.profile_apply`, `derive.characterize`, `derive.review`, `index.update/rebuild`, `persona.status/build`, `pack`, `done`.
     * Include timestamps, durations, counts, paths changed, retries, and warnings.
-28. [ ] Add unit test that reads the NDJSON and asserts expected events and minimal fields.
+28. [x] Add unit test that reads the NDJSON and asserts expected events and minimal fields.
 
 > Commit: `telemetry: structured NDJSON for capture; unit test`
 
@@ -364,8 +364,8 @@ Extend current FastAPI server with **capture**:
 
 ### Phase 10 — Cleanup & Deprecation scaffold
 
-32. [ ] Ensure all old commands print a deprecation warning that points to the new path; mark as `hidden=True`.
-33. [ ] Final `ruff` cleanup, mypy pass, and green suite.
+32. [x] Ensure all old commands print a deprecation warning that points to the new path; mark as `hidden=True`.
+33. [x] Final `ruff` cleanup, mypy pass, and green suite.
 
 > Commit: `final polish: deprecations, lint, typing`
 
@@ -921,13 +921,13 @@ Ensure both commands **never** represent “no work” as an error.
 
 **Add explicit tests for authoritative journals**.
 
-20. [ ] Extend `capture --from` to folders; recurse for `*.md`.
+20. [x] Extend `capture --from` to folders; recurse for `*.md`.
 
-21. [ ] Ensure `data/manifest/ingested.yaml` holds `canonical_journal_path`. Skip creating a **second** journal file for identical `import_hash`.
+21. [x] Ensure `data/manifest/ingested.yaml` holds `canonical_journal_path`. Skip creating a **second** journal file for identical `import_hash`.
 
-22. [ ] Front matter precedence and `--force-date` semantics verified (unit tests).
+22. [x] Front matter precedence and `--force-date` semantics verified (unit tests).
 
-23. [ ] Slug collision deterministic suffixing. Normalized YAML `source_path` points to canonical path.
+23. [x] Slug collision deterministic suffixing. Normalized YAML `source_path` points to canonical path.
 
 > Commit: `capture: folder imports create canonical journal files + dedupe; tests`
 
@@ -937,6 +937,12 @@ Ensure both commands **never** represent “no work” as an error.
 
 *Add explicit examples for imports writing journal files.*
 
+24. [x] Add `rich_help_panel` groupings to: `capture`, `chat`, `export pack`, and `ops pipeline …`.
+
+25. [x] Update `README.md` & `docs/workflow.md`: show the new top-level, everyday flow with `capture`; keep advanced section for `ops`.
+
+26. [x] Add a `CLI_MIGRATION.md` with old→new mapping and sample commands.
+
 > Commit: `docs: capture imports produce canonical journal files; examples + migration notes`
 
 ---
@@ -944,6 +950,10 @@ Ensure both commands **never** represent “no work” as an error.
 ## Phase 8 — Telemetry
 
 *Add `review_candidates` list to `CaptureResult`. Events should include each `review --file` application result.*
+
+27. [x] Implement full NDJSON logging at `derived/logs/capture/<run_id>.jsonl` (preflight, persist, normalize, derivation stages, index/persona, pack, done).
+
+28. [x] Add unit test that reads the NDJSON and asserts expected events and minimal fields.
 
 > Commit: `telemetry: include new_batches and per-file review-apply events`
 
