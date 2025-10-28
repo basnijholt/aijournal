@@ -49,6 +49,11 @@ def test_run_capture_records_telemetry(tmp_path: Path, monkeypatch: pytest.Monke
     stage_calls: list[tuple[str, str]] = []
     profile_apply_calls: list[str] = []
     review_calls: list[Path] = []
+    index_rebuild_calls: list[tuple[str | None, int | None]] = []
+    index_tail_calls: list[tuple[str | None, int, int | None]] = []
+    persona_build_calls: list[tuple[dict[str, object], list[object]]] = []
+    persona_state_calls: list[Path] = []
+    pack_calls: list[tuple[str, Path]] = []
 
     def _ensure_file(path: Path, content: str) -> Path:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -135,9 +140,51 @@ def test_run_capture_records_telemetry(tmp_path: Path, monkeypatch: pytest.Monke
         "aijournal.services.capture._apply_profile_update_batch",
         fake_apply_batch,
     )
+    dummy_claim = object()
     monkeypatch.setattr(
         "aijournal.services.capture._load_profile_components",
-        lambda root: (None, []),
+        lambda root: (None, [dummy_claim]),
+    )
+    monkeypatch.setattr(
+        "aijournal.services.capture.run_index_rebuild",
+        lambda since, *, limit: index_rebuild_calls.append((since, limit)) or "rebuild",
+    )
+    monkeypatch.setattr(
+        "aijournal.services.capture.run_index_tail",
+        lambda since, *, days, limit: index_tail_calls.append((since, days, limit)) or "updated",
+    )
+
+    persona_states = [
+        ("stale", ["needs rebuild"]),
+        ("fresh", []),
+    ]
+
+    def fake_persona_state(root: Path) -> tuple[str, list[str]]:
+        persona_state_calls.append(root)
+        return persona_states.pop(0) if persona_states else ("fresh", [])
+
+    def fake_run_persona_build(
+        profile: dict[str, object],
+        claim_models: list[object],
+        *,
+        config: dict[str, object],
+        root: Path | None = None,
+    ) -> tuple[Path, bool]:
+        del config
+        persona_build_calls.append((profile, claim_models))
+        persona_path = _ensure_file(
+            tmp_path / "derived" / "persona" / "persona_core.yaml",
+            "persona",
+        )
+        return persona_path, True
+
+    monkeypatch.setattr("aijournal.services.capture.persona_state", fake_persona_state)
+    monkeypatch.setattr("aijournal.services.capture.run_persona_build", fake_run_persona_build)
+    monkeypatch.setattr(
+        "aijournal.services.capture.run_pack",
+        lambda level, date, *, output, max_tokens, fmt, history_days, dry_run: pack_calls.append(
+            (level, output)
+        ),
     )
 
     inputs = CaptureInput(source="stdin", text="Hello capture", title="Capture")
@@ -153,6 +200,8 @@ def test_run_capture_records_telemetry(tmp_path: Path, monkeypatch: pytest.Monke
         "derive.profile_apply",
         "derive.characterize",
         "derive.review",
+        "refresh.index",
+        "refresh.persona",
     ]:
         assert key in result.durations_ms
         assert result.durations_ms[key] >= 0
@@ -173,9 +222,18 @@ def test_run_capture_records_telemetry(tmp_path: Path, monkeypatch: pytest.Monke
     assert profile_apply_calls == [entry.date]
     assert review_calls
     assert stage_calls[0][0] == "summarize"
+    assert index_rebuild_calls == [(None, None)]
+    assert not index_tail_calls
+    assert len(persona_build_calls) == 1
+    assert len(persona_state_calls) == 2
+    assert not pack_calls
 
     manifest_path = tmp_path / "data" / "manifest" / "ingested.yaml"
     assert manifest_path.exists()
+    assert result.persona_stale_before is True
+    assert result.persona_stale_after is False
+    assert result.index_rebuilt is True
+    assert not result.warnings
 
 
 def test_run_capture_requires_text(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -246,6 +304,33 @@ def test_run_capture_review_mode_skips_apply(
         "aijournal.services.capture._load_profile_components",
         lambda root: (None, []),
     )
+    index_rebuild_calls: list[tuple[str | None, int | None]] = []
+    monkeypatch.setattr(
+        "aijournal.services.capture.run_index_rebuild",
+        lambda since, *, limit: index_rebuild_calls.append((since, limit)) or "rebuild",
+    )
+    monkeypatch.setattr(
+        "aijournal.services.capture.run_index_tail",
+        lambda since, *, days, limit: (_ for _ in ()).throw(AssertionError("tail should not run")),
+    )
+    persona_states = [
+        ("fresh", []),
+        ("fresh", []),
+    ]
+    monkeypatch.setattr(
+        "aijournal.services.capture.persona_state",
+        lambda root: persona_states.pop(0),
+    )
+    monkeypatch.setattr(
+        "aijournal.services.capture.run_persona_build",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("persona build should not run")
+        ),
+    )
+    monkeypatch.setattr(
+        "aijournal.services.capture.run_pack",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("pack should not run")),
+    )
 
     inputs = CaptureInput(
         source="stdin",
@@ -259,6 +344,10 @@ def test_run_capture_review_mode_skips_apply(
     assert "derive.review" not in result.durations_ms
     assert not profile_apply_calls
     assert not review_calls
+    assert index_rebuild_calls == [(None, None)]
+    assert result.index_rebuilt is True
+    assert result.persona_stale_before is False
+    assert result.persona_stale_after is False
 
 
 def test_persist_text_writes_markdown_and_normalized(

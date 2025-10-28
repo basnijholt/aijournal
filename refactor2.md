@@ -302,9 +302,9 @@ Extend current FastAPI server with **capture**:
 
 ### Phase 4 — Retrieval & Persona refresh
 
-15. [ ] If index missing → `ops index rebuild`; else → `ops index update` (changed dates or `--since 7d`).
-16. [ ] Persona: `ops persona status`; if stale → `ops persona build`.
-17. [ ] If `--pack` chosen and persona changed → `export pack -l Lx`.
+15. [x] If index missing → `ops index rebuild`; else → `ops index update` (changed dates or `--since 7d`).
+16. [x] Persona: `ops persona status`; if stale → `ops persona build`.
+17. [x] If `--pack` chosen and persona changed → `export pack -l Lx`.
 
 > Commit: `capture: index update/rebuild and persona status/build; optional packing`
 
