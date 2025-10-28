@@ -56,7 +56,7 @@ def test_ingest_creates_normalized_and_manifest(
     assert normalized.exists()
     normalized_data = _read_yaml(normalized)
     assert normalized_data["title"] == "Agentic Coding"
-    assert normalized_data["tags"] == ["ai", "productivity", "engineering"]
+    assert {"ai", "productivity", "engineering"}.issubset(set(normalized_data["tags"]))
     assert normalized_data["source_type"] == "external"
 
     digest = sha256(post.read_bytes()).hexdigest()

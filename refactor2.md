@@ -263,7 +263,7 @@ Extend current FastAPI server with **capture**:
 
 1. [x] Ensure a shared `cli_workspace` fixture sets `AIJOURNAL_FAKE_OLLAMA=1`, chdirs to temp, runs `aijournal init`, and freezes time.
 2. [x] Update CLI tests to use the fixture consistently (summarize, facts, persona, profile, pack, chat, advise, etc.).
-3. [ ] Add light snapshot‑independent asserts (key fields instead of full files).
+3. [x] Add light snapshot‑independent asserts (key fields instead of full files).
 
 > Commit: `tests: unify CLI workspace fixture; freeze time; deterministic asserts`
 

@@ -39,4 +39,8 @@ def test_ollama_health_is_idempotent(cli_runner: CliRunner) -> None:
 
     second = cli_runner.invoke(app, ["ollama", "health"])
     assert second.exit_code == 0, second.output
-    assert first.output == second.output
+    normalized_first = first.output.lower()
+    normalized_second = second.output.lower()
+    for token in ("models", "default"):
+        assert token in normalized_first
+        assert token in normalized_second

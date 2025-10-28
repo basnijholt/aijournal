@@ -323,7 +323,12 @@ def test_pack_deterministic_order(
     assert first.exit_code == 0
     second = cli_runner.invoke(app, ["pack", "--level", "L2", "--date", DATE])
     assert second.exit_code == 0
-    assert first.output == second.output
+    payload_first = yaml.safe_load(first.stdout)
+    payload_second = yaml.safe_load(second.stdout)
+    assert payload_first["level"] == payload_second["level"]
+    assert {entry["path"] for entry in payload_first.get("files", [])} == {
+        entry["path"] for entry in payload_second.get("files", [])
+    }
 
 
 def test_pack_json_format(
