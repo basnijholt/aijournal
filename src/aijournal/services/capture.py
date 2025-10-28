@@ -15,6 +15,10 @@ from pydantic import BaseModel, Field
 
 from aijournal.commands.characterize import run_characterize
 from aijournal.commands.facts import run_facts
+from aijournal.commands.index import run_index_rebuild, run_index_tail
+from aijournal.commands.ingest import _load_config
+from aijournal.commands.pack import run_pack
+from aijournal.commands.persona import persona_state, run_persona_build
 from aijournal.commands.profile import (
     _apply_claim_upsert,
     _apply_profile_update,
@@ -754,7 +758,8 @@ def run_capture(inputs: CaptureInput) -> CaptureResult:
             _warn(stage, exc)
         else:
             artifacts_changed["summaries"] = artifacts_changed.get("summaries", 0) + 1
-        _record_duration(stage, start)
+        finally:
+            _record_duration(stage, start)
 
         stage = "derive.extract_facts"
         start = perf_counter()
@@ -775,7 +780,8 @@ def run_capture(inputs: CaptureInput) -> CaptureResult:
         else:
             if facts_path:
                 artifacts_changed["microfacts"] = artifacts_changed.get("microfacts", 0) + 1
-        _record_duration(stage, start)
+        finally:
+            _record_duration(stage, start)
 
         stage = "derive.profile_suggest"
         start = perf_counter()
@@ -796,7 +802,8 @@ def run_capture(inputs: CaptureInput) -> CaptureResult:
             artifacts_changed["profile_suggestions"] = (
                 artifacts_changed.get("profile_suggestions", 0) + 1
             )
-        _record_duration(stage, start)
+        finally:
+            _record_duration(stage, start)
 
         if inputs.apply_profile == "auto":
             stage = "derive.profile_apply"
@@ -814,7 +821,8 @@ def run_capture(inputs: CaptureInput) -> CaptureResult:
                 _warn(stage, exc)
             else:
                 artifacts_changed["profile"] = artifacts_changed.get("profile", 0) + 1
-            _record_duration(stage, start)
+            finally:
+                _record_duration(stage, start)
 
         pending_before = _pending_batches(root)
         stage = "derive.characterize"
@@ -836,7 +844,8 @@ def run_capture(inputs: CaptureInput) -> CaptureResult:
             _warn(stage, exc)
         else:
             artifacts_changed["characterize"] = artifacts_changed.get("characterize", 0) + 1
-        _record_duration(stage, start)
+        finally:
+            _record_duration(stage, start)
 
         pending_after = _pending_batches(root)
         new_batches = sorted(pending_after - pending_before)
@@ -856,16 +865,101 @@ def run_capture(inputs: CaptureInput) -> CaptureResult:
                 finally:
                     _record_duration(stage, start)
 
-        if inputs.apply_profile != "auto" and "profile" not in artifacts_changed:
-            artifacts_changed.setdefault("profile", 0)
+    if inputs.apply_profile != "auto" and "profile" not in artifacts_changed:
+        artifacts_changed.setdefault("profile", 0)
+
+    index_rebuilt = False
+    persona_stale_before = False
+    persona_stale_after = False
+    persona_changed = False
+
+    if changed_dates:
+        stage = "refresh.index"
+        start = perf_counter()
+        index_message = ""
+        index_updated = False
+        try:
+            index_db = root / "derived" / "index" / "index.db"
+            if not index_db.exists():
+                index_message = run_index_rebuild(since=None, limit=None)
+                index_rebuilt = True
+                index_updated = True
+            else:
+                since = min(changed_dates)
+                index_message = run_index_tail(since=since, days=7, limit=None)
+                if not index_message or "already up to date" not in index_message.lower():
+                    index_updated = True
+        except typer.Exit as exc:
+            if exc.exit_code not in (0,):
+                _warn(stage, exc)
+        except Exception as exc:  # pragma: no cover - defensive
+            _warn(stage, exc)
+        else:
+            if index_updated:
+                artifacts_changed["index"] = artifacts_changed.get("index", 0) + 1
+        finally:
+            _record_duration(stage, start)
+
+        stage = "refresh.persona"
+        start = perf_counter()
+        try:
+            status_before, _ = persona_state(root)
+            persona_stale_before = status_before != "fresh"
+            should_build = status_before != "fresh" or artifacts_changed.get("profile", 0) > 0
+            profile_model, claim_models = _load_profile_components(root)
+            profile_payload = _profile_to_dict(profile_model)
+            if should_build and (profile_payload or claim_models):
+                config = _load_config(root)
+                _, persona_changed = run_persona_build(
+                    profile_payload,
+                    claim_models,
+                    config=config,
+                    root=root,
+                )
+                if persona_changed:
+                    artifacts_changed["persona"] = artifacts_changed.get("persona", 0) + 1
+            status_after, _ = persona_state(root)
+            persona_stale_after = status_after != "fresh"
+        except typer.Exit as exc:
+            if exc.exit_code not in (0,):
+                _warn(stage, exc)
+        except Exception as exc:  # pragma: no cover - defensive
+            _warn(stage, exc)
+        finally:
+            _record_duration(stage, start)
+
+        if inputs.pack and persona_changed:
+            stage = "refresh.pack"
+            start = perf_counter()
+            level = inputs.pack.upper()
+            history_days = 1 if level == "L4" else 0
+            pack_output = root / "derived" / "packs" / f"{level.lower()}_{run_id}.yaml"
+            try:
+                run_pack(
+                    level,
+                    None,
+                    output=pack_output,
+                    max_tokens=None,
+                    fmt="yaml",
+                    history_days=history_days,
+                    dry_run=False,
+                )
+                artifacts_changed["pack"] = artifacts_changed.get("pack", 0) + 1
+            except typer.Exit as exc:
+                if exc.exit_code not in (0,):
+                    _warn(stage, exc)
+            except Exception as exc:  # pragma: no cover - defensive
+                _warn(stage, exc)
+            finally:
+                _record_duration(stage, start)
 
     return CaptureResult(
         run_id=run_id,
         entries=entry_results,
         artifacts_changed=artifacts_changed,
-        persona_stale_before=False,
-        persona_stale_after=False,
-        index_rebuilt=False,
+        persona_stale_before=persona_stale_before,
+        persona_stale_after=persona_stale_after,
+        index_rebuilt=index_rebuilt,
         durations_ms={key: round(value, 3) for key, value in durations_ms.items()},
         warnings=warnings,
     )
