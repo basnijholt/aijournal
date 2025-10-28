@@ -11,7 +11,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from pydantic import ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from aijournal.io.yaml_io import load_yaml_model
 from aijournal.models import PersonaCore, PersonaCoreFile
@@ -60,6 +60,16 @@ _INTENT_KEYWORDS: dict[str, tuple[str, ...]] = {
 }
 
 _ADVICE_VERBS = ("should i", "how do i", "help me", "guide me", "recommend")
+
+
+class ChatLLMResponse(BaseModel):
+    """Minimal schema enforced for live chat answers."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    answer: str = Field(..., max_length=4000)
+    citations: list[str] = Field(default_factory=list)
+    clarifying_question: str | None = None
 
 
 @dataclass(frozen=True)
@@ -288,14 +298,11 @@ class ChatService:
         allow_follow_up: bool,
     ) -> tuple[str, list[ChatCitation], str | None]:
         if not chunks:
-            return self._fake_answer(
-                question,
-                persona,
-                chunks,
-                intent=intent,
-                allow_follow_up=allow_follow_up,
-                prefix="(fallback)",
+            msg = (
+                "No journal chunks were retrieved for this chat question; "
+                "unable to generate a grounded answer."
             )
+            raise RuntimeError(msg)
 
         prompt = self._render_prompt(
             question,
@@ -304,47 +311,40 @@ class ChatService:
             intent=intent,
             allow_follow_up=allow_follow_up,
         )
-        try:
-            payload: dict[str, Any] = run_ollama_agent(self._build_ollama_config(), prompt)
-        except LLMResponseError:
-            return self._fake_answer(
-                question,
-                persona,
-                chunks,
-                intent=intent,
-                allow_follow_up=allow_follow_up,
-                prefix="(fallback)",
-            )
+        payload: ChatLLMResponse = run_ollama_agent(
+            self._build_ollama_config(),
+            prompt,
+            output_type=ChatLLMResponse,
+        )
 
-        answer = str(payload.get("answer") or "").strip()
-        raw_citations = payload.get("citations") or []
+        answer = payload.answer.strip()
+        if not answer:
+            raise LLMResponseError("Chat model returned an empty answer.")
+
         citations: list[ChatCitation] = []
-        for item in raw_citations:
-            code = str(item).strip()
+        missing_codes: list[str] = []
+        for raw_code in payload.citations:
+            code = raw_code.strip()
             if not code:
                 continue
             citation = citations_map.get(code)
-            if citation and citation not in citations:
+            if citation is None:
+                missing_codes.append(code)
+                continue
+            if citation not in citations:
                 citations.append(citation)
 
-        if not answer:
-            return self._fake_answer(
-                question,
-                persona,
-                chunks,
-                intent=intent,
-                allow_follow_up=allow_follow_up,
-                prefix="(fallback)",
+        if missing_codes:
+            raise LLMResponseError(
+                f"Chat model referenced unknown citation codes: {', '.join(sorted(missing_codes))}."
             )
+        if not citations:
+            raise LLMResponseError("Chat model did not provide any citations.")
 
-        if not citations and chunks:
-            citations = [ChatCitation.from_chunk(chunks[0])]
-        clarifying_raw = payload.get("clarifying_question")
-        clarifying = str(clarifying_raw).strip() if isinstance(clarifying_raw, str) else None
-        if clarifying:
-            clarifying = clarifying.rstrip()
-        elif allow_follow_up:
-            clarifying = self._generate_clarifying_question(intent, question)
+        clarifying: str | None = None
+        if allow_follow_up and payload.clarifying_question:
+            clarifying_candidate = payload.clarifying_question.strip()
+            clarifying = clarifying_candidate or None
 
         return answer, citations, clarifying
 
