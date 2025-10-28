@@ -138,59 +138,59 @@ _For each pipeline: (1) add the new module + unit test, commit; (2) update the C
 
 _Pattern for each command group: first create `commands/<name>.py` with a thin `run_*` wrapper replicated from `cli.py`, commit; then switch the Typer command to call it, commit._
 
-25. Create `commands/__init__.py` (docstring: commands host CLI orchestration logic).  
+25. [x] Create `commands/__init__.py` (docstring: commands host CLI orchestration logic).  
     → `uv run pytest`
 
-26. Add `commands/init.py` with `run_init(...)`; Typer wrapper calls it.  
+26. [x] Add `commands/init.py` with `run_init(...)`; Typer wrapper calls it.  
     → `uv run pytest`
 
-27. Add `commands/new.py` with `run_new(...)`; update tests.  
+27. [x] Add `commands/new.py` with `run_new(...)`; update tests.  
     → `uv run pytest`
 
-28. Add `commands/ingest.py`; move ingest orchestration and ensure dependent tests use the new path.  
+28. [x] Add `commands/ingest.py`; move ingest orchestration and ensure dependent tests use the new path.  
     → `uv run pytest`
 
-29. Add `commands/summarize.py` to orchestrate IO + pipeline; thin CLI wrapper.  
+29. [x] Add `commands/summarize.py` to orchestrate IO + pipeline; thin CLI wrapper.  
     → `uv run pytest`
 
-30. Add `commands/facts.py`.  
+30. [ ] Add `commands/facts.py`.  
     → `uv run pytest`
 
-31. Add `commands/persona.py`.  
+31. [ ] Add `commands/persona.py`.  
     → `uv run pytest`
 
-32. Add `commands/profile.py` (suggest/apply/status).  
+32. [ ] Add `commands/profile.py` (suggest/apply/status).  
     → `uv run pytest`
 
-33. Add `commands/index.py`.  
+33. [ ] Add `commands/index.py`.  
     → `uv run pytest`
 
-34. Add `commands/pack.py`.  
+34. [ ] Add `commands/pack.py`.  
     → `uv run pytest`
 
-35. Add `commands/chat.py`/`chatd.py` wrappers.  
+35. [ ] Add `commands/chat.py`/`chatd.py` wrappers.  
     → `uv run pytest`
 
-36. Add `commands/advise.py`.  
+36. [ ] Add `commands/advise.py`.  
     → `uv run pytest`
 
-37. Add `commands/characterize.py`.  
+37. [ ] Add `commands/characterize.py`.  
     → `uv run pytest`
 
 ---
 
 ## Phase 6 · Final Polish
 
-38. Run `ruff --select F401,F841 --fix` (commit resulting cleanup).  
+38. [ ] Run `ruff --select F401,F841 --fix` (commit resulting cleanup).  
     → `uv run pytest`
 
-39. Review `cli.py` to ensure it’s mostly Typer glue + docstrings; adjust comments.  
+39. [ ] Review `cli.py` to ensure it’s mostly Typer glue + docstrings; adjust comments.  
     → `uv run pytest`
 
-40. Update docs (README/PLAN) to describe the new module layout (include distinction between services vs. pipelines).  
+40. Update docs (README/PLAN) to describe the new module layout (include distinction between services vs. pipe[ ] lines).  
     → `uv run pytest`
 
-41. Confirm CLI smoke/integration tests remain in place to guard end-to-end behaviour.  
+41. [ ] Confirm CLI smoke/integration tests remain in place to guard end-to-end behaviour.  
     → `uv run pytest`
 
 ---
