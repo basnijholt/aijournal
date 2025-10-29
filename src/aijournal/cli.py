@@ -8,10 +8,12 @@ terminal IO.
 
 from __future__ import annotations
 
+import json
 import os
+import sys
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 import httpx
 import typer
@@ -31,9 +33,7 @@ from aijournal.commands.characterize import (
 )
 from aijournal.commands.chat import run_chat
 from aijournal.commands.chatd import run_chatd
-from aijournal.commands.facts import (
-    run_facts as run_facts_command,
-)
+from aijournal.commands.facts import run_facts
 from aijournal.commands.index import (
     run_index_rebuild,
     run_index_search,
@@ -45,17 +45,12 @@ from aijournal.commands.ingest import (
     _relative_source_path,
     _use_fake_llm,
     _write_yaml_if_changed,
+    run_ingest,
 )
-from aijournal.commands.ingest import (
-    run_ingest as run_ingest_command,
-)
-from aijournal.commands.init import run_init as run_init_command
-from aijournal.commands.new import run_new as run_new_command
+from aijournal.commands.init import run_init
+from aijournal.commands.new import run_new
 from aijournal.commands.pack import run_pack
-from aijournal.commands.persona import (
-    persona_state,
-    run_persona_build,
-)
+from aijournal.commands.persona import persona_state, run_persona_build
 from aijournal.commands.profile import (
     InterviewTarget,
     _apply_claim_upsert,
@@ -71,6 +66,7 @@ from aijournal.commands.summarize import (
     _entries_to_payload,
     _json_block,
     _load_normalized_entries,
+    run_summarize,
 )
 from aijournal.commands.summarize import (
     _invoke_structured_llm as _commands_invoke_structured_llm,
@@ -78,9 +74,7 @@ from aijournal.commands.summarize import (
 from aijournal.commands.summarize import (
     _structured_call_with_retry as _commands_structured_call_with_retry,
 )
-from aijournal.commands.summarize import (
-    run_summarize as run_summarize_command,
-)
+from aijournal.commands.system import run_status_summary, run_system_doctor
 from aijournal.io.yaml_io import load_yaml_model, write_yaml_model
 from aijournal.models import (
     ClaimAtom,
@@ -109,6 +103,12 @@ from aijournal.services import (
     resolve_ollama_host,
     run_ollama_agent,
 )
+from aijournal.services.capture import (
+    CAPTURE_MAX_STAGE,
+    CAPTURE_STAGES,
+    CaptureInput,
+    run_capture,
+)
 from aijournal.utils import time as time_utils
 from aijournal.utils.coercion import coerce_int
 from aijournal.utils.paths import (
@@ -119,12 +119,421 @@ from aijournal.utils.paths import (
 app = typer.Typer(help="Local-first personal journal utilities.")
 profile_app = typer.Typer(help="Profile utilities.")
 ollama_app = typer.Typer(help="Ollama helpers.")
-app.add_typer(profile_app, name="profile")
-app.add_typer(ollama_app, name="ollama")
 index_app = typer.Typer(help="Retrieval index utilities.")
-app.add_typer(index_app, name="index")
 persona_app = typer.Typer(help="Persona utilities.")
-app.add_typer(persona_app, name="persona")
+
+# Phase 1 scaffold: advanced operations namespace and placeholder groups.
+ops_app = typer.Typer(help="Advanced operations namespace.")
+ops_pipeline_app = typer.Typer(help="Pipeline tools (normalize, summarize, characterize).")
+ops_feedback_app = typer.Typer(help="Feedback processing utilities.")
+ops_system_app = typer.Typer(help="System diagnostics and doctor helpers.")
+ops_dev_app = typer.Typer(help="Developer fixtures and helpers.")
+
+ops_app.add_typer(ops_pipeline_app, name="pipeline")
+ops_app.add_typer(profile_app, name="profile")
+ops_app.add_typer(index_app, name="index")
+ops_app.add_typer(persona_app, name="persona")
+ops_app.add_typer(ops_feedback_app, name="feedback")
+ops_app.add_typer(ops_system_app, name="system")
+ops_app.add_typer(ops_dev_app, name="dev")
+
+ops_system_app.add_typer(ollama_app, name="ollama")
+
+app.add_typer(ops_app, name="ops")
+
+export_app = typer.Typer(help="Context export utilities.")
+serve_app = typer.Typer(help="Service runners and daemons.")
+
+app.add_typer(export_app, name="export")
+app.add_typer(serve_app, name="serve")
+
+CAPTURE_STAGE_LOOKUP = {stage.stage_id: stage for stage in CAPTURE_STAGES}
+CAPTURE_STAGE_TABLE = "\n".join(
+    f"[{stage.stage_id}] {stage.name} – {stage.description}" for stage in CAPTURE_STAGES
+)
+
+
+def _emit_deprecation(command: str, replacement: str | None = None) -> None:
+    """Emit a standardized deprecation notice for legacy commands."""
+    message = f"[DEPRECATED] `{command}` has moved into the new capture-first workflow."
+    if replacement:
+        message += f" Use `{replacement}` instead."
+    typer.secho(message, fg=typer.colors.YELLOW, err=True)
+
+
+@app.command(help="Capture Markdown into the journal workspace and refresh derived artifacts.")
+def capture(
+    from_paths: list[Path] | None = typer.Option(
+        None,
+        "--from",
+        help="File or directory to import (repeatable).",
+        exists=True,
+        dir_okay=True,
+        file_okay=True,
+        readable=True,
+        resolve_path=True,
+        rich_help_panel="INPUT",
+    ),
+    text: str | None = typer.Option(
+        None,
+        "--text",
+        help="Raw Markdown content to capture directly from the CLI.",
+        rich_help_panel="INPUT",
+    ),
+    snapshot: bool = typer.Option(
+        True,
+        "--snapshot/--no-snapshot",
+        help="Store raw copies under data/raw/<hash>.md when importing files.",
+        rich_help_panel="IMPORT BEHAVIOR",
+    ),
+    source_type: str = typer.Option(
+        "journal",
+        "--source-type",
+        help="Semantic classification recorded in front matter (journal|notes|blog).",
+        rich_help_panel="METADATA",
+    ),
+    date: str | None = typer.Option(
+        None,
+        "--date",
+        "-d",
+        help="Fallback created_at date when input lacks one (YYYY-MM-DD).",
+        rich_help_panel="METADATA",
+    ),
+    title: str | None = typer.Option(
+        None,
+        "--title",
+        help="Override title when capturing raw text.",
+        rich_help_panel="METADATA",
+    ),
+    tags: list[str] = typer.Option(
+        [],
+        "--tag",
+        "-t",
+        help="Tag to merge into front matter (repeatable).",
+        rich_help_panel="METADATA",
+        show_default=False,
+    ),
+    projects: list[str] = typer.Option(
+        [],
+        "--project",
+        help="Project to merge into front matter (repeatable).",
+        rich_help_panel="METADATA",
+        show_default=False,
+    ),
+    mood: str | None = typer.Option(
+        None,
+        "--mood",
+        help="Mood value to record in front matter.",
+        rich_help_panel="METADATA",
+    ),
+    apply_profile: str = typer.Option(
+        "auto",
+        "--apply-profile",
+        help="Apply profile suggestions automatically or leave for review (auto|review).",
+        rich_help_panel="APPLY & REFRESH",
+    ),
+    rebuild: str = typer.Option(
+        "auto",
+        "--rebuild",
+        help="Rebuild persona/index artifacts (auto|always|skip).",
+        rich_help_panel="APPLY & REFRESH",
+    ),
+    pack: str | None = typer.Option(
+        None,
+        "--pack",
+        help="Emit a context pack level when persona changes (L1|L3|L4).",
+        rich_help_panel="APPLY & REFRESH",
+    ),
+    min_stage: int = typer.Option(
+        0,
+        "--min-stage",
+        help=f"Lowest capture stage (0-{CAPTURE_MAX_STAGE}) to execute; capture always revalidates stages 0-1.",
+        rich_help_panel="STAGE CONTROL",
+    ),
+    max_stage: int = typer.Option(
+        CAPTURE_MAX_STAGE,
+        "--max-stage",
+        help=f"Highest capture stage (0-{CAPTURE_MAX_STAGE}) to execute. Stages:\n{CAPTURE_STAGE_TABLE}",
+        rich_help_panel="STAGE CONTROL",
+    ),
+    retries: int = typer.Option(
+        1,
+        "--retries",
+        min=0,
+        help="Structured-output retry attempts per stage.",
+        rich_help_panel="LLM & VALIDATION",
+    ),
+    progress: bool = typer.Option(
+        True,
+        "--progress/--no-progress",
+        help="Show per-stage progress indicators during derivations.",
+        rich_help_panel="LLM & VALIDATION",
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        help="Skip writes and report planned actions only.",
+        rich_help_panel="APPLY & REFRESH",
+    ),
+) -> None:
+    """Persist new material and refresh downstream artifacts in one pass."""
+
+    stdin_text: str | None = None
+    if not from_paths and text is None and not sys.stdin.isatty():
+        stdin_buffer = sys.stdin.read()
+        if stdin_buffer and stdin_buffer.strip():
+            stdin_text = stdin_buffer
+
+    effective_text = text if text is not None else stdin_text
+
+    if bool(from_paths) and effective_text:
+        typer.secho("Provide either --from or --text, not both.", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2)
+    if not from_paths and not effective_text:
+        typer.secho(
+            "Use --from to import files/directories or --text for raw Markdown.",
+            fg=typer.colors.RED,
+            err=True,
+        )
+        raise typer.Exit(code=2)
+
+    source_type_value = source_type.lower()
+    if source_type_value not in {"journal", "notes", "blog"}:
+        typer.secho(
+            "--source-type must be one of: journal, notes, blog.", fg=typer.colors.RED, err=True
+        )
+        raise typer.Exit(code=2)
+
+    apply_profile_value = apply_profile.lower()
+    if apply_profile_value not in {"auto", "review"}:
+        typer.secho("--apply-profile must be auto or review.", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2)
+
+    rebuild_value = rebuild.lower()
+    if rebuild_value not in {"auto", "always", "skip"}:
+        typer.secho("--rebuild must be auto, always, or skip.", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2)
+
+    pack_value: str | None = None
+    if pack:
+        pack_upper = pack.upper()
+        if pack_upper not in {"L1", "L3", "L4"}:
+            typer.secho("--pack must be one of: L1, L3, L4.", fg=typer.colors.RED, err=True)
+            raise typer.Exit(code=2)
+        pack_value = pack_upper
+
+    if not (0 <= min_stage <= CAPTURE_MAX_STAGE and 0 <= max_stage <= CAPTURE_MAX_STAGE):
+        typer.secho(
+            f"--min-stage/--max-stage must be between 0 and {CAPTURE_MAX_STAGE}.",
+            fg=typer.colors.RED,
+            err=True,
+        )
+        raise typer.Exit(code=2)
+    if min_stage > max_stage:
+        typer.secho(
+            "--min-stage cannot be greater than --max-stage.", fg=typer.colors.RED, err=True
+        )
+        raise typer.Exit(code=2)
+
+    if from_paths:
+        resolved_paths = [str(path.resolve()) for path in from_paths]
+        contains_dir = any(path.is_dir() for path in from_paths)
+        source_mode: Literal["stdin", "editor", "file", "dir"] = "dir" if contains_dir else "file"
+    else:
+        resolved_paths = []
+        source_mode = "stdin"
+
+    capture_input = CaptureInput(
+        source=source_mode,
+        text=effective_text,
+        paths=resolved_paths,
+        source_type=source_type_value,  # type: ignore[arg-type]
+        date=date,
+        title=title,
+        slug=None,
+        tags=tags,
+        projects=projects,
+        mood=mood,
+        apply_profile=apply_profile_value,  # type: ignore[arg-type]
+        rebuild=rebuild_value,  # type: ignore[arg-type]
+        pack=pack_value,  # type: ignore[arg-type]
+        retries=retries,
+        progress=progress,
+        dry_run=dry_run,
+        snapshot=snapshot,
+        min_stage=min_stage,
+        max_stage=max_stage,
+    )
+
+    result = run_capture(capture_input)
+
+    if result.errors:
+        for error in result.errors:
+            typer.secho(error, fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=1)
+
+    for warning in result.warnings:
+        typer.secho(warning, fg=typer.colors.YELLOW, err=False)
+
+    created = [entry for entry in result.entries if entry.changed and not entry.deduped]
+    deduped = [entry for entry in result.entries if entry.deduped]
+
+    if created:
+        typer.secho("Captured entries:", fg=typer.colors.GREEN)
+        for entry in created:
+            typer.echo(f"  - {entry.date} / {entry.slug}")
+    if deduped:
+        typer.secho("Skipped duplicates:", fg=typer.colors.BLUE)
+        for entry in deduped:
+            typer.echo(f"  - {entry.date} / {entry.slug}")
+
+    completed_set = set(result.stages_completed)
+    if completed_set:
+        typer.secho("Stages completed:", fg=typer.colors.GREEN)
+        for idx in sorted(completed_set):
+            stage = CAPTURE_STAGE_LOOKUP.get(idx)
+            if stage:
+                typer.echo(f"  [{idx}] {stage.name}")
+
+    requested_range = range(result.min_stage, result.max_stage + 1)
+    pending = [idx for idx in requested_range if idx not in completed_set]
+    if pending:
+        typer.secho("Requested stages pending manual follow-up:", fg=typer.colors.YELLOW)
+        for idx in pending:
+            stage = CAPTURE_STAGE_LOOKUP.get(idx)
+            if not stage:
+                continue
+            manual = stage.manual.replace("\n", "\n    ")
+            typer.echo(f"  [{idx}] {stage.name} – {stage.description}\n    {manual}")
+
+    if result.max_stage < CAPTURE_MAX_STAGE:
+        typer.secho("Additional stages not requested in this run:", fg=typer.colors.BLUE)
+        for idx in range(result.max_stage + 1, CAPTURE_MAX_STAGE + 1):
+            stage = CAPTURE_STAGE_LOOKUP.get(idx)
+            if not stage:
+                continue
+            manual = stage.manual.replace("\n", "\n    ")
+            typer.echo(f"  [{idx}] {stage.name} – {stage.description}\n    {manual}")
+
+    typer.echo(
+        json.dumps(
+            {
+                "run_id": result.run_id,
+                "entries": len(result.entries),
+                "created": len(created),
+                "deduped": len(deduped),
+            },
+            indent=2,
+        )
+    )
+
+
+@app.command()
+def status() -> None:
+    """Display persona, index, and retrieval freshness."""
+
+    root = Path.cwd()
+    summary = run_status_summary(root)
+
+    persona = summary["persona"]
+    index_info = summary["index"]
+    pending = summary["pending_updates"]
+    ollama = summary["ollama"]
+
+    exit_code = 0
+
+    typer.echo("Workspace status:\n")
+
+    if persona["status"] == "fresh":
+        typer.secho("Persona: fresh", fg=typer.colors.GREEN)
+    else:
+        color = typer.colors.YELLOW if persona["status"] == "stale" else typer.colors.RED
+        typer.secho(f"Persona: {persona['status']}", fg=color)
+        for reason in persona["reasons"]:
+            typer.echo(f"  - {reason}")
+        exit_code = 1
+
+    index_messages: list[str] = []
+    if index_info["has_index_db"] and index_info["has_annoy_index"]:
+        typer.secho("Index: ready", fg=typer.colors.GREEN)
+    else:
+        typer.secho("Index: missing artifacts", fg=typer.colors.RED)
+        if not index_info["has_index_db"]:
+            index_messages.append("index.db not found")
+        if not index_info["has_annoy_index"]:
+            index_messages.append("annoy.index not found")
+        exit_code = 1
+    if index_info.get("meta_error"):
+        index_messages.append(f"meta error: {index_info['meta_error']}")
+    elif index_info.get("meta"):
+        meta = index_info["meta"] or {}
+        chunk_count = meta.get("chunk_count")
+        entry_count = meta.get("entry_count")
+        updated_at = meta.get("updated_at")
+        pieces = []
+        if chunk_count is not None:
+            pieces.append(f"chunks={chunk_count}")
+        if entry_count is not None:
+            pieces.append(f"entries={entry_count}")
+        if updated_at:
+            pieces.append(f"updated={updated_at}")
+        if pieces:
+            index_messages.append(" ".join(pieces))
+    for line in index_messages:
+        typer.echo(f"  {line}")
+
+    pending_count = pending["count"]
+    if pending_count:
+        typer.secho(
+            f"Pending profile updates: {pending_count}",
+            fg=typer.colors.YELLOW,
+        )
+        for name in pending["samples"]:
+            typer.echo(f"  - {name}")
+    else:
+        typer.secho("Pending profile updates: none", fg=typer.colors.GREEN)
+
+    typer.echo(f"Ollama host: {ollama['host']}")
+    typer.echo("Run `aijournal ops system doctor` for detailed diagnostics.")
+
+    if exit_code:
+        raise typer.Exit(exit_code)
+
+
+@ops_system_app.command("doctor")
+def system_doctor() -> None:
+    """Run system diagnostics and emit machine-readable results."""
+
+    root = Path.cwd()
+    result = run_system_doctor(root)
+
+    typer.echo("System diagnostics:\n")
+    for check in result["checks"]:
+        ok = bool(check.get("ok"))
+        color = typer.colors.GREEN if ok else typer.colors.RED
+        status_text = "ok" if ok else "failed"
+        typer.secho(f"{check['name']}: {status_text}", fg=color)
+        hint = check.get("hint")
+        if hint:
+            typer.echo(f"  hint: {hint}")
+        details = check.get("details")
+        if isinstance(details, dict):
+            for key, value in details.items():
+                if value in (None, [], {}, ""):
+                    continue
+                if isinstance(value, (list, tuple)):
+                    display = ", ".join(str(item) for item in value)
+                elif isinstance(value, dict):
+                    display = json.dumps(value, ensure_ascii=False)
+                else:
+                    display = str(value)
+                typer.echo(f"  {key}: {display}")
+
+    typer.echo("\nJSON summary:")
+    typer.echo(json.dumps(result, indent=2, ensure_ascii=False))
+
+    if not result["ok"]:
+        raise typer.Exit(1)
 
 
 @app.callback()
@@ -164,6 +573,8 @@ def _invoke_structured_llm(
     agent_name: str,
     config: dict[str, Any],
     timeout: float | None = None,
+    max_attempts: int = 2,
+    retry_message: str | None = None,
 ) -> Any:
     """Proxy to summarize command helper while honoring patched runners."""
 
@@ -179,6 +590,8 @@ def _invoke_structured_llm(
             agent_name=agent_name,
             config=config,
             timeout=timeout,
+            max_attempts=max_attempts,
+            retry_message=retry_message,
         )
     finally:
         summarize_commands.build_ollama_config_from_mapping = original_builder
@@ -234,11 +647,11 @@ def init(
     ),
 ) -> None:
     """Initialize the local aijournal layout."""
-    summary = run_init_command(path)
+    summary = run_init(path)
     typer.echo(summary)
 
 
-@app.command()
+@ops_dev_app.command("new", hidden=True)
 def new(
     title: str | None = typer.Argument(
         None,
@@ -263,10 +676,11 @@ def new(
     ),
 ) -> None:
     """Create a new journal entry or synthesize fake entries for testing."""
-    run_new_command(title, tags, fake, seed)
+    _emit_deprecation("aijournal ops dev new", "aijournal capture --text")
+    run_new(title, tags, fake, seed)
 
 
-@app.command()
+@ops_pipeline_app.command("ingest", hidden=True)
 def ingest(
     sources: list[Path] = typer.Argument(
         ...,
@@ -281,20 +695,24 @@ def ingest(
         "external",
         "--source-type",
         help="Label recorded in the manifest for these sources.",
+        rich_help_panel="METADATA",
     ),
     limit: int | None = typer.Option(
         None,
         "--limit",
         help="Maximum number of files to ingest.",
+        rich_help_panel="CONTROL",
     ),
     snapshot: bool = typer.Option(
         True,
         "--snapshot/--no-snapshot",
         help="Store raw copies under data/raw/<hash>.md.",
+        rich_help_panel="IMPORT",
     ),
 ) -> None:
     """Ingest Markdown posts into normalized YAML via Ollama."""
-    run_ingest_command(
+    _emit_deprecation("aijournal ops pipeline ingest", "aijournal capture --from")
+    run_ingest(
         sources,
         source_type=source_type,
         limit=limit,
@@ -302,7 +720,7 @@ def ingest(
     )
 
 
-@app.command()
+@ops_pipeline_app.command("normalize")
 def normalize(
     entry: Path = typer.Argument(
         ...,
@@ -355,14 +773,21 @@ def normalize(
     typer.echo(str(output_path))
 
 
-@app.command()
+@ops_pipeline_app.command("summarize", hidden=True)
 def summarize(
-    date: str = typer.Option(..., "--date", "-d", help="Date (YYYY-MM-DD) to summarize."),
+    date: str = typer.Option(
+        ...,
+        "--date",
+        "-d",
+        help="Date (YYYY-MM-DD) to summarize.",
+        rich_help_panel="INPUT",
+    ),
     timeout: float = typer.Option(
         DEFAULT_TIMEOUT_SECONDS,
         "--timeout",
         help="Seconds to wait for the LLM response before retrying.",
         show_default=True,
+        rich_help_panel="LLM",
     ),
     retries: int = typer.Option(
         DEFAULT_LLM_RETRIES,
@@ -370,15 +795,18 @@ def summarize(
         min=0,
         help="Number of retry attempts when the model times out or returns invalid JSON.",
         show_default=True,
+        rich_help_panel="LLM",
     ),
     progress: bool = typer.Option(
         False,
         "--progress/--no-progress",
         help="Print progress for each normalized entry before calling the model.",
+        rich_help_panel="LLM",
     ),
 ) -> None:
     """Generate a daily summary from normalized entries."""
-    summary_path = run_summarize_command(
+    _emit_deprecation("aijournal ops pipeline summarize", "aijournal capture --from/--text")
+    summary_path = run_summarize(
         date,
         timeout=timeout,
         retries=retries,
@@ -387,14 +815,21 @@ def summarize(
     typer.echo(str(summary_path))
 
 
-@app.command()
+@ops_pipeline_app.command("extract-facts", hidden=True)
 def facts(
-    date: str = typer.Option(..., "--date", "-d", help="Date (YYYY-MM-DD) to analyze."),
+    date: str = typer.Option(
+        ...,
+        "--date",
+        "-d",
+        help="Date (YYYY-MM-DD) to analyze.",
+        rich_help_panel="INPUT",
+    ),
     timeout: float = typer.Option(
         DEFAULT_TIMEOUT_SECONDS,
         "--timeout",
         help="Seconds to wait for the LLM response before retrying.",
         show_default=True,
+        rich_help_panel="LLM",
     ),
     retries: int = typer.Option(
         DEFAULT_LLM_RETRIES,
@@ -402,17 +837,20 @@ def facts(
         min=0,
         help="Number of retry attempts when the model times out or returns invalid JSON.",
         show_default=True,
+        rich_help_panel="LLM",
     ),
     progress: bool = typer.Option(
         False,
         "--progress/--no-progress",
         help="Print progress for each normalized entry before calling the model.",
+        rich_help_panel="LLM",
     ),
 ) -> None:
     """Generate micro-facts from normalized entries."""
+    _emit_deprecation("aijournal ops pipeline extract-facts", "aijournal capture --from/--text")
     root = Path.cwd()
     _, claim_models = _load_profile_components(root)
-    preview, facts_path = run_facts_command(
+    preview, facts_path = run_facts(
         date,
         timeout=timeout,
         retries=retries,
@@ -476,14 +914,21 @@ def profile_apply(
     typer.echo(message)
 
 
-@app.command()
+@ops_pipeline_app.command("characterize", hidden=True)
 def characterize(
-    date: str = typer.Option(..., "--date", "-d", help="Date (YYYY-MM-DD) to analyze."),
+    date: str = typer.Option(
+        ...,
+        "--date",
+        "-d",
+        help="Date (YYYY-MM-DD) to analyze.",
+        rich_help_panel="INPUT",
+    ),
     timeout: float = typer.Option(
         DEFAULT_TIMEOUT_SECONDS,
         "--timeout",
         help="Seconds to wait for the LLM response before retrying.",
         show_default=True,
+        rich_help_panel="LLM",
     ),
     retries: int = typer.Option(
         DEFAULT_LLM_RETRIES,
@@ -491,14 +936,17 @@ def characterize(
         min=0,
         help="Number of retry attempts when the model times out or returns invalid JSON.",
         show_default=True,
+        rich_help_panel="LLM",
     ),
     progress: bool = typer.Option(
         False,
         "--progress/--no-progress",
         help="Print progress for each normalized entry before calling the model.",
+        rich_help_panel="LLM",
     ),
 ) -> None:
     """Derive pending profile updates from normalized entries."""
+    _emit_deprecation("aijournal ops pipeline characterize", "aijournal capture --from/--text")
     batch_path = run_characterize(
         date,
         timeout=timeout,
@@ -516,16 +964,23 @@ def characterize(
     typer.echo(str(batch_path))
 
 
-@app.command("review-updates")
+@ops_pipeline_app.command("review", hidden=True)
 def review_updates(
     file: Path | None = typer.Option(
         None,
         "--file",
         help="Specific pending batch to review (defaults to latest).",
+        rich_help_panel="INPUT",
     ),
-    apply: bool = typer.Option(False, "--apply", help="Apply the proposed updates."),
+    apply: bool = typer.Option(
+        False,
+        "--apply",
+        help="Apply the proposed updates.",
+        rich_help_panel="ACTIONS",
+    ),
 ) -> None:
     """Review or apply pending profile update batches."""
+    _emit_deprecation("aijournal ops pipeline review", "aijournal capture --apply-profile review")
     root = Path.cwd()
     batch_path = file or _latest_pending_batch(root)
     if batch_path is None:
@@ -1001,13 +1456,7 @@ def profile_status() -> None:
     run_profile_status()
 
 
-@app.command("profile-status")
-def profile_status_alias() -> None:
-    """Alias command for profile status (for backwards compatibility)."""
-    run_profile_status()
-
-
-@app.command("interview")
+@profile_app.command("interview")
 def interview(
     date: str = typer.Option(..., "--date", "-d", help="Date (YYYY-MM-DD) to review."),
 ) -> None:
@@ -1111,26 +1560,56 @@ def interview(
         typer.echo(f"- {question.text}")
 
 
-@app.command("pack")
+@export_app.command("pack", hidden=True)
 def pack(
-    level: str = typer.Option("L2", "--level", "-l", help="Context depth (L1 or L2)."),
+    level: str = typer.Option(
+        "L2",
+        "--level",
+        "-l",
+        help="Context depth (L1 or L2).",
+        rich_help_panel="PACK CONFIG",
+    ),
     date: str | None = typer.Option(
         None,
         "--date",
         "-d",
         help="Date (YYYY-MM-DD); auto-detected for L2 when omitted.",
+        rich_help_panel="PACK CONFIG",
     ),
-    output: Path | None = typer.Option(None, "--output", "-o"),
-    max_tokens: int | None = typer.Option(None, "--max-tokens"),
-    fmt: str = typer.Option("yaml", "--format", help="Output format: yaml or json."),
+    output: Path | None = typer.Option(
+        None,
+        "--output",
+        "-o",
+        help="Destination file (defaults to stdout).",
+        rich_help_panel="OUTPUT",
+    ),
+    max_tokens: int | None = typer.Option(
+        None,
+        "--max-tokens",
+        help="Optional token budget when trimming persona context.",
+        rich_help_panel="OUTPUT",
+    ),
+    fmt: str = typer.Option(
+        "yaml",
+        "--format",
+        help="Output format: yaml or json.",
+        rich_help_panel="OUTPUT",
+    ),
     history_days: int = typer.Option(
         0,
         "--history-days",
         help="Number of previous days to include (L4 packs only).",
+        rich_help_panel="OUTPUT",
     ),
-    dry_run: bool = typer.Option(False, "--dry-run", help="Show plan without emitting payload."),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        help="Show plan without emitting payload.",
+        rich_help_panel="OUTPUT",
+    ),
 ) -> None:
     """Assemble a context bundle for prompting."""
+    _emit_deprecation("aijournal export pack", "aijournal capture --pack")
     run_pack(
         level,
         date,
@@ -1160,8 +1639,8 @@ def index_rebuild(
     typer.echo(message)
 
 
-@index_app.command("tail")
-def index_tail(
+@index_app.command("update")
+def index_update(
     since: str | None = typer.Option(
         None,
         "--since",
@@ -1235,41 +1714,49 @@ def chat(
         "--top",
         "-k",
         help="Maximum number of retrieval chunks to use.",
+        rich_help_panel="RETRIEVAL FILTERS",
     ),
     tags: str | None = typer.Option(
         None,
         "--tags",
         help="Optional tag filters (comma or space separated).",
+        rich_help_panel="RETRIEVAL FILTERS",
     ),
     source: str | None = typer.Option(
         None,
         "--source",
         help="Optional source-type filters (comma or space separated).",
+        rich_help_panel="RETRIEVAL FILTERS",
     ),
     date_from: str | None = typer.Option(
         None,
         "--date-from",
         help="Earliest chunk date (YYYY-MM-DD).",
+        rich_help_panel="RETRIEVAL FILTERS",
     ),
     date_to: str | None = typer.Option(
         None,
         "--date-to",
         help="Latest chunk date (YYYY-MM-DD).",
+        rich_help_panel="RETRIEVAL FILTERS",
     ),
     session: str | None = typer.Option(
         None,
         "--session",
         help="Session identifier (defaults to chat-YYYYMMDD-HHMMSS).",
+        rich_help_panel="SESSION",
     ),
     save: bool = typer.Option(
         True,
         "--save/--no-save",
         help="Persist the turn under derived/chat_sessions/<session>.",
+        rich_help_panel="SESSION",
     ),
     feedback: str | None = typer.Option(
         None,
         "--feedback",
         help="Provide 'up' or 'down' to nudge cited claim strengths.",
+        rich_help_panel="SESSION",
     ),
 ) -> None:
     """Run a retrieval-augmented chat turn against your journal."""
@@ -1286,16 +1773,17 @@ def chat(
     )
 
 
-@app.command("chatd")
-def chatd(
+@serve_app.command("chat", hidden=True)
+def serve_chat(
     host: str = typer.Option("127.0.0.1", "--host", help="Host interface to bind."),
     port: int = typer.Option(8080, "--port", help="Port to listen on."),
 ) -> None:
     """Start the FastAPI chat daemon (chatd)."""
+    _emit_deprecation("aijournal serve chat", "the REST capture API (POST /capture)")
     run_chatd(host, port)
 
 
-@app.command("feedback-apply")
+@ops_feedback_app.command("apply")
 def feedback_apply(
     archive: bool = typer.Option(
         True,
@@ -1323,7 +1811,7 @@ def feedback_apply(
     claims_path = root / "profile" / "claims.yaml"
     if not claims_path.exists():
         typer.secho(
-            "Claims file not found at profile/claims.yaml; run `aijournal profile status` first.",
+            "Claims file not found at profile/claims.yaml; run `aijournal ops profile status` first.",
             fg=typer.colors.RED,
             err=True,
         )

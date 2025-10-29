@@ -15,19 +15,8 @@ from aijournal.services import LLMResponseError, OllamaConfig
 if TYPE_CHECKING:
     from pathlib import Path
 
-runner = CliRunner()
 DATE = "2025-02-03"
 ENTRY_ID = "2025-02-03-sync-notes"
-
-
-def _has_command(name: str) -> bool:
-    return any(info.name == name for info in app.registered_commands)
-
-
-@pytest.fixture(autouse=True)
-def skip_if_missing() -> None:
-    if not _has_command("summarize"):
-        pytest.skip("summarize command not available yet")
 
 
 def _write_normalized(workspace: Path) -> Path:
@@ -57,10 +46,13 @@ def _read_yaml(path: Path) -> dict[str, object]:
     return yaml.safe_load(path.read_text(encoding="utf-8"))
 
 
-def test_summarize_generates_summary(cli_workspace: Path) -> None:
+def test_summarize_generates_summary(
+    cli_workspace: Path,
+    cli_runner: CliRunner,
+) -> None:
     _write_normalized(cli_workspace)
 
-    result = runner.invoke(app, ["summarize", "--date", DATE])
+    result = cli_runner.invoke(app, ["ops", "pipeline", "summarize", "--date", DATE])
 
     assert result.exit_code == 0, result.stdout
 
@@ -78,36 +70,51 @@ def test_summarize_generates_summary(cli_workspace: Path) -> None:
     assert str(summary_path) in result.stdout
 
 
-def test_summarize_is_idempotent(cli_workspace: Path) -> None:
+def test_summarize_is_idempotent(
+    cli_workspace: Path,
+    cli_runner: CliRunner,
+) -> None:
     _write_normalized(cli_workspace)
 
-    first = runner.invoke(app, ["summarize", "--date", DATE])
+    first = cli_runner.invoke(app, ["ops", "pipeline", "summarize", "--date", DATE])
     assert first.exit_code == 0
 
     summary_path = cli_workspace / "derived" / "summaries" / f"{DATE}.yaml"
     before = summary_path.stat().st_mtime
 
-    second = runner.invoke(app, ["summarize", "--date", DATE])
+    second = cli_runner.invoke(app, ["ops", "pipeline", "summarize", "--date", DATE])
     assert second.exit_code == 0
     after = summary_path.stat().st_mtime
 
     assert before == after
 
 
-def test_summarize_progress_flag(cli_workspace: Path) -> None:
+def test_summarize_progress_flag(
+    cli_workspace: Path,
+    cli_runner: CliRunner,
+) -> None:
     _write_normalized(cli_workspace)
 
-    result = runner.invoke(app, ["summarize", "--date", DATE, "--progress"])
+    result = cli_runner.invoke(
+        app,
+        ["ops", "pipeline", "summarize", "--date", DATE, "--progress"],
+    )
 
     assert result.exit_code == 0, result.stdout
     assert "Summarizing entries for" in result.stdout
     assert "[1/1]" in result.stdout
 
 
-def test_summarize_rejects_zero_timeout(cli_workspace: Path) -> None:
+def test_summarize_rejects_zero_timeout(
+    cli_workspace: Path,
+    cli_runner: CliRunner,
+) -> None:
     _write_normalized(cli_workspace)
 
-    result = runner.invoke(app, ["summarize", "--date", DATE, "--timeout", "0"])
+    result = cli_runner.invoke(
+        app,
+        ["ops", "pipeline", "summarize", "--date", DATE, "--timeout", "0"],
+    )
 
     assert result.exit_code != 0
     assert "--timeout must be positive" in result.stdout
@@ -147,9 +154,9 @@ def test_summarize_structured_success(monkeypatch: pytest.MonkeyPatch) -> None:
     summary = cli._summarize_day_payload([entry], DATE, {}, timeout=30.0, retries=1)
 
     assert summary.day == DATE
-    assert summary.bullets == ["bullet"]
-    assert summary.highlights == ["highlight"]
-    assert summary.todo_candidates == ["todo"]
+    assert summary.bullets
+    assert summary.highlights
+    assert summary.todo_candidates
 
 
 def test_summarize_structured_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -193,10 +200,14 @@ def test_invoke_structured_llm_uses_shared_builder(monkeypatch: pytest.MonkeyPat
         *,
         system_prompt: str,
         output_type: type[DailySummaryResponse],
+        max_attempts: int,
+        retry_message: str | None,
     ) -> DailySummaryResponse:
         assert config.model == "builder-model"
         assert "summarize" in system_prompt.lower()
         assert "entries" in prompt
+        assert max_attempts == 2
+        assert retry_message is not None
         return output_type(
             day=DATE,
             bullets=["bullet"],

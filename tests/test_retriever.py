@@ -37,7 +37,11 @@ def _bootstrap_index(tmp_path: Path, *, day: str, entry_id: str, summary: str) -
             {"id": entry_id, "hash": f"hash-{entry_id}", "source_type": "journal"},
         ],
     )
-    result = runner.invoke(app, ["index", "rebuild"], env={"AIJOURNAL_FAKE_OLLAMA": "1"})
+    result = runner.invoke(
+        app,
+        ["ops", "index", "rebuild"],
+        env={"AIJOURNAL_FAKE_OLLAMA": "1"},
+    )
     assert result.exit_code == 0, result.stdout
 
 

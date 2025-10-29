@@ -327,7 +327,7 @@ def _format_search_snippet(text: str, limit: int = 200) -> str:
 
 
 def _build_embedding_backend(config: dict[str, Any]) -> EmbeddingBackend:
-    model = str(config.get("embedding_model") or "nomic-embed-text")
+    model = str(config.get("embedding_model") or "embeddinggemma")
     host = os.getenv("AIJOURNAL_OLLAMA_HOST")
     return EmbeddingBackend(model, host=host, fake_mode=_use_fake_llm())
 

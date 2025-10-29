@@ -75,11 +75,11 @@ aijournal/
 
 ### 2.2 Core Components
 
-- **CLI (`src/aijournal/cli.py`)** – Thin Typer glue that wires user-facing commands to the orchestration layer. It keeps direct terminal interactions (printing previews, handling Typer exits) but delegates business logic.
-- **Commands (`src/aijournal/commands/`)** – Feature-specific runners that orchestrate file I/O, pipelines, and error handling for each CLI surface (`init`, `facts`, `profile`, `persona`, `chat`, etc.).
+- **CLI (`src/aijournal/cli.py`)** – Thin Typer glue that wires user-facing commands to the orchestration layer. It exposes everyday verbs (`init`, `capture`, `chat`, `advise`, `status`, `serve chat`, `export pack`) while advanced utilities are namespaced under `ops.*`.
+- **Commands (`src/aijournal/commands/`)** – Feature-specific runners that orchestrate file I/O, pipelines, and error handling for each CLI surface (capture, ops.pipeline, ops.profile, ops.index, ops.persona, ops.feedback, ops.system, ops.dev, etc.).
 - **Pipelines (`src/aijournal/pipelines/`)** – Deterministic workflows that combine services, prompts, and validation for a single use case (summaries, facts, characterization, packs, advice). Pipelines avoid Typer and file-system concerns so they remain testable.
 - **Models (`src/aijournal/models/`)** – Pydantic schemas that validate every authoritative and derived artifact before it hits disk.
-- **Services (`src/aijournal/services/`)** – Ollama client, retrieval/indexing, characterization, consolidation, chat orchestrator, advisor, and feedback handlers.
+- **Services (`src/aijournal/services/`)** – Ollama client, retrieval/indexing, characterization, consolidation, chat orchestrator, advisor, capture orchestrator, and feedback handlers.
 - **Utilities (`src/aijournal/utils/` & `src/aijournal/io/`)** – Path mappers, YAML helpers, slug and ID generators, time utilities, filesystem safety rails.
 - **Prompts (`prompts/`)** – Markdown templates hashed into derived metadata to keep runs reproducible.
 
@@ -104,7 +104,7 @@ aijournal/
 
 ### 3.4 Persona Core
 
-`aijournal persona build` ranks claim atoms by `effective_strength × impact_weight` (weights defined in `config/config.yaml`) and selects enough claims to fit within the configured token budget alongside key facets (values, goals, boundaries, coaching preferences). The builder records trimming metadata, source mtimes, and refuses to run packs or chat when the persona core is stale.
+`aijournal ops persona build` ranks claim atoms by `effective_strength × impact_weight` (weights defined in `config/config.yaml`) and selects enough claims to fit within the configured token budget alongside key facets (values, goals, boundaries, coaching preferences). The builder records trimming metadata, source mtimes, and refuses to run packs or chat when the persona core is stale.
 
 ### 3.5 Provenance, Re-Validation, and Impact Weights
 
@@ -118,43 +118,44 @@ Refer to `docs/workflow.md` for the operational command order. This section expl
 
 ### 4.1 Ingestion and Normalization
 
-- `aijournal ingest <path>` hashes external Markdown files, stores raw snapshots in `data/raw/<hash>.md`, records manifest entries in `data/manifest/ingested.yaml`, and emits normalized YAML under `data/normalized/YYYY-MM-DD/`.
-- `aijournal normalize <journal.md>` performs the same transformation for existing journal entries. Normalized files capture metadata (`id`, `created_at`, `title`, `tags`, `projects`, `mood`), structured sections, entities, summaries, and the original source path.
+- `aijournal capture --text ...` / `--from ...` is the canonical ingestion path. It writes authoritative Markdown under `data/journal/YYYY/MM/DD/<slug>.md`, optionally snapshots raw files under `data/raw/<hash>.md`, updates `data/manifest/ingested.yaml`, and triggers normalization for any new or changed entries.
+- Manual normalization remains available via `aijournal ops pipeline normalize <journal.md>` when scripting or debugging. Normalized files capture metadata (`id`, `created_at`, `title`, `tags`, `projects`, `mood`), structured sections, entities, summaries, and the canonical source path.
 - The manifest prevents duplicate ingestion by SHA-256 hash and ties downstream artifacts back to their sources.
 
 ### 4.2 Daily Derivation Pipeline
 
-Once normalized entries exist for a date, run the derivation commands in order:
-1. `summarize` – writes `derived/summaries/<date>.yaml` with bullets, highlights, and TODO candidates.
-2. `facts` – produces `derived/microfacts/<date>.yaml`, claim proposals, and consolidation previews.
-3. `profile suggest` – generates `derived/profile_suggestions/<date>.yaml` with claim/facet upserts.
-4. `profile apply` – merges accepted suggestions into `profile/claims.yaml` and `profile/self_profile.yaml`.
+Once normalized entries exist for a date, `aijournal capture` drives the derivation stack automatically. Advanced operators can run the same steps manually via:
+1. `aijournal ops pipeline summarize --date <date>` – writes `derived/summaries/<date>.yaml` with bullets, highlights, and TODO candidates.
+2. `aijournal ops pipeline extract-facts --date <date>` – produces `derived/microfacts/<date>.yaml`, claim proposals, and consolidation previews.
+3. `aijournal ops profile suggest --date <date>` – generates `derived/profile_suggestions/<date>.yaml` with claim/facet upserts.
+4. `aijournal ops profile apply --date <date> --yes` – merges accepted suggestions into `profile/claims.yaml` and `profile/self_profile.yaml` (capture runs this automatically when `--apply-profile=auto`).
 
-All outputs include `meta.{llm_model, prompt_path, prompt_hash, created_at}` and are validated against Pydantic models.
+All outputs include `meta.{llm_model, prompt_path, prompt_hash, created_at}` and are validated against Pydantic models. Each capture run logs NDJSON telemetry (`derived/logs/capture/<run_id>.jsonl`) with per-stage durations, counters, and warnings.
 
 ### 4.3 Characterization and Review Loop
 
-- `aijournal characterize --date …` reads normalized entries, persona data, and manifest hashes to propose claim and facet updates plus interview prompts. Results land in `derived/pending/profile_updates/<timestamp>.yaml`.
-- `aijournal review-updates --file … --apply` previews each proposal (including scope conflicts), updates the authoritative profile when approved, refreshes timestamps, and records which normalized entries and manifest hashes drove the change.
+- `aijournal ops pipeline characterize --date …` reads normalized entries, persona data, and manifest hashes to propose claim and facet updates plus interview prompts. Results land in `derived/pending/profile_updates/<timestamp>.yaml`.
+- `aijournal ops pipeline review --file … --apply` previews each proposal (including scope conflicts), updates the authoritative profile when approved, refreshes timestamps, and records which normalized entries and manifest hashes drove the change. `capture` diffs the pending directory and only auto-applies the batches generated during the current run when `--apply-profile=auto`.
 - Multiple batches per day are common; review and apply each batch before moving to retrieval.
 
 ### 4.4 Retrieval and Conversational Loop
 
-- `aijournal index rebuild` transforms normalized entries into deterministic chunks (700–1200 characters, sentence-aware, including section headings) and stores:
+- `aijournal ops index rebuild` transforms normalized entries into deterministic chunks (700–1200 characters, sentence-aware, including section headings) and stores:
   - SQLite FTS5 database (`derived/index/index.db`) with chunk metadata.
   - Annoy index (`derived/index/annoy.index`) keyed by SQLite row IDs.
   - Chunk manifests (`derived/index/chunks/YYYY-MM-DD.yaml`) and optional vector shards for inspection.
+- Incremental refreshes call `aijournal ops index update` with the dates touched during the last capture run (fallback `--since` window) so rebuilds stay fast.
 - Chat and advisor mode share the same orchestrator:
   1. Load the persona core and rank claims by effective strength (bounded by `chat.max_claims`).
   2. Retrieve journal chunks through the `Retriever` service (cosine similarity + recency score where `score = 0.7 * cosine + 0.3 * recency`, `recency = 1 / (1 + 0.05 * days_since)`), using `search_k = search_k_factor * k * trees`.
   3. Assemble context (persona core, selected claims, retrieved chunks with citations, conversation summary, coach preferences) under a shared token budget.
   4. Generate responses that include `[claim:<id>]` or `[entry:<normalized_id>#p<index>]` markers, respect `coaching_prefs.probing`, and optionally ask a clarifying question.
   5. Write transcripts, summaries, learnings, telemetry, and pending feedback batches to `derived/chat_sessions/<session>/`.
-  6. Apply feedback nudges (+0.03 / −0.05 strength, clamped to [0, 1]) via `feedback-apply`.
+  6. Apply feedback nudges (+0.03 / −0.05 strength, clamped to [0, 1]) via `aijournal ops feedback apply`.
 
 ### 4.5 Packs and Context Bundles
 
-`aijournal pack --level Lx` assembles deterministic bundles using the shared token estimator (`token_estimator.char_per_token`, default 4.2). The command:
+`aijournal export pack --level Lx` assembles deterministic bundles using the shared token estimator (`token_estimator.char_per_token`, default 4.2). The command:
 - Requires a fresh persona core (warns when stale).
 - Logs planned token counts and trimmed artifacts (`meta.trimmed`) for reproducibility.
 - Supports YAML or JSON output, optional history windows, and dry-run inspection.
@@ -162,7 +163,7 @@ All outputs include `meta.{llm_model, prompt_path, prompt_hash, created_at}` and
 ### 4.6 Feedback and Strength Adjustments
 
 - Chat feedback queues `derived/pending/profile_updates/feedback_*.yaml` capturing claim strength deltas and transcript context.
-- `aijournal feedback-apply` replays each batch into `profile/claims.yaml`, archives applied files to `derived/pending/profile_updates/applied_feedback/`, and exits non-zero when nothing matched—useful for automation.
+- `aijournal ops feedback apply` replays each batch into `profile/claims.yaml`, archives applied files to `derived/pending/profile_updates/applied_feedback/`, and exits non-zero when nothing matched—useful for automation.
 
 ## 5. Data Models
 
@@ -192,10 +193,10 @@ All structured prompts go through `run_ollama_agent`, which sanitizes JSON, retr
 
 - **Chunking:** Deterministic boundaries (700–1200 characters) with sentence awareness and section headings for context.
 - **Storage:** SQLite FTS5 database for metadata & text (`fts5` is a required compile option) and an Annoy index for vectors.
-- **Vectors:** Embeddings generated via `nomic-embed-text` served by Ollama. `derived/index/meta.json` records embedding dimension, build time, ann_trees, search_k_factor, and whether fake mode ran.
+- **Vectors:** Embeddings generated via `embeddinggemma` served by Ollama. `derived/index/meta.json` records embedding dimension, build time, ann_trees, search_k_factor, and whether fake mode ran.
 - **Search:** `Retriever.search` loads the Annoy neighbors with `search_k = search_k_factor * k * ann_trees`, filters by tags/date/source, then reranks using cosine similarity and recency.
 - **Inspection:** Chunk manifests mirror the indexed content for human audits or external tooling.
-- **Failure Modes:** Missing indexes result in explicit errors directing operators to run `aijournal index rebuild`.
+- **Failure Modes:** Missing indexes result in explicit errors directing operators to run `aijournal ops index rebuild`.
 
 ## 8. Configuration and Environment
 
@@ -204,7 +205,7 @@ All structured prompts go through `run_ollama_agent`, which sanitizes JSON, retr
   - `AIJOURNAL_CONFIG` – alternate config path.
   - `AIJOURNAL_MODEL`, `AIJOURNAL_OLLAMA_HOST` – run-time model/endpoint selection.
   - `AIJOURNAL_FAKE_OLLAMA=1` – deterministic fixtures for tests and CI.
-- Live-mode defaults (see `agents.md`): remote Ollama at `http://192.168.1.143:11434`, chat/advice model `gpt-oss:20b`, embedding model `nomic-embed-text`, commands executed via `uv run -- bash -lc '…'`.
+- Live-mode defaults (see `agents.md`): remote Ollama at `http://192.168.1.143:11434`, chat/advice model `gpt-oss:20b`, embedding model `embeddinggemma`, commands executed via `uv run -- bash -lc '…'`.
 - Always ensure runs start from a clean git tree; archive live artifacts under `/tmp/aijournal_live_run_*` rather than touching the repo directly.
 
 ## 9. Performance Considerations
@@ -242,5 +243,5 @@ Contributor setup, testing expectations, and linting tools are covered in [CONTR
 - **Impact Weight** – Per-facet or claim-type weighting controlling prioritization in persona, interviews, and advice.
 - **Pending Batch** – File under `derived/pending/profile_updates/` holding proposed profile or claim changes awaiting review.
 - **Claim Marker** – `[claim:<id>]` token inserted into chat responses so feedback adjustments map to specific claims.
-- **Feedback Batch** – Strength adjustments generated from chat feedback, applied via `aijournal feedback-apply`.
+- **Feedback Batch** – Strength adjustments generated from chat feedback, applied via `aijournal ops feedback apply`.
 - **Manifest Hash** – SHA-256 digest stored in `data/manifest/ingested.yaml` linking normalized entries and derived artifacts to their source materials.

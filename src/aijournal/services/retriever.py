@@ -210,7 +210,7 @@ class Retriever:
             model = str(
                 self._meta.embedding_model
                 or self.config.get("embedding_model")
-                or "nomic-embed-text",
+                or "embeddinggemma",
             )
             host = os.getenv("AIJOURNAL_OLLAMA_HOST")
             dimension = self._meta.vector_dimension

@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import re
-from collections.abc import Iterable
+from collections.abc import AsyncIterator, Iterable
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
@@ -35,6 +36,28 @@ class ChatRequest(BaseModel):
     session_id: str | None = Field(default=None, pattern=r"^[A-Za-z0-9_.\-]+$")
     save: bool = True
     feedback: str | None = None
+
+
+class CaptureRequest(BaseModel):
+    """Request payload for capture streaming API."""
+
+    source: Literal["stdin", "editor", "file", "dir"]
+    text: str | None = None
+    paths: list[str] = Field(default_factory=list)
+    source_type: Literal["journal", "notes", "blog"] = "journal"
+    date: str | None = None
+    title: str | None = None
+    slug: str | None = None
+    tags: list[str] = Field(default_factory=list)
+    projects: list[str] = Field(default_factory=list)
+    mood: str | None = None
+    apply_profile: Literal["auto", "review"] = "auto"
+    rebuild: Literal["auto", "always", "skip"] = "auto"
+    pack: Literal["L1", "L3", "L4"] | None = None
+    retries: int = Field(1, ge=0)
+    progress: bool = True
+    dry_run: bool = False
+    snapshot: bool = True
 
 
 def _json_line(payload: dict[str, Any]) -> bytes:
@@ -164,7 +187,64 @@ def build_chat_app(root: Path, config: dict[str, Any] | None = None) -> FastAPI:
 
         return StreamingResponse(iterator(), media_type="application/x-ndjson")
 
+    @app.post("/capture")
+    async def capture_endpoint(payload: CaptureRequest) -> StreamingResponse:
+        from aijournal.services.capture import CaptureInput, run_capture
+
+        capture_input = CaptureInput.model_validate(payload.model_dump(mode="python"))
+        loop = asyncio.get_running_loop()
+        queue: asyncio.Queue[bytes | None] = asyncio.Queue()
+
+        def _enqueue(event: dict[str, object]) -> None:
+            loop.call_soon_threadsafe(queue.put_nowait, _json_line(event))
+
+        async def _execute_capture() -> None:
+            try:
+                result = await asyncio.to_thread(
+                    run_capture,
+                    capture_input,
+                    event_sink=_enqueue,
+                    root=root,
+                )
+                created_count = sum(
+                    1 for entry in result.entries if entry.changed and not entry.deduped
+                )
+                deduped_count = sum(1 for entry in result.entries if entry.deduped)
+                summary_event: dict[str, object] = {
+                    "event": "result",
+                    "run_id": result.run_id,
+                    "entries": len(result.entries),
+                    "created": created_count,
+                    "deduped": deduped_count,
+                    "telemetry_path": result.telemetry_path,
+                }
+                _enqueue(summary_event)
+            except Exception as exc:  # pragma: no cover - defensive
+                _enqueue({"event": "error", "message": str(exc)})
+            finally:
+                loop.call_soon_threadsafe(queue.put_nowait, None)
+
+        async def iterator() -> AsyncIterator[bytes]:
+            while True:
+                chunk = await queue.get()
+                if chunk is None:
+                    break
+                yield chunk
+
+        asyncio.create_task(_execute_capture())
+        return StreamingResponse(iterator(), media_type="application/x-ndjson")
+
+    @app.get("/runs/{run_id}")
+    def capture_run(run_id: str) -> dict[str, Any]:
+        from aijournal.services.capture import load_capture_result
+
+        try:
+            result = load_capture_result(root, run_id)
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        return result.model_dump(mode="json")
+
     return app
 
 
-__all__ = ["build_chat_app", "ChatRequest"]
+__all__ = ["build_chat_app", "ChatRequest", "CaptureRequest"]

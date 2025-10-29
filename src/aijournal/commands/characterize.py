@@ -218,6 +218,11 @@ def _characterize_payload(
                 agent_name="aijournal-characterize",
                 config=config,
                 timeout=timeout,
+                max_attempts=max(1, retries + 1),
+                retry_message=(
+                    "Return JSON with exactly the keys `claims`, `facets`, `interview_prompts`. "
+                    "Do not add other keys or narrative text."
+                ),
             ),
         )
 

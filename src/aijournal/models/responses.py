@@ -57,7 +57,7 @@ class FacetProposalPayload(AijournalModel):
     """Structured facet proposal produced during characterization."""
 
     path: str | None = None
-    value: Any = None
+    value: JsonValue = None
     operation: str | None = None
     method: str | None = None
     confidence: float | None = None
