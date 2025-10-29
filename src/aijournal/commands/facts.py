@@ -29,8 +29,8 @@ from aijournal.models import (
     ClaimAtom,
     ClaimProposal,
     ClaimSource,
-    ExtractedFactsResponse,
     ManifestEntry,
+    MicroFactsFile,
     NormalizedEntry,
     ProfileUpdatePreview,
 )
@@ -52,30 +52,21 @@ def _manifest_by_id(entries: Iterable[ManifestEntry]) -> dict[str, ManifestEntry
 def _characterization_context(
     entries: Sequence[NormalizedEntry],
     manifest_index: dict[str, ManifestEntry],
-) -> tuple[list[str], list[str], list[str], list[ClaimSource]]:
+) -> tuple[list[str], list[str], list[ClaimSource]]:
     normalized_ids: list[str] = []
-    source_hashes: set[str] = set()
     manifest_hashes: set[str] = set()
     default_sources: list[ClaimSource] = []
 
     for idx, entry in enumerate(entries):
         entry_id = entry.id or f"entry-{idx + 1}"
         normalized_ids.append(entry_id)
-        source_hash = entry.source_hash
-        if isinstance(source_hash, str) and source_hash:
-            source_hashes.add(source_hash)
         manifest_entry = manifest_index.get(entry_id)
         manifest_hash = manifest_entry.hash if manifest_entry else None
         if manifest_hash:
             manifest_hashes.add(str(manifest_hash))
         default_sources.append(ClaimSource(entry_id=entry_id, spans=[]))
 
-    return (
-        normalized_ids,
-        sorted(source_hashes),
-        sorted(manifest_hashes),
-        default_sources,
-    )
+    return normalized_ids, sorted(manifest_hashes), default_sources
 
 
 def _derived_microfacts_path(root: Path, day: str) -> Path:
@@ -109,13 +100,13 @@ def run_facts(
     context = _characterization_context(entries, manifest_index)
     use_fake_llm = _use_fake_llm()
 
-    def request_microfacts() -> ExtractedFactsResponse:
+    def request_microfacts() -> MicroFactsFile:
         return cast(
-            ExtractedFactsResponse,
+            MicroFactsFile,
             _invoke_structured_llm(
                 "prompts/extract_facts.md",
                 {"date": date, "entries_json": _json_block(_entries_to_payload(entries))},
-                response_model=ExtractedFactsResponse,
+                response_model=MicroFactsFile,
                 agent_name="aijournal-facts",
                 config=config,
                 timeout=timeout_value,

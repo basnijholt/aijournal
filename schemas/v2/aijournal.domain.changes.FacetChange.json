@@ -87,16 +87,28 @@
     }
   },
   "additionalProperties": false,
-  "description": "Structured micro-fact emitted by the extraction pipeline.",
+  "description": "Facet modification proposed by characterization pipelines.",
   "properties": {
     "confidence": {
-      "title": "Confidence",
-      "type": "number"
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Confidence"
     },
     "evidence": {
-      "$ref": "#/$defs/SourceRef"
+      "items": {
+        "$ref": "#/$defs/SourceRef"
+      },
+      "title": "Evidence",
+      "type": "array"
     },
-    "first_seen": {
+    "method": {
       "anyOf": [
         {
           "type": "string"
@@ -106,13 +118,22 @@
         }
       ],
       "default": null,
-      "title": "First Seen"
+      "title": "Method"
     },
-    "id": {
-      "title": "Id",
+    "operation": {
+      "enum": [
+        "set",
+        "remove",
+        "merge"
+      ],
+      "title": "Operation",
       "type": "string"
     },
-    "last_seen": {
+    "path": {
+      "title": "Path",
+      "type": "string"
+    },
+    "rationale": {
       "anyOf": [
         {
           "type": "string"
@@ -122,19 +143,47 @@
         }
       ],
       "default": null,
-      "title": "Last Seen"
+      "title": "Rationale"
     },
-    "statement": {
-      "title": "Statement",
-      "type": "string"
+    "review_after_days": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Review After Days"
+    },
+    "user_verified": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "User Verified"
+    },
+    "value": {
+      "anyOf": [
+        {},
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Value"
     }
   },
   "required": [
-    "id",
-    "statement",
-    "confidence",
-    "evidence"
+    "path",
+    "operation"
   ],
-  "title": "ExtractedFactPayload",
+  "title": "FacetChange",
   "type": "object"
 }

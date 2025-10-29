@@ -5,9 +5,11 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable, Sequence
 from typing import Any, cast
 
+from pydantic import ValidationError
+
+from aijournal.domain.evidence import SourceRef
 from aijournal.fakes import fake_characterize
 from aijournal.models import (
-    CharacterizeResponse,
     ClaimAtom,
     ClaimProposal,
     ClaimSource,
@@ -19,62 +21,53 @@ from aijournal.pipelines import facts as facts_pipeline
 from aijournal.utils.coercion import coerce_float, coerce_int
 
 StructuredCall = Callable[..., Any]
-CharacterizeRequestFactory = Callable[[], CharacterizeResponse]
+CharacterizeRequestFactory = Callable[[], ProfileUpdateProposals]
 NormalizeClaims = Callable[..., list[ClaimProposal]]
 NormalizeFacets = Callable[..., list[FacetProposal]]
 
 
 def normalize_facet_proposals(
     raw_facets: Iterable[Any],
-    *,
-    normalized_ids: list[str],
-    evidence_hashes: list[str],
 ) -> list[FacetProposal]:
     proposals: list[FacetProposal] = []
     for raw in raw_facets:
         if isinstance(raw, FacetProposal):
-            proposals.append(
-                FacetProposal(
-                    path=raw.path,
-                    value=raw.value,
-                    operation=raw.operation,
-                    method=raw.method,
-                    confidence=raw.confidence,
-                    review_after_days=raw.review_after_days,
-                    user_verified=raw.user_verified,
-                    normalized_ids=facts_pipeline.merge_unique(raw.normalized_ids, normalized_ids),
-                    evidence_hashes=facts_pipeline.merge_unique(
-                        raw.evidence_hashes, evidence_hashes
-                    ),
-                    rationale=raw.rationale,
-                ),
-            )
+            proposals.append(raw)
             continue
+
         payload = raw.model_dump(mode="python") if hasattr(raw, "model_dump") else raw
         if not isinstance(payload, dict):
             continue
+
         path = payload.get("path") or payload.get("target")
         if not path:
             continue
-        proposals.append(
-            FacetProposal(
-                path=str(path),
-                value=payload.get("value"),
-                operation=str(payload.get("operation") or "set"),
-                method=str(payload.get("method") or "inferred"),
-                confidence=coerce_float(payload.get("confidence")) or 0.55,
-                review_after_days=coerce_int(payload.get("review_after_days")) or 90,
-                user_verified=bool(payload.get("user_verified", False)),
-                normalized_ids=facts_pipeline.merge_unique(
-                    payload.get("normalized_ids", []), normalized_ids
-                ),
-                evidence_hashes=facts_pipeline.merge_unique(
-                    payload.get("evidence_hashes", []), evidence_hashes
-                ),
-                rationale=str(payload.get("rationale") or payload.get("reason") or "").strip()
-                or None,
-            ),
-        )
+
+        evidence_payload = payload.get("evidence") or []
+        evidence_sources = []
+        for item in evidence_payload:
+            try:
+                evidence_sources.append(SourceRef.model_validate(item))
+            except ValidationError:
+                continue
+
+        proposal_data = {
+            "path": str(path),
+            "value": payload.get("value"),
+            "operation": str(payload.get("operation") or "set"),
+            "method": payload.get("method"),
+            "confidence": coerce_float(payload.get("confidence")),
+            "review_after_days": coerce_int(payload.get("review_after_days")),
+            "user_verified": payload.get("user_verified"),
+            "evidence": evidence_sources,
+            "rationale": str(payload.get("rationale") or payload.get("reason") or "").strip()
+            or None,
+        }
+
+        try:
+            proposals.append(FacetProposal.model_validate(proposal_data))
+        except ValidationError:
+            continue
     return proposals
 
 
@@ -88,7 +81,7 @@ def generate_characterization(
     request_factory: CharacterizeRequestFactory,
     retries: int,
     label: str,
-    context: tuple[list[str], list[str], list[str], list[ClaimSource]],
+    context: tuple[list[str], list[str], list[ClaimSource]],
     claim_timestamp: str,
     build_claim: Callable[..., ClaimAtom],
     normalize_claims: NormalizeClaims,
@@ -96,7 +89,7 @@ def generate_characterization(
 ) -> tuple[ProfileUpdateProposals, list[str]]:
     """Produce claim/facet proposals along with follow-up prompts."""
 
-    normalized_ids, evidence_hashes, manifest_hashes, default_sources = context
+    normalized_ids, manifest_hashes, default_sources = context
 
     if use_fake_llm:
         base = fake_characterize(
@@ -116,7 +109,7 @@ def generate_characterization(
         prompts: list[str] = []
     else:
         response = cast(
-            CharacterizeResponse,
+            ProfileUpdateProposals,
             structured_call(request_factory, retries=retries, label=label),
         )
 
@@ -127,17 +120,18 @@ def generate_characterization(
     claims_payload = normalize_claims(
         raw_claims,
         normalized_ids=normalized_ids,
-        evidence_hashes=evidence_hashes,
         manifest_hashes=manifest_hashes,
         default_sources=default_sources,
         timestamp=claim_timestamp,
     )
-    facets_payload = normalize_facets(
-        raw_facets,
-        normalized_ids=normalized_ids,
-        evidence_hashes=evidence_hashes,
+    facets_payload = normalize_facets(raw_facets)
+    merged_prompts = facts_pipeline.merge_unique([], prompts)
+    proposals = ProfileUpdateProposals(
+        claims=claims_payload,
+        facets=facets_payload,
+        interview_prompts=merged_prompts,
     )
-    return ProfileUpdateProposals(claims=claims_payload, facets=facets_payload), prompts
+    return proposals, merged_prompts
 
 
 __all__ = [

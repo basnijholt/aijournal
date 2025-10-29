@@ -6,57 +6,45 @@ from typing import Any, cast
 
 from pydantic import Field, field_validator
 
-from aijournal.domain.evidence import SourceRef, Span
+from aijournal.domain.changes import (
+    ClaimProposal as DomainClaimProposal,
+)
+from aijournal.domain.changes import (
+    FacetChange as DomainFacetChange,
+)
+from aijournal.domain.changes import (
+    ProfileUpdateProposals as DomainProfileUpdateProposals,
+)
+from aijournal.domain.facts import (
+    DailySummary as DomainDailySummary,
+)
+from aijournal.domain.facts import (
+    FactEvidence as DomainFactEvidence,
+)
+from aijournal.domain.facts import (
+    FactEvidenceSpan as DomainFactEvidenceSpan,
+)
+from aijournal.domain.facts import (
+    MicroFact as DomainMicroFact,
+)
+from aijournal.domain.facts import (
+    MicroFactsFile as DomainMicroFactsFile,
+)
+from aijournal.domain.facts import (
+    SummaryMeta as DomainSummaryMeta,
+)
 
 from .base import AijournalModel
 from .claim_atoms import ClaimAtom, ClaimSource, ClaimSourceSpan, Provenance, Scope
 
+SummaryMeta = DomainSummaryMeta
+DailySummary = DomainDailySummary
+FactEvidenceSpan = DomainFactEvidenceSpan
+FactEvidence = DomainFactEvidence
+MicroFact = DomainMicroFact
+ClaimProposal = DomainClaimProposal
 
-class SummaryMeta(AijournalModel):
-    llm_model: str = "unknown"
-    prompt_path: str = ""
-    prompt_hash: str | None = None
-    created_at: str = ""
-
-
-class DailySummary(AijournalModel):
-    """Derived day summary (PLAN §4.1)."""
-
-    day: str
-    bullets: list[str] = Field(default_factory=list)
-    highlights: list[str] = Field(default_factory=list)
-    todo_candidates: list[str] = Field(default_factory=list)
-    meta: SummaryMeta = Field(default_factory=SummaryMeta)
-
-
-FactEvidenceSpan = Span
-FactEvidence = SourceRef
-
-
-class MicroFact(AijournalModel):
-    id: str
-    statement: str
-    confidence: float
-    evidence: FactEvidence
-    first_seen: str | None = None
-    last_seen: str | None = None
-
-
-class ClaimProposal(AijournalModel):
-    """Pending claim update enriched with provenance."""
-
-    claim: ClaimAtom
-    normalized_ids: list[str] = Field(default_factory=list)
-    evidence_hashes: list[str] = Field(default_factory=list)
-    manifest_hashes: list[str] = Field(default_factory=list)
-    rationale: str | None = None
-
-
-class MicroFactsFile(AijournalModel):
-    facts: list[MicroFact] = Field(default_factory=list)
-    claim_proposals: list[ClaimProposal] = Field(default_factory=list)
-    preview: ProfileUpdatePreview | None = None
-    meta: SummaryMeta = Field(default_factory=SummaryMeta)
+MicroFactsFile = DomainMicroFactsFile
 
 
 class ChunkManifestMeta(AijournalModel):
@@ -277,26 +265,10 @@ class AdviceCard(AijournalModel):
     meta: SummaryMeta = Field(default_factory=SummaryMeta)
 
 
-class FacetProposal(AijournalModel):
-    """Pending facet update referencing profile paths."""
-
-    path: str
-    value: Any
-    operation: str = "set"
-    method: str | None = None
-    confidence: float | None = None
-    review_after_days: int | None = None
-    user_verified: bool | None = None
-    normalized_ids: list[str] = Field(default_factory=list)
-    evidence_hashes: list[str] = Field(default_factory=list)
-    rationale: str | None = None
+FacetProposal = DomainFacetChange
 
 
-class ProfileUpdateProposals(AijournalModel):
-    """Aggregation of claim and facet proposals."""
-
-    claims: list[ClaimProposal] = Field(default_factory=list)
-    facets: list[FacetProposal] = Field(default_factory=list)
+ProfileUpdateProposals = DomainProfileUpdateProposals
 
 
 class ClaimSignaturePayload(AijournalModel):
@@ -406,6 +378,9 @@ class IndexMeta(AijournalModel):
     limit: int | None = None
     touched_dates: list[str] = Field(default_factory=list)
     updated_at: str | None = None
+
+
+MicroFactsFile.model_rebuild(_types_namespace={"ProfileUpdatePreview": ProfileUpdatePreview})
 
 
 __all__ = [

@@ -5,6 +5,9 @@ Markdown, bullet lists, or advice outside that object. The very first character 
 reply must be `{` and the very last character must be `}`. If you have nothing to add,
 return `{\"claims\": [], \"facets\": [], \"interview_prompts\": []}`.
 
+If you cannot produce a valid payload, respond with `{"claims": [], "facets": [], "interview_prompts": []}` rather than emitting prose.
+See `prompts/examples/characterize.json` for a minimal compliant example.
+
 ## Persona Mission
 - Capture durable behavioural patterns, motivations, and boundaries that the coach can
   rely on in future conversations.

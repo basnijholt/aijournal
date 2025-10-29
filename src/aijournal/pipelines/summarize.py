@@ -6,10 +6,10 @@ from collections.abc import Callable, Sequence
 from typing import Any, cast
 
 from aijournal.fakes import fake_summarize
-from aijournal.models import DailySummary, DailySummaryResponse, NormalizedEntry
+from aijournal.models import DailySummary, NormalizedEntry
 
 StructuredCall = Callable[..., Any]
-ResponseFactory = Callable[[], DailySummaryResponse]
+ResponseFactory = Callable[[], DailySummary]
 
 
 def _todo_from_entries(entries: Sequence[NormalizedEntry]) -> list[str]:
@@ -38,7 +38,7 @@ def generate_summary(
         return fallback_model()
 
     response = cast(
-        DailySummaryResponse,
+        DailySummary,
         structured_call(request_factory, retries=retries, label=f"summarize {date}"),
     )
 

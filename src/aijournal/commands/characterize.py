@@ -32,7 +32,6 @@ from aijournal.commands.summarize import (
 )
 from aijournal.io.yaml_io import load_yaml_model, write_yaml_model
 from aijournal.models import (
-    CharacterizeResponse,
     ClaimAtom,
     ClaimProposal,
     ManifestEntry,
@@ -99,6 +98,12 @@ def run_characterize(
     except LLMResponseError as exc:
         typer.secho(f"Characterize failed: {exc}", fg=typer.colors.RED, err=True)
         raise typer.Exit(1)
+
+    interview_prompts = facts_pipeline.merge_unique(
+        proposals_model.interview_prompts,
+        interview_prompts,
+    )
+    proposals_model.interview_prompts = interview_prompts
 
     timestamp = time_utils.format_timestamp(time_utils.now())
     batch_id = f"{date}-{timestamp}"
@@ -200,9 +205,9 @@ def _characterize_payload(
         {key: entry.model_dump(mode="python") for key, entry in manifest_index.items()},
     )
 
-    def request_characterize() -> CharacterizeResponse:
+    def request_characterize() -> ProfileUpdateProposals:
         return cast(
-            CharacterizeResponse,
+            ProfileUpdateProposals,
             invoke_structured_llm(
                 "prompts/characterize.md",
                 {
@@ -214,7 +219,7 @@ def _characterize_payload(
                     ),
                     "manifest_json": manifest_payload,
                 },
-                response_model=CharacterizeResponse,
+                response_model=ProfileUpdateProposals,
                 agent_name="aijournal-characterize",
                 config=config,
                 timeout=timeout,
@@ -247,7 +252,6 @@ def _normalize_claim_proposals(
     raw_claims: Iterable[Any],
     *,
     normalized_ids: list[str],
-    evidence_hashes: list[str],
     manifest_hashes: list[str],
     default_sources: Sequence[Any],
     timestamp: str,
@@ -255,7 +259,6 @@ def _normalize_claim_proposals(
     return facts_pipeline.normalize_claim_proposals(
         raw_claims,
         normalized_ids=normalized_ids,
-        evidence_hashes=evidence_hashes,
         manifest_hashes=manifest_hashes,
         default_sources=default_sources,
         timestamp=timestamp,

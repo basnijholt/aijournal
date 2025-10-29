@@ -2,16 +2,21 @@
 
 from __future__ import annotations
 
+import json
 import os
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, cast
+from pathlib import Path
+from typing import Any, TypeVar, cast
 
+from pydantic import BaseModel
 from pydantic_ai import Agent, ModelSettings, UnexpectedModelBehavior
 from pydantic_ai.exceptions import UserError
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.ollama import OllamaProvider
 
+from aijournal.common.meta import LLMResult
+from aijournal.utils import time as time_utils
 from aijournal.utils.coercion import coerce_float, coerce_int
 
 DEFAULT_OLLAMA_HOST = "http://127.0.0.1:11434"
@@ -159,6 +164,68 @@ def build_ollama_agent(
     return Agent(build_ollama_model(config.model, config.host), **agent_kwargs)
 
 
+_PayloadT = TypeVar("_PayloadT", bound=Any)
+
+
+def _failure_log_dir(label: str | None) -> Path:
+    base = Path.cwd() / "derived" / "logs" / "structured_failures"
+    if label:
+        base = base / label
+    return base
+
+
+def _write_failure_log(
+    *,
+    label: str | None,
+    prompt: str,
+    prompt_path: str | None,
+    attempt: int,
+    error: Exception,
+    raw_payload: str | None,
+) -> None:
+    folder = _failure_log_dir(label)
+    try:
+        folder.mkdir(parents=True, exist_ok=True)
+    except FileExistsError:  # pragma: no cover - minor race safety
+        pass
+
+    timestamp = time_utils.format_timestamp(time_utils.now()).replace(":", "-")
+    payload: dict[str, Any] = {
+        "attempt": attempt,
+        "prompt_path": prompt_path,
+        "prompt": prompt,
+        "error": str(error),
+        "raw_payload": raw_payload,
+        "recorded_at": time_utils.format_timestamp(time_utils.now()),
+    }
+    log_path = folder / f"{timestamp}.json"
+    log_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+
+
+def _extract_raw_payload(error: UnexpectedModelBehavior) -> str | None:
+    candidate = getattr(error, "response_text", None)
+    if isinstance(candidate, str) and candidate.strip():
+        return candidate
+    candidate = getattr(error, "raw_response_text", None)
+    if isinstance(candidate, str) and candidate.strip():
+        return candidate
+    candidate = getattr(error, "output", None)
+    if isinstance(candidate, str) and candidate.strip():
+        return candidate
+    if error.args:
+        summary = error.args[0]
+        if isinstance(summary, str) and summary.strip():
+            return summary
+    cause = error.__cause__
+    while cause is not None:
+        if isinstance(cause, ValueError) and cause.args:
+            message = cause.args[0]
+            if isinstance(message, str) and message.strip():
+                return message
+        cause = cause.__cause__
+    return None
+
+
 def run_ollama_agent(
     config: OllamaConfig,
     prompt: str,
@@ -167,8 +234,11 @@ def run_ollama_agent(
     output_type: type[Any] | None = None,
     max_attempts: int = 2,
     retry_message: str | None = None,
-) -> Any:
-    """Run a Pydantic AI agent and return the validated payload."""
+    prompt_path: str | None = None,
+    prompt_hash: str | None = None,
+    log_label: str | None = None,
+) -> LLMResult[_PayloadT]:
+    """Run a Pydantic AI agent and return the validated payload with metadata."""
 
     if max_attempts < 1:
         msg = "max_attempts must be at least 1"
@@ -180,22 +250,53 @@ def run_ollama_agent(
         config,
         system_prompt=system_prompt,
         output_type=resolved_output,
-        retries=max(0, max_attempts - 1),
+        retries=0,
     )
 
-    try:
-        result = agent.run_sync(prompt, output_type=resolved_output)
-    except UnexpectedModelBehavior as exc:
-        msg = f"Model returned invalid JSON: {exc}"
-        raise LLMResponseError(msg) from exc
-    except UserError as exc:
-        msg = f"Ollama provider error: {exc}"
-        raise LLMResponseError(msg) from exc
-    except Exception as exc:  # pragma: no cover - dependent on runtime env
-        msg = f"Ollama request failed: {exc}"
-        raise LLMResponseError(msg) from exc
+    attempt_prompt = prompt
+    last_exc: Exception | None = None
+    for attempt in range(1, max_attempts + 1):
+        try:
+            result = agent.run_sync(attempt_prompt, output_type=resolved_output)
+        except UnexpectedModelBehavior as exc:
+            raw_payload = _extract_raw_payload(exc)
+            _write_failure_log(
+                label=log_label or getattr(agent, "name", None),
+                prompt=attempt_prompt,
+                prompt_path=prompt_path,
+                attempt=attempt,
+                error=exc,
+                raw_payload=raw_payload,
+            )
+            last_exc = exc
+            if attempt == max_attempts:
+                msg = f"Model returned invalid JSON: {exc}"
+                raise LLMResponseError(msg) from exc
+            if retry_message:
+                attempt_prompt = f"{prompt.rstrip()}\n\nRetry instructions: {retry_message.strip()}"
+            continue
+        except UserError as exc:
+            msg = f"Ollama provider error: {exc}"
+            raise LLMResponseError(msg) from exc
+        except Exception as exc:  # pragma: no cover - dependent on runtime env
+            msg = f"Ollama request failed: {exc}"
+            raise LLMResponseError(msg) from exc
 
-    return result.output
+        payload = result.output
+        if isinstance(payload, BaseModel):
+            payload = cast(BaseModel, payload)
+        created_at = time_utils.format_timestamp(time_utils.now())
+        return LLMResult[_PayloadT](
+            model=config.model,
+            prompt_path=prompt_path or "<inline>",
+            prompt_hash=prompt_hash,
+            created_at=created_at,
+            payload=cast(_PayloadT, payload),
+        )
+
+    assert last_exc is not None  # pragma: no cover - safety net
+    msg = f"Model returned invalid JSON: {last_exc}"
+    raise LLMResponseError(msg) from last_exc
 
 
 __all__ = [

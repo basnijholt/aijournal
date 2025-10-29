@@ -1,13 +1,9 @@
 {
   "$defs": {
-    "ClaimAtom": {
+    "ClaimAtomInput": {
       "additionalProperties": false,
-      "description": "Typed, scoped claim describing the persona.",
+      "description": "Normalized claim payload without identifiers or provenance.",
       "properties": {
-        "id": {
-          "title": "Id",
-          "type": "string"
-        },
         "method": {
           "enum": [
             "self_report",
@@ -21,11 +17,7 @@
           "title": "Predicate",
           "type": "string"
         },
-        "provenance": {
-          "$ref": "#/$defs/Provenance"
-        },
         "review_after_days": {
-          "default": 120,
           "title": "Review After Days",
           "type": "integer"
         },
@@ -37,7 +29,6 @@
           "type": "string"
         },
         "status": {
-          "default": "tentative",
           "enum": [
             "accepted",
             "tentative",
@@ -47,9 +38,6 @@
           "type": "string"
         },
         "strength": {
-          "default": 0.5,
-          "maximum": 1.0,
-          "minimum": 0.0,
           "title": "Strength",
           "type": "number"
         },
@@ -72,7 +60,6 @@
           "type": "string"
         },
         "user_verified": {
-          "default": false,
           "title": "User Verified",
           "type": "boolean"
         },
@@ -82,56 +69,19 @@
         }
       },
       "required": [
-        "id",
         "type",
         "subject",
         "predicate",
         "value",
         "statement",
+        "scope",
+        "strength",
+        "status",
         "method",
-        "provenance"
+        "user_verified",
+        "review_after_days"
       ],
-      "title": "ClaimAtom",
-      "type": "object"
-    },
-    "Provenance": {
-      "additionalProperties": false,
-      "description": "Provenance metadata for a claim atom.",
-      "properties": {
-        "first_seen": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "First Seen"
-        },
-        "last_updated": {
-          "title": "Last Updated",
-          "type": "string"
-        },
-        "observation_count": {
-          "default": 1,
-          "minimum": 1,
-          "title": "Observation Count",
-          "type": "integer"
-        },
-        "sources": {
-          "items": {
-            "$ref": "#/$defs/SourceRef"
-          },
-          "title": "Sources",
-          "type": "array"
-        }
-      },
-      "required": [
-        "last_updated"
-      ],
-      "title": "Provenance",
+      "title": "ClaimAtomInput",
       "type": "object"
     },
     "Scope": {
@@ -255,16 +205,16 @@
     }
   },
   "additionalProperties": false,
-  "description": "Pending claim update enriched with provenance.",
+  "description": "Structured claim update prepared for downstream review.",
   "properties": {
     "claim": {
-      "$ref": "#/$defs/ClaimAtom"
+      "$ref": "#/$defs/ClaimAtomInput"
     },
-    "evidence_hashes": {
+    "evidence": {
       "items": {
-        "type": "string"
+        "$ref": "#/$defs/SourceRef"
       },
-      "title": "Evidence Hashes",
+      "title": "Evidence",
       "type": "array"
     },
     "manifest_hashes": {

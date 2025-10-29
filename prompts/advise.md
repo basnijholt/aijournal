@@ -41,6 +41,9 @@ Guidelines:
 - Keep steps specific and time-bound where possible.
 - Return **only** valid JSON.
 
+If you cannot produce a valid payload matching this schema, respond with `{"error":"schema_validation_failed"}` as the entire output.
+See `prompts/examples/advise.json` for a minimal compliant example.
+
 DATE: $date
 QUESTION: $question
 

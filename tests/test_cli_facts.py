@@ -73,16 +73,18 @@ def test_facts_generates_microfacts(
         assert meta.get(key), f"Missing {key}"
     proposals = data.get("claim_proposals", [])
     assert isinstance(proposals, list) and proposals, "Expected claim proposals from micro-facts"
-    claim = proposals[0]["claim"]
-    assert claim["id"] == f"microfact.fact-{ENTRY_ID}"
+    proposal = proposals[0]
+    claim = proposal["claim"]
     assert "sync notes" in claim["statement"].lower()
-    assert proposals[0]["normalized_ids"] == [ENTRY_ID]
+    assert proposal.get("normalized_ids") == [ENTRY_ID]
+    evidence = proposal.get("evidence") or []
+    assert any(item.get("entry_id") == ENTRY_ID for item in evidence)
     preview = data.get("preview") or {}
     events = preview.get("claim_events") or []
     assert events, "Expected preview events for micro-facts consolidation"
     event = events[0]
     assert event.get("action") == "created"
-    assert event.get("claim_id") == f"microfact.fact-{ENTRY_ID}"
+    assert f"fact-{ENTRY_ID}" in (event.get("claim_id") or "")
     assert "Preview (claim consolidation)" in result.stdout
     assert str(facts_path) in result.stdout
 

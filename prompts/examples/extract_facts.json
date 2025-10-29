@@ -1,0 +1,61 @@
+{
+  "facts": [
+    {
+      "id": "focus-morning-block",
+      "statement": "Morning focus blocks improve deep-work output.",
+      "confidence": 0.82,
+      "evidence": {
+        "entry_id": "2025-10-25-focus-log",
+        "spans": [
+          {
+            "type": "paragraph",
+            "index": 0
+          }
+        ]
+      },
+      "first_seen": "2025-10-25",
+      "last_seen": "2025-10-25"
+    }
+  ],
+  "claim_proposals": [
+    {
+      "claim": {
+        "type": "habit",
+        "subject": "workday",
+        "predicate": "begin_with_focus_block",
+        "value": "Start each workday with two morning focus blocks.",
+        "statement": "I start each workday with two morning focus blocks.",
+        "scope": {
+          "domain": "productivity",
+          "context": [
+            "weekday mornings"
+          ],
+          "conditions": []
+        },
+        "strength": 0.7,
+        "status": "tentative",
+        "method": "self_report",
+        "user_verified": false,
+        "review_after_days": 30
+      },
+      "normalized_ids": [
+        "2025-10-25-focus-log"
+      ],
+      "evidence": [
+        {
+          "entry_id": "2025-10-25-focus-log",
+          "spans": [
+            {
+              "type": "paragraph",
+              "index": 0
+            }
+          ]
+        }
+      ],
+      "manifest_hashes": [
+        "focus-log-hash"
+      ],
+      "rationale": "Recent entry confirms the routine improves momentum."
+    }
+  ]
+}

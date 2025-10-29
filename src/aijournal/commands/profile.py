@@ -21,12 +21,15 @@ from aijournal.commands.summarize import (
     _log_entry_progress,
     _validate_timeout,
 )
+from aijournal.domain.changes import ClaimProposal, FacetChange, ProfileUpdateProposals
+from aijournal.domain.evidence import SourceRef, redact_source_text
 from aijournal.fakes import fake_profile_suggestions
 from aijournal.io.yaml_io import load_yaml_model, write_yaml_model
 from aijournal.models import (
     ClaimAtom,
     ClaimsFile,
     ClaimSource,
+    ClaimSourceSpan,
     NormalizedEntry,
     ProfileSuggestions,
     ProfileSuggestionUpdate,
@@ -34,8 +37,6 @@ from aijournal.models import (
     Provenance,
     Scope,
     SelfProfile,
-    SimpleProfileSuggestionsResponse,
-    SimpleSuggestion,
 )
 from aijournal.pipelines import normalization
 from aijournal.services import ClaimConsolidator, ClaimMergeOutcome, LLMResponseError
@@ -193,8 +194,8 @@ def _profile_suggestions_payload(
             build_claim=_build_claim_atom_from_entry,
         )
     else:
-        simple_response = cast(
-            SimpleProfileSuggestionsResponse,
+        proposals = cast(
+            ProfileUpdateProposals,
             _invoke_structured_llm(
                 "prompts/profile_suggest.md",
                 {
@@ -205,79 +206,159 @@ def _profile_suggestions_payload(
                         {"claims": [claim.model_dump(mode="python") for claim in claims]}
                     ),
                 },
-                response_model=SimpleProfileSuggestionsResponse,
+                response_model=ProfileUpdateProposals,
                 agent_name="aijournal-profile-suggest",
                 config=config,
                 timeout=timeout,
                 max_attempts=max(1, retries + 1),
                 retry_message=(
-                    "Return JSON with keys `suggestions` only. Each suggestion must match the "
-                    "documented schema and avoid extra fields."
+                    "Return JSON with keys `claims` and `facets`; include `interview_prompts` "
+                    "when follow-up questions are warranted."
                 ),
             ),
         )
         timestamp = time_utils.format_timestamp(time_utils.now())
-        suggestions = _simple_suggestions_to_profile(simple_response, timestamp=timestamp)
+        suggestions = _proposals_to_profile(proposals, timestamp=timestamp)
 
     suggestions.meta = _build_meta("prompts/profile_suggest.md", config=config)
     return suggestions
 
 
-def _simple_suggestions_to_profile(
-    simple: SimpleProfileSuggestionsResponse,
+def _proposals_to_profile(
+    proposals: ProfileUpdateProposals,
     *,
     timestamp: str,
 ) -> ProfileSuggestions:
     upserts: list[ProfileSuggestionUpsert] = []
     updates: list[ProfileSuggestionUpdate] = []
 
-    for suggestion in simple.suggestions:
-        kind = (suggestion.kind or "").strip().lower()
-        if kind == "claim":
-            upsert = _simple_claim_to_upsert(suggestion, timestamp)
-            if upsert is not None:
-                upserts.append(upsert)
-        elif kind == "facet":
-            update = _simple_facet_to_update(suggestion)
-            if update is not None:
-                updates.append(update)
-        else:
-            typer.secho(
-                f"Ignoring unknown suggestion kind: {suggestion.kind}",
-                fg=typer.colors.YELLOW,
-                err=True,
-            )
+    for proposal in proposals.claims:
+        upsert = _claim_proposal_to_upsert(proposal, timestamp)
+        if upsert is not None:
+            upserts.append(upsert)
+
+    for change in proposals.facets:
+        update = _facet_change_to_update(change)
+        if update is not None:
+            updates.append(update)
 
     return ProfileSuggestions(upserts=upserts, updates=updates)
 
 
-def _simple_claim_to_upsert(
-    suggestion: SimpleSuggestion,
+def _claim_proposal_to_upsert(
+    proposal: ClaimProposal,
     timestamp: str,
 ) -> ProfileSuggestionUpsert | None:
-    return normalization.simple_claim_to_upsert(suggestion, timestamp)
+    claim_input = proposal.claim
+    statement = claim_input.statement.strip()
+    if not statement:
+        typer.secho("Skipping claim proposal without statement.", fg=typer.colors.YELLOW, err=True)
+        return None
 
+    slug = time_utils.slugify_title(statement) or "claim"
+    claim_id = f"proposal-{slug}"[:96]
 
-def _simple_facet_to_update(suggestion: SimpleSuggestion) -> ProfileSuggestionUpdate | None:
-    path = (suggestion.facet_path or "").strip()
-    if not path or suggestion.value is None:
+    evidence_sources = _source_refs_to_claim_sources(
+        proposal.evidence,
+        proposal.normalized_ids,
+    )
+    if not evidence_sources:
+        evidence_sources = [ClaimSource(entry_id=claim_id, spans=[])]
+
+    raw_claim = {
+        "id": claim_id,
+        "type": claim_input.type,
+        "subject": claim_input.subject,
+        "predicate": claim_input.predicate,
+        "value": claim_input.value,
+        "statement": claim_input.statement,
+        "scope": claim_input.scope.model_dump(mode="python"),
+        "strength": claim_input.strength,
+        "status": claim_input.status,
+        "method": claim_input.method,
+        "user_verified": claim_input.user_verified,
+        "review_after_days": claim_input.review_after_days,
+        "provenance": {
+            "sources": [source.model_dump(mode="python") for source in evidence_sources],
+            "first_seen": time_utils.created_date(timestamp),
+            "last_updated": timestamp,
+            "observation_count": max(1, len(evidence_sources)),
+        },
+    }
+
+    try:
+        claim_atom = normalization.normalize_claim_atom(
+            raw_claim,
+            timestamp=timestamp,
+            default_sources=evidence_sources,
+        )
+    except ValidationError:
         typer.secho(
-            "Skipping facet suggestion without facet_path or value.",
+            "Skipping claim proposal that could not be normalized.",
             fg=typer.colors.YELLOW,
             err=True,
         )
         return None
 
-    evidence = [str(entry).strip() for entry in suggestion.evidence if entry]
+    return ProfileSuggestionUpsert(
+        target="claims",
+        operation="upsert",
+        value=claim_atom,
+        rationale=proposal.rationale,
+    )
+
+
+def _facet_change_to_update(change: FacetChange) -> ProfileSuggestionUpdate | None:
+    path = change.path.strip()
+    if not path:
+        return None
+
+    evidence = [ref.entry_id for ref in change.evidence if ref.entry_id]
+    operation = str(change.operation).strip().lower() or "set"
+
     return ProfileSuggestionUpdate(
         target=path,
-        operation="set",
-        value=suggestion.value,
-        method="inferred",
-        user_verified=False,
-        evidence=evidence,
-        rationale=suggestion.rationale,
+        operation=operation,
+        value=change.value,
+        method=change.method,
+        user_verified=change.user_verified,
+        evidence=evidence or None,
+        rationale=change.rationale,
     )
+
+
+def _source_refs_to_claim_sources(
+    evidence: Sequence[SourceRef],
+    fallback_ids: Sequence[str],
+) -> list[ClaimSource]:
+    sources: list[ClaimSource] = []
+    seen: set[str] = set()
+
+    for ref in evidence:
+        sanitized_ref = redact_source_text(ref)
+        entry_id = (sanitized_ref.entry_id or "").strip()
+        if not entry_id or entry_id in seen:
+            continue
+        spans = [
+            ClaimSourceSpan(
+                type=span.type,
+                index=span.index,
+                start=span.start,
+                end=span.end,
+            )
+            for span in sanitized_ref.spans or []
+        ]
+        sources.append(ClaimSource(entry_id=entry_id, spans=spans))
+        seen.add(entry_id)
+
+    for fallback in fallback_ids:
+        entry_id = (fallback or "").strip()
+        if not entry_id or entry_id in seen:
+            continue
+        sources.append(ClaimSource(entry_id=entry_id, spans=[]))
+        seen.add(entry_id)
+
+    return sources
 
 
 def _build_claim_atom_from_entry(
@@ -290,6 +371,12 @@ def _build_claim_atom_from_entry(
 ) -> ClaimAtom:
     timestamp = time_utils.format_timestamp(time_utils.now())
     default_sources = [ClaimSource(entry_id=entry.id or claim_id, spans=[])]
+    sanitized_sources = [
+        ClaimSource.model_validate(
+            redact_source_text(source).model_dump(mode="python"),
+        )
+        for source in default_sources
+    ]
     raw = {
         "id": claim_id,
         "type": "preference",
@@ -308,14 +395,14 @@ def _build_claim_atom_from_entry(
         "user_verified": False,
         "review_after_days": 120,
         "provenance": {
-            "sources": [source.model_dump(mode="python") for source in default_sources],
+            "sources": [source.model_dump(mode="python") for source in sanitized_sources],
             "first_seen": entry.created_at or timestamp,
         },
     }
     return normalization.normalize_claim_atom(
         raw,
         timestamp=timestamp,
-        default_sources=default_sources,
+        default_sources=sanitized_sources,
     )
 
 
@@ -410,6 +497,11 @@ def _sanitize_provenance_for_compare(provenance: Provenance) -> dict[str, Any]:
     sanitized = provenance.model_dump(mode="python")
     sanitized.pop("last_updated", None)
     sanitized.pop("observation_count", None)
+    if "sources" in sanitized and isinstance(sanitized["sources"], list):
+        sanitized["sources"] = [
+            redact_source_text(SourceRef.model_validate(source)).model_dump(mode="python")
+            for source in sanitized["sources"]
+        ]
     return sanitized
 
 

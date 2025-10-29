@@ -6,6 +6,7 @@ import argparse
 import importlib
 import inspect
 import json
+import os
 import pkgutil
 import sys
 from pathlib import Path
@@ -98,6 +99,7 @@ def main() -> int:
         help="Allow writing schema changes to disk.",
     )
     args = parser.parse_args()
+    should_bless = args.bless or os.environ.get("SCHEMAS_BLESS") == "1"
 
     modules = discover_modules()
     models = collect_models(modules)
@@ -112,7 +114,7 @@ def main() -> int:
         target = schema_path_for(qualified)
         seen.add(target)
         content = render_schema(model)
-        if args.bless:
+        if should_bless:
             if write_if_changed(target, content):
                 changed.append(target)
         else:
@@ -120,19 +122,19 @@ def main() -> int:
                 changed.append(target)
 
     missing = sorted(existing - seen)
-    if args.bless:
+    if should_bless:
         for path in missing:
             path.unlink(missing_ok=True)
 
     if changed or missing:
-        mode = "updated" if args.bless else "would change"
+        mode = "updated" if should_bless else "would change"
         for path in changed:
             print(f"{mode}: {path}")
         for path in missing:
-            verb = "removed" if args.bless else "would remove"
+            verb = "removed" if should_bless else "would remove"
             print(f"{verb}: {path}")
 
-    if not args.bless and (changed or missing):
+    if not should_bless and (changed or missing):
         print("schemas are out of date; run with --bless to update", file=sys.stderr)
         return 1
 

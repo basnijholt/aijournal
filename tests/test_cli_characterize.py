@@ -8,7 +8,7 @@ import yaml
 from typer.testing import CliRunner
 
 from aijournal.cli import app
-from aijournal.models import CharacterizeResponse
+from aijournal.models import ProfileUpdateProposals
 
 DATE = "2025-02-03"
 ENTRY_ID = "2025-02-03-focus-notes"
@@ -125,7 +125,9 @@ def test_characterize_generates_pending_batch(
     claims = proposals.get("claims")
     assert claims, "Expected at least one claim proposal"
     first_claim = claims[0]
-    assert SOURCE_HASH in (first_claim.get("evidence_hashes") or [])
+    assert SOURCE_HASH in (first_claim.get("manifest_hashes") or [])
+    evidence = first_claim.get("evidence") or []
+    assert any(item.get("entry_id") == ENTRY_ID for item in evidence)
     preview = data.get("preview", {})
     events = preview.get("claim_events") or []
     assert events and events[0].get("action") == "created"
@@ -200,7 +202,6 @@ def test_characterize_live_mode_structured(
     monkeypatch.setenv("AIJOURNAL_FAKE_OLLAMA", "0")
 
     claim_payload = {
-        "id": "focus-claim",
         "type": "preference",
         "subject": "Focus routines",
         "predicate": "affinity",
@@ -212,23 +213,17 @@ def test_characterize_live_mode_structured(
         "method": "inferred",
         "user_verified": False,
         "review_after_days": 120,
-        "provenance": {
-            "sources": [{"entry_id": ENTRY_ID, "spans": []}],
-            "first_seen": DATE,
-            "last_updated": f"{DATE}T00:00:00Z",
-            "observation_count": 1,
-        },
     }
 
-    def _fake_structured(*_args, **_kwargs) -> CharacterizeResponse:
-        return CharacterizeResponse.model_validate(
+    def _fake_structured(*_args, **_kwargs) -> ProfileUpdateProposals:
+        return ProfileUpdateProposals.model_validate(
             {
                 "claims": [
                     {
                         "claim": claim_payload,
                         "normalized_ids": [ENTRY_ID],
-                        "evidence_hashes": [SOURCE_HASH],
                         "manifest_hashes": [SOURCE_HASH],
+                        "evidence": [{"entry_id": ENTRY_ID, "spans": []}],
                         "rationale": "Recent entry reinforces the pattern.",
                     }
                 ],
@@ -261,9 +256,11 @@ def test_characterize_live_mode_structured(
     )
     data = yaml.safe_load(batch_path.read_text(encoding="utf-8"))
     assert captured.get("raw_claims"), "Expected structured claims to flow into normalization"
-    claim_ids = [item["claim"]["id"] for item in data["proposals"]["claims"]]
-    assert "focus-claim" in claim_ids
-    statements = [item["claim"]["statement"] for item in data["proposals"]["claims"]]
+    claims = data["proposals"]["claims"]
+    assert all("id" not in item.get("claim", {}) for item in claims)
+    statements = [item["claim"]["statement"] for item in claims]
+    normalized_ids = [item.get("normalized_ids") for item in claims]
+    assert any(ENTRY_ID in (ids or []) for ids in normalized_ids)
     assert any("Focus routines hold" in stmt for stmt in statements)
     prompts = data.get("preview", {}).get("interview_prompts") or []
     assert "travel" in prompts[0]

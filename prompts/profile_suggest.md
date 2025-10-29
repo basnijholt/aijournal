@@ -1,37 +1,61 @@
-You maintain a personal self-profile composed of claims and structured facets. Using the
-normalized entries plus the current profile, propose JSON suggestions using a single array
-named `suggestions`. Each suggestion must take one of two forms:
+You maintain a personal self-profile composed of structured claims and facets. Using the
+normalized entries plus the current profile, propose grounded updates that match the
+`ProfileUpdateProposals` schema below. Output must be a single JSON object with exactly the
+keys `claims` and `facets`—no narration or markdown fences.
 
 ```
 {
-  "suggestions": [
+  "claims": [
     {
-      "kind": "claim",
-      "id": "optional-kebab-id",
-      "statement": "Evidence-backed statement",
-      "rationale": "Short justification (≤20 words)",
-      "evidence": ["normalized-entry-id"],
-      "status": "accepted" | "tentative",
-      "confidence": 0.0-1.0
-    },
+      "claim": {
+        "type": "goal",
+        "subject": "who or what the claim refers to",
+        "predicate": "relationship or attribute",
+        "value": "normalized value",
+        "statement": "Readable sentence",
+        "scope": {"domain": "optional", "context": ["tags"], "conditions": []},
+        "strength": 0.0-1.0,
+        "status": "accepted" | "tentative" | "rejected",
+        "method": "self_report" | "inferred" | "behavioral",
+        "user_verified": false,
+        "review_after_days": integer
+      },
+      "normalized_ids": ["normalized-entry-id"],
+      "evidence": [
+        {"entry_id": "normalized-entry-id", "spans": [{"type": "paragraph", "index": 0}]}
+      ],
+      "manifest_hashes": ["optional-manifest-hash"],
+      "rationale": "≤25 word justification"
+    }
+  ],
+  "facets": [
     {
-      "kind": "facet",
-      "facet_path": "coaching_prefs.check_ins.cadence",
-      "value": <JSON-compatible value>,
-      "rationale": "Short justification (≤20 words)",
-      "evidence": ["normalized-entry-id"]
+      "path": "values_motivations.recurring_theme",
+      "operation": "set" | "merge" | "remove",
+      "value": <JSON-compatible value when operation is set/merge>,
+      "method": "inferred" | "self_report" | "behavioral",
+      "confidence": 0.0-1.0,
+      "review_after_days": integer,
+      "user_verified": false,
+      "evidence": [
+        {"entry_id": "normalized-entry-id", "spans": [{"type": "paragraph", "index": 1}]}
+      ],
+      "rationale": "≤25 word justification"
     }
   ]
 }
 ```
 
 Guidelines:
-- Mine the structured data (`summary`, `sections`, `tags`) to surface meaningful changes even if full paragraphs are unavailable. Anchor every suggestion in the evidence snippets you can observe.
-- Only include fields relevant to the suggestion type (`statement` for claims, `facet_path` and `value` for facets).
-- Use the supplied entries for grounding; omit items when support is weak.
-- IDs are optional; provide them only when a stable slug already exists.
-- Keep rationales brief and factual, and reference evidence IDs where possible.
-- Return **only** the JSON payload shown above. No markdown fences or commentary.
+- Mine `summary`, `sections`, and `tags` to justify every update; omit proposals when support is weak.
+- Prefer refining existing profile elements before introducing new claims or facets.
+- Keep `rationale` concise and reference which evidence entry supports the change.
+- Use `operation: "remove"` only when evidence strongly contradicts an existing facet.
+- Return **only** the JSON payload. No markdown fences or commentary.
+- If no grounded updates exist, return `{ "claims": [], "facets": [] }`.
+
+If you cannot produce a valid payload matching this schema, respond with `{"claims": [], "facets": []}` as the entire output.
+See `prompts/examples/profile_suggest.json` for a minimal compliant example.
 
 DATE: $date
 
