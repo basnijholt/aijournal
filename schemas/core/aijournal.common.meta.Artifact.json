@@ -15,7 +15,10 @@
         "pack.L2",
         "pack.L3",
         "pack.L4",
-        "chat.transcript"
+        "chat.transcript",
+        "chat.summary",
+        "chat.learnings",
+        "advice.card"
       ],
       "title": "ArtifactKind",
       "type": "string"

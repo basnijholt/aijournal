@@ -6,7 +6,6 @@ import json
 import os
 import time
 from collections.abc import Sequence
-from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -15,6 +14,7 @@ from pydantic import ValidationError
 
 from aijournal.api.chat import ChatCitation, ChatResponse
 from aijournal.common.meta import LLMResult
+from aijournal.domain.chat import ChatTelemetry, ChatTurn
 from aijournal.domain.persona import PersonaCore, PersonaCoreFile
 from aijournal.io.artifacts import load_artifact_data
 from aijournal.services.ollama import (
@@ -62,33 +62,6 @@ _INTENT_KEYWORDS: dict[str, tuple[str, ...]] = {
 }
 
 _ADVICE_VERBS = ("should i", "how do i", "help me", "guide me", "recommend")
-
-
-@dataclass(frozen=True)
-class ChatTurn:
-    """Result of a single chat turn."""
-
-    question: str
-    answer: str
-    response: ChatResponse
-    persona: PersonaCore
-    citations: list[ChatCitation]
-    retrieved_chunks: list[RetrievedChunk]
-    fake_mode: bool
-    intent: str
-    clarifying_question: str | None
-    telemetry: ChatTelemetry
-    timestamp: str
-
-
-@dataclass(frozen=True)
-class ChatTelemetry:
-    """Timing and retrieval statistics for a chat turn."""
-
-    retrieval_ms: float
-    chunk_count: int
-    retriever_source: str
-    model: str
 
 
 class ChatService:
@@ -175,15 +148,11 @@ class ChatService:
             retriever_source=result.meta.source,
             model=self._effective_model_name(),
         )
+        telemetry_payload = telemetry.model_dump(mode="python")
         response = response.model_copy(
             update={
                 "answer": answer,
-                "telemetry": {
-                    "retrieval_ms": retrieval_ms,
-                    "chunk_count": len(chunks),
-                    "retriever_source": result.meta.source,
-                    "model": self._effective_model_name(),
-                },
+                "telemetry": telemetry_payload,
                 "timestamp": response.timestamp or timestamp,
             }
         )
@@ -489,6 +458,6 @@ def _persona_summary(persona: PersonaCore, *, max_claims: int = 3) -> dict[str, 
 __all__ = [
     "ChatCitation",
     "ChatService",
-    "ChatTurn",
     "ChatTelemetry",
+    "ChatTurn",
 ]

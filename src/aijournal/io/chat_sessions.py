@@ -4,43 +4,24 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
-import yaml
+from pydantic import ValidationError
 
 from aijournal.common.meta import Artifact, ArtifactKind, ArtifactMeta
+from aijournal.domain.chat import ChatTelemetry, ChatTurn
 from aijournal.domain.chat_sessions import (
-    ChatTelemetryRecord,
+    ChatLearningEntry,
+    ChatSessionLearnings,
+    ChatSessionSummary,
     ChatTranscript,
     ChatTranscriptTurn,
 )
 from aijournal.io.artifacts import load_artifact, save_artifact
-from aijournal.services.chat import ChatCitation, ChatTelemetry, ChatTurn
-
-
-def _load_yaml(path: Path) -> dict[str, Any]:
-    if not path.exists():
-        return {}
-    data = yaml.safe_load(path.read_text(encoding="utf-8"))
-    return data if isinstance(data, dict) else {}
-
-
-def _write_yaml(path: Path, payload: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
+from aijournal.services.chat import ChatCitation
 
 
 def _citation_codes(citations: list[ChatCitation]) -> list[str]:
     return [citation.code for citation in citations]
-
-
-def _telemetry_payload(telemetry: ChatTelemetry) -> dict[str, Any]:
-    return {
-        "retrieval_ms": round(float(telemetry.retrieval_ms), 2),
-        "chunk_count": telemetry.chunk_count,
-        "retriever_source": telemetry.retriever_source,
-        "model": telemetry.model,
-    }
 
 
 @dataclass
@@ -87,7 +68,7 @@ class ChatSessionRecorder:
             intent=turn.intent,
             citations=_citation_codes(turn.citations),
             clarifying_question=turn.clarifying_question,
-            telemetry=ChatTelemetryRecord(
+            telemetry=ChatTelemetry(
                 retrieval_ms=float(turn.telemetry.retrieval_ms),
                 chunk_count=turn.telemetry.chunk_count,
                 retriever_source=turn.telemetry.retriever_source,
@@ -115,57 +96,106 @@ class ChatSessionRecorder:
     # Summary maintenance
     # ------------------------------------------------------------------
     def _update_summary(self, turn: ChatTurn, *, feedback: str | None) -> None:
-        summary = _load_yaml(self._summary)
-        if not summary:
-            summary = {
-                "session_id": self.session_id,
-                "created_at": turn.timestamp,
-                "turn_count": 0,
-                "intent_counts": {},
-            }
+        summary: ChatSessionSummary
+        meta: ArtifactMeta
+        if self._summary.exists():
+            try:
+                existing = load_artifact(self._summary, ChatSessionSummary)
+                summary = existing.data
+                meta = existing.meta
+            except (ValueError, ValidationError):
+                summary = ChatSessionSummary(
+                    session_id=self.session_id,
+                    created_at=turn.timestamp,
+                    updated_at=turn.timestamp,
+                )
+                meta = ArtifactMeta(created_at=turn.timestamp, model=turn.telemetry.model)
+        else:
+            summary = ChatSessionSummary(
+                session_id=self.session_id,
+                created_at=turn.timestamp,
+                updated_at=turn.timestamp,
+            )
+            meta = ArtifactMeta(created_at=turn.timestamp, model=turn.telemetry.model)
 
-        summary["updated_at"] = turn.timestamp
-        summary["turn_count"] = int(summary.get("turn_count", 0) or 0) + 1
-        intent_counts = summary.get("intent_counts", {})
-        if isinstance(intent_counts, dict):
-            intent_counts[turn.intent] = int(intent_counts.get(turn.intent, 0) or 0) + 1
-            summary["intent_counts"] = intent_counts
-        summary["last_question"] = turn.question
-        summary["last_answer_preview"] = turn.answer.split("\n", 1)[0][:160]
-        summary["last_citations"] = _citation_codes(turn.citations)
-        summary["last_clarifying_question"] = turn.clarifying_question
-        summary["last_retrieval_ms"] = round(float(turn.telemetry.retrieval_ms), 2)
-        summary["last_feedback"] = feedback
-        _write_yaml(self._summary, summary)
+        summary.turn_count += 1
+        summary.updated_at = turn.timestamp
+
+        counts = dict(summary.intent_counts)
+        counts[turn.intent] = counts.get(turn.intent, 0) + 1
+        summary.intent_counts = counts
+
+        summary.last_question = turn.question
+        summary.last_answer_preview = turn.answer.split("\n", 1)[0][:160]
+        summary.last_citations = _citation_codes(turn.citations)
+        summary.last_clarifying_question = turn.clarifying_question
+        summary.last_retrieval_ms = round(float(turn.telemetry.retrieval_ms), 2)
+        summary.last_feedback = feedback
+
+        meta.model = turn.telemetry.model
+
+        save_artifact(
+            self._summary,
+            Artifact[ChatSessionSummary](
+                kind=ArtifactKind.CHAT_SUMMARY,
+                meta=meta,
+                data=summary,
+            ),
+        )
 
     # ------------------------------------------------------------------
     # Learnings rollup (for downstream review)
     # ------------------------------------------------------------------
     def _update_learnings(self, turn: ChatTurn, *, feedback: str | None) -> None:
-        payload = _load_yaml(self._learnings)
-        if not payload:
-            payload = {
-                "session_id": self.session_id,
-                "created_at": turn.timestamp,
-                "learnings": [],
-            }
-        payload["updated_at"] = turn.timestamp
-        learnings = payload.get("learnings")
-        if not isinstance(learnings, list):
-            learnings = []
-        learnings.append(
-            {
-                "turn_index": len(learnings) + 1,
-                "question": turn.question,
-                "intent": turn.intent,
-                "citations": _citation_codes(turn.citations),
-                "clarifying_question": turn.clarifying_question,
-                "telemetry": _telemetry_payload(turn.telemetry),
-                "feedback": feedback,
-            },
+        learnings: ChatSessionLearnings
+        meta: ArtifactMeta
+        if self._learnings.exists():
+            try:
+                existing = load_artifact(self._learnings, ChatSessionLearnings)
+                learnings = existing.data
+                meta = existing.meta
+            except (ValueError, ValidationError):
+                learnings = ChatSessionLearnings(
+                    session_id=self.session_id,
+                    created_at=turn.timestamp,
+                    updated_at=turn.timestamp,
+                )
+                meta = ArtifactMeta(created_at=turn.timestamp, model=turn.telemetry.model)
+        else:
+            learnings = ChatSessionLearnings(
+                session_id=self.session_id,
+                created_at=turn.timestamp,
+                updated_at=turn.timestamp,
+            )
+            meta = ArtifactMeta(created_at=turn.timestamp, model=turn.telemetry.model)
+
+        entry = ChatLearningEntry(
+            turn_index=len(learnings.learnings) + 1,
+            question=turn.question,
+            intent=turn.intent,
+            citations=_citation_codes(turn.citations),
+            clarifying_question=turn.clarifying_question,
+            telemetry=ChatTelemetry(
+                retrieval_ms=float(turn.telemetry.retrieval_ms),
+                chunk_count=turn.telemetry.chunk_count,
+                retriever_source=turn.telemetry.retriever_source,
+                model=turn.telemetry.model,
+            ),
+            feedback=feedback,
         )
-        payload["learnings"] = learnings
-        _write_yaml(self._learnings, payload)
+
+        learnings.learnings.append(entry)
+        learnings.updated_at = turn.timestamp
+        meta.model = turn.telemetry.model
+
+        save_artifact(
+            self._learnings,
+            Artifact[ChatSessionLearnings](
+                kind=ArtifactKind.CHAT_LEARNINGS,
+                meta=meta,
+                data=learnings,
+            ),
+        )
 
 
 __all__ = ["ChatSessionRecorder"]

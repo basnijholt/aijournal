@@ -39,6 +39,9 @@ class ArtifactKind(StrEnum):
     PACK_L3 = "pack.L3"
     PACK_L4 = "pack.L4"
     CHAT_TRANSCRIPT = "chat.transcript"
+    CHAT_SUMMARY = "chat.summary"
+    CHAT_LEARNINGS = "chat.learnings"
+    ADVICE_CARD = "advice.card"
 
 
 class Artifact(StrictModel, Generic[T]):

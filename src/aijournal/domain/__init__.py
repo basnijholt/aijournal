@@ -58,7 +58,11 @@ __all__ = [
     "TrimmedFile",
     "ChatTranscript",
     "ChatTranscriptTurn",
-    "ChatTelemetryRecord",
+    "ChatTelemetry",
+    "ChatTurn",
+    "ChatSessionSummary",
+    "ChatSessionLearnings",
+    "ChatLearningEntry",
 ]
 
 _CHANGES_EXPORTS = {
@@ -94,10 +98,16 @@ _PACK_EXPORTS = {
     "PackMeta",
     "TrimmedFile",
 }
-_CHAT_EXPORTS = {
+_CHAT_CORE_EXPORTS = {
+    "ChatTurn",
+    "ChatTelemetry",
+}
+_CHAT_SESSION_EXPORTS = {
     "ChatTranscript",
     "ChatTranscriptTurn",
-    "ChatTelemetryRecord",
+    "ChatSessionSummary",
+    "ChatSessionLearnings",
+    "ChatLearningEntry",
 }
 
 
@@ -132,7 +142,12 @@ def __getattr__(name: str) -> Any:
         value = getattr(module, name)
         globals()[name] = value
         return value
-    if name in _CHAT_EXPORTS:
+    if name in _CHAT_CORE_EXPORTS:
+        module = import_module("aijournal.domain.chat")
+        value = getattr(module, name)
+        globals()[name] = value
+        return value
+    if name in _CHAT_SESSION_EXPORTS:
         module = import_module("aijournal.domain.chat_sessions")
         value = getattr(module, name)
         globals()[name] = value

@@ -604,7 +604,7 @@ class CaptureInput(CaptureRequest):
 - Tests: `uv run pytest`; run `AIJOURNAL_FAKE_OLLAMA=1 uv run aijournal ops index rebuild` if fixtures exist.
 - Commit: `refactor3: unify chunk and index schema`.
 
-**6.2 Chat & Advice DTOs**
+**6.2 Chat & Advice DTOs — DONE**
 - Replace `ChatLLMResponse`/`ChatTurn` with strict `ChatResponse`/`ChatCitation`.
 - Collapse advice twins into `AdviceRecommendation`.
 - Update CLI, services, tests, transcripts.
@@ -622,7 +622,7 @@ class CaptureInput(CaptureRequest):
 
 ### Stage 8 – Artifact Adoption & Provenance Scanner
 
-**8.1 Wrap Derived Artifacts in Artifact[T]**
+**8.1 Wrap Derived Artifacts in Artifact[T] — DONE**
 - Convert persisted YAML/JSON (summaries, microfacts, persona core, profile updates, feedback batches, index meta/chunks, packs, chat transcripts) to `Artifact[T]` envelopes.
 - Use deterministic serialization helper for JSON/YAML dumps.
 - Tests: `uv run pytest`; add test ensuring each artifact has a valid `ArtifactKind` and stable formatting.
@@ -635,7 +635,7 @@ class CaptureInput(CaptureRequest):
 - Tests: `uv run pytest`.
 - Commit: `refactor3: remove legacy schema paths`.
 
-**8.3 Provenance Audit Command**
+**8.3 Provenance Audit Command — DONE**
 - Implement `aijournal ops audit provenance [--fix]` scanning `profile/claims.yaml` and derived artifacts for spans containing text.
 - `--fix` mode applies `redact_source_text`; default mode reports offenders and exits non-zero.
 - Tests: `uv run pytest`; add CLI test with deliberate offender.

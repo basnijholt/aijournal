@@ -27,6 +27,7 @@ from aijournal.commands.advise import (
     _collect_pending_interview_prompts,
     run_advise,
 )
+from aijournal.commands.audit import run_audit_provenance
 from aijournal.commands.characterize import (
     _normalize_claim_proposals,
     _pending_updates_dir,
@@ -134,6 +135,7 @@ ops_pipeline_app = typer.Typer(help="Pipeline tools (normalize, summarize, chara
 ops_feedback_app = typer.Typer(help="Feedback processing utilities.")
 ops_system_app = typer.Typer(help="System diagnostics and doctor helpers.")
 ops_dev_app = typer.Typer(help="Developer fixtures and helpers.")
+ops_audit_app = typer.Typer(help="Audit and governance utilities.")
 
 ops_app.add_typer(ops_pipeline_app, name="pipeline")
 ops_app.add_typer(profile_app, name="profile")
@@ -142,6 +144,7 @@ ops_app.add_typer(persona_app, name="persona")
 ops_app.add_typer(ops_feedback_app, name="feedback")
 ops_app.add_typer(ops_system_app, name="system")
 ops_app.add_typer(ops_dev_app, name="dev")
+ops_app.add_typer(ops_audit_app, name="audit")
 
 ops_system_app.add_typer(ollama_app, name="ollama")
 
@@ -544,6 +547,45 @@ def system_doctor() -> None:
 
     if not result["ok"]:
         raise typer.Exit(1)
+
+
+@ops_audit_app.command("provenance")
+def audit_provenance_command(
+    fix: bool = typer.Option(
+        False,
+        "--fix/--no-fix",
+        help="Redact span.text fields when present instead of only reporting them.",
+    ),
+) -> None:
+    """Scan claims and derived artifacts for span.text remnants."""
+
+    root = Path.cwd()
+    results = run_audit_provenance(root=root, fix=fix)
+    if not results:
+        typer.echo("No provenance span text detected.")
+        return
+
+    if fix:
+        total_spans = sum(result.count for result in results)
+        for result in results:
+            typer.secho(
+                f"Redacted {result.count} span{'s' if result.count != 1 else ''} in {result.path.as_posix()}.",
+                fg=typer.colors.GREEN,
+            )
+        typer.echo(
+            f"Redacted {total_spans} span{'s' if total_spans != 1 else ''} across {len(results)} file{'s' if len(results) != 1 else ''}.",
+        )
+        return
+
+    typer.secho("Found provenance span text in:", fg=typer.colors.YELLOW)
+    for result in results:
+        typer.echo(f"- {result.path.as_posix()}")
+        for issue in result.issues:
+            spans = ", ".join(str(idx) for idx in issue.span_indices)
+            entry_details = f" entry_id={issue.entry_id}" if issue.entry_id else ""
+            typer.echo(f"    {issue.path} spans={spans}{entry_details}")
+    typer.secho("Run with --fix to redact these spans.", fg=typer.colors.YELLOW)
+    raise typer.Exit(1)
 
 
 @app.callback()

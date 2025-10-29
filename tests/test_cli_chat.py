@@ -11,6 +11,9 @@ from typer.testing import CliRunner
 
 from aijournal.api.chat import ChatResponse
 from aijournal.cli import app
+from aijournal.common.meta import ArtifactKind
+from aijournal.domain.chat_sessions import ChatSessionLearnings, ChatSessionSummary
+from aijournal.io.artifacts import load_artifact
 from aijournal.models import PersonaCore
 from aijournal.services.chat import ChatService, ChatTelemetry, ChatTurn
 from tests.helpers import make_claim_atom, write_manifest, write_normalized_entry
@@ -100,6 +103,21 @@ def test_chat_fake_mode_outputs_answer_with_citation(
     assert entry["clarifying_question"]
     assert entry["telemetry"]["chunk_count"] == 1
     assert entry.get("feedback") is None
+
+    summary_artifact = load_artifact(summary, ChatSessionSummary)
+    assert summary_artifact.kind is ArtifactKind.CHAT_SUMMARY
+    summary_data = summary_artifact.data
+    assert summary_data.turn_count == 1
+    assert summary_data.intent_counts
+    assert summary_data.last_citations
+
+    learnings_artifact = load_artifact(learnings, ChatSessionLearnings)
+    assert learnings_artifact.kind is ArtifactKind.CHAT_LEARNINGS
+    learnings_data = learnings_artifact.data
+    assert len(learnings_data.learnings) == 1
+    learning_entry = learnings_data.learnings[0]
+    assert learning_entry.citations
+    assert learning_entry.telemetry.chunk_count == 1
 
 
 def test_chat_errors_when_index_missing(
