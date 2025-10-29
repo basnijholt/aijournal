@@ -40,11 +40,18 @@ This guide explains how the main commands fit together, the order in which to ru
 The top-level CLI now covers the common lifetime loop:
 
 1. **Capture new material**  
+ ```bash
+  uv run aijournal capture --text "Highlights from the product sync" --tag focus
+  uv run aijournal capture --from notes/weekly --source-type notes --project roadmap
+  ```  
+  `capture` handles canonical Markdown writes, manifest updates, raw snapshots, and runs the downstream pipeline (normalize → summarize → extract-facts → profile suggest/apply → characterize/review). It only touches dates whose content actually changed.
+
+   Need to stop early or drive the pipeline manually? Use stage filters:
    ```bash
-   uv run aijournal capture --text "Highlights from the product sync" --tag focus
-   uv run aijournal capture --from notes/weekly --source-type notes --project roadmap
-   ```  
-   `capture` handles canonical Markdown writes, manifest updates, raw snapshots, and runs the downstream pipeline (normalize → summarize → extract-facts → profile suggest/apply → characterize/review). It only touches dates whose content actually changed.
+   uv run aijournal capture --from notes/weekly --max-stage 1      # persist + normalize only
+   uv run aijournal capture --from notes/weekly --min-stage 2      # rerun derived stages
+   ```
+   Capture always revalidates stages 0–1 (persist/normalize) so the canonical files stay in sync, then executes any requested stages ≥2. The CLI prints remaining stages along with the equivalent `uv run aijournal ops ...` commands if you want to pick up manually.
 
 2. **Check workspace status**  
    ```bash
