@@ -1,8 +1,7 @@
 {
   "$defs": {
-    "AdviceLLMRecommendation": {
+    "AdviceRecommendation": {
       "additionalProperties": false,
-      "description": "Simplified recommendation payload emitted directly by the LLM.",
       "properties": {
         "mitigations": {
           "items": {
@@ -36,7 +35,7 @@
       "required": [
         "title"
       ],
-      "title": "AdviceLLMRecommendation",
+      "title": "AdviceRecommendation",
       "type": "object"
     },
     "AdviceReference": {
@@ -105,7 +104,7 @@
     },
     "recommendations": {
       "items": {
-        "$ref": "#/$defs/AdviceLLMRecommendation"
+        "$ref": "#/$defs/AdviceRecommendation"
       },
       "title": "Recommendations",
       "type": "array"

@@ -59,13 +59,12 @@ from .derived import (
     ProfileUpdateProposals,
     SummaryMeta,
 )
-from .responses import AdviceLLMRecommendation, AdviceLLMResponse
+from .responses import AdviceLLMResponse
 
 Claim = ClaimAtom
 
 __all__ = [
     "AdviceCard",
-    "AdviceLLMRecommendation",
     "AdviceLLMResponse",
     "AdviceRecommendation",
     "AdviceReference",

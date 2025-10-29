@@ -11,6 +11,7 @@ import yaml
 from fastapi.testclient import TestClient
 from typer.testing import CliRunner
 
+from aijournal.api.chat import ChatResponse
 from aijournal.cli import app
 from aijournal.models import PersonaCore
 from aijournal.services import ChatService, ChatTelemetry, ChatTurn, build_chat_app
@@ -217,9 +218,16 @@ def test_chatd_feedback_adjusts_claims(tmp_path: Path, monkeypatch: pytest.Monke
             retriever_source="stub",
             model="fake",
         )
+        response = ChatResponse(
+            answer="Signal from claim [claim:focus-claim] informs the response.",
+            citations=[],
+            clarifying_question=None,
+            timestamp="2025-02-03T00:00:00Z",
+        )
         return ChatTurn(
             question=question,
-            answer="Signal from claim [claim:focus-claim] informs the response.",
+            answer=response.answer,
+            response=response,
             persona=PersonaCore(),
             citations=[],
             retrieved_chunks=[],

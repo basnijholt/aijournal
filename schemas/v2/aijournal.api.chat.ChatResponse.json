@@ -1,0 +1,52 @@
+{
+  "additionalProperties": false,
+  "description": "Structured response returned by the chat LLM.",
+  "properties": {
+    "answer": {
+      "maxLength": 4000,
+      "title": "Answer",
+      "type": "string"
+    },
+    "citations": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Citations",
+      "type": "array"
+    },
+    "clarifying_question": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Clarifying Question"
+    },
+    "telemetry": {
+      "additionalProperties": true,
+      "title": "Telemetry",
+      "type": "object"
+    },
+    "timestamp": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Timestamp"
+    }
+  },
+  "required": [
+    "answer"
+  ],
+  "title": "ChatResponse",
+  "type": "object"
+}

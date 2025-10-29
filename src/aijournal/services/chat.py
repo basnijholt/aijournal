@@ -11,8 +11,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import ValidationError
 
+from aijournal.api.chat import ChatCitation, ChatResponse
 from aijournal.common.meta import LLMResult
 from aijournal.domain.persona import PersonaCore, PersonaCoreFile
 from aijournal.io.yaml_io import load_yaml_model
@@ -63,55 +64,13 @@ _INTENT_KEYWORDS: dict[str, tuple[str, ...]] = {
 _ADVICE_VERBS = ("should i", "how do i", "help me", "guide me", "recommend")
 
 
-class ChatLLMResponse(BaseModel):
-    """Minimal schema enforced for live chat answers."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    answer: str = Field(..., max_length=4000)
-    citations: list[str] = Field(default_factory=list)
-    clarifying_question: str | None = None
-
-
-@dataclass(frozen=True)
-class ChatCitation:
-    """Reference to a retrieved chunk included in a chat response."""
-
-    chunk_id: str
-    code: str
-    normalized_id: str
-    chunk_index: int
-    source_path: str
-    date: str
-    tags: tuple[str, ...]
-    score: float
-
-    @property
-    def marker(self) -> str:
-        """Return the display marker used inside responses."""
-        return f"[entry:{self.code}]"
-
-    @classmethod
-    def from_chunk(cls, chunk: RetrievedChunk) -> ChatCitation:
-        code = f"{chunk.normalized_id}#p{chunk.chunk_index}"
-        return cls(
-            chunk_id=chunk.chunk_id,
-            code=code,
-            normalized_id=chunk.normalized_id,
-            chunk_index=chunk.chunk_index,
-            source_path=chunk.source_path,
-            date=chunk.date,
-            tags=tuple(chunk.tags),
-            score=chunk.score,
-        )
-
-
 @dataclass(frozen=True)
 class ChatTurn:
     """Result of a single chat turn."""
 
     question: str
     answer: str
+    response: ChatResponse
     persona: PersonaCore
     citations: list[ChatCitation]
     retrieved_chunks: list[RetrievedChunk]
@@ -192,7 +151,7 @@ class ChatService:
         allow_follow_up = self._allow_follow_up(persona)
 
         if self._fake_mode:
-            answer, citations, clarifying = self._fake_answer(
+            answer, citations, clarifying, response = self._fake_answer(
                 sanitized_question,
                 persona,
                 chunks,
@@ -200,7 +159,7 @@ class ChatService:
                 allow_follow_up=allow_follow_up,
             )
         else:
-            answer, citations, clarifying = self._real_answer(
+            answer, citations, clarifying, response = self._real_answer(
                 sanitized_question,
                 persona,
                 chunks,
@@ -216,9 +175,22 @@ class ChatService:
             retriever_source=result.meta.source,
             model=self._effective_model_name(),
         )
+        response = response.model_copy(
+            update={
+                "answer": answer,
+                "telemetry": {
+                    "retrieval_ms": retrieval_ms,
+                    "chunk_count": len(chunks),
+                    "retriever_source": result.meta.source,
+                    "model": self._effective_model_name(),
+                },
+                "timestamp": response.timestamp or timestamp,
+            }
+        )
         return ChatTurn(
             question=sanitized_question,
             answer=answer,
+            response=response,
             persona=persona,
             citations=citations,
             retrieved_chunks=chunks,
@@ -265,13 +237,14 @@ class ChatService:
         intent: str,
         allow_follow_up: bool,
         prefix: str = "(fake)",
-    ) -> tuple[str, list[ChatCitation], str | None]:
+    ) -> tuple[str, list[ChatCitation], str | None, ChatResponse]:
         if not chunks:
             answer = (
                 f"{prefix} No indexed journal entries matched '{question}'. "
                 "Rebuild the index if you recently added notes."
             )
-            return answer.strip(), [], None
+            response = ChatResponse(answer=answer.strip(), citations=[], timestamp=None)
+            return answer.strip(), [], None, response
 
         top_chunk = chunks[0]
         citation = ChatCitation.from_chunk(top_chunk)
@@ -286,7 +259,13 @@ class ChatService:
         clarifying: str | None = None
         if allow_follow_up:
             clarifying = self._generate_clarifying_question(intent, question)
-        return answer.strip(), [citation], clarifying
+        response = ChatResponse(
+            answer=answer.strip(),
+            citations=[citation.code],
+            clarifying_question=clarifying,
+            timestamp=None,
+        )
+        return answer.strip(), [citation], clarifying, response
 
     def _real_answer(
         self,
@@ -297,7 +276,7 @@ class ChatService:
         *,
         intent: str,
         allow_follow_up: bool,
-    ) -> tuple[str, list[ChatCitation], str | None]:
+    ) -> tuple[str, list[ChatCitation], str | None, ChatResponse]:
         if not chunks:
             msg = (
                 "No journal chunks were retrieved for this chat question; "
@@ -312,20 +291,23 @@ class ChatService:
             intent=intent,
             allow_follow_up=allow_follow_up,
         )
-        result: LLMResult[ChatLLMResponse] = run_ollama_agent(
+        result: LLMResult[ChatResponse] = run_ollama_agent(
             self._build_ollama_config(),
             prompt,
-            output_type=ChatLLMResponse,
+            output_type=ChatResponse,
         )
-        payload = result.payload
+        response = result.payload
+        timestamp_str = datetime.now(tz=UTC).isoformat()
+        if not response.timestamp:
+            response = response.model_copy(update={"timestamp": timestamp_str})
+        answer = response.answer.strip()
 
-        answer = payload.answer.strip()
         if not answer:
             raise LLMResponseError("Chat model returned an empty answer.")
 
         citations: list[ChatCitation] = []
         missing_codes: list[str] = []
-        for raw_code in payload.citations:
+        for raw_code in response.citations:
             code = raw_code.strip()
             if not code:
                 continue
@@ -344,11 +326,11 @@ class ChatService:
             raise LLMResponseError("Chat model did not provide any citations.")
 
         clarifying: str | None = None
-        if allow_follow_up and payload.clarifying_question:
-            clarifying_candidate = payload.clarifying_question.strip()
+        if allow_follow_up and response.clarifying_question:
+            clarifying_candidate = response.clarifying_question.strip()
             clarifying = clarifying_candidate or None
 
-        return answer, citations, clarifying
+        return answer, citations, clarifying, response
 
     def _render_prompt(
         self,
