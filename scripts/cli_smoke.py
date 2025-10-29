@@ -325,7 +325,7 @@ def main() -> None:
     parser.add_argument(
         "--model",
         default=None,
-        help="Override AIJOURNAL_MODEL for the smoke run (e.g., devstral:24b).",
+        help="Override AIJOURNAL_MODEL for the smoke run (e.g., gpt-oss:20b).",
     )
     args = parser.parse_args()
     repo_root = Path(__file__).resolve().parents[1]
