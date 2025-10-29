@@ -2,6 +2,26 @@
 
 This document distills everything learned while executing the full aijournal CLI rehearsal in live mode. Follow it to reproduce the 350/350 run without relying on prior context.
 
+--
+
+## Coding Standards
+
+- Always prefer simple solutions over complex ones.
+- **Check for Changes**: Before starting, review the latest changes from the main branch with `git diff origin/main`
+- **Commit Frequently**: Make small, frequent commits.
+- **Atomic Commits**: Ensure each commit corresponds to a tested, working state.
+- **Targeted Adds**: **NEVER** use `git add .`. Always add files individually (`git add <filename>`) to prevent committing unrelated changes.
+- **Test Before Committing**: **NEVER** claim a task is complete without running `pytest` to ensure all tests pass.
+- **Run Pre-commit Hooks**: Always run `pre-commit run --all-files` before committing to enforce code style and quality.
+- **Handle Linter Issues**:
+  - **False Positives**: The linter may incorrectly flag issues in `pyproject.toml`; these can be ignored.
+  - **Test-Related Errors**: If a pre-commit fix breaks a test (e.g., by removing an unused but necessary fixture), suppress the warning with a `# noqa: <error_code>` comment.
+- **Be Proactive**: Continuously look for opportunities to refactor and improve the codebase for better organization and readability.
+- **Incremental Changes**: Refactor in small, testable steps. Run tests after each change and commit on success.
+- **DO NOT** manually edit the CLI help messages in `README.md`. They are auto-generated.
+- **NEVER** use `git add .`.
+- **NEVER** claim a task is done without passing all `pytest` tests.
+
 ---
 
 ## 0. Environment Snapshot
@@ -10,7 +30,7 @@ This document distills everything learned while executing the full aijournal CLI
 - **Python tooling**: [`uv`](https://docs.astral.sh/uv/) manages dependencies and virtualenv (`uv run …` is mandatory).
 - **LLM host**: Remote Ollama at `http://192.168.1.143:11434`
   - Primary chat/advice model: `gpt-oss:20b`
-  - Embedding model: `nomic-embed-text` (served by the same Ollama host; no fake fallback)
+  - Embedding model: `embeddinggemma` (served by the same Ollama host; no fake fallback)
 - **No fake mode**: Ensure `AIJOURNAL_FAKE_OLLAMA` is **unset** whenever running live commands.
 - **Testing**: `uv run pytest` (≈1.5 s). Pre-commit hooks (Ruff, Ruff-format, mypy) enforce formatting on commit.
 - **Filesystem**: Live rehearsal operates in `/tmp/aijournal_live_run_YYYYMMDDhhmm`. Ground truth profile/tests remain in the repo; live artifacts stay in the temp workspace.
@@ -40,7 +60,7 @@ Read these first to avoid surprises mid-run.
 
 - **Always** run commands via `uv run …` (e.g., `uv run aijournal summarize …`) so the project virtualenv and deps stay active. Use `uv run -- bash -lc '…'` only when you need to wrap multiple shell operations.
 - **Never** set `AIJOURNAL_FAKE_OLLAMA=1` during the live rehearsal; the acceptance criteria explicitly reject fake fixtures.
-- **LLM server** must already host `gpt-oss:20b` and `nomic-embed-text`. Verify with:
+- **LLM server** must already host `gpt-oss:20b` and `embeddinggemma`. Verify with:
   ```bash
   uv run -- bash -lc 'export AIJOURNAL_MODEL="gpt-oss:20b" AIJOURNAL_OLLAMA_HOST="http://192.168.1.143:11434"; aijournal ollama health'
   ```
