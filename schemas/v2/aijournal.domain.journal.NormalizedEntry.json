@@ -1,8 +1,33 @@
 {
   "$defs": {
-    "JournalSection": {
+    "NormalizedEntity": {
       "additionalProperties": false,
-      "description": "Heading/section metadata extracted from Markdown.",
+      "description": "Structured entity extracted during normalization.",
+      "properties": {
+        "extra": {
+          "additionalProperties": true,
+          "title": "Extra",
+          "type": "object"
+        },
+        "type": {
+          "title": "Type",
+          "type": "string"
+        },
+        "value": {
+          "title": "Value",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "value"
+      ],
+      "title": "NormalizedEntity",
+      "type": "object"
+    },
+    "Section": {
+      "additionalProperties": false,
+      "description": "Normalized representation of a markdown heading or section.",
       "properties": {
         "heading": {
           "title": "Heading",
@@ -41,37 +66,12 @@
       "required": [
         "heading"
       ],
-      "title": "JournalSection",
-      "type": "object"
-    },
-    "NormalizedEntity": {
-      "additionalProperties": false,
-      "description": "Structured entity extracted during normalization.",
-      "properties": {
-        "extra": {
-          "additionalProperties": true,
-          "title": "Extra",
-          "type": "object"
-        },
-        "type": {
-          "title": "Type",
-          "type": "string"
-        },
-        "value": {
-          "title": "Value",
-          "type": "string"
-        }
-      },
-      "required": [
-        "type",
-        "value"
-      ],
-      "title": "NormalizedEntity",
+      "title": "Section",
       "type": "object"
     }
   },
   "additionalProperties": false,
-  "description": "Machine-readable normalized entry.",
+  "description": "Machine-readable journal entry used throughout pipelines.",
   "properties": {
     "created_at": {
       "title": "Created At",
@@ -90,7 +90,7 @@
     },
     "sections": {
       "items": {
-        "$ref": "#/$defs/JournalSection"
+        "$ref": "#/$defs/Section"
       },
       "title": "Sections",
       "type": "array"

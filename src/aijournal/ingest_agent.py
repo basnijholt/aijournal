@@ -9,6 +9,7 @@ from pathlib import Path
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent
 
+from aijournal.domain.journal import Section as IngestSection
 from aijournal.services.ollama import build_ollama_agent, build_ollama_config_from_mapping
 
 INGEST_SYSTEM_PROMPT = """
@@ -32,14 +33,6 @@ Requirements:
 
 Return concise, deterministic data so downstream commands can diff results easily.
 """
-
-
-class IngestSection(BaseModel):
-    """Structured representation of a heading block."""
-
-    heading: str = Field(..., max_length=200)
-    level: int = Field(default=2, ge=1, le=6)
-    summary: str | None = Field(default=None, max_length=320)
 
 
 class IngestResult(BaseModel):
