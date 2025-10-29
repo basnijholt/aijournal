@@ -15,6 +15,21 @@ from aijournal.domain.changes import (
 from aijournal.domain.changes import (
     ProfileUpdateProposals as DomainProfileUpdateProposals,
 )
+from aijournal.domain.events import (
+    ClaimConflictPayload as DomainClaimConflictPayload,
+)
+from aijournal.domain.events import (
+    ClaimPreviewEvent as DomainClaimPreviewEvent,
+)
+from aijournal.domain.events import (
+    ClaimSignaturePayload as DomainClaimSignaturePayload,
+)
+from aijournal.domain.events import (
+    FeedbackAdjustmentEvent as DomainFeedbackAdjustmentEvent,
+)
+from aijournal.domain.events import (
+    FeedbackBatch as DomainFeedbackBatch,
+)
 from aijournal.domain.facts import (
     DailySummary as DomainDailySummary,
 )
@@ -66,6 +81,26 @@ InterviewSet = DomainInterviewSet
 PersonaCoreMeta = DomainPersonaCoreMeta
 PersonaCore = DomainPersonaCore
 PersonaCoreFile = DomainPersonaCoreFile
+ClaimSignaturePayload = DomainClaimSignaturePayload
+ClaimConflictPayload = DomainClaimConflictPayload
+ClaimPreviewEvent = DomainClaimPreviewEvent
+FeedbackAdjustmentEvent = DomainFeedbackAdjustmentEvent
+FeedbackBatch = DomainFeedbackBatch
+
+
+PersonaCore.model_rebuild(_types_namespace={"ClaimAtom": ClaimAtom})
+PersonaCoreFile.model_rebuild(
+    _types_namespace={
+        "PersonaCore": PersonaCore,
+        "PersonaCoreMeta": PersonaCoreMeta,
+    }
+)
+InterviewSet.model_rebuild(
+    _types_namespace={
+        "InterviewQuestion": InterviewQuestion,
+        "SummaryMeta": SummaryMeta,
+    }
+)
 
 
 class ChunkManifestMeta(AijournalModel):
@@ -280,44 +315,6 @@ FacetProposal = DomainFacetChange
 ProfileUpdateProposals = DomainProfileUpdateProposals
 
 
-class ClaimSignaturePayload(AijournalModel):
-    """Serialized signature describing the target slot for a claim."""
-
-    claim_type: str
-    subject: str
-    predicate: str
-    domain: str | None = None
-    context: list[str] = Field(default_factory=list)
-    conditions: list[str] = Field(default_factory=list)
-
-
-class ClaimConflictPayload(AijournalModel):
-    """Structured conflict emitted during consolidation previews."""
-
-    claim_id: str
-    signature: ClaimSignaturePayload
-    statement: str
-    existing_value: str
-    incoming_value: str
-    incoming_sources: list[ClaimSource] = Field(default_factory=list)
-
-
-class ClaimPreviewEvent(AijournalModel):
-    """Outcome of attempting to merge a claim proposal into existing atoms."""
-
-    action: str
-    claim_id: str
-    delta_strength: float = 0.0
-    statement: str | None = None
-    value: str | None = None
-    strength: float | None = None
-    signature: ClaimSignaturePayload | None = None
-    conflict: ClaimConflictPayload | None = None
-    related_claim_id: str | None = None
-    related_action: str | None = None
-    related_signature: ClaimSignaturePayload | None = None
-
-
 class ProfileUpdatePreview(AijournalModel):
     """Preview metadata bundled with a profile update batch."""
 
@@ -385,6 +382,11 @@ __all__ = [
     "AdviceRecommendation",
     "AdviceCard",
     "ClaimProposal",
+    "ClaimSignaturePayload",
+    "ClaimConflictPayload",
+    "ClaimPreviewEvent",
+    "FeedbackAdjustmentEvent",
+    "FeedbackBatch",
     "FacetProposal",
     "ProfileUpdateProposals",
     "ClaimSignaturePayload",

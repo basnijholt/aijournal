@@ -1,0 +1,84 @@
+{
+  "$defs": {
+    "FeedbackAdjustmentEvent": {
+      "additionalProperties": false,
+      "description": "Record of a claim strength adjustment triggered by chat feedback.",
+      "properties": {
+        "claim_id": {
+          "title": "Claim Id",
+          "type": "string"
+        },
+        "delta": {
+          "title": "Delta",
+          "type": "number"
+        },
+        "kind": {
+          "const": "feedback",
+          "default": "feedback",
+          "title": "Kind",
+          "type": "string"
+        },
+        "new_strength": {
+          "title": "New Strength",
+          "type": "number"
+        },
+        "old_strength": {
+          "title": "Old Strength",
+          "type": "number"
+        }
+      },
+      "required": [
+        "claim_id",
+        "old_strength",
+        "new_strength",
+        "delta"
+      ],
+      "title": "FeedbackAdjustmentEvent",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Batch of feedback adjustments queued for claim strength updates.",
+  "properties": {
+    "batch_id": {
+      "title": "Batch Id",
+      "type": "string"
+    },
+    "created_at": {
+      "title": "Created At",
+      "type": "string"
+    },
+    "events": {
+      "items": {
+        "$ref": "#/$defs/FeedbackAdjustmentEvent"
+      },
+      "title": "Events",
+      "type": "array"
+    },
+    "feedback": {
+      "enum": [
+        "up",
+        "down"
+      ],
+      "title": "Feedback",
+      "type": "string"
+    },
+    "question": {
+      "title": "Question",
+      "type": "string"
+    },
+    "session_id": {
+      "title": "Session Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "batch_id",
+    "created_at",
+    "session_id",
+    "question",
+    "feedback"
+  ],
+  "title": "FeedbackBatch",
+  "type": "object"
+}
