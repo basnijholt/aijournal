@@ -212,7 +212,7 @@ class CaptureState:
         self.artifacts_changed[key] = self.artifacts_changed.get(key, 0) + 1
 
 
-class CharacterizeStageOutputs(NamedTuple):
+class CharacterizeStage5Outputs(NamedTuple):
     result: OperationResult
     review_result: OperationResult | None
     duration_ms: float
@@ -222,7 +222,7 @@ class CharacterizeStageOutputs(NamedTuple):
     review_candidates: list[str]
 
 
-class PersistStageOutputs(NamedTuple):
+class PersistStage0Outputs(NamedTuple):
     entries: list[EntryResult]
     result: OperationResult
     duration_ms: float
@@ -235,19 +235,19 @@ class NormalizeStageOutputs(NamedTuple):
     changed_dates: list[str]
 
 
-class SummarizeStageOutputs(NamedTuple):
+class SummarizeStage2Outputs(NamedTuple):
     result: OperationResult
     duration_ms: float
     paths: list[str]
 
 
-class FactsStageOutputs(NamedTuple):
+class FactsStage3Outputs(NamedTuple):
     result: OperationResult
     duration_ms: float
     paths: list[str]
 
 
-class ProfileStageOutputs(NamedTuple):
+class ProfileStage4Outputs(NamedTuple):
     suggest_result: OperationResult
     apply_result: OperationResult | None
     duration_ms: float
@@ -255,14 +255,14 @@ class ProfileStageOutputs(NamedTuple):
     applied_count: int
 
 
-class IndexStageOutputs(NamedTuple):
+class IndexStage6Outputs(NamedTuple):
     result: OperationResult
     duration_ms: float
     updated: bool
     rebuilt: bool
 
 
-class PersonaStageOutputs(NamedTuple):
+class PersonaStage7Outputs(NamedTuple):
     result: OperationResult
     duration_ms: float
     persona_changed: bool
@@ -273,7 +273,7 @@ class PersonaStageOutputs(NamedTuple):
     error: str | None
 
 
-class PackStageOutputs(NamedTuple):
+class PackStage8Outputs(NamedTuple):
     result: OperationResult
     duration_ms: float
 
@@ -1809,7 +1809,7 @@ def _run_persist_stage_0(
     root: Path,
     manifest_entries: list[ManifestEntry],
     log_event: Callable[[dict[str, object]], None],
-) -> PersistStageOutputs:
+) -> PersistStage0Outputs:
     """Persist captured content and return entry results with stage metadata."""
 
     entry_results: list[EntryResult] = []
@@ -1868,7 +1868,7 @@ def _run_persist_stage_0(
         warnings=stage_entry_warnings,
         details=persist_details,
     )
-    return PersistStageOutputs(entry_results, op_result, duration_ms)
+    return PersistStage0Outputs(entry_results, op_result, duration_ms)
 
 
 def _run_normalize_stage_1(
@@ -1905,7 +1905,7 @@ def _run_summarize_stage_2(
     changed_dates: list[str],
     inputs: CaptureInput,
     root: Path,
-) -> SummarizeStageOutputs:
+) -> SummarizeStage2Outputs:
     """Generate daily summaries for changed dates."""
 
     stage_start = perf_counter()
@@ -1950,14 +1950,14 @@ def _run_summarize_stage_2(
             "summaries already up to date",
             details=summary_details,
         )
-    return SummarizeStageOutputs(op_result, duration_ms, summary_paths)
+    return SummarizeStage2Outputs(op_result, duration_ms, summary_paths)
 
 
 def _run_facts_stage_3(
     changed_dates: list[str],
     inputs: CaptureInput,
     root: Path,
-) -> FactsStageOutputs:
+) -> FactsStage3Outputs:
     """Extract micro-facts for changed dates."""
 
     stage_start = perf_counter()
@@ -2006,14 +2006,14 @@ def _run_facts_stage_3(
             "micro-facts already up to date",
             details=facts_details,
         )
-    return FactsStageOutputs(op_result, duration_ms, facts_paths)
+    return FactsStage3Outputs(op_result, duration_ms, facts_paths)
 
 
 def _run_profile_stage_4(
     changed_dates: list[str],
     inputs: CaptureInput,
     root: Path,
-) -> ProfileStageOutputs:
+) -> ProfileStage4Outputs:
     """Generate profile suggestions and optionally apply them."""
 
     stage_start = perf_counter()
@@ -2118,7 +2118,7 @@ def _run_profile_stage_4(
                 details=apply_details,
             )
 
-    return ProfileStageOutputs(
+    return ProfileStage4Outputs(
         suggest_result=suggest_result,
         apply_result=apply_result,
         duration_ms=duration_ms,
@@ -2131,7 +2131,7 @@ def _run_characterize_stage_5(
     changed_dates: list[str],
     inputs: CaptureInput,
     root: Path,
-) -> CharacterizeStageOutputs:
+) -> CharacterizeStage5Outputs:
     """Characterize entries and optionally apply review batches."""
 
     stage_start = perf_counter()
@@ -2253,7 +2253,7 @@ def _run_characterize_stage_5(
                 details=review_details,
             )
 
-    return CharacterizeStageOutputs(
+    return CharacterizeStage5Outputs(
         result=characterize_result,
         review_result=review_result,
         duration_ms=duration_ms,
@@ -2267,7 +2267,7 @@ def _run_characterize_stage_5(
 def _run_index_stage_6(
     changed_dates: list[str],
     root: Path,
-) -> IndexStageOutputs:
+) -> IndexStage6Outputs:
     """Refresh the retrieval index for the provided dates."""
 
     stage_start = perf_counter()
@@ -2316,14 +2316,14 @@ def _run_index_stage_6(
             index_message or "index already up to date",
             details=index_details,
         )
-    return IndexStageOutputs(op_result, duration_ms, index_updated, rebuilt)
+    return IndexStage6Outputs(op_result, duration_ms, index_updated, rebuilt)
 
 
 def _run_persona_stage_7(
     inputs: CaptureInput,
     root: Path,
     artifacts_changed: dict[str, int],
-) -> PersonaStageOutputs:
+) -> PersonaStage7Outputs:
     """Refresh persona based on profile changes."""
 
     stage_start = perf_counter()
@@ -2388,7 +2388,7 @@ def _run_persona_stage_7(
             "persona already fresh",
             details=persona_details,
         )
-    return PersonaStageOutputs(
+    return PersonaStage7Outputs(
         result=op_result,
         duration_ms=duration_ms,
         persona_changed=persona_changed,
@@ -2405,13 +2405,13 @@ def _run_pack_stage_8(
     root: Path,
     run_id: str,
     persona_changed: bool,
-) -> PackStageOutputs:
+) -> PackStage8Outputs:
     """Generate derived packs when requested."""
 
     if not inputs.pack:
-        return PackStageOutputs(OperationResult.noop("no pack requested"), 0.0)
+        return PackStage8Outputs(OperationResult.noop("no pack requested"), 0.0)
     if not persona_changed:
-        return PackStageOutputs(
+        return PackStage8Outputs(
             OperationResult.noop("persona unchanged, pack not regenerated"),
             0.0,
         )
@@ -2450,7 +2450,7 @@ def _run_pack_stage_8(
             message="pack generated",
             details=pack_details,
         )
-    return PackStageOutputs(op_result, duration_ms)
+    return PackStage8Outputs(op_result, duration_ms)
 
 
 def normalize_entries(entries: list[EntryResult], root: Path) -> dict[str, Any]:
