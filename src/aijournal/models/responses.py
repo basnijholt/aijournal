@@ -25,6 +25,29 @@ class DailySummaryResponse(AijournalModel):
     todo_candidates: list[str] = Field(default_factory=list)
 
 
+class ClaimSketch(AijournalModel):
+    """Minimal claim payload emitted directly by the LLM."""
+
+    id: str | None = None
+    statement: str
+    value: str | None = None
+    rationale: str | None = None
+    normalized_ids: list[str] = Field(default_factory=list)
+    evidence_hashes: list[str] = Field(default_factory=list)
+    manifest_hashes: list[str] = Field(default_factory=list)
+    confidence: float | None = None
+    strength: float | None = None
+    type: str | None = None
+    subject: str | None = None
+    predicate: str | None = None
+    scope: dict[str, Any] | None = None
+    status: str | None = None
+    method: str | None = None
+    user_verified: bool | None = None
+    review_after_days: int | None = None
+    provenance: dict[str, Any] | None = None
+
+
 class ExtractedFactPayload(AijournalModel):
     """Structured micro-fact emitted by the extraction pipeline."""
 
@@ -39,7 +62,7 @@ class ExtractedFactPayload(AijournalModel):
 class ClaimProposalPayload(AijournalModel):
     """Structured claim proposal returned directly by the LLM."""
 
-    claim: ClaimAtom | dict[str, Any]
+    claim: ClaimSketch
     normalized_ids: list[str] = Field(default_factory=list)
     evidence_hashes: list[str] = Field(default_factory=list)
     manifest_hashes: list[str] = Field(default_factory=list)
@@ -141,6 +164,7 @@ __all__ = [
     "AdviceLLMResponse",
     "CharacterizeResponse",
     "ClaimProposalPayload",
+    "ClaimSketch",
     "DailySummaryResponse",
     "ExtractedFactPayload",
     "ExtractedFactsResponse",

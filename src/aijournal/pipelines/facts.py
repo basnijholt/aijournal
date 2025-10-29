@@ -9,7 +9,10 @@ from pydantic import ValidationError
 
 from aijournal.fakes import fake_microfacts
 from aijournal.models import (
+    ClaimAtom,
     ClaimProposal,
+    ClaimProposalPayload,
+    ClaimSketch,
     ClaimSource,
     ClaimSourceSpan,
     ExtractedFactsResponse,
@@ -202,14 +205,28 @@ def normalize_claim_proposals(
                 ),
             )
             continue
-        payload = raw.model_dump(mode="python") if hasattr(raw, "model_dump") else raw
-        if not isinstance(payload, dict):
+        sketch_like, metadata = _coerce_claim_sketch(raw)
+        if sketch_like is None:
             continue
-        raw_claim = payload.get("claim")
-        candidate = raw_claim if raw_claim is not None else payload
+
+        if isinstance(sketch_like, ClaimSketch):
+            sketch = sketch_like
+        else:
+            try:
+                sketch = ClaimSketch.model_validate(sketch_like.model_dump(mode="python"))
+            except ValidationError:
+                continue
+
+        if metadata.rationale is None:
+            metadata.rationale = sketch.rationale
+
+        payload_normalized_ids = merge_unique(sketch.normalized_ids, metadata.normalized_ids)
+        payload_evidence_hashes = merge_unique(sketch.evidence_hashes, metadata.evidence_hashes)
+        payload_manifest_hashes = merge_unique(sketch.manifest_hashes, metadata.manifest_hashes)
+
         try:
             claim_model = normalization.normalize_claim_atom(
-                candidate,
+                sketch.model_dump(mode="python"),
                 timestamp=timestamp,
                 default_sources=default_sources,
             )
@@ -219,14 +236,73 @@ def normalize_claim_proposals(
         proposals.append(
             ClaimProposal(
                 claim=claim_model,
-                normalized_ids=list(normalized_ids),
-                evidence_hashes=list(evidence_hashes),
-                manifest_hashes=list(manifest_hashes),
-                rationale=str(payload.get("rationale") or payload.get("reason") or "").strip()
-                or None,
+                normalized_ids=merge_unique(payload_normalized_ids, normalized_ids),
+                evidence_hashes=merge_unique(payload_evidence_hashes, evidence_hashes),
+                manifest_hashes=merge_unique(payload_manifest_hashes, manifest_hashes),
+                rationale=metadata.rationale,
             ),
         )
     return proposals
+
+
+class _SketchMetadata:
+    __slots__ = ("normalized_ids", "evidence_hashes", "manifest_hashes", "rationale")
+
+    def __init__(
+        self,
+        *,
+        normalized_ids: Iterable[str] = (),
+        evidence_hashes: Iterable[str] = (),
+        manifest_hashes: Iterable[str] = (),
+        rationale: str | None = None,
+    ) -> None:
+        self.normalized_ids = list(normalized_ids)
+        self.evidence_hashes = list(evidence_hashes)
+        self.manifest_hashes = list(manifest_hashes)
+        self.rationale = rationale
+
+
+def _coerce_claim_sketch(raw: Any) -> tuple[ClaimSketch | ClaimAtom | None, _SketchMetadata]:
+    metadata = _SketchMetadata()
+
+    if isinstance(raw, ClaimSketch):
+        metadata = _SketchMetadata(
+            normalized_ids=raw.normalized_ids,
+            evidence_hashes=raw.evidence_hashes,
+            manifest_hashes=raw.manifest_hashes,
+            rationale=raw.rationale,
+        )
+        return raw, metadata
+
+    if isinstance(raw, ClaimProposalPayload):
+        metadata = _SketchMetadata(
+            normalized_ids=raw.normalized_ids,
+            evidence_hashes=raw.evidence_hashes,
+            manifest_hashes=raw.manifest_hashes,
+            rationale=raw.rationale,
+        )
+        return raw.claim, metadata
+
+    if hasattr(raw, "model_dump"):
+        payload = raw.model_dump(mode="python")
+    else:
+        payload = raw
+
+    if isinstance(payload, dict):
+        claim_data = payload.get("claim") or payload
+        metadata = _SketchMetadata(
+            normalized_ids=payload.get("normalized_ids") or [],
+            evidence_hashes=payload.get("evidence_hashes") or [],
+            manifest_hashes=payload.get("manifest_hashes") or [],
+            rationale=str(payload.get("rationale") or payload.get("reason") or "").strip() or None,
+        )
+        try:
+            sketch = ClaimSketch.model_validate(claim_data)
+        except ValidationError:
+            return None, _SketchMetadata()
+        return sketch, metadata
+
+    return None, _SketchMetadata()
 
 
 def generate_microfacts(
