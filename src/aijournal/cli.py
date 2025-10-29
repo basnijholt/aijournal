@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any, Literal, cast
@@ -264,10 +265,18 @@ def capture(
 ) -> None:
     """Persist new material and refresh downstream artifacts in one pass."""
 
-    if bool(from_paths) and text:
+    stdin_text: str | None = None
+    if not from_paths and text is None and not sys.stdin.isatty():
+        stdin_buffer = sys.stdin.read()
+        if stdin_buffer and stdin_buffer.strip():
+            stdin_text = stdin_buffer
+
+    effective_text = text if text is not None else stdin_text
+
+    if bool(from_paths) and effective_text:
         typer.secho("Provide either --from or --text, not both.", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=2)
-    if not from_paths and not text:
+    if not from_paths and not effective_text:
         typer.secho(
             "Use --from to import files/directories or --text for raw Markdown.",
             fg=typer.colors.RED,
@@ -310,7 +319,7 @@ def capture(
 
     capture_input = CaptureInput(
         source=source_mode,
-        text=text,
+        text=effective_text,
         paths=resolved_paths,
         source_type=source_type_value,  # type: ignore[arg-type]
         date=date,

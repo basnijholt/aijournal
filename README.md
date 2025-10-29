@@ -100,6 +100,12 @@ aijournal capture --text "Blocked on hiring ops; need to queue backlog." --tags 
 
 Writes a canonical Markdown file under `data/journal/YYYY/MM/DD/<slug>.md`, records a manifest row with the entry hash, stores a raw snapshot (`data/raw/<hash>.md`), and refreshes summaries, micro-facts, profile suggestions, persona/index, and optional packs in one shot.
 
+You can also pipe raw Markdown straight into the command:
+
+```sh
+echo "Journaled from stdin" | aijournal capture --tags daily-log
+```
+
 To import existing files or folders:
 
 ```sh
