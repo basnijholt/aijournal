@@ -6,6 +6,8 @@ from typing import Any
 
 from pydantic import ConfigDict, Field
 
+from aijournal.domain.journal import NormalizedEntity, NormalizedEntry, Section
+
 from .base import AijournalModel
 from .claim_atoms import ClaimAtom
 
@@ -48,36 +50,7 @@ class JournalEntry(AijournalModel):
     summary: str | None = None
 
 
-class JournalSection(AijournalModel):
-    """Heading/section metadata extracted from Markdown."""
-
-    heading: str
-    level: int = 1
-    summary: str | None = None
-    para_index: int | None = None
-
-
-class NormalizedEntity(AijournalModel):
-    """Structured entity extracted during normalization."""
-
-    type: str
-    value: str
-    extra: dict[str, Any] = Field(default_factory=dict)
-
-
-class NormalizedEntry(AijournalModel):
-    """Machine-readable normalized entry."""
-
-    id: str
-    created_at: str
-    source_path: str
-    title: str
-    tags: list[str] = Field(default_factory=list)
-    sections: list[JournalSection] = Field(default_factory=list)
-    entities: list[NormalizedEntity] = Field(default_factory=list)
-    summary: str | None = None
-    source_hash: str | None = None
-    source_type: str | None = None
+JournalSection = Section
 
 
 class ClaimsFile(AijournalModel):

@@ -1,6 +1,6 @@
 {
   "additionalProperties": false,
-  "description": "Heading/section metadata extracted from Markdown.",
+  "description": "Normalized representation of a markdown heading or section.",
   "properties": {
     "heading": {
       "title": "Heading",
@@ -39,6 +39,6 @@
   "required": [
     "heading"
   ],
-  "title": "JournalSection",
+  "title": "Section",
   "type": "object"
 }
