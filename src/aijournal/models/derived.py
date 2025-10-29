@@ -6,6 +6,8 @@ from typing import Any, cast
 
 from pydantic import Field, field_validator
 
+from aijournal.domain.evidence import SourceRef, Span
+
 from .base import AijournalModel
 from .claim_atoms import ClaimAtom, ClaimSource, ClaimSourceSpan, Provenance, Scope
 
@@ -27,17 +29,8 @@ class DailySummary(AijournalModel):
     meta: SummaryMeta = Field(default_factory=SummaryMeta)
 
 
-class FactEvidenceSpan(AijournalModel):
-    type: str
-    index: int | None = None
-    start: int | None = None
-    end: int | None = None
-    text: str | None = None
-
-
-class FactEvidence(AijournalModel):
-    entry_id: str
-    spans: list[FactEvidenceSpan] = Field(default_factory=list)
+FactEvidenceSpan = Span
+FactEvidence = SourceRef
 
 
 class MicroFact(AijournalModel):
