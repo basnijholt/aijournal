@@ -14,6 +14,7 @@ class StrictModel(BaseModel):
         validate_assignment=True,
         arbitrary_types_allowed=False,
         populate_by_name=True,
+        protected_namespaces=(),
     )
 
 
