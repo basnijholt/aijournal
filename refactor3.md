@@ -47,7 +47,7 @@ This runbook expands every part of the prior proposal into actionable, testable 
 6. **Atomic Commits:** Each sub-step ends with a passing test suite and a dedicated commit.
 7. **Governance Hooks:** Install a local `pre-push` hook running `uv run pytest -q` and `pre-commit run --all-files`; pushes fail on red.
 8. **Decision Log:** Maintain a “Decision Log” table (Date / Step / Decision / Impact) in `docs/refactor3_status.md`. Every deviation, retry, or adjustment must be recorded before continuing.
-9. **Schema Mode Toggle:** Support `AIJOURNAL_SCHEMA_MODE={read-legacy-write-new,read-both-write-both,read-new-write-new}` as a temporary escape hatch during migration.
+9. **Hard Cutover:** Eliminate legacy schema toggles. Run the entire refactor with the strict models only (`read-new-write-new` semantics) and delete helpers that attempted to bridge formats.
 
 ---
 
@@ -175,7 +175,7 @@ class SourceRef(StrictModel):
     spans: list[Span] = []
 ```
 
-A helper `redact_source_text` will strip `span.text` during claim persistence and the migration audit command will clean legacy files.
+A helper `redact_source_text` will strip `span.text` during claim persistence and the migration audit command will clean any persisted files that still contain text spans.
 
 ### 4.4 Claims & Provenance
 
@@ -490,7 +490,7 @@ class CaptureInput(CaptureRequest):
 4. Unify change events and feedback handling.
 5. Align chunk/index/chat/advice surfaces with the new domain structure; prove retriever parity.
 6. Preserve capture DTO boundaries.
-7. Adopt artifact envelopes (dual-write rehearsal → full cut-over), supply compatibility shims with deprecation warnings, add provenance scanner, and regenerate documentation/examples.
+7. Adopt artifact envelopes with an immediate cut-over, remove leftover legacy files, add provenance scanner, and regenerate documentation/examples.
 8. Run end-to-end rehearsal under new schema, log decisions, publish migration notes, and prepare release guidance.
 
 ---
@@ -525,7 +525,7 @@ class CaptureInput(CaptureRequest):
 
 **1.2 ArtifactMeta & Helpers**
 - Add `aijournal/common/meta.py` (`ArtifactMeta`, `ArtifactKind`, `Artifact[T]`, `LLMResult[T]`).
-- Implement `aijournal/io/artifacts.py` with helper functions: `save_artifact`, `load_artifact`, `read_legacy_or_artifact` (deterministic serialization using sorted keys, UTF-8, newline at EOF).
+- Implement `aijournal/io/artifacts.py` with helper functions: `save_artifact` and `load_artifact` (deterministic serialization using sorted keys, UTF-8, newline at EOF).
 - Tests: `uv run pytest`; `pre-commit run --all-files`.
 - Commit: `refactor3: add artifact envelope primitives`.
 
@@ -622,15 +622,7 @@ class CaptureInput(CaptureRequest):
 - Tests: `uv run pytest`.
 - Commit: `refactor3: formalize capture request/input split`.
 
-### Stage 7.5 – Dual-Write Rehearsal (Safety Valve)
-
-**7.5.1 Temporary Dual-Write**
-- Implement `AIJOURNAL_SCHEMA_MODE` handling with support for `read-both-write-both`.
-- For one commit, write both legacy and v2 artifacts while reading v2 first.
-- Tests: `uv run pytest`; run smoke command ensuring both files produced.
-- Commit: `refactor3: enable dual-write schema rehearsal`.
-
-### Stage 8 – Artifact Adoption, Compatibility & Provenance Scanner
+### Stage 8 – Artifact Adoption & Provenance Scanner
 
 **8.1 Wrap Derived Artifacts in Artifact[T]**
 - Convert persisted YAML/JSON (summaries, microfacts, persona core, profile updates, feedback batches, index meta/chunks, packs, chat transcripts) to `Artifact[T]` envelopes.
@@ -638,11 +630,12 @@ class CaptureInput(CaptureRequest):
 - Tests: `uv run pytest`; add test ensuring each artifact has `schema: "v2"`, `kind in ArtifactKind`, and stable formatting.
 - Commit: `refactor3: adopt artifact envelopes for derived data`.
 
-**8.2 Compatibility Layer with Warnings**
-- Add `aijournal/compat/refactor3.py` mapping legacy class names to new ones, emitting `DeprecationWarning` with `stacklevel=2`.
-- Update codebase to import new modules; external callers rely on compat if needed.
-- Tests: `uv run pytest`; add test asserting warning raised once.
-- Commit: `refactor3: add legacy compatibility aliases`.
+**8.2 Legacy Payload Removal**
+- Rip out any legacy data readers/writers and delete the `AIJOURNAL_SCHEMA_MODE` flag.
+- Drop redundant models, CLI options, and fixtures that referenced v1 layouts.
+- Remove stale `derived/*` examples that predate artifacts; regenerate only the v2 envelopes.
+- Tests: `uv run pytest`.
+- Commit: `refactor3: remove legacy schema paths`.
 
 **8.3 Provenance Audit Command**
 - Implement `aijournal ops audit provenance [--fix]` scanning `profile/claims.yaml` and derived artifacts for spans containing text.
@@ -659,7 +652,7 @@ class CaptureInput(CaptureRequest):
 ### Stage 9 – Documentation & Examples
 
 **9.1 Documentation Updates**
-- Update `README.md`, `ARCHITECTURE.md`, `docs/workflow.md`, `agents.md` to describe strict schemas, artifact envelopes, privacy enforcement, event unions, governance hooks, and temporary `AIJOURNAL_SCHEMA_MODE`.
+- Update `README.md`, `ARCHITECTURE.md`, `docs/workflow.md`, `agents.md` to describe strict schemas, artifact envelopes, privacy enforcement, event unions, and governance hooks with a hard cutover stance (no compatibility knobs).
 - Tests: `uv run pytest`; `pre-commit run --all-files` (Markdown lint).
 - Commit: `refactor3: document strict schema architecture`.
 
@@ -681,7 +674,7 @@ class CaptureInput(CaptureRequest):
 
 **10.2 Completion Log & Changelog**
 - Update `docs/refactor3_status.md` summarizing executed steps, test commands, decision log entries.
-- Update `CHANGELOG.md` with schema v2 introduction, migration notes, codemod instructions, provenance audit command, and schema-mode flag usage.
+- Update `CHANGELOG.md` with schema v2 introduction, migration notes, codemod instructions, provenance audit command, and the removal of schema-mode toggles.
 - Tests: `uv run pytest`.
 - Commit: `refactor3: finalize strict schema release notes`.
 
@@ -728,8 +721,8 @@ class CaptureInput(CaptureRequest):
 | 3.x | `AIJOURNAL_FAKE_OLLAMA=1` pipeline smoke tests (recommended). |
 | 5.2 | CLI feedback apply in fake mode to ensure event union works. |
 | 6.1 | `aijournal ops index rebuild` in fake mode + parity assertion. |
-| 7.5 | Dual-write rehearsal verification. |
 | 8.1 | Golden file diff review (ensure only envelope + deterministic formatting changes). |
+| 8.2 | Verify grep for removed legacy modules/files is empty; ensure CLI refuses old schema flags. |
 | 8.4 | Codemod unit test. |
 | 10.1 | Full workflow rehearsal in temp workspace. |
 
@@ -743,8 +736,7 @@ Add property tests for provenance redaction and event JSON round-trips during re
 | ---- | ---------- |
 | LLM fails to output strict schema initially | Enhanced prompts, structured-output retry, logged failures, schema fixtures. |
 | Claim provenance accidentally stores text | Validators, `redact_source_text`, audit command, dedicated tests. |
-| Artifact conversion corrupts existing data | Legacy readers, `AIJOURNAL_SCHEMA_MODE` fallback, migration CLI, deterministic serialization. |
-| Compatibility breaks third-party scripts | Compat layer with warnings, codemod, documented changes. |
+| Artifact conversion corrupts existing data | Back up via git, run e2e rehearsal before deleting old files, deterministic serialization, audit command. |
 | Search/index mismatch | Retriever parity test with mini workspace. |
 | Schema drift after merge | JSON schema snapshots + CI diff, ArtifactKind enum. |
 | Commit discipline lapses | Checkpoint rule + pre-push hook. |
@@ -777,8 +769,8 @@ refactor3: <concise summary>
 - All stages complete with passing tests and sequential commits.
 - `git status` clean; no leftover artifacts or temporary files.
 - `docs/refactor3_status.md` contains Decision Log entries and execution summary.
-- `CHANGELOG.md` documents schema v2 introduction, schema mode, codemod, audit command.
-- Compat layer and prompts updated; schema snapshots in place.
+- `CHANGELOG.md` documents the strict schema v2 cut-over, audit command, codemod, and hard removal of legacy formats.
+- Prompts updated; schema snapshots in place with no legacy fallbacks.
 - Optional release checklist prepared if required.
 
 ---
@@ -800,7 +792,7 @@ refactor3: <concise summary>
 > 6. Tests must pass after each `refactor3` sub-step; commit immediately.
 > 7. Document deviations in `docs/refactor3_status.md#decision-log` before proceeding.
 >
-> **Deliverables**: Completed code per checklist, updated documentation, migration utilities, compatibility aliases (with warnings), codemod script, schema snapshots, changelog entry, decision log updates, and green test evidence.
+> **Deliverables**: Completed code per checklist, updated documentation, migration utilities, codemod script, schema snapshots, changelog entry, decision log updates, and green test evidence.
 
 ---
 
