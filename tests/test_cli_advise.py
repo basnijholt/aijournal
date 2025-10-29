@@ -9,9 +9,14 @@ import yaml
 from typer.testing import CliRunner
 
 from aijournal.cli import app
-from aijournal.common.meta import ArtifactKind
-from aijournal.io.artifacts import load_artifact
-from aijournal.models import AdviceCard
+from aijournal.common.meta import Artifact, ArtifactKind, ArtifactMeta
+from aijournal.io.artifacts import load_artifact, save_artifact
+from aijournal.models import (
+    AdviceCard,
+    ProfileUpdateBatch,
+    ProfileUpdatePreview,
+    ProfileUpdateProposals,
+)
 from tests.helpers import make_claim_atom
 
 if TYPE_CHECKING:
@@ -63,14 +68,25 @@ boundaries_ethics:
 
 
 def _seed_pending_prompt(workspace: Path) -> None:
-    payload = {
-        "preview": {
-            "interview_prompts": ["Where do morning routines break down during travel weeks?"],
-        }
-    }
+    batch = ProfileUpdateBatch(
+        batch_id="pending-batch",
+        created_at=f"{DATE}T00:00:00Z",
+        date=DATE,
+        proposals=ProfileUpdateProposals(),
+        preview=ProfileUpdatePreview(
+            interview_prompts=["Where do morning routines break down during travel weeks?"],
+        ),
+    )
     path = workspace / "derived" / "pending" / "profile_updates" / "pending.yaml"
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
+    save_artifact(
+        path,
+        Artifact[ProfileUpdateBatch](
+            kind=ArtifactKind.PROFILE_UPDATES,
+            meta=ArtifactMeta(created_at=f"{DATE}T00:00:00Z"),
+            data=batch,
+        ),
+    )
 
 
 def _invoke(

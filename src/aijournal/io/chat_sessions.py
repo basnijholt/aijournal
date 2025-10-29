@@ -5,8 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from pydantic import ValidationError
-
 from aijournal.common.meta import Artifact, ArtifactKind, ArtifactMeta
 from aijournal.domain.chat import ChatTelemetry, ChatTurn
 from aijournal.domain.chat_sessions import (
@@ -101,15 +99,14 @@ class ChatSessionRecorder:
         if self._summary.exists():
             try:
                 existing = load_artifact(self._summary, ChatSessionSummary)
-                summary = existing.data
-                meta = existing.meta
-            except (ValueError, ValidationError):
-                summary = ChatSessionSummary(
-                    session_id=self.session_id,
-                    created_at=turn.timestamp,
-                    updated_at=turn.timestamp,
+            except Exception as exc:
+                msg = (
+                    "Existing chat summary does not match the strict artifact schema. "
+                    f"Remove {self._summary} and rerun the command."
                 )
-                meta = ArtifactMeta(created_at=turn.timestamp, model=turn.telemetry.model)
+                raise RuntimeError(msg) from exc
+            summary = existing.data
+            meta = existing.meta
         else:
             summary = ChatSessionSummary(
                 session_id=self.session_id,
@@ -152,15 +149,14 @@ class ChatSessionRecorder:
         if self._learnings.exists():
             try:
                 existing = load_artifact(self._learnings, ChatSessionLearnings)
-                learnings = existing.data
-                meta = existing.meta
-            except (ValueError, ValidationError):
-                learnings = ChatSessionLearnings(
-                    session_id=self.session_id,
-                    created_at=turn.timestamp,
-                    updated_at=turn.timestamp,
+            except Exception as exc:
+                msg = (
+                    "Existing chat learnings file does not match the strict artifact schema. "
+                    f"Remove {self._learnings} and rerun the command."
                 )
-                meta = ArtifactMeta(created_at=turn.timestamp, model=turn.telemetry.model)
+                raise RuntimeError(msg) from exc
+            learnings = existing.data
+            meta = existing.meta
         else:
             learnings = ChatSessionLearnings(
                 session_id=self.session_id,

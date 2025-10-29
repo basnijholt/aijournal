@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, cast
 
 import typer
-import yaml
+from pydantic import ValidationError
 
 from aijournal.commands.ingest import _load_config, _use_fake_llm
 from aijournal.commands.pack import _latest_normalized_day
@@ -26,8 +26,8 @@ from aijournal.commands.summarize import (
     _load_normalized_entries,
 )
 from aijournal.common.meta import Artifact, ArtifactKind
-from aijournal.io.artifacts import save_artifact
-from aijournal.models import AdviceCard, AdviceLLMResponse, ClaimAtom
+from aijournal.io.artifacts import load_artifact, save_artifact
+from aijournal.models import AdviceCard, AdviceLLMResponse, ClaimAtom, ProfileUpdateBatch
 from aijournal.pipelines import advise as advise_pipeline
 from aijournal.services import build_ollama_config_from_mapping
 from aijournal.utils import time as time_utils
@@ -90,11 +90,15 @@ def _collect_pending_interview_prompts(root: Path, limit: int = 5) -> list[str]:
     prompts: list[str] = []
     for path in sorted((p for p in directory.glob("*.yaml") if p.is_file()), reverse=True):
         try:
-            payload = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-        except yaml.YAMLError:
+            artifact = load_artifact(path, ProfileUpdateBatch)
+        except (ValidationError, ValueError):
             continue
-        preview = payload.get("preview") or {}
-        for prompt in preview.get("interview_prompts") or []:
+        if artifact.kind is not ArtifactKind.PROFILE_UPDATES:
+            continue
+        preview = artifact.data.preview
+        if not preview:
+            continue
+        for prompt in preview.interview_prompts:
             text = str(prompt).strip()
             if text and text not in prompts:
                 prompts.append(text)
