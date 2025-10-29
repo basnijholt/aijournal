@@ -84,21 +84,22 @@ def test_chat_fake_mode_outputs_answer_with_citation(
     session_id = session_line.split(":", 1)[1].strip()
     session_dir = cli_workspace / "derived" / "chat_sessions" / session_id
     assert session_dir.exists()
-    transcript = session_dir / "transcript.jsonl"
+    transcript = session_dir / "transcript.json"
     summary = session_dir / "summary.yaml"
     learnings = session_dir / "learnings.yaml"
     assert transcript.exists()
     assert summary.exists()
     assert learnings.exists()
 
-    lines = transcript.read_text(encoding="utf-8").strip().splitlines()
-    assert len(lines) == 2
-    payload = json.loads(lines[-1])
-    assert payload["role"] == "assistant"
-    assert "[entry:" in payload["text"]
-    assert payload["clarifying_question"]
-    assert payload["telemetry"]["chunk_count"] == 1
-    assert payload.get("feedback") is None
+    transcript_payload = json.loads(transcript.read_text(encoding="utf-8"))
+    assert transcript_payload["kind"] == "chat.transcript"
+    turns = transcript_payload["data"]["turns"]
+    assert len(turns) == 1
+    entry = turns[0]
+    assert entry["answer"].count("[entry:") >= 1
+    assert entry["clarifying_question"]
+    assert entry["telemetry"]["chunk_count"] == 1
+    assert entry.get("feedback") is None
 
 
 def test_chat_errors_when_index_missing(

@@ -52,6 +52,13 @@ __all__ = [
     "PersonaCoreMeta",
     "PersonaCore",
     "PersonaCoreFile",
+    "PackBundle",
+    "PackEntry",
+    "PackMeta",
+    "TrimmedFile",
+    "ChatTranscript",
+    "ChatTranscriptTurn",
+    "ChatTelemetryRecord",
 ]
 
 _CHANGES_EXPORTS = {
@@ -81,6 +88,17 @@ _PERSONA_EXPORTS = {
     "InterviewQuestion",
     "InterviewSet",
 }
+_PACK_EXPORTS = {
+    "PackBundle",
+    "PackEntry",
+    "PackMeta",
+    "TrimmedFile",
+}
+_CHAT_EXPORTS = {
+    "ChatTranscript",
+    "ChatTranscriptTurn",
+    "ChatTelemetryRecord",
+}
 
 
 def __getattr__(name: str) -> Any:
@@ -106,6 +124,16 @@ def __getattr__(name: str) -> Any:
         return value
     if name in _PERSONA_EXPORTS:
         module = import_module("aijournal.domain.persona")
+        value = getattr(module, name)
+        globals()[name] = value
+        return value
+    if name in _PACK_EXPORTS:
+        module = import_module("aijournal.domain.packs")
+        value = getattr(module, name)
+        globals()[name] = value
+        return value
+    if name in _CHAT_EXPORTS:
+        module = import_module("aijournal.domain.chat_sessions")
         value = getattr(module, name)
         globals()[name] = value
         return value

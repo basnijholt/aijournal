@@ -1,0 +1,30 @@
+{
+  "additionalProperties": false,
+  "description": "Telemetry captured for a chat turn.",
+  "properties": {
+    "chunk_count": {
+      "title": "Chunk Count",
+      "type": "integer"
+    },
+    "model": {
+      "title": "Model",
+      "type": "string"
+    },
+    "retrieval_ms": {
+      "title": "Retrieval Ms",
+      "type": "number"
+    },
+    "retriever_source": {
+      "title": "Retriever Source",
+      "type": "string"
+    }
+  },
+  "required": [
+    "retrieval_ms",
+    "chunk_count",
+    "retriever_source",
+    "model"
+  ],
+  "title": "ChatTelemetryRecord",
+  "type": "object"
+}

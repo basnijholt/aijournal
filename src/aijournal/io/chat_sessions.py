@@ -2,25 +2,20 @@
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import yaml
 
-try:  # pragma: no cover - optional dependency
-    import orjson
-except ModuleNotFoundError:  # pragma: no cover - optional dependency
-    orjson = None  # type: ignore[assignment]
-
+from aijournal.common.meta import Artifact, ArtifactKind, ArtifactMeta
+from aijournal.domain.chat_sessions import (
+    ChatTelemetryRecord,
+    ChatTranscript,
+    ChatTranscriptTurn,
+)
+from aijournal.io.artifacts import load_artifact, save_artifact
 from aijournal.services.chat import ChatCitation, ChatTelemetry, ChatTurn
-
-
-def _dumps_json(payload: dict[str, Any]) -> str:
-    if orjson is not None:
-        return orjson.dumps(payload, option=orjson.OPT_APPEND_NEWLINE).decode("utf-8")
-    return json.dumps(payload, ensure_ascii=False) + "\n"
 
 
 def _load_yaml(path: Path) -> dict[str, Any]:
@@ -58,7 +53,7 @@ class ChatSessionRecorder:
     def __post_init__(self) -> None:
         self.session_dir = self.root / "derived" / "chat_sessions" / self.session_id.strip()
         self.session_dir.mkdir(parents=True, exist_ok=True)
-        self._transcript = self.session_dir / "transcript.jsonl"
+        self._transcript = self.session_dir / "transcript.json"
         self._summary = self.session_dir / "summary.yaml"
         self._learnings = self.session_dir / "learnings.yaml"
 
@@ -72,28 +67,49 @@ class ChatSessionRecorder:
     # Transcript persistence
     # ------------------------------------------------------------------
     def _append_transcript(self, turn: ChatTurn, *, feedback: str | None) -> None:
-        payloads: list[dict[str, Any]] = [
-            {
-                "timestamp": turn.timestamp,
-                "role": "user",
-                "text": turn.question,
-                "intent": turn.intent,
-            },
-            {
-                "timestamp": turn.timestamp,
-                "role": "assistant",
-                "text": turn.answer,
-                "intent": turn.intent,
-                "citations": _citation_codes(turn.citations),
-                "clarifying_question": turn.clarifying_question,
-                "telemetry": _telemetry_payload(turn.telemetry),
-                "fake_mode": turn.fake_mode,
-                "feedback": feedback,
-            },
-        ]
-        with self._transcript.open("a", encoding="utf-8") as handle:
-            for record in payloads:
-                handle.write(_dumps_json(record))
+        if self._transcript.exists():
+            existing = load_artifact(self._transcript, ChatTranscript)
+            transcript = existing.data
+            meta = existing.meta
+        else:
+            transcript = ChatTranscript(
+                session_id=self.session_id,
+                created_at=turn.timestamp,
+                updated_at=turn.timestamp,
+            )
+            meta = ArtifactMeta(created_at=turn.timestamp, model=turn.telemetry.model)
+
+        entry = ChatTranscriptTurn(
+            turn_index=len(transcript.turns) + 1,
+            timestamp=turn.timestamp,
+            question=turn.question,
+            answer=turn.answer,
+            intent=turn.intent,
+            citations=_citation_codes(turn.citations),
+            clarifying_question=turn.clarifying_question,
+            telemetry=ChatTelemetryRecord(
+                retrieval_ms=float(turn.telemetry.retrieval_ms),
+                chunk_count=turn.telemetry.chunk_count,
+                retriever_source=turn.telemetry.retriever_source,
+                model=turn.telemetry.model,
+            ),
+            feedback=feedback,
+            fake_mode=turn.fake_mode,
+        )
+
+        transcript.turns.append(entry)
+        transcript.updated_at = turn.timestamp
+        meta.model = turn.telemetry.model
+
+        save_artifact(
+            self._transcript,
+            Artifact[ChatTranscript](
+                kind=ArtifactKind.CHAT_TRANSCRIPT,
+                meta=meta,
+                data=transcript,
+            ),
+            format="json",
+        )
 
     # ------------------------------------------------------------------
     # Summary maintenance

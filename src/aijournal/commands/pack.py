@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
 
 import typer
 import yaml
@@ -13,9 +12,11 @@ from aijournal.commands.index import _index_settings
 from aijournal.commands.ingest import (
     _load_config,
     _relative_source_path,
-    _write_yaml_if_changed,
 )
 from aijournal.commands.persona import ensure_persona_ready_for_pack
+from aijournal.common.meta import Artifact, ArtifactKind, ArtifactMeta
+from aijournal.domain.packs import PackBundle
+from aijournal.io.artifacts import save_artifact
 from aijournal.pipelines import index as index_pipeline
 from aijournal.pipelines import pack as pack_pipeline
 from aijournal.utils import time as time_utils
@@ -84,7 +85,7 @@ def run_pack(
         pack_pipeline.trim_entries(entries_payload, budget, trimmed)
         total_tokens = sum(entry.tokens for entry in entries_payload)
 
-    payload = pack_pipeline.build_pack_payload(
+    bundle = pack_pipeline.build_pack_payload(
         entries_payload,
         normalized_level,
         resolved_date,
@@ -102,9 +103,25 @@ def run_pack(
         output=output,
     )
 
+    artifact_kind_map = {
+        "L1": ArtifactKind.PACK_L1,
+        "L2": ArtifactKind.PACK_L2,
+        "L3": ArtifactKind.PACK_L3,
+        "L4": ArtifactKind.PACK_L4,
+    }
+    artifact_meta = ArtifactMeta(
+        created_at=bundle.meta.generated_at,
+        notes={"level": normalized_level, "date": resolved_date},
+    )
+    artifact = Artifact[PackBundle](
+        kind=artifact_kind_map[normalized_level],
+        meta=artifact_meta,
+        data=bundle,
+    )
+
     if dry_run:
         typer.echo("Planned files:")
-        for entry in entries_payload:
+        for entry in bundle.files:
             typer.echo(f"- {entry.path} ({entry.tokens} tokens)")
         if trimmed:
             trimmed_display = ", ".join(f"{item.role}:{item.path}" for item in trimmed)
@@ -113,36 +130,21 @@ def run_pack(
 
     if output:
         output.parent.mkdir(parents=True, exist_ok=True)
-        changed = False
-        if fmt_value == "json":
-            changed = _write_json_if_changed(output, payload.to_dict())
-        else:
-            changed = _write_yaml_if_changed(output, payload.to_dict())
+        previous = output.read_text(encoding="utf-8") if output.exists() else None
+        save_artifact(output, artifact, format=fmt_value)
+        new_text = output.read_text(encoding="utf-8") if output.exists() else None
+        changed = previous != new_text
         if changed:
             typer.echo(str(output))
         else:
             typer.echo("No changes")
         return
 
+    artifact_payload = artifact.model_dump(mode="json")
     if fmt_value == "json":
-        typer.echo(json.dumps(payload.to_dict(), indent=2))
+        typer.echo(json.dumps(artifact_payload, indent=2))
     else:
-        typer.echo(yaml.safe_dump(payload.to_dict(), sort_keys=False))
-
-
-def _write_json_if_changed(path: Path, payload: dict[str, Any]) -> bool:
-    existing: dict[str, Any] | None = None
-    if path.exists():
-        try:
-            existing = json.loads(path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
-            existing = None
-    if existing == payload:
-        return False
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-    tmp.replace(path)
-    return True
+        typer.echo(yaml.safe_dump(artifact_payload, sort_keys=False))
 
 
 def _latest_normalized_day(root: Path) -> str | None:

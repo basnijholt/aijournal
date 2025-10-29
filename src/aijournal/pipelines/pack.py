@@ -3,11 +3,10 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
-from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any
 
+from aijournal.domain.packs import PackBundle, PackEntry, PackMeta, TrimmedFile
 from aijournal.utils import time as time_utils
 
 ROLE_ORDER = [
@@ -36,39 +35,6 @@ TRIM_PRIORITY = [
     "profile",
     "claims",
 ]
-
-
-@dataclass
-class PackEntry:
-    role: str
-    path: str
-    tokens: int
-    content: str
-
-
-@dataclass
-class TrimmedFile:
-    role: str
-    path: str
-
-
-@dataclass
-class PackMeta:
-    total_tokens: int
-    max_tokens: int
-    trimmed: list[TrimmedFile]
-    generated_at: str
-
-
-@dataclass
-class PackBundle:
-    level: str
-    date: str
-    files: list[PackEntry]
-    meta: PackMeta
-
-    def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
 
 
 class PackAssemblyError(RuntimeError):
