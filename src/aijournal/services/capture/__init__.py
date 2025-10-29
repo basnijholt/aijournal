@@ -58,6 +58,9 @@ from .utils import (
     discover_markdown_files as _discover_markdown_files,
 )
 from .utils import (
+    emit_operation_event as _emit_operation_event,
+)
+from .utils import (
     ensure_manifest as _ensure_manifest,
 )
 from .utils import (
@@ -110,6 +113,7 @@ __all__ = [
     "run_profile_suggest",
     "run_summarize_command",
     "_apply_profile_update_batch",
+    "_emit_operation_event",
     "_discover_markdown_files",
     "_ensure_manifest",
     "_ensure_unique_slug",
@@ -1460,6 +1464,9 @@ def run_capture(
     persona_changed = False
 
     index_rebuilt_flag = False
+    persona_error: str | None = None
+    status_before = "unknown"
+    status_after = "unknown"
     if changed_dates and stage_enabled(6):
         index_outputs = _run_index_stage_6(
             changed_dates,
@@ -1471,14 +1478,6 @@ def run_capture(
         index_rebuilt_flag = index_outputs.rebuilt
         if index_updated:
             artifacts_changed["index"] = artifacts_changed.get("index", 0) + 1
-        log_event(
-            {
-                "event": "index.rebuild",
-                "status": _stage_status(index_result),
-                "message": index_result.message,
-                "details": index_result.details,
-            }
-        )
         record_stage_outcome(
             stage_id=6,
             stage_name="refresh.index",
@@ -1499,14 +1498,12 @@ def run_capture(
                 result=index_result,
                 duration=0.0,
             )
-        log_event(
-            {
-                "event": "index.rebuild",
-                "status": _stage_status(index_result),
-                "message": index_result.message,
-                "details": index_result.details,
-            }
-        )
+    _emit_operation_event(
+        log_event,
+        event="index.rebuild",
+        status=_stage_status(index_result),
+        result=index_result,
+    )
 
     if stage_enabled(7):
         persona_outputs = _run_persona_stage_7(inputs, root, artifacts_changed)
@@ -1520,18 +1517,6 @@ def run_capture(
         persona_error = persona_outputs.error
         if persona_changed:
             artifacts_changed["persona"] = artifacts_changed.get("persona", 0) + 1
-        persona_event: dict[str, object] = {
-            "event": "persona.status",
-            "status": _stage_status(persona_result),
-            "details": {
-                "before": status_before,
-                "after": status_after,
-                "should_build": persona_result.details.get("should_build", False),
-            },
-        }
-        if persona_error is not None:
-            persona_event["error"] = persona_error
-        log_event(persona_event)
         record_stage_outcome(
             stage_id=7,
             stage_name="refresh.persona",
@@ -1541,13 +1526,21 @@ def run_capture(
         )
     else:
         persona_result = record_skipped_stage(7, "refresh.persona", "refresh.persona")
-        log_event(
-            {
-                "event": "persona.status",
-                "status": _stage_status(persona_result),
-                "details": persona_result.details,
-            }
-        )
+    persona_event_details = dict(persona_result.details or {})
+    persona_event_details.update(
+        {
+            "status_before": status_before,
+            "status_after": status_after,
+        }
+    )
+    _emit_operation_event(
+        log_event,
+        event="persona.status",
+        status=_stage_status(persona_result),
+        result=persona_result,
+        details=persona_event_details,
+        extra={"error": persona_error} if persona_error else None,
+    )
 
     if stage_enabled(8):
         pack_outputs = _run_pack_stage_8(

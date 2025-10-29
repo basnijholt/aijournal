@@ -116,6 +116,7 @@ This builds on items 1 & 2 but isn’t strictly required once automatic detectio
 - Create a small telemetry helper (`emit_stage_event(log_event, stage_name, op_result)`) in `capture/utils.py` (or similar) and use it for index/persona/pack done events.
 - Remove direct `log_event` payload duplication in stage code.
 - Verify tests → commit.
+- ✅ 2025-10-28: Added `_emit_operation_event` helper and routed index/persona telemetry through it; pack relies on stage recording only. Tests stay green via `uv run pytest`.
 
 ### To-Do E — Focused stage tests
 - Add unit-level tests per stage helper (mocking external commands) so `tests/services/test_capture.py` is no longer the only coverage point.
