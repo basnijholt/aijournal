@@ -15,15 +15,11 @@ def run_facts_stage_3(
     inputs: CaptureInput,
     root: Path,
 ) -> FactsStage3Outputs:
-    from .. import (
-        DEFAULT_TIMEOUT_SECONDS,
-        FactsStage3Outputs,
-        OperationResult,
-        _load_profile_components,
-        _noop_preview,
-        _relative_path,
-        run_facts,
-    )
+    from aijournal.commands.facts import run_facts
+    from aijournal.commands.profile import _load_profile_components
+
+    from .. import DEFAULT_TIMEOUT_SECONDS, FactsStage3Outputs, OperationResult
+    from ..utils import noop_preview, relative_path
 
     stage_start = perf_counter()
     facts_paths: list[str] = []
@@ -37,7 +33,7 @@ def run_facts_stage_3(
                 retries=inputs.retries,
                 progress=inputs.progress,
                 claim_models=claim_models,
-                build_claim_preview=_noop_preview,
+                build_claim_preview=noop_preview,
             )
         except typer.Exit as exc:
             if exc.exit_code not in (0,):
@@ -46,7 +42,7 @@ def run_facts_stage_3(
             facts_errors.append(f"{date}: {exc}")
         else:
             if facts_path:
-                facts_paths.append(_relative_path(facts_path, root))
+                facts_paths.append(relative_path(facts_path, root))
     duration_ms = (perf_counter() - stage_start) * 1000.0
     facts_details: dict[str, object] = {"dates": changed_dates}
     if facts_errors:

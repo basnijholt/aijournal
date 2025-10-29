@@ -15,15 +15,14 @@ def run_characterize_stage_5(
     inputs: CaptureInput,
     root: Path,
 ) -> CharacterizeStage5Outputs:
-    from .. import (
-        DEFAULT_TIMEOUT_SECONDS,
-        CharacterizeStage5Outputs,
-        OperationResult,
-        _apply_profile_update_batch,
-        _noop_preview,
-        _pending_batches,
-        _relative_path,
-        run_characterize,
+    from aijournal.commands.characterize import run_characterize
+
+    from .. import DEFAULT_TIMEOUT_SECONDS, CharacterizeStage5Outputs, OperationResult
+    from ..utils import (
+        apply_profile_update_batch,
+        noop_preview,
+        pending_batches,
+        relative_path,
     )
 
     stage_start = perf_counter()
@@ -34,14 +33,14 @@ def run_characterize_stage_5(
     review_candidates: list[str] = []
     review_errors: list[str] = []
     for date in changed_dates:
-        pending_before = _pending_batches(root)
+        pending_before = pending_batches(root)
         try:
             batch_path = run_characterize(
                 date,
                 timeout=DEFAULT_TIMEOUT_SECONDS,
                 retries=inputs.retries,
                 progress=inputs.progress,
-                build_claim_preview=_noop_preview,
+                build_claim_preview=noop_preview,
             )
         except typer.Exit as exc:
             if exc.exit_code not in (0,):
@@ -51,29 +50,29 @@ def run_characterize_stage_5(
             characterize_errors.append(f"{date}: {exc}")
             continue
         else:
-            rel_batch = _relative_path(batch_path, root)
+            rel_batch = relative_path(batch_path, root)
             characterize_paths.append(rel_batch)
 
-        pending_after = _pending_batches(root)
+        pending_after = pending_batches(root)
         new_batches = sorted(pending_after - pending_before)
         if batch_path not in new_batches:
             new_batches.append(batch_path)
 
         for pending_path in new_batches:
-            rel_pending = _relative_path(pending_path, root)
+            rel_pending = relative_path(pending_path, root)
             review_candidates.append(rel_pending)
 
         if inputs.apply_profile == "auto":
             for pending_path in new_batches:
                 try:
-                    if _apply_profile_update_batch(root, pending_path):
-                        review_applied.append(_relative_path(pending_path, root))
+                    if apply_profile_update_batch(root, pending_path):
+                        review_applied.append(relative_path(pending_path, root))
                     else:
-                        review_pending.append(_relative_path(pending_path, root))
+                        review_pending.append(relative_path(pending_path, root))
                 except Exception as exc:  # pragma: no cover - defensive
-                    review_errors.append(f"{_relative_path(pending_path, root)}: {exc}")
+                    review_errors.append(f"{relative_path(pending_path, root)}: {exc}")
         else:
-            review_pending.extend(_relative_path(path, root) for path in new_batches)
+            review_pending.extend(relative_path(path, root) for path in new_batches)
 
     duration_ms = (perf_counter() - stage_start) * 1000.0
     characterize_details: dict[str, object] = {

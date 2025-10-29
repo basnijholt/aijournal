@@ -35,14 +35,14 @@ def capture_pipeline_mocks(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> N
         return path
 
     monkeypatch.setattr(
-        "aijournal.services.capture.run_summarize_command",
+        "aijournal.commands.summarize.run_summarize",
         lambda date, *, timeout, retries, progress: _ensure_file(
             tmp_path / "derived" / "summaries" / f"{date}.yaml", "summary"
         ),
     )
 
     monkeypatch.setattr(
-        "aijournal.services.capture.run_facts",
+        "aijournal.commands.facts.run_facts",
         lambda date, *, timeout, retries, progress, claim_models, build_claim_preview: (
             None,
             _ensure_file(tmp_path / "derived" / "microfacts" / f"{date}.yaml", "facts"),
@@ -50,7 +50,7 @@ def capture_pipeline_mocks(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> N
     )
 
     monkeypatch.setattr(
-        "aijournal.services.capture.run_profile_suggest",
+        "aijournal.commands.profile.run_profile_suggest",
         lambda date, *, timeout, retries, progress: _ensure_file(
             tmp_path / "derived" / "profile_suggestions" / f"{date}.yaml",
             "suggest",
@@ -58,12 +58,12 @@ def capture_pipeline_mocks(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> N
     )
 
     monkeypatch.setattr(
-        "aijournal.services.capture.run_profile_apply",
+        "aijournal.commands.profile.run_profile_apply",
         lambda date, *, suggestions_path, auto_confirm: "applied",
     )
 
     monkeypatch.setattr(
-        "aijournal.services.capture.run_characterize",
+        "aijournal.commands.characterize.run_characterize",
         lambda date, *, timeout, retries, progress, build_claim_preview: _ensure_file(
             tmp_path / "derived" / "pending" / "profile_updates" / f"{date}-batch.yaml",
             "batch",
@@ -71,22 +71,17 @@ def capture_pipeline_mocks(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> N
     )
 
     monkeypatch.setattr(
-        "aijournal.services.capture._apply_profile_update_batch",
-        lambda root, batch_path: True,
-    )
-
-    monkeypatch.setattr(
-        "aijournal.services.capture._load_profile_components",
+        "aijournal.commands.profile._load_profile_components",
         lambda root: (None, [object()]),
     )
 
     monkeypatch.setattr(
-        "aijournal.services.capture.run_index_rebuild",
+        "aijournal.commands.index.run_index_rebuild",
         lambda since, *, limit: "rebuild",
     )
 
     monkeypatch.setattr(
-        "aijournal.services.capture.run_index_tail",
+        "aijournal.commands.index.run_index_tail",
         lambda since, *, days, limit: "tail",
     )
 
@@ -98,16 +93,16 @@ def capture_pipeline_mocks(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> N
     def _persona_state(root: Path) -> tuple[str, list[str]]:
         return persona_states.pop(0) if persona_states else ("fresh", [])
 
-    monkeypatch.setattr("aijournal.services.capture.persona_state", _persona_state)
+    monkeypatch.setattr("aijournal.commands.persona.persona_state", _persona_state)
 
     def _persona_build(profile, claims, *, config, root=None):  # noqa: ANN001
         path = _ensure_file(tmp_path / "derived" / "persona" / "persona_core.yaml", "persona")
         return path, True
 
-    monkeypatch.setattr("aijournal.services.capture.run_persona_build", _persona_build)
+    monkeypatch.setattr("aijournal.commands.persona.run_persona_build", _persona_build)
 
     monkeypatch.setattr(
-        "aijournal.services.capture.run_pack",
+        "aijournal.commands.pack.run_pack",
         lambda *args, **kwargs: None,
     )
 
