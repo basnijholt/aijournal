@@ -1,0 +1,21 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "claims": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Claims",
+      "type": "array"
+    },
+    "facets": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Facets",
+      "type": "array"
+    }
+  },
+  "title": "AdviceReference",
+  "type": "object"
+}

@@ -1,0 +1,115 @@
+{
+  "$defs": {
+    "ClaimSource": {
+      "additionalProperties": false,
+      "description": "Structured reference back to a normalized entry.",
+      "properties": {
+        "entry_id": {
+          "title": "Entry Id",
+          "type": "string"
+        },
+        "spans": {
+          "items": {
+            "$ref": "#/$defs/ClaimSourceSpan"
+          },
+          "title": "Spans",
+          "type": "array"
+        }
+      },
+      "required": [
+        "entry_id"
+      ],
+      "title": "ClaimSource",
+      "type": "object"
+    },
+    "ClaimSourceSpan": {
+      "additionalProperties": false,
+      "description": "Evidence locator for a claim source.",
+      "properties": {
+        "end": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "End"
+        },
+        "index": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Index"
+        },
+        "start": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Start"
+        },
+        "type": {
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "title": "ClaimSourceSpan",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Provenance metadata for a claim atom.",
+  "properties": {
+    "first_seen": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "First Seen"
+    },
+    "last_updated": {
+      "title": "Last Updated",
+      "type": "string"
+    },
+    "observation_count": {
+      "default": 1,
+      "minimum": 1,
+      "title": "Observation Count",
+      "type": "integer"
+    },
+    "sources": {
+      "items": {
+        "$ref": "#/$defs/ClaimSource"
+      },
+      "title": "Sources",
+      "type": "array"
+    }
+  },
+  "required": [
+    "last_updated"
+  ],
+  "title": "Provenance",
+  "type": "object"
+}

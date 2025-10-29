@@ -1,0 +1,62 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "affect_energy": {
+      "additionalProperties": true,
+      "title": "Affect Energy",
+      "type": "object"
+    },
+    "boundaries_ethics": {
+      "additionalProperties": true,
+      "title": "Boundaries Ethics",
+      "type": "object"
+    },
+    "coaching_prefs": {
+      "additionalProperties": true,
+      "title": "Coaching Prefs",
+      "type": "object"
+    },
+    "dashboard": {
+      "additionalProperties": true,
+      "title": "Dashboard",
+      "type": "object"
+    },
+    "decision_style": {
+      "additionalProperties": true,
+      "title": "Decision Style",
+      "type": "object"
+    },
+    "goals": {
+      "additionalProperties": true,
+      "title": "Goals",
+      "type": "object"
+    },
+    "habits": {
+      "additionalProperties": true,
+      "title": "Habits",
+      "type": "object"
+    },
+    "planning": {
+      "additionalProperties": true,
+      "title": "Planning",
+      "type": "object"
+    },
+    "social": {
+      "additionalProperties": true,
+      "title": "Social",
+      "type": "object"
+    },
+    "traits": {
+      "additionalProperties": true,
+      "title": "Traits",
+      "type": "object"
+    },
+    "values_motivations": {
+      "additionalProperties": true,
+      "title": "Values Motivations",
+      "type": "object"
+    }
+  },
+  "title": "SelfProfile",
+  "type": "object"
+}

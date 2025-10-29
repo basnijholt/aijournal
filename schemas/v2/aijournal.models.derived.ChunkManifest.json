@@ -1,0 +1,133 @@
+{
+  "$defs": {
+    "ChunkManifestChunk": {
+      "additionalProperties": false,
+      "properties": {
+        "chunk_id": {
+          "title": "Chunk Id",
+          "type": "string"
+        },
+        "chunk_index": {
+          "title": "Chunk Index",
+          "type": "integer"
+        },
+        "chunk_text": {
+          "title": "Chunk Text",
+          "type": "string"
+        },
+        "manifest_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Manifest Hash"
+        },
+        "normalized_id": {
+          "title": "Normalized Id",
+          "type": "string"
+        },
+        "source_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Hash"
+        },
+        "source_path": {
+          "title": "Source Path",
+          "type": "string"
+        },
+        "source_type": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Type"
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Tags",
+          "type": "array"
+        },
+        "tokens": {
+          "default": 0,
+          "title": "Tokens",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "chunk_id",
+        "normalized_id",
+        "chunk_index",
+        "chunk_text",
+        "source_path"
+      ],
+      "title": "ChunkManifestChunk",
+      "type": "object"
+    },
+    "ChunkManifestMeta": {
+      "additionalProperties": false,
+      "properties": {
+        "embedding_model": {
+          "title": "Embedding Model",
+          "type": "string"
+        },
+        "generated_at": {
+          "title": "Generated At",
+          "type": "string"
+        },
+        "vector_dimension": {
+          "title": "Vector Dimension",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "embedding_model",
+        "vector_dimension",
+        "generated_at"
+      ],
+      "title": "ChunkManifestMeta",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "chunks": {
+      "items": {
+        "$ref": "#/$defs/ChunkManifestChunk"
+      },
+      "title": "Chunks",
+      "type": "array"
+    },
+    "day": {
+      "title": "Day",
+      "type": "string"
+    },
+    "meta": {
+      "$ref": "#/$defs/ChunkManifestMeta"
+    }
+  },
+  "required": [
+    "day",
+    "meta"
+  ],
+  "title": "ChunkManifest",
+  "type": "object"
+}

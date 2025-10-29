@@ -1,0 +1,75 @@
+{
+  "$defs": {
+    "ClaimSourceSpan": {
+      "additionalProperties": false,
+      "description": "Evidence locator for a claim source.",
+      "properties": {
+        "end": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "End"
+        },
+        "index": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Index"
+        },
+        "start": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Start"
+        },
+        "type": {
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "title": "ClaimSourceSpan",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Structured reference back to a normalized entry.",
+  "properties": {
+    "entry_id": {
+      "title": "Entry Id",
+      "type": "string"
+    },
+    "spans": {
+      "items": {
+        "$ref": "#/$defs/ClaimSourceSpan"
+      },
+      "title": "Spans",
+      "type": "array"
+    }
+  },
+  "required": [
+    "entry_id"
+  ],
+  "title": "ClaimSource",
+  "type": "object"
+}

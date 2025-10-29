@@ -1,0 +1,51 @@
+{
+  "additionalProperties": false,
+  "description": "Serialized signature describing the target slot for a claim.",
+  "properties": {
+    "claim_type": {
+      "title": "Claim Type",
+      "type": "string"
+    },
+    "conditions": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Conditions",
+      "type": "array"
+    },
+    "context": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Context",
+      "type": "array"
+    },
+    "domain": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Domain"
+    },
+    "predicate": {
+      "title": "Predicate",
+      "type": "string"
+    },
+    "subject": {
+      "title": "Subject",
+      "type": "string"
+    }
+  },
+  "required": [
+    "claim_type",
+    "subject",
+    "predicate"
+  ],
+  "title": "ClaimSignaturePayload",
+  "type": "object"
+}

@@ -1,0 +1,62 @@
+{
+  "$defs": {
+    "AdviceReference": {
+      "additionalProperties": false,
+      "properties": {
+        "claims": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Claims",
+          "type": "array"
+        },
+        "facets": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Facets",
+          "type": "array"
+        }
+      },
+      "title": "AdviceReference",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Simplified recommendation payload emitted directly by the LLM.",
+  "properties": {
+    "mitigations": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Mitigations",
+      "type": "array"
+    },
+    "risks": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Risks",
+      "type": "array"
+    },
+    "steps": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Steps",
+      "type": "array"
+    },
+    "title": {
+      "title": "Title",
+      "type": "string"
+    },
+    "why_this_fits_you": {
+      "$ref": "#/$defs/AdviceReference"
+    }
+  },
+  "required": [
+    "title"
+  ],
+  "title": "AdviceLLMRecommendation",
+  "type": "object"
+}
