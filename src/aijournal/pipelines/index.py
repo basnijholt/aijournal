@@ -15,12 +15,12 @@ from typing import Any, Literal
 import numpy as np
 from annoy import AnnoyIndex
 
+from aijournal.domain.index import IndexMeta
 from aijournal.io.yaml_io import load_yaml_model, write_yaml_model
 from aijournal.models import (
     ChunkManifest,
     ChunkManifestChunk,
     ChunkManifestMeta,
-    IndexMeta,
     ManifestEntry,
     NormalizedEntry,
 )

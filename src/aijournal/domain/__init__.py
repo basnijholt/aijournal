@@ -18,6 +18,7 @@ if TYPE_CHECKING:  # pragma: no cover - for type checkers only
         MicroFactsFile,
         SummaryMeta,
     )
+    from .index import Chunk, IndexMeta, RetrievedChunk
     from .persona import (
         InterviewQuestion,
         InterviewSet,
@@ -43,6 +44,9 @@ __all__ = [
     "Span",
     "SourceRef",
     "redact_source_text",
+    "Chunk",
+    "RetrievedChunk",
+    "IndexMeta",
     "InterviewQuestion",
     "InterviewSet",
     "PersonaCoreMeta",
@@ -64,6 +68,11 @@ _FACTS_EXPORTS = {
     "MicroFactsFile",
     "FactEvidence",
     "FactEvidenceSpan",
+}
+_INDEX_EXPORTS = {
+    "Chunk",
+    "RetrievedChunk",
+    "IndexMeta",
 }
 _PERSONA_EXPORTS = {
     "PersonaCoreMeta",
@@ -87,6 +96,11 @@ def __getattr__(name: str) -> Any:
         return value
     if name in _FACTS_EXPORTS:
         module = import_module("aijournal.domain.facts")
+        value = getattr(module, name)
+        globals()[name] = value
+        return value
+    if name in _INDEX_EXPORTS:
+        module = import_module("aijournal.domain.index")
         value = getattr(module, name)
         globals()[name] = value
         return value

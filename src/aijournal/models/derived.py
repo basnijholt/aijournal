@@ -48,6 +48,9 @@ from aijournal.domain.facts import (
 from aijournal.domain.facts import (
     SummaryMeta as DomainSummaryMeta,
 )
+from aijournal.domain.index import (
+    IndexMeta as DomainIndexMeta,
+)
 from aijournal.domain.persona import (
     InterviewQuestion as DomainInterviewQuestion,
 )
@@ -86,6 +89,7 @@ ClaimConflictPayload = DomainClaimConflictPayload
 ClaimPreviewEvent = DomainClaimPreviewEvent
 FeedbackAdjustmentEvent = DomainFeedbackAdjustmentEvent
 FeedbackBatch = DomainFeedbackBatch
+IndexMeta = DomainIndexMeta
 
 
 PersonaCore.model_rebuild(_types_namespace={"ClaimAtom": ClaimAtom})
@@ -342,22 +346,6 @@ class ProfileUpdateBatch(AijournalModel):
     proposals: ProfileUpdateProposals = Field(default_factory=ProfileUpdateProposals)
     meta: SummaryMeta = Field(default_factory=SummaryMeta)
     preview: ProfileUpdatePreview | None = None
-
-
-class IndexMeta(AijournalModel):
-    embedding_model: str | None = None
-    vector_dimension: int | None = None
-    chunk_count: int | None = None
-    entry_count: int | None = None
-    mode: str | None = None
-    fake_mode: bool | None = None
-    annoy_trees: int | None = None
-    search_k_factor: float | None = None
-    char_per_token: float | None = None
-    since: str | None = None
-    limit: int | None = None
-    touched_dates: list[str] = Field(default_factory=list)
-    updated_at: str | None = None
 
 
 MicroFactsFile.model_rebuild(_types_namespace={"ProfileUpdatePreview": ProfileUpdatePreview})
