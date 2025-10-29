@@ -96,6 +96,7 @@
     },
     "PersonaCore": {
       "additionalProperties": false,
+      "description": "Primary persona payload used by chat/advise pipelines.",
       "properties": {
         "claims": {
           "items": {
@@ -115,6 +116,7 @@
     },
     "PersonaCoreMeta": {
       "additionalProperties": false,
+      "description": "Metadata captured alongside the persona core artifact.",
       "properties": {
         "budget_exceeded": {
           "default": false,
@@ -390,6 +392,7 @@
     }
   },
   "additionalProperties": false,
+  "description": "Persona core artifact envelope stored on disk.",
   "properties": {
     "meta": {
       "$ref": "#/$defs/PersonaCoreMeta"

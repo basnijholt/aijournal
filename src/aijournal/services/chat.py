@@ -14,8 +14,8 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from aijournal.common.meta import LLMResult
+from aijournal.domain.persona import PersonaCore, PersonaCoreFile
 from aijournal.io.yaml_io import load_yaml_model
-from aijournal.models import PersonaCore, PersonaCoreFile
 from aijournal.services.ollama import (
     LLMResponseError,
     OllamaConfig,

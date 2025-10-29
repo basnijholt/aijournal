@@ -18,6 +18,13 @@ if TYPE_CHECKING:  # pragma: no cover - for type checkers only
         MicroFactsFile,
         SummaryMeta,
     )
+    from .persona import (
+        InterviewQuestion,
+        InterviewSet,
+        PersonaCore,
+        PersonaCoreFile,
+        PersonaCoreMeta,
+    )
 
 __all__ = [
     "ClaimAtomInput",
@@ -36,6 +43,11 @@ __all__ = [
     "Span",
     "SourceRef",
     "redact_source_text",
+    "InterviewQuestion",
+    "InterviewSet",
+    "PersonaCoreMeta",
+    "PersonaCore",
+    "PersonaCoreFile",
 ]
 
 _CHANGES_EXPORTS = {
@@ -53,6 +65,13 @@ _FACTS_EXPORTS = {
     "FactEvidence",
     "FactEvidenceSpan",
 }
+_PERSONA_EXPORTS = {
+    "PersonaCoreMeta",
+    "PersonaCore",
+    "PersonaCoreFile",
+    "InterviewQuestion",
+    "InterviewSet",
+}
 
 
 def __getattr__(name: str) -> Any:
@@ -68,6 +87,11 @@ def __getattr__(name: str) -> Any:
         return value
     if name in _FACTS_EXPORTS:
         module = import_module("aijournal.domain.facts")
+        value = getattr(module, name)
+        globals()[name] = value
+        return value
+    if name in _PERSONA_EXPORTS:
+        module = import_module("aijournal.domain.persona")
         value = getattr(module, name)
         globals()[name] = value
         return value

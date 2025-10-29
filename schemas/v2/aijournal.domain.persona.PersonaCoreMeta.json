@@ -1,5 +1,6 @@
 {
   "additionalProperties": false,
+  "description": "Metadata captured alongside the persona core artifact.",
   "properties": {
     "budget_exceeded": {
       "default": false,

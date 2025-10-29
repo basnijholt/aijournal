@@ -9,8 +9,9 @@ from typing import Any
 
 import typer
 
+from aijournal.domain.persona import PersonaCoreFile, PersonaCoreMeta
 from aijournal.io.yaml_io import load_yaml_model, write_yaml_model
-from aijournal.models import ClaimAtom, PersonaCoreFile, PersonaCoreMeta
+from aijournal.models import ClaimAtom
 from aijournal.pipelines import persona as persona_pipeline
 from aijournal.utils import time as time_utils
 from aijournal.utils.coercion import coerce_float
