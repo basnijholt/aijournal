@@ -1235,7 +1235,7 @@ def run_capture(
     stage_results: list[StageResult] = []
 
     if stage_enabled(0):
-        entry_results, persist_result, persist_duration = _run_persist_stage(
+        entry_results, persist_result, persist_duration = _run_persist_stage_0(
             inputs,
             root,
             manifest_entries,
@@ -1264,9 +1264,11 @@ def run_capture(
     changed_dates: list[str] = []
 
     if stage_enabled(1):
-        artifact_counts, normalize_result, normalize_duration, changed_dates = _run_normalize_stage(
-            entry_results,
-            root,
+        artifact_counts, normalize_result, normalize_duration, changed_dates = (
+            _run_normalize_stage_1(
+                entry_results,
+                root,
+            )
         )
     else:
         normalize_duration = 0.0
@@ -1299,7 +1301,7 @@ def run_capture(
         entries_changed = 0
 
     if changed_dates and stage_enabled(2):
-        summarize_result, summarize_duration, summary_paths = _run_summarize_stage(
+        summarize_result, summarize_duration, summary_paths = _run_summarize_stage_2(
             changed_dates,
             inputs,
             root,
@@ -1343,7 +1345,7 @@ def run_capture(
         )
 
     if changed_dates and stage_enabled(3):
-        facts_result, facts_duration, facts_paths = _run_facts_stage(
+        facts_result, facts_duration, facts_paths = _run_facts_stage_3(
             changed_dates,
             inputs,
             root,
@@ -1388,7 +1390,7 @@ def run_capture(
 
     if changed_dates and stage_enabled(4):
         profile_result, apply_result, profile_duration, suggestion_paths, applied_count = (
-            _run_profile_stage(
+            _run_profile_stage_4(
                 changed_dates,
                 inputs,
                 root,
@@ -1458,7 +1460,7 @@ def run_capture(
             review_applied,
             review_pending,
             review_candidates_generated,
-        ) = _run_characterize_stage(changed_dates, inputs, root)
+        ) = _run_characterize_stage_5(changed_dates, inputs, root)
         for path in characterize_paths:
             artifacts_changed["characterize"] = artifacts_changed.get("characterize", 0) + 1
         review_candidates.extend(review_candidates_generated)
@@ -1523,7 +1525,7 @@ def run_capture(
 
     index_rebuilt_flag = False
     if changed_dates and stage_enabled(6):
-        index_result, index_duration, index_updated, index_rebuilt_flag = _run_index_stage(
+        index_result, index_duration, index_updated, index_rebuilt_flag = _run_index_stage_6(
             changed_dates,
             root,
         )
@@ -1589,7 +1591,7 @@ def run_capture(
             status_before,
             status_after,
             persona_error,
-        ) = _run_persona_stage(inputs, root, artifacts_changed)
+        ) = _run_persona_stage_7(inputs, root, artifacts_changed)
         if persona_changed:
             artifacts_changed["persona"] = artifacts_changed.get("persona", 0) + 1
         durations_ms["refresh.persona"] = persona_duration
@@ -1642,7 +1644,7 @@ def run_capture(
         )
 
     if stage_enabled(8):
-        pack_result, pack_duration = _run_pack_stage(
+        pack_result, pack_duration = _run_pack_stage_8(
             inputs,
             root,
             resolved_run_id,
@@ -1718,7 +1720,7 @@ def run_capture(
     return result
 
 
-def _run_persist_stage(
+def _run_persist_stage_0(
     inputs: CaptureInput,
     root: Path,
     manifest_entries: list[ManifestEntry],
@@ -1785,7 +1787,7 @@ def _run_persist_stage(
     return entry_results, op_result, duration_ms
 
 
-def _run_normalize_stage(
+def _run_normalize_stage_1(
     entry_results: list[EntryResult],
     root: Path,
 ) -> tuple[dict[str, Any], OperationResult, float, list[str]]:
@@ -1815,7 +1817,7 @@ def _run_normalize_stage(
     return artifact_counts, op_result, duration_ms, changed_dates
 
 
-def _run_summarize_stage(
+def _run_summarize_stage_2(
     changed_dates: list[str],
     inputs: CaptureInput,
     root: Path,
@@ -1867,7 +1869,7 @@ def _run_summarize_stage(
     return op_result, duration_ms, summary_paths
 
 
-def _run_facts_stage(
+def _run_facts_stage_3(
     changed_dates: list[str],
     inputs: CaptureInput,
     root: Path,
@@ -1923,7 +1925,7 @@ def _run_facts_stage(
     return op_result, duration_ms, facts_paths
 
 
-def _run_profile_stage(
+def _run_profile_stage_4(
     changed_dates: list[str],
     inputs: CaptureInput,
     root: Path,
@@ -2035,7 +2037,7 @@ def _run_profile_stage(
     return suggest_result, apply_result, duration_ms, suggestion_paths, applied_count
 
 
-def _run_characterize_stage(
+def _run_characterize_stage_5(
     changed_dates: list[str],
     inputs: CaptureInput,
     root: Path,
@@ -2180,7 +2182,7 @@ def _run_characterize_stage(
     )
 
 
-def _run_index_stage(
+def _run_index_stage_6(
     changed_dates: list[str],
     root: Path,
 ) -> tuple[OperationResult, float, bool, bool]:
@@ -2235,7 +2237,7 @@ def _run_index_stage(
     return op_result, duration_ms, index_updated, rebuilt
 
 
-def _run_persona_stage(
+def _run_persona_stage_7(
     inputs: CaptureInput,
     root: Path,
     artifacts_changed: dict[str, int],
@@ -2316,7 +2318,7 @@ def _run_persona_stage(
     )
 
 
-def _run_pack_stage(
+def _run_pack_stage_8(
     inputs: CaptureInput,
     root: Path,
     run_id: str,
