@@ -68,7 +68,7 @@ Read these first to avoid surprises mid-run.
 - **Clean runs only**: if the repo has pending changes, either commit them or reset to a clean state before beginning.
 - **No data loss**: Do not remove artifacts outside the temp workspace. Archive/rename instead of deleting in the repo.
 - **Feedback loop**: When chat answers omit claim markers, feedback adjustments cannot apply. The chat prompt and telemetry now highlight this scenario—respond accordingly.
-- **Schema mode awareness**: `AIJOURNAL_SCHEMA_MODE` defaults to `read-legacy-write-new`, which emits both legacy YAML and v2 artifact envelopes. Switch to `read-both-write-both` if you want side-by-side files during validation, or `read-new-write-new` once the workspace is fully migrated.
+- **Schema mode awareness**: `AIJOURNAL_SCHEMA_MODE` defaults to `read-legacy-write-new` only as a short-lived migration guard. Regenerate artifacts and then flip to `read-new-write-new`; the project intentionally avoids long-term legacy support.
 
 ---
 
