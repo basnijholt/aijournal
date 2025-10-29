@@ -9,6 +9,9 @@ import yaml
 from typer.testing import CliRunner
 
 from aijournal.cli import app
+from aijournal.common.meta import Artifact, ArtifactKind, ArtifactMeta
+from aijournal.io.artifacts import save_artifact
+from aijournal.models import ProfileSuggestions, ProfileSuggestionUpsert, SummaryMeta
 from tests.helpers import make_claim_atom
 
 if TYPE_CHECKING:
@@ -57,12 +60,12 @@ def _seed_authoritative(workspace: Path) -> None:
 
 
 def _seed_suggestions(workspace: Path) -> Path:
-    suggestions = {
-        "upserts": [
-            {
-                "target": "claims",
-                "operation": "upsert",
-                "value": make_claim_atom(
+    suggestions = ProfileSuggestions(
+        upserts=[
+            ProfileSuggestionUpsert(
+                target="claims",
+                operation="upsert",
+                value=make_claim_atom(
                     "pref_evening",
                     "Prefers evening walks",
                     strength=0.6,
@@ -70,22 +73,29 @@ def _seed_suggestions(workspace: Path) -> Path:
                     method="inferred",
                     last_updated=f"{DATE}T10:00:00Z",
                 ),
-            },
+            )
         ],
-        "updates": [
+        updates=[
             {
                 "target": "values_motivations.schwartz_top5",
                 "operation": "update",
                 "value": ["Universalism", "Benevolence"],
             },
         ],
-        "meta": {
-            "llm_model": "fake",
-            "prompt_path": "prompts/profile_suggest.md",
-        },
-    }
+        meta=SummaryMeta(
+            llm_model="fake-ollama",
+            prompt_path="prompts/profile_suggest.md",
+            prompt_hash="seed",
+            created_at=f"{DATE}T10:00:00Z",
+        ),
+    )
+    artifact = Artifact[ProfileSuggestions](
+        kind=ArtifactKind.PROFILE_SUGGESTIONS,
+        meta=ArtifactMeta(created_at=suggestions.meta.created_at, model=suggestions.meta.llm_model),
+        data=suggestions,
+    )
     path = workspace / "derived" / "profile_suggestions" / f"{DATE}.yaml"
-    _write_yaml(path, suggestions)
+    save_artifact(path, artifact)
     return path
 
 

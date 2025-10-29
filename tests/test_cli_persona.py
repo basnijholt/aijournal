@@ -65,11 +65,15 @@ def test_persona_build_generates_core(
 
     persona_path = cli_workspace / "derived" / "persona" / "persona_core.yaml"
     assert persona_path.exists()
-    payload = yaml.safe_load(persona_path.read_text(encoding="utf-8"))
-    assert payload["persona"]["claims"], "claims should be present"
-    assert payload["meta"]["claim_count"] == len(payload["persona"]["claims"])
-    assert payload["meta"]["planned_tokens"] > 0
-    source_mtimes = payload["meta"].get("source_mtimes", {})
+    artifact = yaml.safe_load(persona_path.read_text(encoding="utf-8"))
+    assert artifact.get("schema") == "v2"
+    assert artifact.get("kind") == "persona.core"
+    data = artifact.get("data", {})
+    meta = data.get("meta", {})
+    assert data.get("persona", {}).get("claims"), "claims should be present"
+    assert meta.get("claim_count") == len(data.get("persona", {}).get("claims", []))
+    assert meta.get("planned_tokens") > 0
+    source_mtimes = meta.get("source_mtimes", {})
     assert "profile/self_profile.yaml" in source_mtimes
     assert "profile/claims.yaml" in source_mtimes
 
@@ -97,12 +101,13 @@ def test_persona_build_trims_when_budget_forced(
     assert result.exit_code == 0, result.stdout
 
     persona_path = cli_workspace / "derived" / "persona" / "persona_core.yaml"
-    payload = yaml.safe_load(persona_path.read_text(encoding="utf-8"))
-    trimmed = payload["meta"].get("trimmed", [])
+    artifact = yaml.safe_load(persona_path.read_text(encoding="utf-8"))
+    meta = artifact.get("data", {}).get("meta", {})
+    trimmed = meta.get("trimmed", [])
     assert trimmed, "expect at least one trimmed claim when forcing small budget"
     trimmed_ids = [item["id"] for item in trimmed]
     assert "pref.evening" in trimmed_ids
-    assert isinstance(payload["meta"].get("budget_exceeded"), bool)
+    assert isinstance(meta.get("budget_exceeded"), bool)
 
 
 def test_persona_build_handles_empty_claims(
@@ -114,11 +119,12 @@ def test_persona_build_handles_empty_claims(
 
     result = cli_runner.invoke(app, ["ops", "persona", "build"])
     assert result.exit_code == 0, result.stdout
-    payload = yaml.safe_load(
+    artifact = yaml.safe_load(
         (cli_workspace / "derived" / "persona" / "persona_core.yaml").read_text(encoding="utf-8"),
     )
-    assert payload["persona"]["claims"] == []
-    assert payload["persona"]["profile"], "profile slice should be included when available"
+    persona_data = artifact.get("data", {}).get("persona", {})
+    assert persona_data.get("claims") == []
+    assert persona_data.get("profile"), "profile slice should be included when available"
 
 
 def test_persona_build_respects_min_claims(
@@ -142,11 +148,12 @@ def test_persona_build_respects_min_claims(
         ],
     )
     assert result.exit_code == 0, result.stdout
-    payload = yaml.safe_load(
+    artifact = yaml.safe_load(
         (cli_workspace / "derived" / "persona" / "persona_core.yaml").read_text(encoding="utf-8"),
     )
-    assert payload["meta"]["claim_count"] == 2
-    assert payload["meta"].get("budget_exceeded") is True
+    meta = artifact.get("data", {}).get("meta", {})
+    assert meta.get("claim_count") == 2
+    assert meta.get("budget_exceeded") is True
 
 
 def test_persona_status_reports_fresh(

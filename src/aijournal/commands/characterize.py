@@ -30,7 +30,9 @@ from aijournal.commands.summarize import (
     _log_entry_progress,
     _structured_call_with_retry,
 )
-from aijournal.io.yaml_io import load_yaml_model, write_yaml_model
+from aijournal.common.meta import Artifact, ArtifactKind, ArtifactMeta
+from aijournal.io.artifacts import save_artifact
+from aijournal.io.yaml_io import load_yaml_model
 from aijournal.models import (
     ClaimAtom,
     ClaimProposal,
@@ -40,6 +42,7 @@ from aijournal.models import (
     ProfileUpdateInput,
     ProfileUpdatePreview,
     ProfileUpdateProposals,
+    SummaryMeta,
 )
 from aijournal.pipelines import characterize as characterize_pipeline
 from aijournal.pipelines import facts as facts_pipeline
@@ -154,7 +157,13 @@ def run_characterize(
     pending_dir = _pending_updates_dir(root)
     pending_dir.mkdir(parents=True, exist_ok=True)
     batch_path = _pending_updates_path(root, batch_id)
-    write_yaml_model(batch_path, batch_model)
+    artifact = Artifact[ProfileUpdateBatch](
+        kind=ArtifactKind.PROFILE_UPDATES,
+        schema="v2",
+        meta=_artifact_meta_from_summary_meta(meta_model),
+        data=batch_model,
+    )
+    save_artifact(batch_path, artifact)
     return batch_path
 
 
@@ -262,6 +271,16 @@ def _normalize_claim_proposals(
         manifest_hashes=manifest_hashes,
         default_sources=default_sources,
         timestamp=timestamp,
+    )
+
+
+def _artifact_meta_from_summary_meta(meta: SummaryMeta) -> ArtifactMeta:
+    created_at = meta.created_at or time_utils.format_timestamp(time_utils.now())
+    return ArtifactMeta(
+        created_at=created_at,
+        model=meta.llm_model,
+        prompt_path=meta.prompt_path,
+        prompt_hash=meta.prompt_hash,
     )
 
 

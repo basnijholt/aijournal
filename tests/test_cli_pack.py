@@ -10,6 +10,9 @@ import yaml
 from typer.testing import CliRunner
 
 from aijournal.cli import app
+from aijournal.common.meta import Artifact, ArtifactKind, ArtifactMeta
+from aijournal.io.artifacts import save_artifact
+from aijournal.models import ProfileSuggestions, ProfileSuggestionUpsert, SummaryMeta
 from tests.helpers import make_claim_atom
 
 if TYPE_CHECKING:
@@ -110,24 +113,35 @@ def _seed_advice(tmp_path: Path, day: str = DATE, question: str = ADVICE_QUESTIO
 
 def _seed_profile_suggestions(tmp_path: Path, day: str = DATE) -> Path:
     suggestions_path = tmp_path / "derived" / "profile_suggestions" / f"{day}.yaml"
-    payload = {
-        "day": day,
-        "upserts": [
-            {
-                "target": "claims",
-                "operation": "upsert",
-                "value": make_claim_atom(
+    meta = SummaryMeta(
+        llm_model="fake-ollama",
+        prompt_path="prompts/profile_suggest.md",
+        prompt_hash="seed",
+        created_at=f"{day}T10:00:00Z",
+    )
+    payload = ProfileSuggestions(
+        upserts=[
+            ProfileSuggestionUpsert(
+                target="claims",
+                operation="upsert",
+                value=make_claim_atom(
                     "pref_afternoon_break",
                     "Energy dips shortly after 15:00",
                     strength=0.68,
                     status="tentative",
                     last_updated=f"{day}T11:00:00Z",
                 ),
-            },
+            )
         ],
-        "updates": [],
-    }
-    _write(suggestions_path, yaml.safe_dump(payload, sort_keys=False))
+        updates=[],
+        meta=meta,
+    )
+    artifact = Artifact[ProfileSuggestions](
+        kind=ArtifactKind.PROFILE_SUGGESTIONS,
+        meta=ArtifactMeta(created_at=meta.created_at, model=meta.llm_model),
+        data=payload,
+    )
+    save_artifact(suggestions_path, artifact)
     return suggestions_path
 
 
