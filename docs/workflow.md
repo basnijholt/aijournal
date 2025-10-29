@@ -27,59 +27,55 @@ This guide explains how the main commands fit together, the order in which to ru
    ```  
    All subsequent commands assume you run them from this directory with `uv run aijournal ...`.
 
-3. **Author entries**  
-   Add Markdown journal files under `data/journal/YYYY/MM/DD/slug.md`. Each entry should have front matter (`id`, `created_at`, `title`, `tags`, `projects`, `mood`) and a body with a few paragraphs.
-
-4. **Normalize entries**  
+3. **Capture your first entry**  
    ```bash
-   uv run aijournal normalize data/journal/2025/10/26/slug.md
+   uv run aijournal capture --text "Kickoff journal entry" --tag planning --project onboarding
    ```  
-   Normalized YAML lives in `data/normalized/YYYY-MM-DD/`. Check that `summary` fields exist; add one manually if the auto-normalizer doesn’t infer it.
+   `capture` writes the canonical Markdown file, records a manifest row and raw snapshot, and runs the full downstream pipeline (normalize → summarize → extract-facts → profile suggest/apply → characterize/review) for any changed dates. Re-run `capture` whenever you add entries or import folders—it automatically dedupes by hash and skips work when nothing changed.
 
 ---
 
-## 3. Daily Pipeline Overview
+## 3. Everyday Flow
 
-Once you have normalized entries for a given day, run the following commands **in order**. Each step produces files that the next step consumes.
+The top-level CLI now covers the common lifetime loop:
 
-| Step | Command | Purpose | Output |
-|------|---------|---------|--------|
-| 1 | `uv run aijournal summarize --date YYYY-MM-DD` | Creates a daily narrative | `derived/summaries/YYYY-MM-DD.yaml` |
-| 2 | `uv run aijournal facts --date YYYY-MM-DD` | Generates micro-facts and claim proposals | `derived/microfacts/YYYY-MM-DD.yaml` |
-| 3 | `uv run aijournal profile suggest --date YYYY-MM-DD` | Suggests new claims/facets | `derived/profile_suggestions/YYYY-MM-DD.yaml` |
-| 4 | `uv run aijournal profile apply --date YYYY-MM-DD --yes` | Applies suggestions (if any) | Updates `profile/claims.yaml` / `self_profile.yaml` |
-| 5 | `uv run aijournal characterize --date YYYY-MM-DD --progress` | Consolidates updates & interview prompts | `derived/pending/profile_updates/*.yaml` |
-| 6 | `uv run aijournal review-updates --file <batch> --apply` | Merges pending updates into the profile | Updates `profile/` files |
+1. **Capture new material**  
+   ```bash
+   uv run aijournal capture --text "Highlights from the product sync" --tag focus
+   uv run aijournal capture --from notes/weekly --source-type notes --project roadmap
+   ```  
+   `capture` handles canonical Markdown writes, manifest updates, raw snapshots, and runs the downstream pipeline (normalize → summarize → extract-facts → profile suggest/apply → characterize/review). It only touches dates whose content actually changed.
 
-> Tip: repeat steps 5–6 for each batch the characterize step produces.
+2. **Check workspace status**  
+   ```bash
+   uv run aijournal status
+   ```  
+   Confirms persona/index freshness, pending profile batches, and Ollama connectivity. Any warnings show up in yellow.
+
+3. **Use conversational surfaces**  
+   - `uv run aijournal chat "What progress did I make?"`  
+   - `uv run aijournal advise "How should I prioritise habits this week?"`  
+   - `uv run aijournal export pack --level L1 --format yaml`  
+   - `uv run aijournal serve chat --host 127.0.0.1 --port 8055`
+
+4. **Apply feedback when ready**  
+   ```bash
+   uv run aijournal feedback-apply
+   ```
+
+That’s the entire daily workflow—no manual normalization or staged pipeline runs required.
 
 ---
 
 ## 4. Retrieval & Persona Maintenance
 
-After the daily pipeline, refresh the artifacts used by chat, search, and advice:
+`capture` already refreshes the index, persona core, and packs when inputs change. You can re-run
+individual stages manually via the `ops` namespace when debugging or scripting:
 
-1. **Rebuild the search index**  
-   ```bash
-   uv run aijournal index rebuild
-   ```  
-   Artifacts appear in `derived/index/`.
-
-2. **Run a smoke search** (optional but verifies the index)  
-   ```bash
-   uv run aijournal index search "deep work sprint focus" --top 3
-   ```
-
-3. **Regenerate the persona core**  
-   ```bash
-   uv run aijournal persona build
-   ```
-
-4. **Pack the context bundle**  
-   ```bash
-   uv run aijournal pack --level L1 --format yaml
-   ```
-   Use `--level L4` when you need a larger bundle for external assistants.
+- `uv run aijournal ops index rebuild` — rebuild Annoy/SQLite artifacts from scratch.  
+- `uv run aijournal ops index search "deep work" --top 3` — smoke-test the index.  
+- `uv run aijournal ops persona build` — regenerate `derived/persona/persona_core.yaml`.  
+- `uv run aijournal export pack --level L4 --history-days 1` — assemble a context bundle (top-level everyday command).
 
 ---
 
@@ -114,31 +110,26 @@ With the profile, index, and packs up to date you can use the interactive comman
 
 ## 6. Optional / Advanced Commands
 
-- `uv run aijournal ingest <path>` — normalize external Markdown (blog posts, etc.).
-- `uv run aijournal profile status` — shows review priorities after applying updates.
-- `uv run aijournal interview --date YYYY-MM-DD` — generates follow-up questions for that day’s entries.
-- `uv run aijournal pack --level L4 --date YYYY-MM-DD --history-days N --format json` — build a long-horizon pack for external assistants.
-- `uv run aijournal ollama health` — verifies available models on the Ollama host.
+- `uv run aijournal ops pipeline ingest <path>` — run the legacy ingestion agent without invoking capture.
+- `uv run aijournal ops profile status` — detailed review priorities after applying updates.
+- `uv run aijournal ops profile interview --date YYYY-MM-DD` — generate follow-up questions for that day’s entries.
+- `uv run aijournal export pack --level L4 --date YYYY-MM-DD --history-days N --format json` — build a long-horizon pack for external assistants.
+- `uv run aijournal ops system ollama health` — verify available models on the Ollama host.
 
 ---
 
 ## 7. Quick Reference Flow
 
 ```
-init → write journal entries → normalize
+init → capture (--text/--from) → status
    ↓
-summarize → facts → profile suggest → profile apply
-   ↓
-characterize → review-updates
-   ↓
-index rebuild → persona build → pack
-   ↓
-chat / advise / interview
+chat / advise / export pack / serve chat
    ↓
 feedback-apply (as needed)
 ```
 
-Running commands in this order ensures downstream surfaces (chat, packs, advice) always see up-to-date data without manual patching.
+If you need to inspect individual stages, re-run them via `aijournal ops ...`; otherwise `capture`
+keeps derived artifacts refreshed automatically.
 
 ---
 

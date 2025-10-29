@@ -24,25 +24,16 @@ For a deep dive into core concepts, memory layers, claim atoms, and system inter
 
 ### Quick Workflow Overview
 
-Use the following flow to keep your journal, profile, and retrieval artifacts in sync:
+Use the following everyday flow to keep your workspace fresh (see [CLI_MIGRATION.md](CLI_MIGRATION.md) for the full legacy → new command map):
 
-1. `aijournal init` — create a workspace.  
-2. Write Markdown entries under `data/journal/YYYY/MM/DD/`.  
-3. `aijournal normalize` each entry (check that summaries exist).  
-4. Daily pipeline (per entry date):
-   - `aijournal summarize`
-   - `aijournal facts`
-   - `aijournal profile suggest`
-   - `aijournal profile apply`
-   - `aijournal characterize`
-   - `aijournal review-updates --apply`
-5. Update derived artifacts:
-   - `aijournal index rebuild`
-   - `aijournal persona build`
-   - `aijournal pack --level L1 --format yaml`
-6. Use conversational surfaces (`aijournal chat`, `chatd`, `advise`) and apply queued feedback with `aijournal feedback-apply`.
+1. `aijournal init` — scaffold a new workspace (idempotent).  
+2. `aijournal capture ...` — collect new material (free-form text, `$EDITOR`, files, or whole directories). Capture writes canonical Markdown, records snapshots/manifest rows, and automatically runs normalize → summarize → facts → profile suggest/apply → characterize/review, plus index/persona refreshes as needed.  
+3. `aijournal status` — confirm persona/index freshness, pending feedback, and Ollama connectivity.  
+4. Use conversational surfaces (`aijournal chat`, `aijournal advise`, `aijournal serve chat`, `aijournal export pack --level ...`) to consume the latest context.
 
-A quick reminder for live mode: export `AIJOURNAL_OLLAMA_HOST` to the remote Ollama address before running the pipeline so chat, summarize, and retrieval calls don't fall back to localhost.
+All advanced and one-off utilities now live under `aijournal ops ...` (pipelines, persona/index helpers, feedback). See the migration table below for the old→new mapping.
+
+A quick reminder for live mode: export `AIJOURNAL_OLLAMA_HOST` before running capture or other LLM-backed commands so they don’t fall back to localhost.
 
 A more detailed walkthrough lives in [docs/workflow.md](docs/workflow.md).
 
@@ -104,15 +95,23 @@ Creates the full layout (config/profile/data/derived/prompts). Subsequent runs j
 
 ```sh
 cd ~/journal
-aijournal new "Morning sync" --tags focus planning
+aijournal capture --text "Blocked on hiring ops; need to queue backlog." --tags focus
 ```
 
-Emits `data/journal/YYYY/MM/DD/<slug>.md` with YAML frontmatter and refuses to overwrite an existing slug.
+Writes a canonical Markdown file under `data/journal/YYYY/MM/DD/<slug>.md`, records a manifest row with the entry hash, stores a raw snapshot (`data/raw/<hash>.md`), and refreshes summaries, micro-facts, profile suggestions, persona/index, and optional packs in one shot.
+
+To import existing files or folders:
+
+```sh
+aijournal capture --from notes/weekly --source-type notes --tag planning --project roadmap
+```
+
+The command recurses for `*.md`/`*.markdown`, dedupes via SHA-256, and logs slug collisions with deterministic `-2`, `-3`, … suffixes.
 
 ### Generate fake entries (fixtures / demos)
 
 ```sh
-aijournal new --fake 3 --seed 7 --tags focus planning
+aijournal ops dev new --fake 3 --seed 7 --tags focus planning
 ```
 
 Produces three Markdown files with full frontmatter (`id`, `created_at`, `title`, `tags`, `projects`, `mood`) plus short body paragraphs. The command never calls Ollama and is safe to run offline; existing slugs are skipped. Provide `--seed` for deterministic fixtures (great for tests/CI) and optionally layer `--tags` to override the auto-generated tag sets.
@@ -134,12 +133,11 @@ aijournal index search "deep work ideas" --tags focus --date-from 2025-02-01
 
 ### Ingest existing Markdown (blogs, notes)
 
-Use the ingestion agent to normalize entire directories of Markdown or Hugo posts. By default it
-talks to your local Ollama server (set `AIJOURNAL_FAKE_OLLAMA=1` to use the deterministic fake
-parser in tests/CI):
+Use `aijournal capture --from <path>` for everyday imports. When you need the original ingestion agent
+(for scripting or CI), call it via `aijournal ops pipeline ingest`:
 
 ```sh
-aijournal ingest /home/basnijholt/Work/nijho.lt/content/post --source-type blog
+aijournal ops pipeline ingest /home/basnijholt/Work/nijho.lt/content/post --source-type blog
 ```
 
 Each ingested file is hashed (manifest stored at `data/manifest/ingested.yaml`), a raw snapshot is
@@ -155,10 +153,12 @@ of them resolve model/temperature/host via `build_ollama_config_from_mapping` be
 `run_ollama_agent`, so behavior stays aligned across CLI surfaces. Fake mode remains available for
 CI/tests by setting `AIJOURNAL_FAKE_OLLAMA=1`.
 
+Advanced reruns are still available through `aijournal ops ...` should you need to drive individual stages manually.
+
 ### Normalize Markdown into YAML
 
 ```sh
-aijournal normalize data/journal/2025/02/03/morning-sync.md
+aijournal ops pipeline normalize data/journal/2025/02/03/morning-sync.md
 ```
 
 Produces `data/normalized/2025-02-03/<entry_id>.yaml`. Files are only rewritten when content changes.
@@ -166,7 +166,7 @@ Produces `data/normalized/2025-02-03/<entry_id>.yaml`. Files are only rewritten 
 ### Summaries
 
 ```sh
-aijournal summarize --date 2025-02-03
+aijournal ops pipeline summarize --date 2025-02-03
 ```
 
 Calls `prompts/summarize_day.md` through Ollama and writes `derived/summaries/<DATE>.yaml` with
@@ -183,7 +183,7 @@ command aborts with an actionable error so you can inspect the upstream output.
 ### Micro-facts
 
 ```sh
-aijournal facts --date 2025-02-03
+aijournal ops pipeline extract-facts --date 2025-02-03
 ```
 
 Uses `prompts/extract_facts.md` to create `derived/microfacts/<DATE>.yaml` filled with

@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Sequence
+import json
+from collections.abc import Callable, Iterable, Sequence
 from datetime import UTC, datetime
 from hashlib import sha256
 from pathlib import Path
 from time import perf_counter
-from typing import Literal
+from typing import Any, Literal
 
 import typer
 import yaml
@@ -42,6 +43,8 @@ from aijournal.models import (
 )
 from aijournal.utils import time as time_utils
 from aijournal.utils.paths import normalized_entry_path
+
+MARKDOWN_SUFFIXES = {".md", ".markdown"}
 
 
 def _journal_path(root: Path, date_str: str, slug: str) -> Path:
@@ -194,6 +197,95 @@ def _apply_profile_update_batch(root: Path, batch_path: Path) -> bool:
     return True
 
 
+def _raw_snapshot_path(root: Path, digest: str) -> Path:
+    return root / "data" / "raw" / f"{digest}.md"
+
+
+def _write_snapshot(raw_bytes: bytes, root: Path, digest: str) -> Path:
+    snapshot_path = _raw_snapshot_path(root, digest)
+    snapshot_path.parent.mkdir(parents=True, exist_ok=True)
+    if not snapshot_path.exists():
+        snapshot_path.write_bytes(raw_bytes)
+    return snapshot_path
+
+
+def _discover_markdown_files(paths: Sequence[str]) -> list[Path]:
+    collected: list[Path] = []
+    for raw in paths:
+        candidate = Path(raw).expanduser().resolve()
+        if candidate.is_dir():
+            for path in sorted(candidate.rglob("*")):
+                if path.is_file() and path.suffix.lower() in MARKDOWN_SUFFIXES:
+                    collected.append(path)
+            continue
+        if candidate.is_file():
+            if candidate.suffix.lower() in MARKDOWN_SUFFIXES:
+                collected.append(candidate)
+            continue
+        raise FileNotFoundError(f"capture --from path not found: {raw}")
+
+    unique: list[Path] = []
+    seen: set[Path] = set()
+    for path in sorted(collected):
+        if path in seen:
+            continue
+        seen.add(path)
+        unique.append(path)
+    return unique
+
+
+def _telemetry_log_path(root: Path, run_id: str) -> Path:
+    return root / "derived" / "logs" / "capture" / f"{run_id}.jsonl"
+
+
+def _make_telemetry_logger(
+    root: Path,
+    run_id: str,
+    *,
+    sink: Callable[[dict[str, object]], None] | None = None,
+) -> tuple[Callable[[dict[str, object]], None], Path]:
+    log_path = _telemetry_log_path(root, run_id)
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+
+    def _write(event: dict[str, object]) -> None:
+        payload = {
+            "run_id": run_id,
+            "timestamp": time_utils.format_timestamp(time_utils.now()),
+            **event,
+        }
+        with log_path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(payload, ensure_ascii=False) + "\n")
+        if sink is not None:
+            try:
+                sink(payload)
+            except Exception:  # pragma: no cover - defensive sink guard
+                return
+
+    return _write, log_path
+
+
+def _capture_result_path(root: Path, run_id: str) -> Path:
+    return root / "derived" / "logs" / "capture" / f"{run_id}.result.json"
+
+
+def _write_capture_result(root: Path, result: CaptureResult) -> Path:
+    path = _capture_result_path(root, result.run_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    # Persist JSON so other processes (FastAPI) can retrieve run metadata.
+    payload = result.model_dump(mode="json")
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    return path
+
+
+def load_capture_result(root: Path, run_id: str) -> CaptureResult:
+    path = _capture_result_path(root, run_id)
+    if not path.exists():
+        msg = f"capture run not found: {run_id}"
+        raise FileNotFoundError(msg)
+    data = json.loads(path.read_text(encoding="utf-8"))
+    return CaptureResult.model_validate(data)
+
+
 DEFAULT_TIMEOUT_SECONDS = 120.0
 
 
@@ -242,7 +334,16 @@ def _build_manifest_entry(
     slug: str,
     tags: list[str],
     root: Path,
+    canonical_path: Path | None = None,
+    snapshot_path: Path | None = None,
+    aliases: Sequence[str] | None = None,
 ) -> ManifestEntry:
+    canonical_rel = (
+        _relative_path(canonical_path, root)
+        if canonical_path is not None
+        else _relative_path(markdown_path, root)
+    )
+    snapshot_rel = _relative_path(snapshot_path, root) if snapshot_path is not None else None
     return ManifestEntry(
         hash=digest,
         path=_relative_path(markdown_path, root),
@@ -253,6 +354,9 @@ def _build_manifest_entry(
         id=slug,
         tags=tags,
         model=None,
+        canonical_journal_path=canonical_rel,
+        snapshot_path=snapshot_rel,
+        aliases=list(aliases or []),
     )
 
 
@@ -275,6 +379,59 @@ def _coerce_frontmatter_tags(raw: object) -> list[str]:
     if isinstance(raw, str):
         return [raw]
     return []
+
+
+def _extract_json_frontmatter_block(text: str) -> tuple[str, str]:
+    depth = 0
+    in_string = False
+    escape = False
+    start_index = None
+    for index, char in enumerate(text):
+        if start_index is None:
+            if char.isspace():
+                continue
+            if char != "{":
+                raise ValueError("JSON frontmatter must start with '{'")
+            start_index = index
+            depth = 1
+            continue
+
+        if in_string:
+            if escape:
+                escape = False
+                continue
+            if char == "\\":
+                escape = True
+                continue
+            if char == '"':
+                in_string = False
+            continue
+
+        if char == '"':
+            in_string = True
+            continue
+        if char == "{":
+            depth += 1
+            continue
+        if char == "}":
+            depth -= 1
+            if depth == 0 and start_index is not None:
+                end_index = index + 1
+                block = text[start_index:end_index]
+                remainder = text[end_index:]
+                return block, remainder
+    raise ValueError("Unterminated JSON frontmatter block")
+
+
+def _extract_json_frontmatter(text: str) -> tuple[dict[str, object], str]:
+    block, body = _extract_json_frontmatter_block(text)
+    try:
+        data = json.loads(block) or {}
+    except json.JSONDecodeError as exc:  # pragma: no cover - defensive
+        raise ValueError("Invalid JSON frontmatter") from exc
+    if not isinstance(data, dict):
+        data = {}
+    return data, body.lstrip("\n")
 
 
 def _normalize_markdown(
@@ -359,12 +516,17 @@ def _persist_text_entry(
     title = _resolve_title(inputs, body_text)
     base_slug = inputs.slug or f"{date_str}-{time_utils.slugify_title(title)}"
     slug = _ensure_unique_slug(root, date_str, base_slug)
+    aliases: list[str] = []
+    entry_warnings: list[str] = []
+    if slug != base_slug:
+        aliases.append(base_slug)
+        entry_warnings.append(f'slug "{base_slug}" already exists; stored as "{slug}"')
 
     markdown_path = _journal_path(root, date_str, slug)
     frontmatter_tags = _coalesce_tags(inputs.tags)
     projects = _coalesce_tags(inputs.projects)
 
-    frontmatter: dict[str, object] = {
+    frontmatter: dict[str, Any] = {
         "id": slug,
         "created_at": time_utils.format_timestamp(created_dt),
         "title": title,
@@ -372,6 +534,7 @@ def _persist_text_entry(
         "source_type": inputs.source_type,
         "origin": {"kind": "capture"},
     }
+    frontmatter["origin"]["canonical_path"] = _relative_path(markdown_path, root)
     if projects:
         frontmatter["projects"] = projects
     if inputs.mood:
@@ -420,6 +583,8 @@ def _persist_text_entry(
         slug=slug,
         tags=frontmatter_tags,
         root=root,
+        canonical_path=markdown_path,
+        aliases=aliases,
     )
     manifest_entries.append(entry)
     _write_manifest(manifest_path, manifest_entries)
@@ -432,29 +597,33 @@ def _persist_text_entry(
         slug=slug,
         deduped=False,
         changed=True,
-        warnings=[],
+        warnings=entry_warnings,
         source_hash=digest,
         source_type=inputs.source_type,
     )
 
 
 def _split_frontmatter(text: str) -> tuple[dict[str, object], str]:
+    stripped = text.lstrip()
+    if stripped.startswith("{"):
+        return _extract_json_frontmatter(stripped)
+
     delimiter = None
-    if text.startswith("---"):
+    if stripped.startswith("---"):
         delimiter = "---"
-    elif text.startswith("+++"):
+    elif stripped.startswith("+++"):
         delimiter = "+++"
     if delimiter is None:
         msg = "Markdown entry missing YAML/TOML frontmatter delimiter"
         raise ValueError(msg)
 
-    parts = text.split(delimiter, 2)
+    parts = stripped.split(delimiter, 2)
     if len(parts) < 3:
         msg = "Incomplete YAML/TOML frontmatter block"
         raise ValueError(msg)
 
     frontmatter_raw = parts[1].strip()
-    body = parts[2]
+    body = parts[2].lstrip("\n")
     data = yaml.safe_load(frontmatter_raw) or {}
     if not isinstance(data, dict):
         data = {}
@@ -479,20 +648,29 @@ def _persist_file_entry(
     inputs: CaptureInput,
     root: Path,
     manifest_entries: list[ManifestEntry],
+    *,
+    source_path: Path | None = None,
+    snapshot: bool = True,
+    manifest_index: dict[str, ManifestEntry] | None = None,
 ) -> EntryResult:
-    if not inputs.paths:
-        raise ValueError("capture --from requires at least one path")
+    if source_path is None:
+        if not inputs.paths:
+            raise ValueError("capture --from requires at least one path")
+        source_path = Path(inputs.paths[0]).expanduser().resolve()
+    else:
+        source_path = source_path.expanduser().resolve()
 
     _ensure_manifest(manifest_entries, root)
     manifest_path = _manifest_path(root)
-    manifest_index = _manifest_index(manifest_entries)
+    local_index = (
+        manifest_index if manifest_index is not None else _manifest_index(manifest_entries)
+    )
 
-    source_path = Path(inputs.paths[0]).expanduser().resolve()
     raw_bytes = source_path.read_bytes()
     digest = _digest_bytes(raw_bytes)
 
-    if digest in manifest_index:
-        existing = manifest_index[digest]
+    if digest in local_index:
+        existing = local_index[digest]
         return EntryResult(
             markdown_path=existing.path,
             normalized_path=existing.normalized,
@@ -524,6 +702,12 @@ def _persist_file_entry(
         slug_source = f"{date_str}-{time_utils.slugify_title(title)}"
     slug = _ensure_unique_slug(root, date_str, slug_source)
 
+    aliases: list[str] = []
+    entry_warnings: list[str] = []
+    if slug != slug_source:
+        aliases.append(slug_source)
+        entry_warnings.append(f'slug "{slug_source}" already exists; stored as "{slug}"')
+
     tags = _coalesce_tags(
         _coerce_frontmatter_tags(frontmatter_data.get("tags")),
         inputs.tags,
@@ -534,7 +718,8 @@ def _persist_file_entry(
     )
 
     markdown_path = _journal_path(root, date_str, slug)
-    frontmatter_out: dict[str, object] = {
+    canonical_rel = _relative_path(markdown_path, root)
+    frontmatter_out: dict[str, Any] = {
         "id": slug,
         "created_at": time_utils.format_timestamp(created_dt),
         "title": title,
@@ -544,6 +729,7 @@ def _persist_file_entry(
             "kind": "import",
             "original_path": str(source_path),
             "import_hash": digest,
+            "canonical_path": canonical_rel,
         },
     }
     if projects:
@@ -561,10 +747,14 @@ def _persist_file_entry(
     if summary_text:
         frontmatter_out["summary"] = summary_text
 
-    # Preserve any unhandled keys from the original frontmatter.
     for key, value in frontmatter_data.items():
         if key not in frontmatter_out:
             frontmatter_out[key] = value
+
+    snapshot_path_obj: Path | None = None
+    if snapshot:
+        snapshot_path_obj = _write_snapshot(raw_bytes, root, digest)
+        frontmatter_out["origin"]["snapshot_path"] = _relative_path(snapshot_path_obj, root)
 
     _write_markdown_entry(markdown_path, frontmatter_out, body)
 
@@ -584,10 +774,13 @@ def _persist_file_entry(
         slug=slug,
         tags=tags,
         root=root,
+        canonical_path=markdown_path,
+        snapshot_path=snapshot_path_obj,
+        aliases=aliases,
     )
     manifest_entries.append(entry)
     _write_manifest(manifest_path, manifest_entries)
-    manifest_index[digest] = entry
+    local_index[digest] = entry
 
     return EntryResult(
         markdown_path=_relative_path(markdown_path, root),
@@ -596,7 +789,7 @@ def _persist_file_entry(
         slug=slug,
         deduped=False,
         changed=True,
-        warnings=[],
+        warnings=entry_warnings,
         source_hash=digest,
         source_type=inputs.source_type,
     )
@@ -639,6 +832,7 @@ class CaptureInput(BaseModel):
     retries: int = Field(1, ge=0, description="LLM structured-output retries per stage.")
     progress: bool = Field(True, description="Whether to display progress indicators.")
     dry_run: bool = Field(False, description="Skip writes and report planned actions only.")
+    snapshot: bool = Field(True, description="Store raw snapshots for file imports.")
 
 
 class EntryResult(BaseModel):
@@ -685,45 +879,109 @@ class CaptureResult(BaseModel):
         default_factory=dict,
         description="Per-stage durations (milliseconds).",
     )
+    review_candidates: list[str] = Field(
+        default_factory=list,
+        description="Pending review batch paths generated during capture.",
+    )
+    telemetry_path: str | None = Field(
+        None,
+        description="Relative path to the NDJSON telemetry log for this run.",
+    )
 
 
-def run_capture(inputs: CaptureInput) -> CaptureResult:
+def run_capture(
+    inputs: CaptureInput,
+    *,
+    run_id: str | None = None,
+    event_sink: Callable[[dict[str, object]], None] | None = None,
+    root: Path | None = None,
+) -> CaptureResult:
     """Execute the capture workflow (persist, normalize, derive, telemetry)."""
 
     if inputs.dry_run:
         msg = "capture dry-run is not implemented yet"
         raise ValueError(msg)
 
-    if inputs.source not in {"stdin", "editor", "file"}:
+    root = root or Path.cwd()
+    resolved_run_id = run_id or _generate_run_id()
+    log_event, telemetry_path = _make_telemetry_logger(root, resolved_run_id, sink=event_sink)
+    log_event(
+        {
+            "event": "preflight",
+            "source": inputs.source,
+            "paths": inputs.paths,
+            "snapshot": inputs.snapshot,
+            "apply_profile": inputs.apply_profile,
+            "rebuild": inputs.rebuild,
+            "pack": inputs.pack,
+        }
+    )
+
+    if inputs.source not in {"stdin", "editor", "file", "dir"}:
         msg = f"Unsupported capture source: {inputs.source}"
+        log_event({"event": "preflight", "status": "error", "error": msg})
         raise ValueError(msg)
 
-    root = Path.cwd()
-    run_id = _generate_run_id()
     manifest_entries: list[ManifestEntry] = []
     entry_results: list[EntryResult] = []
     durations_ms: dict[str, float] = {}
     warnings: list[str] = []
+    review_candidates: list[str] = []
 
     persist_start = perf_counter()
     if inputs.source in {"stdin", "editor"}:
         if not inputs.text:
             msg = "capture text input requires non-empty text"
+            log_event({"event": "persist", "status": "error", "error": msg})
             raise ValueError(msg)
         entry_results.append(_persist_text_entry(inputs, root, manifest_entries))
-    elif inputs.source == "file":
+    else:
         if not inputs.paths:
-            msg = "capture file input requires at least one path"
+            msg = "capture --from requires at least one path"
+            log_event({"event": "persist", "status": "error", "error": msg})
             raise ValueError(msg)
-        if len(inputs.paths) != 1:
-            msg = "capture --from currently supports a single file"
+        files = _discover_markdown_files(inputs.paths)
+        if not files:
+            msg = "capture --from found no Markdown files"
+            log_event({"event": "persist", "status": "error", "error": msg})
             raise ValueError(msg)
-        entry_results.append(_persist_file_entry(inputs, root, manifest_entries))
+        _ensure_manifest(manifest_entries, root)
+        manifest_idx = _manifest_index(manifest_entries)
+        for file_path in files:
+            entry_result = _persist_file_entry(
+                inputs,
+                root,
+                manifest_entries,
+                source_path=file_path,
+                snapshot=inputs.snapshot,
+                manifest_index=manifest_idx,
+            )
+            entry_results.append(entry_result)
     durations_ms["persist"] = (perf_counter() - persist_start) * 1000.0
+    created_count = sum(1 for entry in entry_results if entry.changed and not entry.deduped)
+    deduped_count = sum(1 for entry in entry_results if entry.deduped)
+    log_event(
+        {
+            "event": "persist",
+            "status": "ok",
+            "duration_ms": round(durations_ms["persist"], 3),
+            "entries": len(entry_results),
+            "created": created_count,
+            "deduped": deduped_count,
+        }
+    )
 
     normalize_start = perf_counter()
     artifact_counts = normalize_entries(entry_results, root) if entry_results else {}
     durations_ms["normalize"] = (perf_counter() - normalize_start) * 1000.0
+    log_event(
+        {
+            "event": "normalize",
+            "status": "ok",
+            "duration_ms": round(durations_ms["normalize"], 3),
+            "artifacts": artifact_counts,
+        }
+    )
 
     artifacts_changed = {key: value for key, value in artifact_counts.items() if value}
     entries_changed = sum(1 for entry in entry_results if entry.changed and not entry.deduped)
@@ -744,8 +1002,9 @@ def run_capture(inputs: CaptureInput) -> CaptureResult:
     for date in changed_dates:
         stage = "derive.summarize"
         start = perf_counter()
+        summary_event = {"event": stage, "date": date}
         try:
-            run_summarize_command(
+            summary_path = run_summarize_command(
                 date,
                 timeout=DEFAULT_TIMEOUT_SECONDS,
                 retries=inputs.retries,
@@ -754,15 +1013,25 @@ def run_capture(inputs: CaptureInput) -> CaptureResult:
         except typer.Exit as exc:
             if exc.exit_code not in (0,):
                 _warn(stage, exc)
+                log_event({**summary_event, "status": "error", "error": str(exc)})
         except Exception as exc:  # pragma: no cover - defensive
             _warn(stage, exc)
+            log_event({**summary_event, "status": "error", "error": str(exc)})
         else:
             artifacts_changed["summaries"] = artifacts_changed.get("summaries", 0) + 1
+            log_event(
+                {
+                    **summary_event,
+                    "status": "ok",
+                    "path": _relative_path(summary_path, root),
+                }
+            )
         finally:
             _record_duration(stage, start)
 
         stage = "derive.extract_facts"
         start = perf_counter()
+        facts_event = {"event": stage, "date": date}
         try:
             _, facts_path = run_facts(
                 date,
@@ -775,17 +1044,27 @@ def run_capture(inputs: CaptureInput) -> CaptureResult:
         except typer.Exit as exc:
             if exc.exit_code not in (0,):
                 _warn(stage, exc)
+                log_event({**facts_event, "status": "error", "error": str(exc)})
         except Exception as exc:  # pragma: no cover - defensive
             _warn(stage, exc)
+            log_event({**facts_event, "status": "error", "error": str(exc)})
         else:
             if facts_path:
                 artifacts_changed["microfacts"] = artifacts_changed.get("microfacts", 0) + 1
+                log_event(
+                    {
+                        **facts_event,
+                        "status": "ok",
+                        "path": _relative_path(facts_path, root),
+                    }
+                )
         finally:
             _record_duration(stage, start)
 
         stage = "derive.profile_suggest"
         start = perf_counter()
         suggestions_path: Path | None = None
+        suggest_event = {"event": stage, "date": date}
         try:
             suggestions_path = run_profile_suggest(
                 date,
@@ -796,18 +1075,29 @@ def run_capture(inputs: CaptureInput) -> CaptureResult:
         except typer.Exit as exc:
             if exc.exit_code not in (0,):
                 _warn(stage, exc)
+                log_event({**suggest_event, "status": "error", "error": str(exc)})
         except Exception as exc:  # pragma: no cover - defensive
             _warn(stage, exc)
+            log_event({**suggest_event, "status": "error", "error": str(exc)})
         else:
             artifacts_changed["profile_suggestions"] = (
                 artifacts_changed.get("profile_suggestions", 0) + 1
             )
+            if suggestions_path:
+                log_event(
+                    {
+                        **suggest_event,
+                        "status": "ok",
+                        "path": _relative_path(suggestions_path, root),
+                    }
+                )
         finally:
             _record_duration(stage, start)
 
         if inputs.apply_profile == "auto":
             stage = "derive.profile_apply"
             start = perf_counter()
+            apply_event = {"event": stage, "date": date}
             try:
                 run_profile_apply(
                     date,
@@ -817,10 +1107,13 @@ def run_capture(inputs: CaptureInput) -> CaptureResult:
             except typer.Exit as exc:
                 if exc.exit_code not in (0,):
                     _warn(stage, exc)
+                    log_event({**apply_event, "status": "error", "error": str(exc)})
             except Exception as exc:  # pragma: no cover - defensive
                 _warn(stage, exc)
+                log_event({**apply_event, "status": "error", "error": str(exc)})
             else:
                 artifacts_changed["profile"] = artifacts_changed.get("profile", 0) + 1
+                log_event({**apply_event, "status": "ok"})
             finally:
                 _record_duration(stage, start)
 
@@ -828,6 +1121,7 @@ def run_capture(inputs: CaptureInput) -> CaptureResult:
         stage = "derive.characterize"
         start = perf_counter()
         created_batches: list[Path] = []
+        characterize_event = {"event": stage, "date": date}
         try:
             batch_path = run_characterize(
                 date,
@@ -840,10 +1134,20 @@ def run_capture(inputs: CaptureInput) -> CaptureResult:
         except typer.Exit as exc:
             if exc.exit_code not in (0,):
                 _warn(stage, exc)
+                log_event({**characterize_event, "status": "error", "error": str(exc)})
         except Exception as exc:  # pragma: no cover - defensive
             _warn(stage, exc)
+            log_event({**characterize_event, "status": "error", "error": str(exc)})
         else:
             artifacts_changed["characterize"] = artifacts_changed.get("characterize", 0) + 1
+            for batch in created_batches:
+                log_event(
+                    {
+                        **characterize_event,
+                        "status": "ok",
+                        "path": _relative_path(batch, root),
+                    }
+                )
         finally:
             _record_duration(stage, start)
 
@@ -853,17 +1157,36 @@ def run_capture(inputs: CaptureInput) -> CaptureResult:
             if batch_path not in new_batches:
                 new_batches.append(batch_path)
 
+        review_candidates.extend(_relative_path(path, root) for path in new_batches)
+
         if inputs.apply_profile == "auto" and new_batches:
             stage = "derive.review"
             for batch_path in new_batches:
                 start = perf_counter()
+                review_event = {
+                    "event": stage,
+                    "path": _relative_path(batch_path, root),
+                }
                 try:
                     if _apply_profile_update_batch(root, batch_path):
                         artifacts_changed["profile"] = artifacts_changed.get("profile", 0) + 1
+                        log_event({**review_event, "status": "applied"})
+                    else:
+                        log_event({**review_event, "status": "noop"})
                 except Exception as exc:  # pragma: no cover - defensive
                     _warn(stage, exc)
+                    log_event({**review_event, "status": "error", "error": str(exc)})
                 finally:
                     _record_duration(stage, start)
+        elif new_batches:
+            for batch_path in new_batches:
+                log_event(
+                    {
+                        "event": "derive.review",
+                        "path": _relative_path(batch_path, root),
+                        "status": "pending",
+                    }
+                )
 
     if inputs.apply_profile != "auto" and "profile" not in artifacts_changed:
         artifacts_changed.setdefault("profile", 0)
@@ -878,6 +1201,7 @@ def run_capture(inputs: CaptureInput) -> CaptureResult:
         start = perf_counter()
         index_message = ""
         index_updated = False
+        index_error = False
         try:
             index_db = root / "derived" / "index" / "index.db"
             if not index_db.exists():
@@ -892,16 +1216,30 @@ def run_capture(inputs: CaptureInput) -> CaptureResult:
         except typer.Exit as exc:
             if exc.exit_code not in (0,):
                 _warn(stage, exc)
+                log_event({"event": "index.update", "status": "error", "error": str(exc)})
+                index_error = True
         except Exception as exc:  # pragma: no cover - defensive
             _warn(stage, exc)
+            log_event({"event": "index.update", "status": "error", "error": str(exc)})
+            index_error = True
         else:
             if index_updated:
                 artifacts_changed["index"] = artifacts_changed.get("index", 0) + 1
         finally:
             _record_duration(stage, start)
+        log_event(
+            {
+                "event": "index.rebuild" if index_rebuilt else "index.update",
+                "status": "error" if index_error else ("ok" if index_updated else "noop"),
+                "message": index_message,
+            }
+        )
 
         stage = "refresh.persona"
         start = perf_counter()
+        persona_event = {"event": "persona.status"}
+        should_build = False
+        persona_error = False
         try:
             status_before, _ = persona_state(root)
             persona_stale_before = status_before != "fresh"
@@ -923,38 +1261,85 @@ def run_capture(inputs: CaptureInput) -> CaptureResult:
         except typer.Exit as exc:
             if exc.exit_code not in (0,):
                 _warn(stage, exc)
+                log_event({**persona_event, "status": "error", "error": str(exc)})
+                persona_error = True
         except Exception as exc:  # pragma: no cover - defensive
             _warn(stage, exc)
+            log_event({**persona_event, "status": "error", "error": str(exc)})
+            persona_error = True
         finally:
             _record_duration(stage, start)
+        log_event(
+            {
+                **persona_event,
+                "status": "error" if persona_error else "ok",
+                "before": "stale" if persona_stale_before else "fresh",
+                "after": "stale" if persona_stale_after else "fresh",
+            }
+        )
+        if should_build and not persona_error:
+            log_event(
+                {
+                    "event": "persona.build",
+                    "status": "ok" if persona_changed else "noop",
+                }
+            )
 
-        if inputs.pack and persona_changed:
-            stage = "refresh.pack"
-            start = perf_counter()
-            level = inputs.pack.upper()
-            history_days = 1 if level == "L4" else 0
-            pack_output = root / "derived" / "packs" / f"{level.lower()}_{run_id}.yaml"
-            try:
-                run_pack(
-                    level,
-                    None,
-                    output=pack_output,
-                    max_tokens=None,
-                    fmt="yaml",
-                    history_days=history_days,
-                    dry_run=False,
-                )
-                artifacts_changed["pack"] = artifacts_changed.get("pack", 0) + 1
-            except typer.Exit as exc:
-                if exc.exit_code not in (0,):
-                    _warn(stage, exc)
-            except Exception as exc:  # pragma: no cover - defensive
+    if inputs.pack and persona_changed:
+        stage = "refresh.pack"
+        start = perf_counter()
+        level = inputs.pack.upper()
+        history_days = 1 if level == "L4" else 0
+        pack_output = root / "derived" / "packs" / f"{level.lower()}_{resolved_run_id}.yaml"
+        pack_error = False
+        try:
+            run_pack(
+                level,
+                None,
+                output=pack_output,
+                max_tokens=None,
+                fmt="yaml",
+                history_days=history_days,
+                dry_run=False,
+            )
+            artifacts_changed["pack"] = artifacts_changed.get("pack", 0) + 1
+        except typer.Exit as exc:
+            if exc.exit_code not in (0,):
                 _warn(stage, exc)
-            finally:
-                _record_duration(stage, start)
+                log_event({"event": "pack", "status": "error", "error": str(exc)})
+                pack_error = True
+        except Exception as exc:  # pragma: no cover - defensive
+            _warn(stage, exc)
+            log_event({"event": "pack", "status": "error", "error": str(exc)})
+            pack_error = True
+        finally:
+            _record_duration(stage, start)
+        log_event(
+            {
+                "event": "pack",
+                "status": "error" if pack_error else "ok",
+                "level": level,
+                "output": _relative_path(pack_output, root),
+            }
+        )
 
-    return CaptureResult(
-        run_id=run_id,
+    for entry in entry_results:
+        if entry.warnings:
+            warnings.extend(entry.warnings)
+
+    telemetry_rel = _relative_path(telemetry_path, root)
+    log_event(
+        {
+            "event": "done",
+            "status": "ok",
+            "warnings": warnings,
+            "artifacts_changed": artifacts_changed,
+            "review_candidates": review_candidates,
+        }
+    )
+
+    result = CaptureResult(
+        run_id=resolved_run_id,
         entries=entry_results,
         artifacts_changed=artifacts_changed,
         persona_stale_before=persona_stale_before,
@@ -962,7 +1347,13 @@ def run_capture(inputs: CaptureInput) -> CaptureResult:
         index_rebuilt=index_rebuilt,
         durations_ms={key: round(value, 3) for key, value in durations_ms.items()},
         warnings=warnings,
+        review_candidates=review_candidates,
+        telemetry_path=telemetry_rel,
     )
+
+    _write_capture_result(root, result)
+
+    return result
 
 
 def normalize_entries(entries: list[EntryResult], root: Path) -> dict[str, int]:
