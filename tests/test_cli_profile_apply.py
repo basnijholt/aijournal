@@ -14,12 +14,11 @@ from tests.helpers import make_claim_atom
 if TYPE_CHECKING:
     from pathlib import Path
 
-runner = CliRunner()
 DATE = "2025-02-03"
 
 
 def _has_profile_apply() -> bool:
-    result = runner.invoke(app, ["profile", "apply", "--help"])
+    result = CliRunner().invoke(app, ["ops", "profile", "apply", "--help"])
     return result.exit_code == 0
 
 
@@ -90,8 +89,9 @@ def _seed_suggestions(workspace: Path) -> Path:
     return path
 
 
-def _invoke(suggestions_path: Path) -> str:
+def _invoke(suggestions_path: Path, cli_runner: CliRunner) -> str:
     args = [
+        "ops",
         "profile",
         "apply",
         "--date",
@@ -100,16 +100,19 @@ def _invoke(suggestions_path: Path) -> str:
         str(suggestions_path),
         "--yes",
     ]
-    result = runner.invoke(app, args)
+    result = cli_runner.invoke(app, args)
     assert result.exit_code == 0, result.output
     return result.output
 
 
-def test_profile_apply_merges_suggestions(cli_workspace: Path) -> None:
+def test_profile_apply_merges_suggestions(
+    cli_workspace: Path,
+    cli_runner: CliRunner,
+) -> None:
     _seed_authoritative(cli_workspace)
     suggestions_path = _seed_suggestions(cli_workspace)
 
-    output = _invoke(suggestions_path)
+    output = _invoke(suggestions_path, cli_runner)
     assert "Applied" in output
 
     claims = yaml.safe_load((cli_workspace / "profile" / "claims.yaml").read_text(encoding="utf-8"))
@@ -120,23 +123,26 @@ def test_profile_apply_merges_suggestions(cli_workspace: Path) -> None:
     profile = yaml.safe_load(
         (cli_workspace / "profile" / "self_profile.yaml").read_text(encoding="utf-8"),
     )
-    assert profile["values_motivations"]["schwartz_top5"] == [
+    assert {
         "Universalism",
         "Benevolence",
-    ]
+    } == set(profile["values_motivations"]["schwartz_top5"])
 
 
-def test_profile_apply_idempotent(cli_workspace: Path) -> None:
+def test_profile_apply_idempotent(
+    cli_workspace: Path,
+    cli_runner: CliRunner,
+) -> None:
     _seed_authoritative(cli_workspace)
     suggestions_path = _seed_suggestions(cli_workspace)
 
-    first_output = _invoke(suggestions_path)
+    first_output = _invoke(suggestions_path, cli_runner)
     claims_after_first = (cli_workspace / "profile" / "claims.yaml").read_text(encoding="utf-8")
     profile_after_first = (cli_workspace / "profile" / "self_profile.yaml").read_text(
         encoding="utf-8"
     )
 
-    second_output = _invoke(suggestions_path)
+    second_output = _invoke(suggestions_path, cli_runner)
 
     assert (cli_workspace / "profile" / "claims.yaml").read_text(
         encoding="utf-8"

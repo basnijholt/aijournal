@@ -199,7 +199,7 @@ Add via `uv add` unless already present:
 - `fastapi` + `uvicorn` — lightweight local chat server/orchestrator.
 - `orjson` — faster JSON (optional but recommended for chat transcripts/index meta).
 
-Embedding defaults rely on Ollama (e.g., `nomic-embed-text`); keep everything local-first.
+Embedding defaults rely on Ollama (e.g., `embeddinggemma`); keep everything local-first.
 
 ---
 
@@ -639,7 +639,7 @@ Health check:
 
 ### 8.1 Embedding + retrieval services
 
-- Embeddings default to `nomic-embed-text` via Ollama (`EmbeddingClient` wraps HTTP calls, caches dims, exposes `embed_texts`).
+- Embeddings default to `embeddinggemma` via Ollama (`EmbeddingClient` wraps HTTP calls, caches dims, exposes `embed_texts`).
 - `Indexer` manages chunking (700–1200 chars, boundary aware), writes SQLite rows, and updates Annoy (rebuild after N inserts or on-demand `index rebuild`).
 - `Retriever` loads query embeddings, performs ANN search (`search_k = factor * k * trees`), filters by tags/date/source, applies lightweight rerank: `score = 0.7*cos + 0.3*recency` where `recency = 1/(1+0.05*days)`.
 - Retrieval requires the Annoy + SQLite artifacts; if either is missing, commands error immediately so you can rebuild via `aijournal index rebuild`.
@@ -663,7 +663,7 @@ Health check:
 
 - Path: `config/config.yaml`
   - `model: "llama3.1:8b-instruct"`
-  - `embedding_model: "nomic-embed-text"`
+  - `embedding_model: "embeddinggemma"`
   - `temperature: 0.2`
   - `seed: 42`
   - `paths: {data, profile, derived, prompts}`

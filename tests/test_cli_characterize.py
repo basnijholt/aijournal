@@ -1,4 +1,4 @@
-"""Tests for characterize/review-updates commands."""
+"""Tests for characterize/review pipeline commands."""
 
 from __future__ import annotations
 
@@ -10,7 +10,6 @@ from typer.testing import CliRunner
 from aijournal.cli import app
 from aijournal.models import CharacterizeResponse
 
-runner = CliRunner()
 DATE = "2025-02-03"
 ENTRY_ID = "2025-02-03-focus-notes"
 SOURCE_HASH = "abc123hash"
@@ -93,16 +92,14 @@ def _seed_conflicting_claim(tmp_path: Path) -> None:
 
 def _run_characterize(
     tmp_path: Path,
+    cli_runner: CliRunner,
     extra_args: list[str] | None = None,
     env_override: dict[str, str] | None = None,
 ) -> tuple[Path, str]:
-    env = {"AIJOURNAL_FAKE_OLLAMA": "1"}
-    if env_override:
-        env.update(env_override)
-    args = ["characterize", "--date", DATE]
+    args = ["ops", "pipeline", "characterize", "--date", DATE]
     if extra_args:
         args.extend(extra_args)
-    result = runner.invoke(app, args, env=env)
+    result = cli_runner.invoke(app, args, env=env_override)
     assert result.exit_code == 0, result.output
     pending_dir = tmp_path / "derived" / "pending" / "profile_updates"
     batches = sorted(pending_dir.glob("*.yaml"))
@@ -110,13 +107,15 @@ def _run_characterize(
     return batches[-1], result.stdout
 
 
-def test_characterize_generates_pending_batch(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.chdir(tmp_path)
-    _seed_normalized(tmp_path)
-    _seed_manifest(tmp_path)
-    _seed_profile(tmp_path)
+def test_characterize_generates_pending_batch(
+    cli_workspace: Path,
+    cli_runner: CliRunner,
+) -> None:
+    _seed_normalized(cli_workspace)
+    _seed_manifest(cli_workspace)
+    _seed_profile(cli_workspace)
 
-    batch_path, _ = _run_characterize(tmp_path)
+    batch_path, _ = _run_characterize(cli_workspace, cli_runner)
     data = yaml.safe_load(batch_path.read_text(encoding="utf-8"))
 
     assert data.get("inputs")
@@ -133,23 +132,23 @@ def test_characterize_generates_pending_batch(tmp_path: Path, monkeypatch) -> No
     assert not (preview.get("interview_prompts") or [])
 
 
-def test_review_updates_applies_batch(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.chdir(tmp_path)
-    _seed_normalized(tmp_path)
-    _seed_manifest(tmp_path)
-    _seed_profile(tmp_path)
+def test_review_updates_applies_batch(
+    cli_workspace: Path,
+    cli_runner: CliRunner,
+) -> None:
+    _seed_normalized(cli_workspace)
+    _seed_manifest(cli_workspace)
+    _seed_profile(cli_workspace)
 
-    batch_path, _ = _run_characterize(tmp_path)
-    env = {"AIJOURNAL_FAKE_OLLAMA": "1"}
-    result = runner.invoke(
+    batch_path, _ = _run_characterize(cli_workspace, cli_runner)
+    result = cli_runner.invoke(
         app,
-        ["review-updates", "--file", str(batch_path), "--apply"],
-        env=env,
+        ["ops", "pipeline", "review", "--file", str(batch_path), "--apply"],
     )
     assert result.exit_code == 0, result.output
 
-    profile_path = tmp_path / "profile" / "self_profile.yaml"
-    claims_path = tmp_path / "profile" / "claims.yaml"
+    profile_path = cli_workspace / "profile" / "self_profile.yaml"
+    claims_path = cli_workspace / "profile" / "claims.yaml"
     profile_data = yaml.safe_load(profile_path.read_text(encoding="utf-8"))
     claims_data = yaml.safe_load(claims_path.read_text(encoding="utf-8"))
 
@@ -157,14 +156,16 @@ def test_review_updates_applies_batch(tmp_path: Path, monkeypatch) -> None:
     assert claims_data.get("claims"), "Expected claim upsert applied"
 
 
-def test_characterize_preview_flags_conflict(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.chdir(tmp_path)
-    _seed_normalized(tmp_path)
-    _seed_manifest(tmp_path)
-    _seed_profile(tmp_path)
-    _seed_conflicting_claim(tmp_path)
+def test_characterize_preview_flags_conflict(
+    cli_workspace: Path,
+    cli_runner: CliRunner,
+) -> None:
+    _seed_normalized(cli_workspace)
+    _seed_manifest(cli_workspace)
+    _seed_profile(cli_workspace)
+    _seed_conflicting_claim(cli_workspace)
 
-    batch_path, _ = _run_characterize(tmp_path)
+    batch_path, _ = _run_characterize(cli_workspace, cli_runner)
     data = yaml.safe_load(batch_path.read_text(encoding="utf-8"))
     preview = data.get("preview", {})
     events = preview.get("claim_events") or []
@@ -174,23 +175,28 @@ def test_characterize_preview_flags_conflict(tmp_path: Path, monkeypatch) -> Non
     assert prompts, "Expected interview prompt queued for conflict"
 
 
-def test_characterize_progress_flag(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.chdir(tmp_path)
-    _seed_normalized(tmp_path)
-    _seed_manifest(tmp_path)
-    _seed_profile(tmp_path)
+def test_characterize_progress_flag(
+    cli_workspace: Path,
+    cli_runner: CliRunner,
+) -> None:
+    _seed_normalized(cli_workspace)
+    _seed_manifest(cli_workspace)
+    _seed_profile(cli_workspace)
 
-    _, output = _run_characterize(tmp_path, ["--progress"])
+    _, output = _run_characterize(cli_workspace, cli_runner, ["--progress"])
 
     assert "Characterizing entries" in output
     assert "[1/1]" in output
 
 
-def test_characterize_live_mode_structured(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.chdir(tmp_path)
-    _seed_normalized(tmp_path)
-    _seed_manifest(tmp_path)
-    _seed_profile(tmp_path)
+def test_characterize_live_mode_structured(
+    cli_workspace: Path,
+    cli_runner: CliRunner,
+    monkeypatch,
+) -> None:
+    _seed_normalized(cli_workspace)
+    _seed_manifest(cli_workspace)
+    _seed_profile(cli_workspace)
     monkeypatch.setenv("AIJOURNAL_FAKE_OLLAMA", "0")
 
     claim_payload = {
@@ -249,7 +255,8 @@ def test_characterize_live_mode_structured(tmp_path: Path, monkeypatch) -> None:
     )
 
     batch_path, _ = _run_characterize(
-        tmp_path,
+        cli_workspace,
+        cli_runner,
         env_override={"AIJOURNAL_FAKE_OLLAMA": "0"},
     )
     data = yaml.safe_load(batch_path.read_text(encoding="utf-8"))

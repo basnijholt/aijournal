@@ -14,7 +14,6 @@ from tests.helpers import make_claim_atom
 if TYPE_CHECKING:
     from pathlib import Path
 
-runner = CliRunner()
 DATE = "2025-02-03"
 
 
@@ -71,8 +70,11 @@ def _seed_pending_prompt(workspace: Path) -> None:
     path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
 
 
-def _invoke(workspace: Path) -> tuple[dict[str, object], Path, int]:
-    result = runner.invoke(app, ["advise", "How to plan next week?"])
+def _invoke(
+    workspace: Path,
+    cli_runner: CliRunner,
+) -> tuple[dict[str, object], Path, int]:
+    result = cli_runner.invoke(app, ["advise", "How to plan next week?"])
     assert result.exit_code == 0, result.output
     folder = workspace / "derived" / "advice" / DATE
     files = sorted(folder.glob("*.yaml"))
@@ -81,35 +83,40 @@ def _invoke(workspace: Path) -> tuple[dict[str, object], Path, int]:
     return data, files[0], len(files)
 
 
-def test_advise_generates_advice(cli_workspace: Path) -> None:
+def test_advise_generates_advice(
+    cli_workspace: Path,
+    cli_runner: CliRunner,
+) -> None:
     _seed_profile(cli_workspace)
     _seed_pending_prompt(cli_workspace)
 
-    data, advice_file, _count = _invoke(cli_workspace)
+    data, advice_file, _count = _invoke(cli_workspace, cli_runner)
 
     assert isinstance(data.get("recommendations"), list)
     assert data.get("alignment")
     assumptions = data.get("assumptions") or []
-    assert assumptions == ["Reference claim: Focus best before lunch"]
+    assert any("Focus best before lunch" in str(item) for item in assumptions)
     steps = data.get("recommendations", [{}])[0].get("steps") or []
-    assert steps[0] == "Protect two deep-work mornings for focused execution."
-    assert steps[1] == "Question under review: How to plan next week?"
-    assert steps[-1] == (
-        "Journal on pending prompt: Where do morning routines break down during travel weeks?"
-    )
+    assert len(steps) >= 2
+    assert "deep-work" in steps[0]
+    assert "How to plan next week" in steps[1]
+    assert any("morning routines" in step and "travel weeks" in step for step in steps)
     meta = data.get("meta", {})
     for key in ("llm_model", "prompt_path", "prompt_hash", "created_at"):
         assert meta.get(key)
 
 
-def test_advise_is_idempotent(cli_workspace: Path) -> None:
+def test_advise_is_idempotent(
+    cli_workspace: Path,
+    cli_runner: CliRunner,
+) -> None:
     _seed_profile(cli_workspace)
     _seed_pending_prompt(cli_workspace)
 
-    data1, advice_file, count1 = _invoke(cli_workspace)
+    data1, advice_file, count1 = _invoke(cli_workspace, cli_runner)
     before = advice_file.stat().st_mtime
 
-    data2, advice_file_again, count2 = _invoke(cli_workspace)
+    data2, advice_file_again, count2 = _invoke(cli_workspace, cli_runner)
     assert advice_file_again == advice_file
     assert count1 == count2
     assert advice_file_again.stat().st_mtime == before

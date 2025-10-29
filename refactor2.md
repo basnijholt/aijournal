@@ -29,7 +29,7 @@
 
 * **Green after every step**: After each checklist item, run `uv run pytest`. Commit only when green.
 * **Small diffs**: No drive‑by cleanups. If you must fix a bug, do it in a separate, clearly labeled commit.
-* **Aliases over deletes**: Keep old commands as hidden aliases with warnings for 1–2 releases.
+* **Intentional breakage is acceptable**: There is no public user base yet, so we can drop obsolete commands outright as long as the migration is clearly documented.
 * **Fake mode in CI/tests**: `AIJOURNAL_FAKE_OLLAMA=1` where appropriate to keep runs deterministic.
 
 ---
@@ -79,7 +79,9 @@ aijournal ops system ollama health        # moved under system
 aijournal ops dev fixtures                # home for 'new --fake' (optional)
 ```
 
-### Deprecations (hidden aliases with warnings)
+### Command removals / renames (documented only)
+
+The legacy verbs disappear in this reorg; update docs, tests, and `CLI_MIGRATION.md` so contributors can map the old names:
 
 * `facts` → `ops pipeline extract-facts`
 * `review-updates` → `ops pipeline review`
@@ -259,33 +261,30 @@ Extend current FastAPI server with **capture**:
 
 ### Phase 0 — Test hardening & fixtures (no behavior change)
 
-1. [ ] Ensure a shared `cli_workspace` fixture sets `AIJOURNAL_FAKE_OLLAMA=1`, chdirs to temp, runs `aijournal init`, and freezes time.
-2. [ ] Update CLI tests to use the fixture consistently (summarize, facts, persona, profile, pack, chat, advise, etc.).
-3. [ ] Add light snapshot‑independent asserts (key fields instead of full files).
+1. [x] Ensure a shared `cli_workspace` fixture sets `AIJOURNAL_FAKE_OLLAMA=1`, chdirs to temp, runs `aijournal init`, and freezes time.
+2. [x] Update CLI tests to use the fixture consistently (summarize, facts, persona, profile, pack, chat, advise, etc.).
+3. [x] Add light snapshot‑independent asserts (key fields instead of full files).
 
 > Commit: `tests: unify CLI workspace fixture; freeze time; deterministic asserts`
 
 ---
 
-### Phase 1 — CLI skeleton re‑org (aliases in place; no behavior change)
+### Phase 1 — CLI skeleton re‑org (rename/remove legacy verbs)
 
-4. [ ] Create Typer sub‑apps: `ops`, `ops.pipeline`, `ops.profile`, `ops.index`, `ops.persona`, `ops.feedback`, `ops.system`, `ops.dev`, `export`, `serve`.
-5. [ ] Register **top‑level**: `init`, `capture` (placeholder, not functional yet—print “Not implemented” and exit 2), `chat`, `advise`, `status` (placeholder), `serve chat`, `export pack`.
-6. [ ] Move low-level commands under `ops` with **aliases**:
+4. [x] Create Typer sub-apps: `ops`, `ops.pipeline`, `ops.profile`, `ops.index`, `ops.persona`, `ops.feedback`, `ops.system`, `ops.dev`, `export`, `serve`.
+5. [x] Register **top-level**: `init`, `capture` (placeholder, not functional yet—print “Not implemented” and exit 2), `chat`, `advise`, `status` (placeholder), `serve chat`, `export pack`.
+6. [x] Move low-level commands into the new sub-apps, removing the legacy entry points entirely (document the change in `CLI_MIGRATION.md` and tests).
 
-   * `facts`→`ops pipeline extract-facts`, `review-updates`→`ops pipeline review`, `index tail`→`ops index update`, `interview`→`ops profile interview`, `pack`→`export pack`, `chatd`→`serve chat`.
-7. [ ] Keep the **old names as hidden aliases** emitting a deprecation warning and forwarding to new handlers.
-
-> Commit: `cli: introduce top-level/ops layout; add hidden aliases with deprecation warnings`
+> Commit: `cli: introduce top-level/ops layout; drop legacy command names`
 
 ---
 
 ### Phase 2 — `capture` v1 (Persist + Normalize only)
 
-8. [ ] Create `services/capture.py` with `CaptureInput`, `EntryResult`, `CaptureResult`; stub `run_capture()`.
-9. [ ] Implement **persist** for `--text`, `--edit`, `--from <file>` (single file), slug/date inference, duplicate detection.
-10. [ ] Implement **normalize** call(s) for newly persisted/changed entries.
-11. [ ] Write minimal telemetry (persist/normalize durations).
+8. [x] Create `services/capture.py` with `CaptureInput`, `EntryResult`, `CaptureResult`; stub `run_capture()`.
+9. [x] Implement **persist** for `--text`, `--edit`, `--from <file>` (single file), slug/date inference, duplicate detection.
+10. [x] Implement **normalize** call(s) for newly persisted/changed entries.
+11. [x] Write minimal telemetry (persist/normalize durations).
 
 > Commit: `capture: persist+normalize; schemas and minimal telemetry`
 
@@ -293,9 +292,9 @@ Extend current FastAPI server with **capture**:
 
 ### Phase 3 — `capture` v2 (Derivation steps per date)
 
-12. [ ] For dates touched by this run, call: `summarize`, `ops pipeline extract-facts`, `ops profile suggest`, `ops profile apply --yes` (if `--apply-profile=auto`), `ops pipeline characterize`, `ops pipeline review --apply` (limit to this run's batches).
-13. [ ] Implement `--retries`, `--progress` passthroughs to structured-output steps.
-14. [ ] Log derived artifacts updated; update telemetry counters.
+12. [x] For dates touched by this run, call: `summarize`, `ops pipeline extract-facts`, `ops profile suggest`, `ops profile apply --yes` (if `--apply-profile=auto`), `ops pipeline characterize`, `ops pipeline review --apply` (limit to this run's batches).
+13. [x] Implement `--retries`, `--progress` (with `rich`) passthroughs to structured-output steps.
+14. [x] Log derived artifacts updated; update telemetry counters.
 
 > Commit: `capture: derivation pipeline (summarize, facts, suggest/apply, characterize, review)`
 
@@ -303,9 +302,9 @@ Extend current FastAPI server with **capture**:
 
 ### Phase 4 — Retrieval & Persona refresh
 
-15. [ ] If index missing → `ops index rebuild`; else → `ops index update` (changed dates or `--since 7d`).
-16. [ ] Persona: `ops persona status`; if stale → `ops persona build`.
-17. [ ] If `--pack` chosen and persona changed → `export pack -l Lx`.
+15. [x] If index missing → `ops index rebuild`; else → `ops index update` (changed dates or `--since 7d`).
+16. [x] Persona: `ops persona status`; if stale → `ops persona build`.
+17. [x] If `--pack` chosen and persona changed → `export pack -l Lx`.
 
 > Commit: `capture: index update/rebuild and persona status/build; optional packing`
 
@@ -313,8 +312,8 @@ Extend current FastAPI server with **capture**:
 
 ### Phase 5 — `status` & `ops system doctor`
 
-18. [ ] Implement `ops system doctor` (fts5, Annoy, Ollama host reachability, writable paths) with JSON + human output.
-19. [ ] Implement `status` summary (persona freshness, index presence/meta, pending updates count, Ollama reachability hint) with exit code policy.
+18. [x] Implement `ops system doctor` (fts5, Annoy, Ollama host reachability, writable paths) with JSON + human output.
+19. [x] Implement `status` summary (persona freshness, index presence/meta, pending updates count, Ollama reachability hint) with exit code policy.
 
 > Commit: `status + system doctor: aggregated health checks`
 
@@ -322,10 +321,10 @@ Extend current FastAPI server with **capture**:
 
 ### Phase 6 — Import: folders, manifest, front matter
 
-20. [ ] Extend `capture --from` to accept directories; recurse for `*.md`.
-21. [ ] Reuse manifest (SHA-256) to dedupe; store raw snapshots if snapshotting is enabled.
-22. [ ] Detect and prefer front matter for `title`, `created_at`, `tags`, `projects`; fallback to file mtime and content inference.
-23. [ ] Resolve slug collisions deterministically (`-2`, `-3`, …); record alias in logs.
+20. [x] Extend `capture --from` to accept directories; recurse for `*.md`.
+21. [x] Reuse manifest (SHA-256) to dedupe; store raw snapshots if snapshotting is enabled.
+22. [x] Detect and prefer front matter for `title`, `created_at`, `tags`, `projects`; fallback to file mtime and content inference.
+23. [x] Resolve slug collisions deterministically (`-2`, `-3`, …); record alias in logs.
 
 > Commit: `capture: robust import (folders, manifest dedupe, front matter, collisions)`
 
@@ -333,9 +332,9 @@ Extend current FastAPI server with **capture**:
 
 ### Phase 7 — Help text polish (rich panels) & docs
 
-24. [ ] Add `rich_help_panel` groupings to: `capture`, `chat`, `export pack`, and `ops pipeline …`.
-25. [ ] Update `README.md` & `docs/workflow.md`: show the new top‑level, everyday flow with `capture`; keep advanced section for `ops`.
-26. [ ] Add a `CLI_MIGRATION.md` with old→new mapping and sample commands.
+24. [x] Add `rich_help_panel` groupings to: `capture`, `chat`, `export pack`, and `ops pipeline …`.
+25. [x] Update `README.md` & `docs/workflow.md`: show the new top‑level, everyday flow with `capture`; keep advanced section for `ops`.
+26. [x] Add a `CLI_MIGRATION.md` with old→new mapping and sample commands.
 
 > Commit: `docs+help: capture-first workflows; advanced commands under ops; migration guide`
 
@@ -343,11 +342,11 @@ Extend current FastAPI server with **capture**:
 
 ### Phase 8 — Telemetry (full) & log schema
 
-27. [ ] Implement full NDJSON logging at `derived/logs/capture/<run_id>.jsonl`:
+27. [x] Implement full NDJSON logging at `derived/logs/capture/<run_id>.jsonl`:
 
     * Event types: `preflight`, `persist`, `normalize`, `derive.summarize`, `derive.extract_facts`, `derive.profile_suggest`, `derive.profile_apply`, `derive.characterize`, `derive.review`, `index.update/rebuild`, `persona.status/build`, `pack`, `done`.
     * Include timestamps, durations, counts, paths changed, retries, and warnings.
-28. [ ] Add unit test that reads the NDJSON and asserts expected events and minimal fields.
+28. [x] Add unit test that reads the NDJSON and asserts expected events and minimal fields.
 
 > Commit: `telemetry: structured NDJSON for capture; unit test`
 
@@ -365,8 +364,8 @@ Extend current FastAPI server with **capture**:
 
 ### Phase 10 — Cleanup & Deprecation scaffold
 
-32. [ ] Ensure all old commands print a deprecation warning that points to the new path; mark as `hidden=True`.
-33. [ ] Final `ruff` cleanup, mypy pass, and green suite.
+32. [x] Ensure all old commands print a deprecation warning that points to the new path; mark as `hidden=True`.
+33. [x] Final `ruff` cleanup, mypy pass, and green suite.
 
 > Commit: `final polish: deprecations, lint, typing`
 
@@ -525,6 +524,7 @@ Final summary (`event: done`) includes:
   * `test_capture_derivation_steps.py`: verify derived file paths exist & schema stubs (fake mode).
   * `test_capture_refresh.py`: persona/index rebuild/update behavior.
   * `test_capture_telemetry.py`: parse NDJSON and assert event sequence.
+  * `test_journal_entry_origin_schema.py`: validate the expanded `JournalEntry` (`source_type`, `origin`, date-only `created_at`) and matching normalized payloads.
 
 * **Integration (CLI)**
 
@@ -550,7 +550,11 @@ Final summary (`event: done`) includes:
 * `ARCHITECTURE.md`:
 
   * Add `CaptureOrchestrator` to services and telemetry to `derived/logs/capture/`.
-* Add `CLI_MIGRATION.md` table of old→new commands.
+* `agents.md`:
+
+  * Rework the live-mode rehearsal to use the new everyday vs. `ops` command layout.
+  * Link to `CLI_MIGRATION.md` so future operators can translate old command names.
+* Add `CLI_MIGRATION.md` table of old→new commands (cross-reference it from the docs above).
 
 ---
 
@@ -562,8 +566,7 @@ Final summary (`event: done`) includes:
   * Produces derived files for the date.
   * Refreshes index/persona as needed.
   * Emits NDJSON log with the canonical event sequence.
-* `aijournal --help` matches the **target** structure.
-* Old commands still function via hidden aliases with deprecation warnings.
+* `aijournal --help` matches the **target** structure (legacy commands removed).
 * `status` & `ops system doctor` provide clear, accurate outputs.
 * All tests green; no regressions in existing suites.
 
@@ -571,7 +574,7 @@ Final summary (`event: done`) includes:
 
 ## 13) Sample Commit Messages (use as-is)
 
-* `cli: introduce ops subtree and top-level everyday commands (aliases only)`
+* `cli: introduce ops subtree and top-level everyday commands`
 * `capture: add schemas and persist+normalize path (phase 2)`
 * `capture: wire derivation steps; apply-profile=auto; retries/progress`
 * `capture: index update/rebuild + persona status/build; optional packs`
@@ -580,7 +583,7 @@ Final summary (`event: done`) includes:
 * `help/docs: rich_help_panel groupings; README & workflow updates`
 * `telemetry: NDJSON event stream for capture + unit tests`
 * `api: POST /capture streaming NDJSON (optional)`
-* `cleanup: deprecation warnings, hidden aliases, ruff/mypy pass`
+* `cleanup: final lint/mypy pass and polish`
 
 ---
 
@@ -676,7 +679,7 @@ For each imported file:
      3. date parsed from path (regex `YYYY[-/_]MM[-/_]DD`),
      4. file mtime (local),
      5. **today**.
-   * Persist the **date** as an ISO 8601 date (not datetime) in front matter; retain precise `imported_at` in `origin`.
+   * Persist the **date** as an ISO 8601 date (not datetime) in front matter; retain precise `imported_at` in `origin`. This is a deliberate schema change: we’ll migrate all seeded content and validators to expect date-only strings so we are free from legacy timestamp handling.
 
 3. **Resolve title/slug**
 
@@ -831,9 +834,24 @@ Below only shows **new/changed** items. Keep all other steps from the original g
 
 ## Phase 1 — CLI skeleton (unchanged)
 
-*(aliases in place; no behavior change)*
+*Checklist already updated above to drop legacy commands; nothing further to tweak here.*
 
-*No change to checkboxes.*
+---
+
+## Phase 1b — Schema & seed updates (new)
+
+* [ ] Extend `JournalEntry` (and related schema helpers) to support the new front-matter shape:
+
+* add `source_type: Literal[...] | None`
+* add `origin: OriginMetadata` (new Pydantic model capturing `kind`, `original_path`, `import_hash`, `snapshot_path`, `imported_at`, `capture_run_id`, `front_matter_preserved`)
+
+Mirror the relevant fields on `NormalizedEntry` (`origin.import_hash`, `origin.source_type`) so downstream consumers can rely on structured provenance.
+
+* [ ] Convert all seeded sample entries (`data/journal/**/*`) to the new **date-only** `created_at` format (`YYYY-MM-DD`). Update normalization, pipelines, and tests to expect date strings (no timestamps). This is a breaking change but acceptable (no external users yet); make the migration explicit in a helper script if needed.
+
+* [ ] Update normalization/ingest helpers and schema validation (`schema.validate_schema("journal_entry", ...)`) so they accept the richer front matter. Adjust or add unit tests to cover the new fields and date-only format.
+
+* [ ] Document the schema change in `CLI_MIGRATION.md` / CHANGELOG (unreleased) to guide contributors pulling main.
 
 ---
 
@@ -903,13 +921,13 @@ Ensure both commands **never** represent “no work” as an error.
 
 **Add explicit tests for authoritative journals**.
 
-20. [ ] Extend `capture --from` to folders; recurse for `*.md`.
+20. [x] Extend `capture --from` to folders; recurse for `*.md`.
 
-21. [ ] Ensure `data/manifest/ingested.yaml` holds `canonical_journal_path`. Skip creating a **second** journal file for identical `import_hash`.
+21. [x] Ensure `data/manifest/ingested.yaml` holds `canonical_journal_path`. Skip creating a **second** journal file for identical `import_hash`.
 
-22. [ ] Front matter precedence and `--force-date` semantics verified (unit tests).
+22. [x] Front matter precedence and `--force-date` semantics verified (unit tests).
 
-23. [ ] Slug collision deterministic suffixing. Normalized YAML `source_path` points to canonical path.
+23. [x] Slug collision deterministic suffixing. Normalized YAML `source_path` points to canonical path.
 
 > Commit: `capture: folder imports create canonical journal files + dedupe; tests`
 
@@ -919,6 +937,12 @@ Ensure both commands **never** represent “no work” as an error.
 
 *Add explicit examples for imports writing journal files.*
 
+24. [x] Add `rich_help_panel` groupings to: `capture`, `chat`, `export pack`, and `ops pipeline …`.
+
+25. [x] Update `README.md` & `docs/workflow.md`: show the new top-level, everyday flow with `capture`; keep advanced section for `ops`.
+
+26. [x] Add a `CLI_MIGRATION.md` with old→new mapping and sample commands.
+
 > Commit: `docs: capture imports produce canonical journal files; examples + migration notes`
 
 ---
@@ -926,6 +950,10 @@ Ensure both commands **never** represent “no work” as an error.
 ## Phase 8 — Telemetry
 
 *Add `review_candidates` list to `CaptureResult`. Events should include each `review --file` application result.*
+
+27. [x] Implement full NDJSON logging at `derived/logs/capture/<run_id>.jsonl` (preflight, persist, normalize, derivation stages, index/persona, pack, done).
+
+28. [x] Add unit test that reads the NDJSON and asserts expected events and minimal fields.
 
 > Commit: `telemetry: include new_batches and per-file review-apply events`
 

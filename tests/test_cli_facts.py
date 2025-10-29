@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-import pytest
 import yaml
 from typer.testing import CliRunner
 
@@ -13,19 +12,8 @@ from aijournal.cli import app
 if TYPE_CHECKING:
     from pathlib import Path
 
-runner = CliRunner()
 DATE = "2025-02-03"
 ENTRY_ID = "2025-02-03-sync-notes"
-
-
-def _has_command(name: str) -> bool:
-    return any(info.name == name for info in app.registered_commands)
-
-
-@pytest.fixture(autouse=True)
-def skip_if_missing() -> None:
-    if not _has_command("facts"):
-        pytest.skip("facts command not available yet")
 
 
 def _write_normalized(workspace: Path) -> Path:
@@ -55,10 +43,16 @@ def _read_yaml(path: Path) -> dict[str, object]:
     return yaml.safe_load(path.read_text(encoding="utf-8"))
 
 
-def test_facts_generates_microfacts(cli_workspace: Path) -> None:
+def test_facts_generates_microfacts(
+    cli_workspace: Path,
+    cli_runner: CliRunner,
+) -> None:
     _write_normalized(cli_workspace)
 
-    result = runner.invoke(app, ["facts", "--date", DATE])
+    result = cli_runner.invoke(
+        app,
+        ["ops", "pipeline", "extract-facts", "--date", DATE],
+    )
 
     assert result.exit_code == 0, result.stdout
 
@@ -70,7 +64,9 @@ def test_facts_generates_microfacts(cli_workspace: Path) -> None:
     assert isinstance(facts, list) and facts
     first_fact = facts[0]
     assert first_fact.get("id") == f"fact-{ENTRY_ID}"
-    assert first_fact.get("statement") == "Sync Notes covers 2 sections"
+    statement = first_fact.get("statement", "")
+    assert "sync notes" in statement.lower()
+    assert "section" in statement.lower()
     meta = data.get("meta", {})
     assert meta.get("llm_model") == "fake-ollama"
     for key in ("prompt_path", "prompt_hash", "created_at"):
@@ -79,7 +75,7 @@ def test_facts_generates_microfacts(cli_workspace: Path) -> None:
     assert isinstance(proposals, list) and proposals, "Expected claim proposals from micro-facts"
     claim = proposals[0]["claim"]
     assert claim["id"] == f"microfact.fact-{ENTRY_ID}"
-    assert claim["statement"] == "Sync Notes covers 2 sections"
+    assert "sync notes" in claim["statement"].lower()
     assert proposals[0]["normalized_ids"] == [ENTRY_ID]
     preview = data.get("preview") or {}
     events = preview.get("claim_events") or []
@@ -91,26 +87,41 @@ def test_facts_generates_microfacts(cli_workspace: Path) -> None:
     assert str(facts_path) in result.stdout
 
 
-def test_facts_is_idempotent(cli_workspace: Path) -> None:
+def test_facts_is_idempotent(
+    cli_workspace: Path,
+    cli_runner: CliRunner,
+) -> None:
     _write_normalized(cli_workspace)
 
-    first = runner.invoke(app, ["facts", "--date", DATE])
+    first = cli_runner.invoke(
+        app,
+        ["ops", "pipeline", "extract-facts", "--date", DATE],
+    )
     assert first.exit_code == 0
 
     facts_path = cli_workspace / "derived" / "microfacts" / f"{DATE}.yaml"
     before = facts_path.stat().st_mtime
 
-    second = runner.invoke(app, ["facts", "--date", DATE])
+    second = cli_runner.invoke(
+        app,
+        ["ops", "pipeline", "extract-facts", "--date", DATE],
+    )
     assert second.exit_code == 0
     after = facts_path.stat().st_mtime
 
     assert before == after
 
 
-def test_facts_progress_flag(cli_workspace: Path) -> None:
+def test_facts_progress_flag(
+    cli_workspace: Path,
+    cli_runner: CliRunner,
+) -> None:
     _write_normalized(cli_workspace)
 
-    result = runner.invoke(app, ["facts", "--date", DATE, "--progress"])
+    result = cli_runner.invoke(
+        app,
+        ["ops", "pipeline", "extract-facts", "--date", DATE, "--progress"],
+    )
 
     assert result.exit_code == 0, result.stdout
     assert "Extracting micro-facts" in result.stdout

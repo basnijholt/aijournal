@@ -119,6 +119,11 @@ def run_facts(
                 agent_name="aijournal-facts",
                 config=config,
                 timeout=timeout_value,
+                max_attempts=max(1, retries + 1),
+                retry_message=(
+                    "Return JSON with keys `facts` and `claim_proposals` only. "
+                    "Each fact must include id, statement, confidence, evidence and dates."
+                ),
             ),
         )
 

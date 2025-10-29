@@ -11,18 +11,10 @@ from typer.testing import CliRunner
 from aijournal.cli import app
 from tests.helpers import make_claim_atom
 
-runner = CliRunner()
-
 
 @pytest.fixture(autouse=True)
 def _fake_mode(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("AIJOURNAL_FAKE_OLLAMA", "1")
-
-
-def _init_workspace(base: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.chdir(base)
-    result = runner.invoke(app, ["init"])
-    assert result.exit_code == 0, result.stdout
 
 
 def _write_claims(path: Path, *, claim_id: str, strength: float) -> None:
@@ -50,18 +42,18 @@ def _write_feedback_batch(path: Path, *, claim_id: str, delta: float, new_streng
 
 
 def test_feedback_apply_updates_claims_and_archives(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    cli_workspace: Path,
+    cli_runner: CliRunner,
 ) -> None:
-    _init_workspace(tmp_path, monkeypatch)
-    claims_path = tmp_path / "profile" / "claims.yaml"
+    claims_path = cli_workspace / "profile" / "claims.yaml"
     _write_claims(claims_path, claim_id="focus-claim", strength=0.5)
 
-    pending_dir = tmp_path / "derived" / "pending" / "profile_updates"
+    pending_dir = cli_workspace / "derived" / "pending" / "profile_updates"
     pending_dir.mkdir(parents=True, exist_ok=True)
     batch_path = pending_dir / "feedback_focus.yaml"
     _write_feedback_batch(batch_path, claim_id="focus-claim", delta=-0.05, new_strength=0.45)
 
-    result = runner.invoke(app, ["feedback-apply"])
+    result = cli_runner.invoke(app, ["ops", "feedback", "apply"])
     assert result.exit_code == 0, result.stdout
     output = result.stdout or result.output
     assert "Applied 1 feedback adjustment" in output
@@ -74,13 +66,13 @@ def test_feedback_apply_updates_claims_and_archives(
 
 
 def test_feedback_apply_no_batches_exits_non_zero(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    cli_workspace: Path,
+    cli_runner: CliRunner,
 ) -> None:
-    _init_workspace(tmp_path, monkeypatch)
-    pending_dir = tmp_path / "derived" / "pending" / "profile_updates"
+    pending_dir = cli_workspace / "derived" / "pending" / "profile_updates"
     pending_dir.mkdir(parents=True, exist_ok=True)
-    _write_claims(tmp_path / "profile" / "claims.yaml", claim_id="focus-claim", strength=0.5)
+    _write_claims(cli_workspace / "profile" / "claims.yaml", claim_id="focus-claim", strength=0.5)
 
-    result = runner.invoke(app, ["feedback-apply"])
+    result = cli_runner.invoke(app, ["ops", "feedback", "apply"])
     assert result.exit_code != 0
     assert "No feedback batches to apply." in (result.stderr or result.stdout or "")
