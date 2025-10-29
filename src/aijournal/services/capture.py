@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 from collections.abc import Callable, Iterable, Sequence
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from hashlib import sha256
 from pathlib import Path
@@ -150,6 +151,65 @@ def _emit_stage_event(
     if stage_result.result.warnings:
         payload["warnings"] = stage_result.result.warnings
     log_event(payload)
+
+
+@dataclass
+class CaptureState:
+    """Mutable state shared across capture stages."""
+
+    root: Path
+    inputs: CaptureInput
+    log_event: Callable[[dict[str, object]], None]
+    requested_min_stage: int
+    requested_max_stage: int
+    run_id: str
+    manifest_entries: list[ManifestEntry] = field(default_factory=list)
+    entry_results: list[EntryResult] = field(default_factory=list)
+    artifacts_changed: dict[str, int] = field(default_factory=dict)
+    durations_ms: dict[str, float] = field(default_factory=dict)
+    warnings: list[str] = field(default_factory=list)
+    review_candidates: list[str] = field(default_factory=list)
+    stage_results: list[StageResult] = field(default_factory=list)
+    stages_completed: set[int] = field(default_factory=set)
+    stages_skipped: set[int] = field(default_factory=set)
+    changed_dates: list[str] = field(default_factory=list)
+    persona_stale_before: bool = False
+    persona_stale_after: bool = False
+    persona_changed: bool = False
+    index_rebuilt: bool = False
+    index_rebuilt_flag: bool = False
+
+    def stage_enabled(self, stage_index: int) -> bool:
+        """Return True if the stage is inside the requested min/max window."""
+
+        if stage_index <= 1:
+            return stage_index <= self.requested_max_stage
+        return self.requested_min_stage <= stage_index <= self.requested_max_stage
+
+    def record_stage(
+        self,
+        *,
+        stage_id: int,
+        stage_name: str,
+        op_result: OperationResult,
+        duration_ms: float,
+    ) -> None:
+        """Record the outcome of a stage with shared telemetry helpers."""
+
+        _record_stage(
+            stage_results=self.stage_results,
+            stages_completed=self.stages_completed,
+            stages_skipped=self.stages_skipped,
+            warnings_accumulator=self.warnings,
+            log_event=self.log_event,
+            stage_id=stage_id,
+            stage_name=stage_name,
+            op_result=op_result,
+            duration_ms=duration_ms,
+        )
+
+    def increment_artifact(self, key: str) -> None:
+        self.artifacts_changed[key] = self.artifacts_changed.get(key, 0) + 1
 
 
 def _record_stage(
@@ -1174,197 +1234,79 @@ def run_capture(
     review_candidates: list[str] = []
     stage_results: list[StageResult] = []
 
-    persist_start = perf_counter()
-    stage_entry_warnings: list[str] = []
     if stage_enabled(0):
-        if inputs.source in {"stdin", "editor"}:
-            if not inputs.text:
-                msg = "capture text input requires non-empty text"
-                log_event({"event": "persist", "status": "error", "error": msg})
-                raise ValueError(msg)
-            entry = _persist_text_entry(inputs, root, manifest_entries)
-            stage_entry_warnings.extend(entry.warnings)
-            entry_results.append(entry)
-        else:
-            if not inputs.paths:
-                msg = "capture --from requires at least one path"
-                log_event({"event": "persist", "status": "error", "error": msg})
-                raise ValueError(msg)
-            files = _discover_markdown_files(inputs.paths)
-            if not files:
-                msg = "capture --from found no Markdown files"
-                log_event({"event": "persist", "status": "error", "error": msg})
-                raise ValueError(msg)
-            _ensure_manifest(manifest_entries, root)
-            manifest_idx = _manifest_index(manifest_entries)
-            for file_path in files:
-                entry = _persist_file_entry(
-                    inputs,
-                    root,
-                    manifest_entries,
-                    source_path=file_path,
-                    snapshot=inputs.snapshot,
-                    manifest_index=manifest_idx,
-                )
-                stage_entry_warnings.extend(entry.warnings)
-                entry_results.append(entry)
-
-        duration_ms = (perf_counter() - persist_start) * 1000.0
-        durations_ms["persist"] = duration_ms
-        created_count = sum(1 for entry in entry_results if entry.changed and not entry.deduped)
-        deduped_count = sum(1 for entry in entry_results if entry.deduped)
-        artifacts = [
-            entry.markdown_path
-            for entry in entry_results
-            if entry.changed and not entry.deduped and entry.markdown_path
-        ]
-        persist_details: dict[str, Any] = {
-            "entries": len(entry_results),
-            "created": created_count,
-            "deduped": deduped_count,
-        }
-        message = (
-            f"{created_count} entries persisted" if created_count else "no new entries persisted"
-        )
-        op_result = OperationResult.wrote(
-            artifacts,
-            message=message,
-            warnings=stage_entry_warnings,
-            details=persist_details,
-        )
-        _record_stage(
-            stage_results=stage_results,
-            stages_completed=stages_completed,
-            stages_skipped=stages_skipped,
-            warnings_accumulator=warnings,
-            log_event=log_event,
-            stage_id=0,
-            stage_name="persist",
-            op_result=op_result,
-            duration_ms=duration_ms,
+        entry_results, persist_result, persist_duration = _run_persist_stage(
+            inputs,
+            root,
+            manifest_entries,
+            log_event,
         )
     else:
-        duration_ms = (perf_counter() - persist_start) * 1000.0
-        durations_ms["persist"] = duration_ms
-        op_result = OperationResult.noop(
+        persist_duration = 0.0
+        persist_result = OperationResult.noop(
             "skipped by stage filter",
             details={"status": "skipped"},
         )
-        _record_stage(
-            stage_results=stage_results,
-            stages_completed=stages_completed,
-            stages_skipped=stages_skipped,
-            warnings_accumulator=warnings,
-            log_event=log_event,
-            stage_id=0,
-            stage_name="persist",
-            op_result=op_result,
-            duration_ms=duration_ms,
-        )
+    durations_ms["persist"] = persist_duration
+    _record_stage(
+        stage_results=stage_results,
+        stages_completed=stages_completed,
+        stages_skipped=stages_skipped,
+        warnings_accumulator=warnings,
+        log_event=log_event,
+        stage_id=0,
+        stage_name="persist",
+        op_result=persist_result,
+        duration_ms=persist_duration,
+    )
 
     artifact_counts: dict[str, Any] = {}
-    entries_changed = sum(1 for entry in entry_results if entry.changed and not entry.deduped)
+    changed_dates: list[str] = []
 
     if stage_enabled(1):
-        normalize_start = perf_counter()
-        artifact_counts = normalize_entries(entry_results, root) if entry_results else {}
-        duration_ms = (perf_counter() - normalize_start) * 1000.0
-        durations_ms["normalize"] = duration_ms
-        normalized_count = int(artifact_counts.get("normalized", 0))
-        normalized_paths = artifact_counts.get("paths", [])
-        normalize_details: dict[str, Any] = {"normalized": normalized_count}
-        if normalized_count:
-            message = f"{normalized_count} normalized entries updated"
-            op_result = OperationResult.wrote(
-                normalized_paths, message=message, details=normalize_details
-            )
-        else:
-            op_result = OperationResult.noop(
-                "normalized entries already up to date",
-                details=normalize_details,
-            )
-        _record_stage(
-            stage_results=stage_results,
-            stages_completed=stages_completed,
-            stages_skipped=stages_skipped,
-            warnings_accumulator=warnings,
-            log_event=log_event,
-            stage_id=1,
-            stage_name="normalize",
-            op_result=op_result,
-            duration_ms=duration_ms,
+        artifact_counts, normalize_result, normalize_duration, changed_dates = _run_normalize_stage(
+            entry_results,
+            root,
         )
     else:
-        op_result = OperationResult.noop(
+        normalize_duration = 0.0
+        normalize_result = OperationResult.noop(
             "skipped by stage filter",
             details={"status": "skipped"},
         )
-        _record_stage(
-            stage_results=stage_results,
-            stages_completed=stages_completed,
-            stages_skipped=stages_skipped,
-            warnings_accumulator=warnings,
-            log_event=log_event,
-            stage_id=1,
-            stage_name="normalize",
-            op_result=op_result,
-            duration_ms=0.0,
-        )
+
+    durations_ms["normalize"] = normalize_duration
+    _record_stage(
+        stage_results=stage_results,
+        stages_completed=stages_completed,
+        stages_skipped=stages_skipped,
+        warnings_accumulator=warnings,
+        log_event=log_event,
+        stage_id=1,
+        stage_name="normalize",
+        op_result=normalize_result,
+        duration_ms=normalize_duration,
+    )
 
     artifacts_changed = {
         key: value for key, value in artifact_counts.items() if key != "paths" and value
     }
-    if entries_changed:
-        artifacts_changed.setdefault("entries", entries_changed)
-
-    changed_dates = (
-        sorted({entry.date for entry in entry_results if entry.changed and not entry.deduped})
-        if stage_enabled(1)
-        else []
-    )
+    if stage_enabled(1):
+        entries_changed = sum(1 for entry in entry_results if entry.changed and not entry.deduped)
+        if entries_changed:
+            artifacts_changed.setdefault("entries", entries_changed)
+    else:
+        entries_changed = 0
 
     if changed_dates and stage_enabled(2):
-        summary_paths: list[str] = []
-        summary_errors: list[str] = []
-        stage_start = perf_counter()
-        for date in changed_dates:
-            try:
-                summary_path = run_summarize_command(
-                    date,
-                    timeout=DEFAULT_TIMEOUT_SECONDS,
-                    retries=inputs.retries,
-                    progress=inputs.progress,
-                )
-            except typer.Exit as exc:
-                if exc.exit_code not in (0,):
-                    summary_errors.append(f"{date}: {exc}")
-            except Exception as exc:  # pragma: no cover - defensive
-                summary_errors.append(f"{date}: {exc}")
-            else:
-                summary_paths.append(_relative_path(summary_path, root))
-                artifacts_changed["summaries"] = artifacts_changed.get("summaries", 0) + 1
-        duration_ms = (perf_counter() - stage_start) * 1000.0
-        durations_ms["derive.summarize"] = duration_ms
-        summary_details: dict[str, Any] = {"dates": changed_dates}
-        if summary_errors:
-            message = "summaries completed with errors" if summary_paths else "summaries failed"
-            op_result = OperationResult(
-                ok=bool(summary_paths),
-                changed=bool(summary_paths),
-                message=message,
-                artifacts=summary_paths,
-                warnings=summary_errors,
-                details=summary_details,
-            )
-        elif summary_paths:
-            message = f"generated summaries for {len(summary_paths)} entries"
-            op_result = OperationResult.wrote(
-                summary_paths, message=message, details=summary_details
-            )
-        else:
-            op_result = OperationResult.noop(
-                "summaries already up to date", details=summary_details
-            )
+        summarize_result, summarize_duration, summary_paths = _run_summarize_stage(
+            changed_dates,
+            inputs,
+            root,
+        )
+        for _ in summary_paths:
+            artifacts_changed["summaries"] = artifacts_changed.get("summaries", 0) + 1
+        durations_ms["derive.summarize"] = summarize_duration
         _record_stage(
             stage_results=stage_results,
             stages_completed=stages_completed,
@@ -1373,20 +1315,21 @@ def run_capture(
             log_event=log_event,
             stage_id=2,
             stage_name="derive.summarize",
-            op_result=op_result,
-            duration_ms=duration_ms,
+            op_result=summarize_result,
+            duration_ms=summarize_duration,
         )
     else:
         if not stage_enabled(2):
-            op_result = OperationResult.noop(
+            summarize_result = OperationResult.noop(
                 "skipped by stage filter",
                 details={"status": "skipped"},
             )
         else:
-            op_result = OperationResult.noop(
+            summarize_result = OperationResult.noop(
                 "no dates required summarization",
                 details={"dates": []},
             )
+        durations_ms.setdefault("derive.summarize", 0.0)
         _record_stage(
             stage_results=stage_results,
             stages_completed=stages_completed,
@@ -1395,54 +1338,19 @@ def run_capture(
             log_event=log_event,
             stage_id=2,
             stage_name="derive.summarize",
-            op_result=op_result,
+            op_result=summarize_result,
             duration_ms=0.0,
         )
 
     if changed_dates and stage_enabled(3):
-        facts_paths: list[str] = []
-        facts_errors: list[str] = []
-        stage_start = perf_counter()
-        claim_models = _load_profile_components(root)[1]
-        for date in changed_dates:
-            try:
-                _, facts_path = run_facts(
-                    date,
-                    timeout=DEFAULT_TIMEOUT_SECONDS,
-                    retries=inputs.retries,
-                    progress=inputs.progress,
-                    claim_models=claim_models,
-                    build_claim_preview=_noop_preview,
-                )
-            except typer.Exit as exc:
-                if exc.exit_code not in (0,):
-                    facts_errors.append(f"{date}: {exc}")
-            except Exception as exc:  # pragma: no cover - defensive
-                facts_errors.append(f"{date}: {exc}")
-            else:
-                if facts_path:
-                    facts_paths.append(_relative_path(facts_path, root))
-                    artifacts_changed["microfacts"] = artifacts_changed.get("microfacts", 0) + 1
-        duration_ms = (perf_counter() - stage_start) * 1000.0
-        durations_ms["derive.extract_facts"] = duration_ms
-        facts_details: dict[str, Any] = {"dates": changed_dates}
-        if facts_errors:
-            message = "facts completed with errors" if facts_paths else "facts failed"
-            op_result = OperationResult(
-                ok=bool(facts_paths),
-                changed=bool(facts_paths),
-                message=message,
-                artifacts=facts_paths,
-                warnings=facts_errors,
-                details=facts_details,
-            )
-        elif facts_paths:
-            message = f"extracted micro-facts for {len(facts_paths)} entries"
-            op_result = OperationResult.wrote(facts_paths, message=message, details=facts_details)
-        else:
-            op_result = OperationResult.noop(
-                "micro-facts already up to date", details=facts_details
-            )
+        facts_result, facts_duration, facts_paths = _run_facts_stage(
+            changed_dates,
+            inputs,
+            root,
+        )
+        for _ in facts_paths:
+            artifacts_changed["microfacts"] = artifacts_changed.get("microfacts", 0) + 1
+        durations_ms["derive.extract_facts"] = facts_duration
         _record_stage(
             stage_results=stage_results,
             stages_completed=stages_completed,
@@ -1451,20 +1359,21 @@ def run_capture(
             log_event=log_event,
             stage_id=3,
             stage_name="derive.extract_facts",
-            op_result=op_result,
-            duration_ms=duration_ms,
+            op_result=facts_result,
+            duration_ms=facts_duration,
         )
     else:
         if not stage_enabled(3):
-            op_result = OperationResult.noop(
+            facts_result = OperationResult.noop(
                 "skipped by stage filter",
                 details={"status": "skipped"},
             )
         else:
-            op_result = OperationResult.noop(
+            facts_result = OperationResult.noop(
                 "no dates required micro-facts",
                 details={"dates": []},
             )
+        durations_ms.setdefault("derive.extract_facts", 0.0)
         _record_stage(
             stage_results=stage_results,
             stages_completed=stages_completed,
@@ -1473,85 +1382,25 @@ def run_capture(
             log_event=log_event,
             stage_id=3,
             stage_name="derive.extract_facts",
-            op_result=op_result,
+            op_result=facts_result,
             duration_ms=0.0,
         )
 
     if changed_dates and stage_enabled(4):
-        suggestion_paths: list[str] = []
-        suggestion_errors: list[str] = []
-        apply_errors: list[str] = []
-        applied_count = 0
-        stage_start = perf_counter()
-        for date in changed_dates:
-            suggestions_path: Path | None = None
-            try:
-                suggestions_path = run_profile_suggest(
-                    date,
-                    timeout=DEFAULT_TIMEOUT_SECONDS,
-                    retries=inputs.retries,
-                    progress=inputs.progress,
-                )
-            except typer.Exit as exc:
-                if exc.exit_code not in (0,):
-                    suggestion_errors.append(f"{date}: {exc}")
-            except Exception as exc:  # pragma: no cover - defensive
-                suggestion_errors.append(f"{date}: {exc}")
-            else:
-                if suggestions_path:
-                    suggestion_paths.append(_relative_path(suggestions_path, root))
-                artifacts_changed["profile_suggestions"] = (
-                    artifacts_changed.get("profile_suggestions", 0) + 1
-                )
-
-            if inputs.apply_profile == "auto" and suggestions_path is not None:
-                try:
-                    run_profile_apply(
-                        date,
-                        suggestions_path=suggestions_path,
-                        auto_confirm=True,
-                    )
-                except typer.Exit as exc:
-                    if exc.exit_code not in (0,):
-                        apply_errors.append(f"{date}: {exc}")
-                except Exception as exc:  # pragma: no cover - defensive
-                    apply_errors.append(f"{date}: {exc}")
-                else:
-                    artifacts_changed["profile"] = artifacts_changed.get("profile", 0) + 1
-                    applied_count += 1
-
-        duration_ms = (perf_counter() - stage_start) * 1000.0
-        durations_ms["derive.profile_suggest"] = duration_ms
-        suggestion_details: dict[str, Any] = {
-            "dates": changed_dates,
-            "apply_mode": inputs.apply_profile,
-            "suggestions": suggestion_paths,
-        }
-        if suggestion_errors:
-            message = (
-                "profile suggestions completed with errors"
-                if suggestion_paths
-                else "profile suggestion stage failed"
+        profile_result, apply_result, profile_duration, suggestion_paths, applied_count = (
+            _run_profile_stage(
+                changed_dates,
+                inputs,
+                root,
             )
-            suggest_result = OperationResult(
-                ok=bool(suggestion_paths),
-                changed=bool(suggestion_paths),
-                message=message,
-                artifacts=suggestion_paths,
-                warnings=suggestion_errors,
-                details=suggestion_details,
+        )
+        for _ in suggestion_paths:
+            artifacts_changed["profile_suggestions"] = (
+                artifacts_changed.get("profile_suggestions", 0) + 1
             )
-        elif suggestion_paths:
-            suggest_result = OperationResult.wrote(
-                suggestion_paths,
-                message="profile suggestions generated",
-                details=suggestion_details,
-            )
-        else:
-            suggest_result = OperationResult.noop(
-                "profile suggestions already up to date",
-                details=suggestion_details,
-            )
+        if apply_result and apply_result.changed:
+            artifacts_changed["profile"] = artifacts_changed.get("profile", 0) + applied_count
+        durations_ms["derive.profile_suggest"] = profile_duration
         _record_stage(
             stage_results=stage_results,
             stages_completed=stages_completed,
@@ -1560,40 +1409,11 @@ def run_capture(
             log_event=log_event,
             stage_id=4,
             stage_name="derive.profile_suggest",
-            op_result=suggest_result,
-            duration_ms=duration_ms,
+            op_result=profile_result,
+            duration_ms=profile_duration,
         )
-
-        if inputs.apply_profile == "auto":
-            durations_ms["derive.profile_apply"] = duration_ms
-            apply_details: dict[str, Any] = {
-                "dates": changed_dates,
-                "applied": applied_count,
-            }
-            if apply_errors:
-                message = (
-                    "profile updates applied with errors"
-                    if applied_count
-                    else "profile apply stage failed"
-                )
-                apply_result = OperationResult(
-                    ok=bool(applied_count),
-                    changed=bool(applied_count),
-                    message=message,
-                    warnings=apply_errors,
-                    details=apply_details,
-                )
-            elif applied_count:
-                apply_result = OperationResult.wrote(
-                    [],
-                    message="profile updates applied",
-                    details=apply_details,
-                )
-            else:
-                apply_result = OperationResult.noop(
-                    "no profile updates required",
-                    details=apply_details,
-                )
+        if apply_result is not None:
+            durations_ms["derive.profile_apply"] = profile_duration
             _record_stage(
                 stage_results=stage_results,
                 stages_completed=stages_completed,
@@ -1603,16 +1423,16 @@ def run_capture(
                 stage_id=4,
                 stage_name="derive.profile_apply",
                 op_result=apply_result,
-                duration_ms=duration_ms,
+                duration_ms=profile_duration,
             )
     else:
         if not stage_enabled(4):
-            op_result = OperationResult.noop(
+            profile_result = OperationResult.noop(
                 "skipped by stage filter",
                 details={"status": "skipped"},
             )
         else:
-            op_result = OperationResult.noop(
+            profile_result = OperationResult.noop(
                 "no dates required profile suggestions",
                 details={"dates": []},
             )
@@ -1625,92 +1445,26 @@ def run_capture(
             log_event=log_event,
             stage_id=4,
             stage_name="derive.profile_suggest",
-            op_result=op_result,
+            op_result=profile_result,
             duration_ms=0.0,
         )
 
     if changed_dates and stage_enabled(5):
-        characterize_paths: list[str] = []
-        characterize_errors: list[str] = []
-        review_errors: list[str] = []
-        review_applied: list[str] = []
-        review_pending: list[str] = []
-        stage_start = perf_counter()
-        for date in changed_dates:
-            pending_before = _pending_batches(root)
-            try:
-                batch_path = run_characterize(
-                    date,
-                    timeout=DEFAULT_TIMEOUT_SECONDS,
-                    retries=inputs.retries,
-                    progress=inputs.progress,
-                    build_claim_preview=_noop_preview,
-                )
-            except typer.Exit as exc:
-                if exc.exit_code not in (0,):
-                    characterize_errors.append(f"{date}: {exc}")
-                continue
-            except Exception as exc:  # pragma: no cover - defensive
-                characterize_errors.append(f"{date}: {exc}")
-                continue
-            else:
-                rel_batch = _relative_path(batch_path, root)
-                characterize_paths.append(rel_batch)
-                artifacts_changed["characterize"] = artifacts_changed.get("characterize", 0) + 1
-
-            pending_after = _pending_batches(root)
-            new_batches = sorted(pending_after - pending_before)
-            if batch_path not in new_batches:
-                new_batches.append(batch_path)
-
-            for pending_path in new_batches:
-                rel_pending = _relative_path(pending_path, root)
-                review_candidates.append(rel_pending)
-
-            if inputs.apply_profile == "auto":
-                for pending_path in new_batches:
-                    try:
-                        if _apply_profile_update_batch(root, pending_path):
-                            artifacts_changed["profile"] = artifacts_changed.get("profile", 0) + 1
-                            review_applied.append(_relative_path(pending_path, root))
-                        else:
-                            review_pending.append(_relative_path(pending_path, root))
-                    except Exception as exc:  # pragma: no cover - defensive
-                        review_errors.append(f"{_relative_path(pending_path, root)}: {exc}")
-            else:
-                review_pending.extend(_relative_path(path, root) for path in new_batches)
-
-        duration_ms = (perf_counter() - stage_start) * 1000.0
-        durations_ms["derive.characterize"] = duration_ms
-        characterize_details: dict[str, Any] = {
-            "dates": changed_dates,
-            "new_batches": characterize_paths,
-            "apply_mode": inputs.apply_profile,
-        }
-        if characterize_errors:
-            message = (
-                "characterize/review completed with errors"
-                if characterize_paths or review_applied
-                else "characterize stage failed"
-            )
-            op_result = OperationResult(
-                ok=bool(characterize_paths or review_applied),
-                changed=bool(characterize_paths or review_applied),
-                message=message,
-                artifacts=characterize_paths,
-                warnings=characterize_errors,
-                details=characterize_details,
-            )
-        elif characterize_paths or review_applied:
-            message = "characterization batches generated"
-            op_result = OperationResult.wrote(
-                characterize_paths, message=message, details=characterize_details
-            )
-        else:
-            op_result = OperationResult.noop(
-                "no characterization updates needed",
-                details=characterize_details,
-            )
+        (
+            characterize_result,
+            review_result,
+            characterize_duration,
+            characterize_paths,
+            review_applied,
+            review_pending,
+            review_candidates_generated,
+        ) = _run_characterize_stage(changed_dates, inputs, root)
+        for path in characterize_paths:
+            artifacts_changed["characterize"] = artifacts_changed.get("characterize", 0) + 1
+        review_candidates.extend(review_candidates_generated)
+        if review_result and review_result.changed:
+            artifacts_changed["profile"] = artifacts_changed.get("profile", 0) + len(review_applied)
+        durations_ms["derive.characterize"] = characterize_duration
         _record_stage(
             stage_results=stage_results,
             stages_completed=stages_completed,
@@ -1719,47 +1473,11 @@ def run_capture(
             log_event=log_event,
             stage_id=5,
             stage_name="derive.characterize",
-            op_result=op_result,
-            duration_ms=duration_ms,
+            op_result=characterize_result,
+            duration_ms=characterize_duration,
         )
-
-        if inputs.apply_profile == "auto":
-            durations_ms["derive.review"] = duration_ms
-            review_details: dict[str, Any] = {
-                "apply_mode": inputs.apply_profile,
-                "applied_batches": review_applied,
-                "pending_batches": review_pending,
-            }
-            if review_errors:
-                message = (
-                    "profile batches applied with errors"
-                    if review_applied
-                    else "profile review stage failed"
-                )
-                review_result = OperationResult(
-                    ok=bool(review_applied),
-                    changed=bool(review_applied),
-                    message=message,
-                    artifacts=review_applied,
-                    warnings=review_errors,
-                    details=review_details,
-                )
-            elif review_applied:
-                review_result = OperationResult.wrote(
-                    review_applied,
-                    message="profile batches applied",
-                    details=review_details,
-                )
-            elif review_pending:
-                review_result = OperationResult.noop(
-                    "profile batches pending manual review",
-                    details=review_details,
-                )
-            else:
-                review_result = OperationResult.noop(
-                    "no profile batches generated",
-                    details=review_details,
-                )
+        if review_result is not None:
+            durations_ms["derive.review"] = characterize_duration
             _record_stage(
                 stage_results=stage_results,
                 stages_completed=stages_completed,
@@ -1769,16 +1487,16 @@ def run_capture(
                 stage_id=5,
                 stage_name="derive.review",
                 op_result=review_result,
-                duration_ms=duration_ms,
+                duration_ms=characterize_duration,
             )
     else:
         if not stage_enabled(5):
-            op_result = OperationResult.noop(
+            characterize_result = OperationResult.noop(
                 "skipped by stage filter",
                 details={"status": "skipped"},
             )
         else:
-            op_result = OperationResult.noop(
+            characterize_result = OperationResult.noop(
                 "no dates required characterization",
                 details={"dates": []},
             )
@@ -1791,32 +1509,9 @@ def run_capture(
             log_event=log_event,
             stage_id=5,
             stage_name="derive.characterize",
-            op_result=op_result,
+            op_result=characterize_result,
             duration_ms=0.0,
         )
-        if inputs.apply_profile == "auto":
-            durations_ms.setdefault("derive.review", 0.0)
-            if not stage_enabled(5):
-                review_op = OperationResult.noop(
-                    "skipped by stage filter",
-                    details={"status": "skipped"},
-                )
-            else:
-                review_op = OperationResult.noop(
-                    "no profile batches generated",
-                    details={"dates": []},
-                )
-            _record_stage(
-                stage_results=stage_results,
-                stages_completed=stages_completed,
-                stages_skipped=stages_skipped,
-                warnings_accumulator=warnings,
-                log_event=log_event,
-                stage_id=5,
-                stage_name="derive.review",
-                op_result=review_op,
-                duration_ms=0.0,
-            )
 
     if inputs.apply_profile != "auto" and "profile" not in artifacts_changed:
         artifacts_changed.setdefault("profile", 0)
@@ -1828,61 +1523,19 @@ def run_capture(
 
     index_rebuilt_flag = False
     if changed_dates and stage_enabled(6):
-        stage_start = perf_counter()
-        index_message = ""
-        index_error: str | None = None
-        index_updated = False
-        try:
-            index_db = root / "derived" / "index" / "index.db"
-            if not index_db.exists():
-                index_message = run_index_rebuild(since=None, limit=None)
-                index_rebuilt_flag = True
-                index_updated = True
-            else:
-                since = min(changed_dates)
-                index_message = run_index_tail(since=since, days=7, limit=None)
-                if not index_message or "already up to date" not in index_message.lower():
-                    index_updated = True
-        except typer.Exit as exc:
-            if exc.exit_code not in (0,):
-                index_error = str(exc)
-        except Exception as exc:  # pragma: no cover - defensive
-            index_error = str(exc)
-        else:
-            if index_updated:
-                artifacts_changed["index"] = artifacts_changed.get("index", 0) + 1
-        duration_ms = (perf_counter() - stage_start) * 1000.0
-        durations_ms["refresh.index"] = duration_ms
-        index_details: dict[str, Any] = {
-            "message": index_message,
-            "rebuild": index_rebuilt_flag,
-        }
-        if index_error is not None:
-            op_result = OperationResult.fail(
-                f"index update failed: {index_error}",
-                details=index_details,
-            )
-        elif index_updated:
-            index_artifacts = [
-                _relative_path(root / "derived" / "index" / "index.db", root),
-                _relative_path(root / "derived" / "index" / "annoy.index", root),
-            ]
-            op_result = OperationResult.wrote(
-                index_artifacts,
-                message=index_message or "index refreshed",
-                details=index_details,
-            )
-        else:
-            op_result = OperationResult.noop(
-                index_message or "index already up to date",
-                details=index_details,
-            )
+        index_result, index_duration, index_updated, index_rebuilt_flag = _run_index_stage(
+            changed_dates,
+            root,
+        )
+        if index_updated:
+            artifacts_changed["index"] = artifacts_changed.get("index", 0) + 1
+        durations_ms["refresh.index"] = index_duration
         log_event(
             {
                 "event": "index.rebuild",
-                "status": _stage_status(op_result),
-                "message": op_result.message,
-                "details": index_details,
+                "status": _stage_status(index_result),
+                "message": index_result.message,
+                "details": index_result.details,
             }
         )
         _record_stage(
@@ -1893,23 +1546,25 @@ def run_capture(
             log_event=log_event,
             stage_id=6,
             stage_name="refresh.index",
-            op_result=op_result,
-            duration_ms=duration_ms,
+            op_result=index_result,
+            duration_ms=index_duration,
         )
+        index_rebuilt = index_rebuilt or index_rebuilt_flag
     else:
         if not stage_enabled(6):
-            op_result = OperationResult.noop(
+            index_result = OperationResult.noop(
                 "skipped by stage filter",
                 details={"status": "skipped"},
             )
         else:
-            op_result = OperationResult.noop("no index refresh required")
+            index_result = OperationResult.noop("no index refresh required")
+        durations_ms.setdefault("refresh.index", 0.0)
         log_event(
             {
                 "event": "index.rebuild",
-                "status": _stage_status(op_result),
-                "message": op_result.message,
-                "details": op_result.details,
+                "status": _stage_status(index_result),
+                "message": index_result.message,
+                "details": index_result.details,
             }
         )
         _record_stage(
@@ -1920,83 +1575,31 @@ def run_capture(
             log_event=log_event,
             stage_id=6,
             stage_name="refresh.index",
-            op_result=op_result,
+            op_result=index_result,
             duration_ms=0.0,
         )
 
-    index_rebuilt = index_rebuilt or index_rebuilt_flag
-
     if stage_enabled(7):
-        stage_start = perf_counter()
-        should_build = False
-        persona_error: str | None = None
-        status_before = "unknown"
-        status_after = "unknown"
-        try:
-            status_before, _ = persona_state(root)
-            persona_stale_before = status_before != "fresh"
-            should_build = persona_stale_before or artifacts_changed.get("profile", 0) > 0
-            profile_model, claim_models = _load_profile_components(root)
-            profile_payload = _profile_to_dict(profile_model)
-            if should_build and (profile_payload or claim_models):
-                config = _load_config(root)
-                _, persona_changed = run_persona_build(
-                    profile_payload,
-                    claim_models,
-                    config=config,
-                    root=root,
-                )
-                if persona_changed:
-                    artifacts_changed["persona"] = artifacts_changed.get("persona", 0) + 1
-            status_after, _ = persona_state(root)
-            persona_stale_after = status_after != "fresh"
-        except typer.Exit as exc:
-            if exc.exit_code not in (0,):
-                persona_error = str(exc)
-        except Exception as exc:  # pragma: no cover - defensive
-            persona_error = str(exc)
-        duration_ms = (perf_counter() - stage_start) * 1000.0
-        durations_ms["refresh.persona"] = duration_ms
-        persona_artifacts = []
+        (
+            persona_result,
+            persona_duration,
+            persona_changed,
+            persona_stale_before,
+            persona_stale_after,
+            status_before,
+            status_after,
+            persona_error,
+        ) = _run_persona_stage(inputs, root, artifacts_changed)
         if persona_changed:
-            persona_artifacts.append(
-                _relative_path(root / "derived" / "persona" / "persona_core.yaml", root)
-            )
-        persona_details: dict[str, Any] = {
-            "before_fresh": not persona_stale_before,
-            "after_fresh": not persona_stale_after,
-            "should_build": should_build,
-        }
-        if persona_error is not None:
-            op_result = OperationResult.fail(
-                f"persona refresh failed: {persona_error}",
-                details=persona_details,
-            )
-        elif persona_changed:
-            message = "persona rebuilt"
-            op_result = OperationResult.wrote(
-                persona_artifacts,
-                message=message,
-                details=persona_details,
-            )
-        elif persona_stale_after:
-            op_result = OperationResult.noop(
-                "persona remains stale",
-                details=persona_details,
-                warnings=["persona could not be refreshed"],
-            )
-        else:
-            op_result = OperationResult.noop(
-                "persona already fresh",
-                details=persona_details,
-            )
+            artifacts_changed["persona"] = artifacts_changed.get("persona", 0) + 1
+        durations_ms["refresh.persona"] = persona_duration
         persona_event: dict[str, object] = {
             "event": "persona.status",
-            "status": _stage_status(op_result),
+            "status": _stage_status(persona_result),
             "details": {
                 "before": status_before,
                 "after": status_after,
-                "should_build": should_build,
+                "should_build": persona_result.details.get("should_build", False),
             },
         }
         if persona_error is not None:
@@ -2010,19 +1613,20 @@ def run_capture(
             log_event=log_event,
             stage_id=7,
             stage_name="refresh.persona",
-            op_result=op_result,
-            duration_ms=duration_ms,
+            op_result=persona_result,
+            duration_ms=persona_duration,
         )
     else:
-        op_result = OperationResult.noop(
+        persona_result = OperationResult.noop(
             "skipped by stage filter",
             details={"status": "skipped"},
         )
+        durations_ms.setdefault("refresh.persona", 0.0)
         log_event(
             {
                 "event": "persona.status",
-                "status": _stage_status(op_result),
-                "details": op_result.details,
+                "status": _stage_status(persona_result),
+                "details": persona_result.details,
             }
         )
         _record_stage(
@@ -2033,50 +1637,20 @@ def run_capture(
             log_event=log_event,
             stage_id=7,
             stage_name="refresh.persona",
-            op_result=op_result,
+            op_result=persona_result,
             duration_ms=0.0,
         )
 
-    if inputs.pack and persona_changed and stage_enabled(8):
-        stage_start = perf_counter()
-        level = inputs.pack.upper()
-        history_days = 1 if level == "L4" else 0
-        pack_output = root / "derived" / "packs" / f"{level.lower()}_{resolved_run_id}.yaml"
-        pack_error: str | None = None
-        try:
-            run_pack(
-                level,
-                None,
-                output=pack_output,
-                max_tokens=None,
-                fmt="yaml",
-                history_days=history_days,
-                dry_run=False,
-            )
+    if stage_enabled(8):
+        pack_result, pack_duration = _run_pack_stage(
+            inputs,
+            root,
+            resolved_run_id,
+            persona_changed,
+        )
+        if pack_result.changed:
             artifacts_changed["pack"] = artifacts_changed.get("pack", 0) + 1
-        except typer.Exit as exc:
-            if exc.exit_code not in (0,):
-                pack_error = str(exc)
-        except Exception as exc:  # pragma: no cover - defensive
-            pack_error = str(exc)
-        duration_ms = (perf_counter() - stage_start) * 1000.0
-        durations_ms["refresh.pack"] = duration_ms
-        rel_output = _relative_path(pack_output, root)
-        pack_details: dict[str, Any] = {
-            "level": level,
-            "history_days": history_days,
-        }
-        if pack_error is not None:
-            op_result = OperationResult.fail(
-                f"pack generation failed: {pack_error}",
-                details=pack_details,
-            )
-        else:
-            op_result = OperationResult.wrote(
-                [rel_output],
-                message="pack generated",
-                details=pack_details,
-            )
+        durations_ms["refresh.pack"] = pack_duration
         _record_stage(
             stage_results=stage_results,
             stages_completed=stages_completed,
@@ -2085,19 +1659,15 @@ def run_capture(
             log_event=log_event,
             stage_id=8,
             stage_name="pack",
-            op_result=op_result,
-            duration_ms=duration_ms,
+            op_result=pack_result,
+            duration_ms=pack_duration,
         )
     else:
-        if not stage_enabled(8):
-            op_result = OperationResult.noop(
-                "skipped by stage filter",
-                details={"status": "skipped"},
-            )
-        elif inputs.pack and not persona_changed:
-            op_result = OperationResult.noop("persona unchanged, pack not regenerated")
-        else:
-            op_result = OperationResult.noop("no pack requested")
+        pack_result = OperationResult.noop(
+            "skipped by stage filter",
+            details={"status": "skipped"},
+        )
+        durations_ms.setdefault("refresh.pack", 0.0)
         _record_stage(
             stage_results=stage_results,
             stages_completed=stages_completed,
@@ -2106,7 +1676,7 @@ def run_capture(
             log_event=log_event,
             stage_id=8,
             stage_name="pack",
-            op_result=op_result,
+            op_result=pack_result,
             duration_ms=0.0,
         )
 
@@ -2146,6 +1716,654 @@ def run_capture(
     _write_capture_result(root, result)
 
     return result
+
+
+def _run_persist_stage(
+    inputs: CaptureInput,
+    root: Path,
+    manifest_entries: list[ManifestEntry],
+    log_event: Callable[[dict[str, object]], None],
+) -> tuple[list[EntryResult], OperationResult, float]:
+    """Persist captured content and return entry results with stage metadata."""
+
+    entry_results: list[EntryResult] = []
+    stage_entry_warnings: list[str] = []
+
+    persist_start = perf_counter()
+    if inputs.source in {"stdin", "editor"}:
+        if not inputs.text:
+            msg = "capture text input requires non-empty text"
+            log_event({"event": "persist", "status": "error", "error": msg})
+            raise ValueError(msg)
+        entry = _persist_text_entry(inputs, root, manifest_entries)
+        stage_entry_warnings.extend(entry.warnings)
+        entry_results.append(entry)
+    else:
+        if not inputs.paths:
+            msg = "capture --from requires at least one path"
+            log_event({"event": "persist", "status": "error", "error": msg})
+            raise ValueError(msg)
+        files = _discover_markdown_files(inputs.paths)
+        if not files:
+            msg = "capture --from found no Markdown files"
+            log_event({"event": "persist", "status": "error", "error": msg})
+            raise ValueError(msg)
+        _ensure_manifest(manifest_entries, root)
+        manifest_idx = _manifest_index(manifest_entries)
+        for file_path in files:
+            entry = _persist_file_entry(
+                inputs,
+                root,
+                manifest_entries,
+                source_path=file_path,
+                snapshot=inputs.snapshot,
+                manifest_index=manifest_idx,
+            )
+            stage_entry_warnings.extend(entry.warnings)
+            entry_results.append(entry)
+
+    duration_ms = (perf_counter() - persist_start) * 1000.0
+    created_count = sum(1 for entry in entry_results if entry.changed and not entry.deduped)
+    deduped_count = sum(1 for entry in entry_results if entry.deduped)
+    artifacts = [
+        entry.markdown_path
+        for entry in entry_results
+        if entry.changed and not entry.deduped and entry.markdown_path
+    ]
+    persist_details: dict[str, Any] = {
+        "entries": len(entry_results),
+        "created": created_count,
+        "deduped": deduped_count,
+    }
+    message = f"{created_count} entries persisted" if created_count else "no new entries persisted"
+    op_result = OperationResult.wrote(
+        artifacts,
+        message=message,
+        warnings=stage_entry_warnings,
+        details=persist_details,
+    )
+    return entry_results, op_result, duration_ms
+
+
+def _run_normalize_stage(
+    entry_results: list[EntryResult],
+    root: Path,
+) -> tuple[dict[str, Any], OperationResult, float, list[str]]:
+    """Normalize changed entries and report artifact counts and dates."""
+
+    normalize_start = perf_counter()
+    artifact_counts = normalize_entries(entry_results, root) if entry_results else {}
+    duration_ms = (perf_counter() - normalize_start) * 1000.0
+    normalized_count = int(artifact_counts.get("normalized", 0))
+    normalized_paths = artifact_counts.get("paths", [])
+    normalize_details: dict[str, Any] = {"normalized": normalized_count}
+    if normalized_count:
+        message = f"{normalized_count} normalized entries updated"
+        op_result = OperationResult.wrote(
+            normalized_paths,
+            message=message,
+            details=normalize_details,
+        )
+    else:
+        op_result = OperationResult.noop(
+            "normalized entries already up to date",
+            details=normalize_details,
+        )
+    changed_dates = sorted(
+        {entry.date for entry in entry_results if entry.changed and not entry.deduped}
+    )
+    return artifact_counts, op_result, duration_ms, changed_dates
+
+
+def _run_summarize_stage(
+    changed_dates: list[str],
+    inputs: CaptureInput,
+    root: Path,
+) -> tuple[OperationResult, float, list[str]]:
+    """Generate daily summaries for changed dates."""
+
+    stage_start = perf_counter()
+    summary_paths: list[str] = []
+    summary_errors: list[str] = []
+    for date in changed_dates:
+        try:
+            summary_path = run_summarize_command(
+                date,
+                timeout=DEFAULT_TIMEOUT_SECONDS,
+                retries=inputs.retries,
+                progress=inputs.progress,
+            )
+        except typer.Exit as exc:
+            if exc.exit_code not in (0,):
+                summary_errors.append(f"{date}: {exc}")
+        except Exception as exc:  # pragma: no cover - defensive
+            summary_errors.append(f"{date}: {exc}")
+        else:
+            summary_paths.append(_relative_path(summary_path, root))
+    duration_ms = (perf_counter() - stage_start) * 1000.0
+    summary_details: dict[str, Any] = {"dates": changed_dates}
+    if summary_errors:
+        message = "summaries completed with errors" if summary_paths else "summaries failed"
+        op_result = OperationResult(
+            ok=bool(summary_paths),
+            changed=bool(summary_paths),
+            message=message,
+            artifacts=summary_paths,
+            warnings=summary_errors,
+            details=summary_details,
+        )
+    elif summary_paths:
+        message = f"generated summaries for {len(summary_paths)} entries"
+        op_result = OperationResult.wrote(
+            summary_paths,
+            message=message,
+            details=summary_details,
+        )
+    else:
+        op_result = OperationResult.noop(
+            "summaries already up to date",
+            details=summary_details,
+        )
+    return op_result, duration_ms, summary_paths
+
+
+def _run_facts_stage(
+    changed_dates: list[str],
+    inputs: CaptureInput,
+    root: Path,
+) -> tuple[OperationResult, float, list[str]]:
+    """Extract micro-facts for changed dates."""
+
+    stage_start = perf_counter()
+    facts_paths: list[str] = []
+    facts_errors: list[str] = []
+    claim_models = _load_profile_components(root)[1]
+    for date in changed_dates:
+        try:
+            _, facts_path = run_facts(
+                date,
+                timeout=DEFAULT_TIMEOUT_SECONDS,
+                retries=inputs.retries,
+                progress=inputs.progress,
+                claim_models=claim_models,
+                build_claim_preview=_noop_preview,
+            )
+        except typer.Exit as exc:
+            if exc.exit_code not in (0,):
+                facts_errors.append(f"{date}: {exc}")
+        except Exception as exc:  # pragma: no cover - defensive
+            facts_errors.append(f"{date}: {exc}")
+        else:
+            if facts_path:
+                facts_paths.append(_relative_path(facts_path, root))
+    duration_ms = (perf_counter() - stage_start) * 1000.0
+    facts_details: dict[str, Any] = {"dates": changed_dates}
+    if facts_errors:
+        message = "facts completed with errors" if facts_paths else "facts failed"
+        op_result = OperationResult(
+            ok=bool(facts_paths),
+            changed=bool(facts_paths),
+            message=message,
+            artifacts=facts_paths,
+            warnings=facts_errors,
+            details=facts_details,
+        )
+    elif facts_paths:
+        message = f"extracted micro-facts for {len(facts_paths)} entries"
+        op_result = OperationResult.wrote(
+            facts_paths,
+            message=message,
+            details=facts_details,
+        )
+    else:
+        op_result = OperationResult.noop(
+            "micro-facts already up to date",
+            details=facts_details,
+        )
+    return op_result, duration_ms, facts_paths
+
+
+def _run_profile_stage(
+    changed_dates: list[str],
+    inputs: CaptureInput,
+    root: Path,
+) -> tuple[OperationResult, OperationResult | None, float, list[str], int]:
+    """Generate profile suggestions and optionally apply them."""
+
+    stage_start = perf_counter()
+    suggestion_paths: list[str] = []
+    suggestion_errors: list[str] = []
+    apply_errors: list[str] = []
+    applied_count = 0
+    for date in changed_dates:
+        suggestions_path: Path | None = None
+        try:
+            suggestions_path = run_profile_suggest(
+                date,
+                timeout=DEFAULT_TIMEOUT_SECONDS,
+                retries=inputs.retries,
+                progress=inputs.progress,
+            )
+        except typer.Exit as exc:
+            if exc.exit_code not in (0,):
+                suggestion_errors.append(f"{date}: {exc}")
+        except Exception as exc:  # pragma: no cover - defensive
+            suggestion_errors.append(f"{date}: {exc}")
+        else:
+            if suggestions_path is not None:
+                suggestion_paths.append(_relative_path(suggestions_path, root))
+
+        if inputs.apply_profile == "auto" and suggestions_path is not None:
+            try:
+                run_profile_apply(
+                    date,
+                    suggestions_path=suggestions_path,
+                    auto_confirm=True,
+                )
+            except typer.Exit as exc:
+                if exc.exit_code not in (0,):
+                    apply_errors.append(f"{date}: {exc}")
+            except Exception as exc:  # pragma: no cover - defensive
+                apply_errors.append(f"{date}: {exc}")
+            else:
+                applied_count += 1
+
+    duration_ms = (perf_counter() - stage_start) * 1000.0
+    suggestion_details: dict[str, Any] = {
+        "dates": changed_dates,
+        "apply_mode": inputs.apply_profile,
+        "suggestions": suggestion_paths,
+    }
+    if suggestion_errors:
+        message = (
+            "profile suggestions completed with errors"
+            if suggestion_paths
+            else "profile suggestion stage failed"
+        )
+        suggest_result = OperationResult(
+            ok=bool(suggestion_paths),
+            changed=bool(suggestion_paths),
+            message=message,
+            artifacts=suggestion_paths,
+            warnings=suggestion_errors,
+            details=suggestion_details,
+        )
+    elif suggestion_paths:
+        suggest_result = OperationResult.wrote(
+            suggestion_paths,
+            message="profile suggestions generated",
+            details=suggestion_details,
+        )
+    else:
+        suggest_result = OperationResult.noop(
+            "profile suggestions already up to date",
+            details=suggestion_details,
+        )
+
+    apply_result: OperationResult | None = None
+    if inputs.apply_profile == "auto":
+        apply_details: dict[str, Any] = {
+            "dates": changed_dates,
+            "applied": applied_count,
+        }
+        if apply_errors:
+            message = (
+                "profile updates applied with errors"
+                if applied_count
+                else "profile apply stage failed"
+            )
+            apply_result = OperationResult(
+                ok=bool(applied_count),
+                changed=bool(applied_count),
+                message=message,
+                warnings=apply_errors,
+                details=apply_details,
+            )
+        elif applied_count:
+            apply_result = OperationResult(
+                ok=True,
+                changed=True,
+                message="profile updates applied",
+                details=apply_details,
+            )
+        else:
+            apply_result = OperationResult.noop(
+                "no profile updates required",
+                details=apply_details,
+            )
+
+    return suggest_result, apply_result, duration_ms, suggestion_paths, applied_count
+
+
+def _run_characterize_stage(
+    changed_dates: list[str],
+    inputs: CaptureInput,
+    root: Path,
+) -> tuple[
+    OperationResult,
+    OperationResult | None,
+    float,
+    list[str],
+    list[str],
+    list[str],
+    list[str],
+]:
+    """Characterize entries and optionally apply review batches."""
+
+    stage_start = perf_counter()
+    characterize_paths: list[str] = []
+    characterize_errors: list[str] = []
+    review_applied: list[str] = []
+    review_pending: list[str] = []
+    review_candidates: list[str] = []
+    review_errors: list[str] = []
+    for date in changed_dates:
+        pending_before = _pending_batches(root)
+        try:
+            batch_path = run_characterize(
+                date,
+                timeout=DEFAULT_TIMEOUT_SECONDS,
+                retries=inputs.retries,
+                progress=inputs.progress,
+                build_claim_preview=_noop_preview,
+            )
+        except typer.Exit as exc:
+            if exc.exit_code not in (0,):
+                characterize_errors.append(f"{date}: {exc}")
+            continue
+        except Exception as exc:  # pragma: no cover - defensive
+            characterize_errors.append(f"{date}: {exc}")
+            continue
+        else:
+            rel_batch = _relative_path(batch_path, root)
+            characterize_paths.append(rel_batch)
+
+        pending_after = _pending_batches(root)
+        new_batches = sorted(pending_after - pending_before)
+        if batch_path not in new_batches:
+            new_batches.append(batch_path)
+
+        for pending_path in new_batches:
+            rel_pending = _relative_path(pending_path, root)
+            review_candidates.append(rel_pending)
+
+        if inputs.apply_profile == "auto":
+            for pending_path in new_batches:
+                try:
+                    if _apply_profile_update_batch(root, pending_path):
+                        review_applied.append(_relative_path(pending_path, root))
+                    else:
+                        review_pending.append(_relative_path(pending_path, root))
+                except Exception as exc:  # pragma: no cover - defensive
+                    review_errors.append(f"{_relative_path(pending_path, root)}: {exc}")
+        else:
+            review_pending.extend(_relative_path(path, root) for path in new_batches)
+
+    duration_ms = (perf_counter() - stage_start) * 1000.0
+    characterize_details: dict[str, Any] = {
+        "dates": changed_dates,
+        "new_batches": characterize_paths,
+        "apply_mode": inputs.apply_profile,
+    }
+    if characterize_errors:
+        message = (
+            "characterize/review completed with errors"
+            if characterize_paths or review_applied
+            else "characterize stage failed"
+        )
+        characterize_result = OperationResult(
+            ok=bool(characterize_paths or review_applied),
+            changed=bool(characterize_paths or review_applied),
+            message=message,
+            artifacts=characterize_paths,
+            warnings=characterize_errors,
+            details=characterize_details,
+        )
+    elif characterize_paths or review_applied:
+        characterize_result = OperationResult.wrote(
+            characterize_paths,
+            message="characterization batches generated",
+            details=characterize_details,
+        )
+    else:
+        characterize_result = OperationResult.noop(
+            "no characterization updates needed",
+            details=characterize_details,
+        )
+
+    review_result: OperationResult | None = None
+    if inputs.apply_profile == "auto":
+        review_details: dict[str, Any] = {
+            "apply_mode": inputs.apply_profile,
+            "applied_batches": review_applied,
+            "pending_batches": review_pending,
+        }
+        if review_errors:
+            message = (
+                "profile batches applied with errors"
+                if review_applied
+                else "profile review stage failed"
+            )
+            review_result = OperationResult(
+                ok=bool(review_applied),
+                changed=bool(review_applied),
+                message=message,
+                artifacts=review_applied,
+                warnings=review_errors,
+                details=review_details,
+            )
+        elif review_applied:
+            review_result = OperationResult.wrote(
+                review_applied,
+                message="profile batches applied",
+                details=review_details,
+            )
+        elif review_pending:
+            review_result = OperationResult.noop(
+                "profile batches pending manual review",
+                details=review_details,
+            )
+        else:
+            review_result = OperationResult.noop(
+                "no profile batches generated",
+                details=review_details,
+            )
+
+    return (
+        characterize_result,
+        review_result,
+        duration_ms,
+        characterize_paths,
+        review_applied,
+        review_pending,
+        review_candidates,
+    )
+
+
+def _run_index_stage(
+    changed_dates: list[str],
+    root: Path,
+) -> tuple[OperationResult, float, bool, bool]:
+    """Refresh the retrieval index for the provided dates."""
+
+    stage_start = perf_counter()
+    index_message = ""
+    index_error: str | None = None
+    index_updated = False
+    rebuilt = False
+    try:
+        index_db = root / "derived" / "index" / "index.db"
+        if not index_db.exists():
+            index_message = run_index_rebuild(since=None, limit=None)
+            rebuilt = True
+            index_updated = True
+        else:
+            since = min(changed_dates)
+            index_message = run_index_tail(since=since, days=7, limit=None)
+            if not index_message or "already up to date" not in index_message.lower():
+                index_updated = True
+    except typer.Exit as exc:
+        if exc.exit_code not in (0,):
+            index_error = str(exc)
+    except Exception as exc:  # pragma: no cover - defensive
+        index_error = str(exc)
+    duration_ms = (perf_counter() - stage_start) * 1000.0
+    index_details: dict[str, Any] = {
+        "message": index_message,
+        "rebuild": rebuilt,
+    }
+    if index_error is not None:
+        op_result = OperationResult.fail(
+            f"index update failed: {index_error}",
+            details=index_details,
+        )
+    elif index_updated:
+        index_artifacts = [
+            _relative_path(root / "derived" / "index" / "index.db", root),
+            _relative_path(root / "derived" / "index" / "annoy.index", root),
+        ]
+        op_result = OperationResult.wrote(
+            index_artifacts,
+            message=index_message or "index refreshed",
+            details=index_details,
+        )
+    else:
+        op_result = OperationResult.noop(
+            index_message or "index already up to date",
+            details=index_details,
+        )
+    return op_result, duration_ms, index_updated, rebuilt
+
+
+def _run_persona_stage(
+    inputs: CaptureInput,
+    root: Path,
+    artifacts_changed: dict[str, int],
+) -> tuple[OperationResult, float, bool, bool, bool, str, str, str | None]:
+    """Refresh persona based on profile changes."""
+
+    stage_start = perf_counter()
+    should_build = False
+    persona_error: str | None = None
+    persona_changed = False
+    persona_stale_before = False
+    persona_stale_after = False
+    status_before = "unknown"
+    status_after = "unknown"
+    try:
+        status_before, _ = persona_state(root)
+        persona_stale_before = status_before != "fresh"
+        should_build = persona_stale_before or artifacts_changed.get("profile", 0) > 0
+        profile_model, claim_models = _load_profile_components(root)
+        profile_payload = _profile_to_dict(profile_model)
+        if should_build and (profile_payload or claim_models):
+            config = _load_config(root)
+            _, persona_changed = run_persona_build(
+                profile_payload,
+                claim_models,
+                config=config,
+                root=root,
+            )
+        status_after, _ = persona_state(root)
+        persona_stale_after = status_after != "fresh"
+    except typer.Exit as exc:
+        if exc.exit_code not in (0,):
+            persona_error = str(exc)
+    except Exception as exc:  # pragma: no cover - defensive
+        persona_error = str(exc)
+    duration_ms = (perf_counter() - stage_start) * 1000.0
+    persona_artifacts = []
+    if persona_changed:
+        persona_artifacts.append(
+            _relative_path(root / "derived" / "persona" / "persona_core.yaml", root)
+        )
+    persona_details: dict[str, Any] = {
+        "before_fresh": not persona_stale_before,
+        "after_fresh": not persona_stale_after,
+        "should_build": should_build,
+    }
+    if persona_error is not None:
+        op_result = OperationResult.fail(
+            f"persona refresh failed: {persona_error}",
+            details=persona_details,
+        )
+    elif persona_changed:
+        op_result = OperationResult.wrote(
+            persona_artifacts,
+            message="persona rebuilt",
+            details=persona_details,
+        )
+    elif persona_stale_after:
+        op_result = OperationResult.noop(
+            "persona remains stale",
+            details=persona_details,
+            warnings=["persona could not be refreshed"],
+        )
+    else:
+        op_result = OperationResult.noop(
+            "persona already fresh",
+            details=persona_details,
+        )
+    return (
+        op_result,
+        duration_ms,
+        persona_changed,
+        persona_stale_before,
+        persona_stale_after,
+        status_before,
+        status_after,
+        persona_error,
+    )
+
+
+def _run_pack_stage(
+    inputs: CaptureInput,
+    root: Path,
+    run_id: str,
+    persona_changed: bool,
+) -> tuple[OperationResult, float]:
+    """Generate derived packs when requested."""
+
+    if not inputs.pack:
+        return OperationResult.noop("no pack requested"), 0.0
+    if not persona_changed:
+        return OperationResult.noop("persona unchanged, pack not regenerated"), 0.0
+
+    stage_start = perf_counter()
+    level = inputs.pack.upper()
+    history_days = 1 if level == "L4" else 0
+    pack_output = root / "derived" / "packs" / f"{level.lower()}_{run_id}.yaml"
+    pack_error: str | None = None
+    try:
+        run_pack(
+            level,
+            None,
+            output=pack_output,
+            max_tokens=None,
+            fmt="yaml",
+            history_days=history_days,
+            dry_run=False,
+        )
+    except typer.Exit as exc:
+        if exc.exit_code not in (0,):
+            pack_error = str(exc)
+    except Exception as exc:  # pragma: no cover - defensive
+        pack_error = str(exc)
+    duration_ms = (perf_counter() - stage_start) * 1000.0
+    pack_details: dict[str, Any] = {"level": level, "history_days": history_days}
+    if pack_error is not None:
+        op_result = OperationResult.fail(
+            f"pack generation failed: {pack_error}",
+            details=pack_details,
+        )
+    else:
+        rel_output = _relative_path(pack_output, root)
+        op_result = OperationResult.wrote(
+            [rel_output],
+            message="pack generated",
+            details=pack_details,
+        )
+    return op_result, duration_ms
 
 
 def normalize_entries(entries: list[EntryResult], root: Path) -> dict[str, Any]:
