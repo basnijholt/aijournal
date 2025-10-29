@@ -141,79 +141,6 @@
       "title": "ClaimProposal",
       "type": "object"
     },
-    "ClaimSource": {
-      "additionalProperties": false,
-      "description": "Structured reference back to a normalized entry.",
-      "properties": {
-        "entry_id": {
-          "title": "Entry Id",
-          "type": "string"
-        },
-        "spans": {
-          "items": {
-            "$ref": "#/$defs/ClaimSourceSpan"
-          },
-          "title": "Spans",
-          "type": "array"
-        }
-      },
-      "required": [
-        "entry_id"
-      ],
-      "title": "ClaimSource",
-      "type": "object"
-    },
-    "ClaimSourceSpan": {
-      "additionalProperties": false,
-      "description": "Evidence locator for a claim source.",
-      "properties": {
-        "end": {
-          "anyOf": [
-            {
-              "type": "integer"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "End"
-        },
-        "index": {
-          "anyOf": [
-            {
-              "type": "integer"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Index"
-        },
-        "start": {
-          "anyOf": [
-            {
-              "type": "integer"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Start"
-        },
-        "type": {
-          "title": "Type",
-          "type": "string"
-        }
-      },
-      "required": [
-        "type"
-      ],
-      "title": "ClaimSourceSpan",
-      "type": "object"
-    },
     "FacetProposal": {
       "additionalProperties": false,
       "description": "Pending facet update referencing profile paths.",
@@ -340,7 +267,7 @@
         },
         "sources": {
           "items": {
-            "$ref": "#/$defs/ClaimSource"
+            "$ref": "#/$defs/SourceRef"
           },
           "title": "Sources",
           "type": "array"
@@ -384,6 +311,91 @@
         }
       },
       "title": "Scope",
+      "type": "object"
+    },
+    "SourceRef": {
+      "additionalProperties": false,
+      "description": "Reference to a normalized entry and the supporting spans.",
+      "properties": {
+        "entry_id": {
+          "title": "Entry Id",
+          "type": "string"
+        },
+        "spans": {
+          "items": {
+            "$ref": "#/$defs/Span"
+          },
+          "title": "Spans",
+          "type": "array"
+        }
+      },
+      "required": [
+        "entry_id"
+      ],
+      "title": "SourceRef",
+      "type": "object"
+    },
+    "Span": {
+      "additionalProperties": false,
+      "description": "Detailed pointer back into a source document.",
+      "properties": {
+        "end": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "End"
+        },
+        "index": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Index"
+        },
+        "start": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Start"
+        },
+        "text": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Text"
+        },
+        "type": {
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "title": "Span",
       "type": "object"
     }
   },

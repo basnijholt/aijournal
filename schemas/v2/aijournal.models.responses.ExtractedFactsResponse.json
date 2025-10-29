@@ -262,7 +262,7 @@
           "type": "number"
         },
         "evidence": {
-          "$ref": "#/$defs/FactEvidence"
+          "$ref": "#/$defs/SourceRef"
         },
         "first_seen": {
           "anyOf": [
@@ -306,8 +306,9 @@
       "title": "ExtractedFactPayload",
       "type": "object"
     },
-    "FactEvidence": {
+    "SourceRef": {
       "additionalProperties": false,
+      "description": "Reference to a normalized entry and the supporting spans.",
       "properties": {
         "entry_id": {
           "title": "Entry Id",
@@ -315,7 +316,7 @@
         },
         "spans": {
           "items": {
-            "$ref": "#/$defs/FactEvidenceSpan"
+            "$ref": "#/$defs/Span"
           },
           "title": "Spans",
           "type": "array"
@@ -324,11 +325,12 @@
       "required": [
         "entry_id"
       ],
-      "title": "FactEvidence",
+      "title": "SourceRef",
       "type": "object"
     },
-    "FactEvidenceSpan": {
+    "Span": {
       "additionalProperties": false,
+      "description": "Detailed pointer back into a source document.",
       "properties": {
         "end": {
           "anyOf": [
@@ -386,7 +388,7 @@
       "required": [
         "type"
       ],
-      "title": "FactEvidenceSpan",
+      "title": "Span",
       "type": "object"
     }
   },

@@ -7,11 +7,27 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
+from aijournal.domain.evidence import redact_source_text
+
 from ..models import ClaimAtom, ClaimSource, ClaimSourceSpan, Provenance, Scope
 
 
 def _clamp01(value: float) -> float:
     return max(0.0, min(1.0, value))
+
+
+def _redacted_sources(sources: Sequence[ClaimSource]) -> list[ClaimSource]:
+    return [redact_source_text(source) for source in sources]
+
+
+def _redacted_provenance(provenance: Provenance, timestamp: str) -> Provenance:
+    redacted = provenance.model_copy(update={"sources": _redacted_sources(provenance.sources)})
+    redacted.last_updated = timestamp
+    if redacted.observation_count <= 0:
+        redacted.observation_count = max(1, len(redacted.sources) or 1)
+    if not redacted.first_seen:
+        redacted.first_seen = timestamp.split("T", 1)[0]
+    return redacted
 
 
 def _scope_tuple(scope: Scope | None) -> tuple[str | None, tuple[str, ...], tuple[str, ...]]:
@@ -100,6 +116,13 @@ class ClaimConsolidator:
         incoming_atom = (
             incoming if isinstance(incoming, ClaimAtom) else ClaimAtom.model_validate(incoming)
         )
+        incoming_atom = incoming_atom.model_copy(
+            update={
+                "provenance": _redacted_provenance(
+                    incoming_atom.provenance, timestamp=self._timestamp
+                )
+            },
+        )
         typed_input = all(isinstance(item, ClaimAtom) for item in claims)
         atom_claims = [
             item if isinstance(item, ClaimAtom) else ClaimAtom.model_validate(item)
@@ -167,6 +190,7 @@ class ClaimConsolidator:
         return None
 
     def _initialize_provenance(self, provenance: Provenance) -> None:
+        provenance.sources = _redacted_sources(provenance.sources)
         if provenance.observation_count <= 0:
             provenance.observation_count = max(1, len(provenance.sources) or 1)
         provenance.last_updated = self._timestamp
@@ -201,7 +225,7 @@ class ClaimConsolidator:
 
     def _merge_sources(self, existing: ClaimAtom, incoming: ClaimAtom) -> bool:
         existing_sources = list(existing.provenance.sources)
-        incoming_sources = list(incoming.provenance.sources)
+        incoming_sources = _redacted_sources(incoming.provenance.sources)
         combined = list(existing_sources)
         seen = {_source_key(source) for source in existing_sources}
         changed = False

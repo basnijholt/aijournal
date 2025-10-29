@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, field_validator
+
+from aijournal.domain.evidence import SourceRef, Span
 
 from .base import AijournalModel
 
@@ -22,20 +24,8 @@ ClaimStatus = Literal["accepted", "tentative", "rejected"]
 ClaimMethod = Literal["self_report", "inferred", "behavioral"]
 
 
-class ClaimSourceSpan(AijournalModel):
-    """Evidence locator for a claim source."""
-
-    type: str
-    index: int | None = None
-    start: int | None = None
-    end: int | None = None
-
-
-class ClaimSource(AijournalModel):
-    """Structured reference back to a normalized entry."""
-
-    entry_id: str
-    spans: list[ClaimSourceSpan] = Field(default_factory=list)
+ClaimSourceSpan = Span
+ClaimSource = SourceRef
 
 
 class Scope(AijournalModel):
@@ -71,6 +61,16 @@ class ClaimAtom(AijournalModel):
     user_verified: bool = False
     review_after_days: int = 120
     provenance: Provenance
+
+    @field_validator("provenance")
+    @classmethod
+    def _ensure_redacted(cls, provenance: Provenance) -> Provenance:
+        for source in provenance.sources:
+            for span in source.spans:
+                if span.text is not None:
+                    msg = "claim provenance spans must not carry raw text"
+                    raise ValueError(msg)
+        return provenance
 
 
 class ClaimAtomsFile(AijournalModel):

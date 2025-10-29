@@ -1,6 +1,6 @@
 {
   "additionalProperties": false,
-  "description": "Evidence locator for a claim source.",
+  "description": "Detailed pointer back into a source document.",
   "properties": {
     "end": {
       "anyOf": [
@@ -38,6 +38,18 @@
       "default": null,
       "title": "Start"
     },
+    "text": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Text"
+    },
     "type": {
       "title": "Type",
       "type": "string"
@@ -46,6 +58,6 @@
   "required": [
     "type"
   ],
-  "title": "ClaimSourceSpan",
+  "title": "Span",
   "type": "object"
 }
