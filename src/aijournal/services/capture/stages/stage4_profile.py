@@ -10,7 +10,7 @@ if TYPE_CHECKING:
     from .. import CaptureInput, ProfileStage4Outputs
 
 
-def _run_profile_stage_4(
+def run_profile_stage_4(
     changed_dates: list[str],
     inputs: CaptureInput,
     root: Path,

@@ -10,7 +10,7 @@ if TYPE_CHECKING:
     from .. import CaptureInput, FactsStage3Outputs
 
 
-def _run_facts_stage_3(
+def run_facts_stage_3(
     changed_dates: list[str],
     inputs: CaptureInput,
     root: Path,

@@ -10,7 +10,7 @@ if TYPE_CHECKING:
     from .. import CaptureInput, PackStage8Outputs
 
 
-def _run_pack_stage_8(
+def run_pack_stage_8(
     inputs: CaptureInput,
     root: Path,
     run_id: str,

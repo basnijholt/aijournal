@@ -36,15 +36,15 @@ from aijournal.types.results import OperationResult, StageResult
 from aijournal.utils import time as time_utils
 from aijournal.utils.paths import normalized_entry_path
 
-from .stages.stage0_persist import _run_persist_stage_0
-from .stages.stage1_normalize import _run_normalize_stage_1
-from .stages.stage2_summarize import _run_summarize_stage_2
-from .stages.stage3_facts import _run_facts_stage_3
-from .stages.stage4_profile import _run_profile_stage_4
-from .stages.stage5_characterize import _run_characterize_stage_5
-from .stages.stage6_index import _run_index_stage_6
-from .stages.stage7_persona import _run_persona_stage_7
-from .stages.stage8_pack import _run_pack_stage_8
+from .stages.stage0_persist import run_persist_stage_0
+from .stages.stage1_normalize import run_normalize_stage_1
+from .stages.stage2_summarize import run_summarize_stage_2
+from .stages.stage3_facts import run_facts_stage_3
+from .stages.stage4_profile import run_profile_stage_4
+from .stages.stage5_characterize import run_characterize_stage_5
+from .stages.stage6_index import run_index_stage_6
+from .stages.stage7_persona import run_persona_stage_7
+from .stages.stage8_pack import run_pack_stage_8
 from .utils import (
     apply_profile_update_batch as _apply_profile_update_batch,
 )
@@ -1234,7 +1234,7 @@ def run_capture(
         )
 
     if stage_enabled(0):
-        persist_outputs = _run_persist_stage_0(
+        persist_outputs = run_persist_stage_0(
             inputs,
             root,
             manifest_entries,
@@ -1258,7 +1258,7 @@ def run_capture(
     changed_dates: list[str] = []
 
     if stage_enabled(1):
-        normalize_outputs = _run_normalize_stage_1(
+        normalize_outputs = run_normalize_stage_1(
             entry_results,
             root,
         )
@@ -1288,7 +1288,7 @@ def run_capture(
         entries_changed = 0
 
     if changed_dates and stage_enabled(2):
-        summarize_outputs = _run_summarize_stage_2(
+        summarize_outputs = run_summarize_stage_2(
             changed_dates,
             inputs,
             root,
@@ -1322,7 +1322,7 @@ def run_capture(
             )
 
     if changed_dates and stage_enabled(3):
-        facts_outputs = _run_facts_stage_3(
+        facts_outputs = run_facts_stage_3(
             changed_dates,
             inputs,
             root,
@@ -1356,7 +1356,7 @@ def run_capture(
             )
 
     if changed_dates and stage_enabled(4):
-        profile_outputs = _run_profile_stage_4(
+        profile_outputs = run_profile_stage_4(
             changed_dates,
             inputs,
             root,
@@ -1408,7 +1408,7 @@ def run_capture(
             )
 
     if changed_dates and stage_enabled(5):
-        characterize_outputs = _run_characterize_stage_5(changed_dates, inputs, root)
+        characterize_outputs = run_characterize_stage_5(changed_dates, inputs, root)
         characterize_result = characterize_outputs.result
         review_result = characterize_outputs.review_result
         characterize_duration = characterize_outputs.duration_ms
@@ -1468,7 +1468,7 @@ def run_capture(
     status_before = "unknown"
     status_after = "unknown"
     if changed_dates and stage_enabled(6):
-        index_outputs = _run_index_stage_6(
+        index_outputs = run_index_stage_6(
             changed_dates,
             root,
         )
@@ -1506,7 +1506,7 @@ def run_capture(
     )
 
     if stage_enabled(7):
-        persona_outputs = _run_persona_stage_7(inputs, root, artifacts_changed)
+        persona_outputs = run_persona_stage_7(inputs, root, artifacts_changed)
         persona_result = persona_outputs.result
         persona_duration = persona_outputs.duration_ms
         persona_changed = persona_outputs.persona_changed
@@ -1543,7 +1543,7 @@ def run_capture(
     )
 
     if stage_enabled(8):
-        pack_outputs = _run_pack_stage_8(
+        pack_outputs = run_pack_stage_8(
             inputs,
             root,
             resolved_run_id,

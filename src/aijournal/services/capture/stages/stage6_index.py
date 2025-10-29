@@ -10,7 +10,7 @@ if TYPE_CHECKING:
     from .. import IndexStage6Outputs
 
 
-def _run_index_stage_6(
+def run_index_stage_6(
     changed_dates: list[str],
     root: Path,
 ) -> IndexStage6Outputs:

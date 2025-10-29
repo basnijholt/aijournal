@@ -8,7 +8,7 @@ if TYPE_CHECKING:
     from .. import EntryResult, NormalizeStageOutputs
 
 
-def _run_normalize_stage_1(
+def run_normalize_stage_1(
     entry_results: list[EntryResult],
     root: Path,
 ) -> NormalizeStageOutputs:
