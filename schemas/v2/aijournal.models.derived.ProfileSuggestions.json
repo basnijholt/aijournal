@@ -1,0 +1,418 @@
+{
+  "$defs": {
+    "ClaimAtom": {
+      "additionalProperties": false,
+      "description": "Typed, scoped claim describing the persona.",
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "method": {
+          "enum": [
+            "self_report",
+            "inferred",
+            "behavioral"
+          ],
+          "title": "Method",
+          "type": "string"
+        },
+        "predicate": {
+          "title": "Predicate",
+          "type": "string"
+        },
+        "provenance": {
+          "$ref": "#/$defs/Provenance"
+        },
+        "review_after_days": {
+          "default": 120,
+          "title": "Review After Days",
+          "type": "integer"
+        },
+        "scope": {
+          "$ref": "#/$defs/Scope"
+        },
+        "statement": {
+          "title": "Statement",
+          "type": "string"
+        },
+        "status": {
+          "default": "tentative",
+          "enum": [
+            "accepted",
+            "tentative",
+            "rejected"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "strength": {
+          "default": 0.5,
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Strength",
+          "type": "number"
+        },
+        "subject": {
+          "title": "Subject",
+          "type": "string"
+        },
+        "type": {
+          "enum": [
+            "preference",
+            "value",
+            "goal",
+            "boundary",
+            "trait",
+            "habit",
+            "aversion",
+            "skill"
+          ],
+          "title": "Type",
+          "type": "string"
+        },
+        "user_verified": {
+          "default": false,
+          "title": "User Verified",
+          "type": "boolean"
+        },
+        "value": {
+          "title": "Value",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "subject",
+        "predicate",
+        "value",
+        "statement",
+        "method",
+        "provenance"
+      ],
+      "title": "ClaimAtom",
+      "type": "object"
+    },
+    "ClaimSource": {
+      "additionalProperties": false,
+      "description": "Structured reference back to a normalized entry.",
+      "properties": {
+        "entry_id": {
+          "title": "Entry Id",
+          "type": "string"
+        },
+        "spans": {
+          "items": {
+            "$ref": "#/$defs/ClaimSourceSpan"
+          },
+          "title": "Spans",
+          "type": "array"
+        }
+      },
+      "required": [
+        "entry_id"
+      ],
+      "title": "ClaimSource",
+      "type": "object"
+    },
+    "ClaimSourceSpan": {
+      "additionalProperties": false,
+      "description": "Evidence locator for a claim source.",
+      "properties": {
+        "end": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "End"
+        },
+        "index": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Index"
+        },
+        "start": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Start"
+        },
+        "type": {
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "title": "ClaimSourceSpan",
+      "type": "object"
+    },
+    "ProfileSuggestionUpdate": {
+      "additionalProperties": false,
+      "properties": {
+        "evidence": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Evidence"
+        },
+        "method": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Method"
+        },
+        "operation": {
+          "title": "Operation",
+          "type": "string"
+        },
+        "rationale": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rationale"
+        },
+        "target": {
+          "title": "Target",
+          "type": "string"
+        },
+        "user_verified": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "User Verified"
+        },
+        "value": {
+          "title": "Value"
+        }
+      },
+      "required": [
+        "target",
+        "operation",
+        "value"
+      ],
+      "title": "ProfileSuggestionUpdate",
+      "type": "object"
+    },
+    "ProfileSuggestionUpsert": {
+      "additionalProperties": false,
+      "properties": {
+        "operation": {
+          "title": "Operation",
+          "type": "string"
+        },
+        "rationale": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rationale"
+        },
+        "target": {
+          "title": "Target",
+          "type": "string"
+        },
+        "value": {
+          "$ref": "#/$defs/ClaimAtom"
+        }
+      },
+      "required": [
+        "target",
+        "operation",
+        "value"
+      ],
+      "title": "ProfileSuggestionUpsert",
+      "type": "object"
+    },
+    "Provenance": {
+      "additionalProperties": false,
+      "description": "Provenance metadata for a claim atom.",
+      "properties": {
+        "first_seen": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "First Seen"
+        },
+        "last_updated": {
+          "title": "Last Updated",
+          "type": "string"
+        },
+        "observation_count": {
+          "default": 1,
+          "minimum": 1,
+          "title": "Observation Count",
+          "type": "integer"
+        },
+        "sources": {
+          "items": {
+            "$ref": "#/$defs/ClaimSource"
+          },
+          "title": "Sources",
+          "type": "array"
+        }
+      },
+      "required": [
+        "last_updated"
+      ],
+      "title": "Provenance",
+      "type": "object"
+    },
+    "Scope": {
+      "additionalProperties": false,
+      "description": "Contextual qualifiers for a claim atom.",
+      "properties": {
+        "conditions": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Conditions",
+          "type": "array"
+        },
+        "context": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Context",
+          "type": "array"
+        },
+        "domain": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Domain"
+        }
+      },
+      "title": "Scope",
+      "type": "object"
+    },
+    "SummaryMeta": {
+      "additionalProperties": false,
+      "properties": {
+        "created_at": {
+          "default": "",
+          "title": "Created At",
+          "type": "string"
+        },
+        "llm_model": {
+          "default": "unknown",
+          "title": "Llm Model",
+          "type": "string"
+        },
+        "prompt_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Prompt Hash"
+        },
+        "prompt_path": {
+          "default": "",
+          "title": "Prompt Path",
+          "type": "string"
+        }
+      },
+      "title": "SummaryMeta",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "meta": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/SummaryMeta"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "updates": {
+      "items": {
+        "$ref": "#/$defs/ProfileSuggestionUpdate"
+      },
+      "title": "Updates",
+      "type": "array"
+    },
+    "upserts": {
+      "items": {
+        "$ref": "#/$defs/ProfileSuggestionUpsert"
+      },
+      "title": "Upserts",
+      "type": "array"
+    }
+  },
+  "title": "ProfileSuggestions",
+  "type": "object"
+}

@@ -1,0 +1,51 @@
+{
+  "additionalProperties": false,
+  "description": "Normalized entry metadata captured in a characterization batch.",
+  "properties": {
+    "id": {
+      "title": "Id",
+      "type": "string"
+    },
+    "manifest_hash": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Manifest Hash"
+    },
+    "normalized_path": {
+      "title": "Normalized Path",
+      "type": "string"
+    },
+    "source_hash": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Source Hash"
+    },
+    "tags": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Tags",
+      "type": "array"
+    }
+  },
+  "required": [
+    "id",
+    "normalized_path"
+  ],
+  "title": "ProfileUpdateInput",
+  "type": "object"
+}

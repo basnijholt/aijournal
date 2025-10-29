@@ -1,0 +1,24 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "embedding_model": {
+      "title": "Embedding Model",
+      "type": "string"
+    },
+    "generated_at": {
+      "title": "Generated At",
+      "type": "string"
+    },
+    "vector_dimension": {
+      "title": "Vector Dimension",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "embedding_model",
+    "vector_dimension",
+    "generated_at"
+  ],
+  "title": "ChunkManifestMeta",
+  "type": "object"
+}

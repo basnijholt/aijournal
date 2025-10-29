@@ -1,0 +1,104 @@
+{
+  "$defs": {
+    "InterviewQuestion": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "priority": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Priority"
+        },
+        "target_facet": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Target Facet"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "text"
+      ],
+      "title": "InterviewQuestion",
+      "type": "object"
+    },
+    "SummaryMeta": {
+      "additionalProperties": false,
+      "properties": {
+        "created_at": {
+          "default": "",
+          "title": "Created At",
+          "type": "string"
+        },
+        "llm_model": {
+          "default": "unknown",
+          "title": "Llm Model",
+          "type": "string"
+        },
+        "prompt_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Prompt Hash"
+        },
+        "prompt_path": {
+          "default": "",
+          "title": "Prompt Path",
+          "type": "string"
+        }
+      },
+      "title": "SummaryMeta",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "meta": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/SummaryMeta"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "questions": {
+      "items": {
+        "$ref": "#/$defs/InterviewQuestion"
+      },
+      "title": "Questions",
+      "type": "array"
+    }
+  },
+  "title": "InterviewSet",
+  "type": "object"
+}

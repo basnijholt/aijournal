@@ -1,0 +1,75 @@
+{
+  "$defs": {
+    "SummaryMeta": {
+      "additionalProperties": false,
+      "properties": {
+        "created_at": {
+          "default": "",
+          "title": "Created At",
+          "type": "string"
+        },
+        "llm_model": {
+          "default": "unknown",
+          "title": "Llm Model",
+          "type": "string"
+        },
+        "prompt_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Prompt Hash"
+        },
+        "prompt_path": {
+          "default": "",
+          "title": "Prompt Path",
+          "type": "string"
+        }
+      },
+      "title": "SummaryMeta",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Derived day summary (PLAN §4.1).",
+  "properties": {
+    "bullets": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Bullets",
+      "type": "array"
+    },
+    "day": {
+      "title": "Day",
+      "type": "string"
+    },
+    "highlights": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Highlights",
+      "type": "array"
+    },
+    "meta": {
+      "$ref": "#/$defs/SummaryMeta"
+    },
+    "todo_candidates": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Todo Candidates",
+      "type": "array"
+    }
+  },
+  "required": [
+    "day"
+  ],
+  "title": "DailySummary",
+  "type": "object"
+}

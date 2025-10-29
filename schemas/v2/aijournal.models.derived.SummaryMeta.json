@@ -1,0 +1,34 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "created_at": {
+      "default": "",
+      "title": "Created At",
+      "type": "string"
+    },
+    "llm_model": {
+      "default": "unknown",
+      "title": "Llm Model",
+      "type": "string"
+    },
+    "prompt_hash": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Prompt Hash"
+    },
+    "prompt_path": {
+      "default": "",
+      "title": "Prompt Path",
+      "type": "string"
+    }
+  },
+  "title": "SummaryMeta",
+  "type": "object"
+}

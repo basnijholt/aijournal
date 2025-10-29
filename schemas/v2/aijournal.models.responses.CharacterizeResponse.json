@@ -1,0 +1,419 @@
+{
+  "$defs": {
+    "ClaimProposalPayload": {
+      "additionalProperties": false,
+      "description": "Structured claim proposal returned directly by the LLM.",
+      "properties": {
+        "claim": {
+          "$ref": "#/$defs/ClaimSketch"
+        },
+        "evidence_hashes": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Evidence Hashes",
+          "type": "array"
+        },
+        "manifest_hashes": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Manifest Hashes",
+          "type": "array"
+        },
+        "normalized_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Normalized Ids",
+          "type": "array"
+        },
+        "rationale": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rationale"
+        }
+      },
+      "required": [
+        "claim"
+      ],
+      "title": "ClaimProposalPayload",
+      "type": "object"
+    },
+    "ClaimSketch": {
+      "additionalProperties": false,
+      "description": "Minimal claim payload emitted directly by the LLM.",
+      "properties": {
+        "confidence": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Confidence"
+        },
+        "evidence_hashes": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Evidence Hashes",
+          "type": "array"
+        },
+        "id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Id"
+        },
+        "manifest_hashes": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Manifest Hashes",
+          "type": "array"
+        },
+        "method": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Method"
+        },
+        "normalized_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Normalized Ids",
+          "type": "array"
+        },
+        "predicate": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Predicate"
+        },
+        "provenance": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Provenance"
+        },
+        "rationale": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rationale"
+        },
+        "review_after_days": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Review After Days"
+        },
+        "scope": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Scope"
+        },
+        "statement": {
+          "title": "Statement",
+          "type": "string"
+        },
+        "status": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Status"
+        },
+        "strength": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Strength"
+        },
+        "subject": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Subject"
+        },
+        "type": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Type"
+        },
+        "user_verified": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "User Verified"
+        },
+        "value": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Value"
+        }
+      },
+      "required": [
+        "statement"
+      ],
+      "title": "ClaimSketch",
+      "type": "object"
+    },
+    "FacetProposalPayload": {
+      "additionalProperties": false,
+      "description": "Structured facet proposal produced during characterization.",
+      "properties": {
+        "confidence": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Confidence"
+        },
+        "evidence_hashes": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Evidence Hashes",
+          "type": "array"
+        },
+        "method": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Method"
+        },
+        "normalized_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Normalized Ids",
+          "type": "array"
+        },
+        "operation": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Operation"
+        },
+        "path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Path"
+        },
+        "rationale": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rationale"
+        },
+        "review_after_days": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Review After Days"
+        },
+        "user_verified": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "User Verified"
+        },
+        "value": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "integer"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "items": {},
+              "type": "array"
+            },
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Value"
+        }
+      },
+      "title": "FacetProposalPayload",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Structured response for profile characterization.",
+  "properties": {
+    "claims": {
+      "items": {
+        "$ref": "#/$defs/ClaimProposalPayload"
+      },
+      "title": "Claims",
+      "type": "array"
+    },
+    "facets": {
+      "items": {
+        "$ref": "#/$defs/FacetProposalPayload"
+      },
+      "title": "Facets",
+      "type": "array"
+    },
+    "interview_prompts": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Interview Prompts",
+      "type": "array"
+    }
+  },
+  "title": "CharacterizeResponse",
+  "type": "object"
+}

@@ -1,0 +1,165 @@
+{
+  "$defs": {
+    "AdviceRecommendation": {
+      "additionalProperties": false,
+      "properties": {
+        "mitigations": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Mitigations",
+          "type": "array"
+        },
+        "risks": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Risks",
+          "type": "array"
+        },
+        "steps": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Steps",
+          "type": "array"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        },
+        "why_this_fits_you": {
+          "$ref": "#/$defs/AdviceReference"
+        }
+      },
+      "required": [
+        "title"
+      ],
+      "title": "AdviceRecommendation",
+      "type": "object"
+    },
+    "AdviceReference": {
+      "additionalProperties": false,
+      "properties": {
+        "claims": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Claims",
+          "type": "array"
+        },
+        "facets": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Facets",
+          "type": "array"
+        }
+      },
+      "title": "AdviceReference",
+      "type": "object"
+    },
+    "SummaryMeta": {
+      "additionalProperties": false,
+      "properties": {
+        "created_at": {
+          "default": "",
+          "title": "Created At",
+          "type": "string"
+        },
+        "llm_model": {
+          "default": "unknown",
+          "title": "Llm Model",
+          "type": "string"
+        },
+        "prompt_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Prompt Hash"
+        },
+        "prompt_path": {
+          "default": "",
+          "title": "Prompt Path",
+          "type": "string"
+        }
+      },
+      "title": "SummaryMeta",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "alignment": {
+      "$ref": "#/$defs/AdviceReference"
+    },
+    "assumptions": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Assumptions",
+      "type": "array"
+    },
+    "confidence": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Confidence"
+    },
+    "id": {
+      "title": "Id",
+      "type": "string"
+    },
+    "meta": {
+      "$ref": "#/$defs/SummaryMeta"
+    },
+    "next_actions": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Next Actions",
+      "type": "array"
+    },
+    "query": {
+      "title": "Query",
+      "type": "string"
+    },
+    "recommendations": {
+      "items": {
+        "$ref": "#/$defs/AdviceRecommendation"
+      },
+      "title": "Recommendations",
+      "type": "array"
+    },
+    "style": {
+      "additionalProperties": true,
+      "title": "Style",
+      "type": "object"
+    },
+    "tradeoffs": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Tradeoffs",
+      "type": "array"
+    }
+  },
+  "required": [
+    "id",
+    "query"
+  ],
+  "title": "AdviceCard",
+  "type": "object"
+}

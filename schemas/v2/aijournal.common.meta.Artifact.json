@@ -1,0 +1,141 @@
+{
+  "$defs": {
+    "ArtifactKind": {
+      "description": "Enumeration of persisted artifact categories.",
+      "enum": [
+        "persona.core",
+        "summaries.daily",
+        "microfacts.daily",
+        "profile.updates",
+        "feedback.batch",
+        "index.meta",
+        "index.chunks",
+        "pack.L1",
+        "pack.L3",
+        "pack.L4",
+        "chat.transcript"
+      ],
+      "title": "ArtifactKind",
+      "type": "string"
+    },
+    "ArtifactMeta": {
+      "additionalProperties": false,
+      "description": "Metadata describing how an artifact was produced.",
+      "properties": {
+        "char_per_token": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Char Per Token"
+        },
+        "created_at": {
+          "title": "Created At",
+          "type": "string"
+        },
+        "model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model"
+        },
+        "notes": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Notes"
+        },
+        "prompt_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Prompt Hash"
+        },
+        "prompt_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Prompt Path"
+        },
+        "sources": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sources"
+        }
+      },
+      "required": [
+        "created_at"
+      ],
+      "title": "ArtifactMeta",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Versioned artifact envelope wrapping a payload of type ``T``.",
+  "properties": {
+    "data": {
+      "title": "Data"
+    },
+    "kind": {
+      "$ref": "#/$defs/ArtifactKind"
+    },
+    "meta": {
+      "$ref": "#/$defs/ArtifactMeta"
+    },
+    "schema": {
+      "const": "v2",
+      "default": "v2",
+      "title": "Schema",
+      "type": "string"
+    }
+  },
+  "required": [
+    "kind",
+    "meta",
+    "data"
+  ],
+  "title": "Artifact",
+  "type": "object"
+}

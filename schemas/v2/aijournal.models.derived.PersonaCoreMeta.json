@@ -1,0 +1,116 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "budget_exceeded": {
+      "default": false,
+      "title": "Budget Exceeded",
+      "type": "boolean"
+    },
+    "char_per_token": {
+      "title": "Char Per Token",
+      "type": "number"
+    },
+    "claim_count": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Claim Count"
+    },
+    "claim_pool": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Claim Pool"
+    },
+    "generated_at": {
+      "title": "Generated At",
+      "type": "string"
+    },
+    "max_claims": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Max Claims"
+    },
+    "min_claims": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Min Claims"
+    },
+    "planned_tokens": {
+      "title": "Planned Tokens",
+      "type": "integer"
+    },
+    "selection_strategy": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Selection Strategy"
+    },
+    "source_mtimes": {
+      "additionalProperties": {
+        "type": "number"
+      },
+      "title": "Source Mtimes",
+      "type": "object"
+    },
+    "sources": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "title": "Sources",
+      "type": "object"
+    },
+    "token_budget": {
+      "title": "Token Budget",
+      "type": "integer"
+    },
+    "trimmed": {
+      "items": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "title": "Trimmed",
+      "type": "array"
+    }
+  },
+  "required": [
+    "generated_at",
+    "token_budget",
+    "planned_tokens",
+    "char_per_token"
+  ],
+  "title": "PersonaCoreMeta",
+  "type": "object"
+}

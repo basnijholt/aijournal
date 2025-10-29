@@ -1,0 +1,41 @@
+{
+  "additionalProperties": false,
+  "description": "Captured LLM invocation details paired with the structured payload.",
+  "properties": {
+    "created_at": {
+      "title": "Created At",
+      "type": "string"
+    },
+    "model": {
+      "title": "Model",
+      "type": "string"
+    },
+    "payload": {
+      "title": "Payload"
+    },
+    "prompt_hash": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Prompt Hash"
+    },
+    "prompt_path": {
+      "title": "Prompt Path",
+      "type": "string"
+    }
+  },
+  "required": [
+    "model",
+    "prompt_path",
+    "created_at",
+    "payload"
+  ],
+  "title": "LLMResult",
+  "type": "object"
+}

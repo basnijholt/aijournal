@@ -1,0 +1,6 @@
+#!/bin/sh
+
+set -euo pipefail
+
+uv run pytest -q
+pre-commit run --all-files
