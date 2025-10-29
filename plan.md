@@ -110,6 +110,7 @@ This builds on items 1 & 2 but isn’t strictly required once automatic detectio
 - Introduce a helper (e.g., `record_skipped_stage(state, stage_id, name, reason)`) that wraps the noop result + duration bookkeeping.
 - Replace the repeated skip branches across stages with the helper for consistency.
 - Tests must stay green → commit.
+- ✅ 2025-10-28: Added `record_stage_outcome`/`record_skipped_stage` closures inside `run_capture`, rewired every stage skip branch to use them, and kept `uv run pytest` green.
 
 ### To-Do D — Centralize telemetry emission
 - Create a small telemetry helper (`emit_stage_event(log_event, stage_name, op_result)`) in `capture/utils.py` (or similar) and use it for index/persona/pack done events.

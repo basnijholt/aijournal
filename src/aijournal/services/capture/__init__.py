@@ -1188,6 +1188,47 @@ def run_capture(
     review_candidates: list[str] = []
     stage_results: list[StageResult] = []
 
+    def record_stage_outcome(
+        stage_id: int,
+        stage_name: str,
+        duration_key: str,
+        result: OperationResult,
+        duration: float,
+    ) -> OperationResult:
+        """Track stage result, duration, and telemetry in one place."""
+
+        durations_ms[duration_key] = duration
+        _record_stage(
+            stage_results=stage_results,
+            stages_completed=stages_completed,
+            stages_skipped=stages_skipped,
+            warnings_accumulator=warnings,
+            log_event=log_event,
+            stage_id=stage_id,
+            stage_name=stage_name,
+            op_result=result,
+            duration_ms=duration,
+        )
+        return result
+
+    def record_skipped_stage(
+        stage_id: int,
+        stage_name: str,
+        duration_key: str,
+        *,
+        message: str = "skipped by stage filter",
+    ) -> OperationResult:
+        """Create a standardized skip result and record it."""
+
+        skip_result = OperationResult.noop(message, details={"status": "skipped"})
+        return record_stage_outcome(
+            stage_id,
+            stage_name,
+            duration_key,
+            skip_result,
+            0.0,
+        )
+
     if stage_enabled(0):
         persist_outputs = _run_persist_stage_0(
             inputs,
@@ -1198,25 +1239,16 @@ def run_capture(
         entry_results = persist_outputs.entries
         persist_result = persist_outputs.result
         persist_duration = persist_outputs.duration_ms
+        record_stage_outcome(
+            stage_id=0,
+            stage_name="persist",
+            duration_key="persist",
+            result=persist_result,
+            duration=persist_duration,
+        )
     else:
         entry_results = []
-        persist_duration = 0.0
-        persist_result = OperationResult.noop(
-            "skipped by stage filter",
-            details={"status": "skipped"},
-        )
-    durations_ms["persist"] = persist_duration
-    _record_stage(
-        stage_results=stage_results,
-        stages_completed=stages_completed,
-        stages_skipped=stages_skipped,
-        warnings_accumulator=warnings,
-        log_event=log_event,
-        stage_id=0,
-        stage_name="persist",
-        op_result=persist_result,
-        duration_ms=persist_duration,
-    )
+        persist_result = record_skipped_stage(0, "persist", "persist")
 
     artifact_counts: dict[str, Any] = {}
     changed_dates: list[str] = []
@@ -1230,25 +1262,16 @@ def run_capture(
         normalize_result = normalize_outputs.result
         normalize_duration = normalize_outputs.duration_ms
         changed_dates = normalize_outputs.changed_dates
-    else:
-        normalize_duration = 0.0
-        normalize_result = OperationResult.noop(
-            "skipped by stage filter",
-            details={"status": "skipped"},
+        record_stage_outcome(
+            stage_id=1,
+            stage_name="normalize",
+            duration_key="normalize",
+            result=normalize_result,
+            duration=normalize_duration,
         )
-
-    durations_ms["normalize"] = normalize_duration
-    _record_stage(
-        stage_results=stage_results,
-        stages_completed=stages_completed,
-        stages_skipped=stages_skipped,
-        warnings_accumulator=warnings,
-        log_event=log_event,
-        stage_id=1,
-        stage_name="normalize",
-        op_result=normalize_result,
-        duration_ms=normalize_duration,
-    )
+    else:
+        normalize_result = record_skipped_stage(1, "normalize", "normalize")
+        normalize_duration = 0.0
 
     artifacts_changed = {
         key: value for key, value in artifact_counts.items() if key != "paths" and value
@@ -1271,41 +1294,28 @@ def run_capture(
         summary_paths = summarize_outputs.paths
         for _ in summary_paths:
             artifacts_changed["summaries"] = artifacts_changed.get("summaries", 0) + 1
-        durations_ms["derive.summarize"] = summarize_duration
-        _record_stage(
-            stage_results=stage_results,
-            stages_completed=stages_completed,
-            stages_skipped=stages_skipped,
-            warnings_accumulator=warnings,
-            log_event=log_event,
+        record_stage_outcome(
             stage_id=2,
             stage_name="derive.summarize",
-            op_result=summarize_result,
-            duration_ms=summarize_duration,
+            duration_key="derive.summarize",
+            result=summarize_result,
+            duration=summarize_duration,
         )
     else:
         if not stage_enabled(2):
-            summarize_result = OperationResult.noop(
-                "skipped by stage filter",
-                details={"status": "skipped"},
-            )
+            summarize_result = record_skipped_stage(2, "derive.summarize", "derive.summarize")
         else:
             summarize_result = OperationResult.noop(
                 "no dates required summarization",
                 details={"dates": []},
             )
-        durations_ms.setdefault("derive.summarize", 0.0)
-        _record_stage(
-            stage_results=stage_results,
-            stages_completed=stages_completed,
-            stages_skipped=stages_skipped,
-            warnings_accumulator=warnings,
-            log_event=log_event,
-            stage_id=2,
-            stage_name="derive.summarize",
-            op_result=summarize_result,
-            duration_ms=0.0,
-        )
+            record_stage_outcome(
+                stage_id=2,
+                stage_name="derive.summarize",
+                duration_key="derive.summarize",
+                result=summarize_result,
+                duration=0.0,
+            )
 
     if changed_dates and stage_enabled(3):
         facts_outputs = _run_facts_stage_3(
@@ -1318,41 +1328,28 @@ def run_capture(
         facts_paths = facts_outputs.paths
         for _ in facts_paths:
             artifacts_changed["microfacts"] = artifacts_changed.get("microfacts", 0) + 1
-        durations_ms["derive.extract_facts"] = facts_duration
-        _record_stage(
-            stage_results=stage_results,
-            stages_completed=stages_completed,
-            stages_skipped=stages_skipped,
-            warnings_accumulator=warnings,
-            log_event=log_event,
+        record_stage_outcome(
             stage_id=3,
             stage_name="derive.extract_facts",
-            op_result=facts_result,
-            duration_ms=facts_duration,
+            duration_key="derive.extract_facts",
+            result=facts_result,
+            duration=facts_duration,
         )
     else:
         if not stage_enabled(3):
-            facts_result = OperationResult.noop(
-                "skipped by stage filter",
-                details={"status": "skipped"},
-            )
+            facts_result = record_skipped_stage(3, "derive.extract_facts", "derive.extract_facts")
         else:
             facts_result = OperationResult.noop(
                 "no dates required micro-facts",
                 details={"dates": []},
             )
-        durations_ms.setdefault("derive.extract_facts", 0.0)
-        _record_stage(
-            stage_results=stage_results,
-            stages_completed=stages_completed,
-            stages_skipped=stages_skipped,
-            warnings_accumulator=warnings,
-            log_event=log_event,
-            stage_id=3,
-            stage_name="derive.extract_facts",
-            op_result=facts_result,
-            duration_ms=0.0,
-        )
+            record_stage_outcome(
+                stage_id=3,
+                stage_name="derive.extract_facts",
+                duration_key="derive.extract_facts",
+                result=facts_result,
+                duration=0.0,
+            )
 
     if changed_dates and stage_enabled(4):
         profile_outputs = _run_profile_stage_4(
@@ -1371,54 +1368,40 @@ def run_capture(
             )
         if apply_result and apply_result.changed:
             artifacts_changed["profile"] = artifacts_changed.get("profile", 0) + applied_count
-        durations_ms["derive.profile_suggest"] = profile_duration
-        _record_stage(
-            stage_results=stage_results,
-            stages_completed=stages_completed,
-            stages_skipped=stages_skipped,
-            warnings_accumulator=warnings,
-            log_event=log_event,
+        record_stage_outcome(
             stage_id=4,
             stage_name="derive.profile_suggest",
-            op_result=profile_result,
-            duration_ms=profile_duration,
+            duration_key="derive.profile_suggest",
+            result=profile_result,
+            duration=profile_duration,
         )
         if apply_result is not None:
-            durations_ms["derive.profile_apply"] = profile_duration
-            _record_stage(
-                stage_results=stage_results,
-                stages_completed=stages_completed,
-                stages_skipped=stages_skipped,
-                warnings_accumulator=warnings,
-                log_event=log_event,
+            record_stage_outcome(
                 stage_id=4,
                 stage_name="derive.profile_apply",
-                op_result=apply_result,
-                duration_ms=profile_duration,
+                duration_key="derive.profile_apply",
+                result=apply_result,
+                duration=profile_duration,
             )
     else:
         if not stage_enabled(4):
-            profile_result = OperationResult.noop(
-                "skipped by stage filter",
-                details={"status": "skipped"},
+            profile_result = record_skipped_stage(
+                4,
+                "derive.profile_suggest",
+                "derive.profile_suggest",
             )
         else:
             profile_result = OperationResult.noop(
                 "no dates required profile suggestions",
                 details={"dates": []},
             )
-        durations_ms.setdefault("derive.profile_suggest", 0.0)
-        _record_stage(
-            stage_results=stage_results,
-            stages_completed=stages_completed,
-            stages_skipped=stages_skipped,
-            warnings_accumulator=warnings,
-            log_event=log_event,
-            stage_id=4,
-            stage_name="derive.profile_suggest",
-            op_result=profile_result,
-            duration_ms=0.0,
-        )
+            record_stage_outcome(
+                stage_id=4,
+                stage_name="derive.profile_suggest",
+                duration_key="derive.profile_suggest",
+                result=profile_result,
+                duration=0.0,
+            )
 
     if changed_dates and stage_enabled(5):
         characterize_outputs = _run_characterize_stage_5(changed_dates, inputs, root)
@@ -1433,54 +1416,40 @@ def run_capture(
         review_candidates.extend(review_candidates_generated)
         if review_result and review_result.changed:
             artifacts_changed["profile"] = artifacts_changed.get("profile", 0) + len(review_applied)
-        durations_ms["derive.characterize"] = characterize_duration
-        _record_stage(
-            stage_results=stage_results,
-            stages_completed=stages_completed,
-            stages_skipped=stages_skipped,
-            warnings_accumulator=warnings,
-            log_event=log_event,
+        record_stage_outcome(
             stage_id=5,
             stage_name="derive.characterize",
-            op_result=characterize_result,
-            duration_ms=characterize_duration,
+            duration_key="derive.characterize",
+            result=characterize_result,
+            duration=characterize_duration,
         )
         if review_result is not None:
-            durations_ms["derive.review"] = characterize_duration
-            _record_stage(
-                stage_results=stage_results,
-                stages_completed=stages_completed,
-                stages_skipped=stages_skipped,
-                warnings_accumulator=warnings,
-                log_event=log_event,
+            record_stage_outcome(
                 stage_id=5,
                 stage_name="derive.review",
-                op_result=review_result,
-                duration_ms=characterize_duration,
+                duration_key="derive.review",
+                result=review_result,
+                duration=characterize_duration,
             )
     else:
         if not stage_enabled(5):
-            characterize_result = OperationResult.noop(
-                "skipped by stage filter",
-                details={"status": "skipped"},
+            characterize_result = record_skipped_stage(
+                5,
+                "derive.characterize",
+                "derive.characterize",
             )
         else:
             characterize_result = OperationResult.noop(
                 "no dates required characterization",
                 details={"dates": []},
             )
-        durations_ms.setdefault("derive.characterize", 0.0)
-        _record_stage(
-            stage_results=stage_results,
-            stages_completed=stages_completed,
-            stages_skipped=stages_skipped,
-            warnings_accumulator=warnings,
-            log_event=log_event,
-            stage_id=5,
-            stage_name="derive.characterize",
-            op_result=characterize_result,
-            duration_ms=0.0,
-        )
+            record_stage_outcome(
+                stage_id=5,
+                stage_name="derive.characterize",
+                duration_key="derive.characterize",
+                result=characterize_result,
+                duration=0.0,
+            )
 
     if inputs.apply_profile != "auto" and "profile" not in artifacts_changed:
         artifacts_changed.setdefault("profile", 0)
@@ -1502,7 +1471,6 @@ def run_capture(
         index_rebuilt_flag = index_outputs.rebuilt
         if index_updated:
             artifacts_changed["index"] = artifacts_changed.get("index", 0) + 1
-        durations_ms["refresh.index"] = index_duration
         log_event(
             {
                 "event": "index.rebuild",
@@ -1511,27 +1479,26 @@ def run_capture(
                 "details": index_result.details,
             }
         )
-        _record_stage(
-            stage_results=stage_results,
-            stages_completed=stages_completed,
-            stages_skipped=stages_skipped,
-            warnings_accumulator=warnings,
-            log_event=log_event,
+        record_stage_outcome(
             stage_id=6,
             stage_name="refresh.index",
-            op_result=index_result,
-            duration_ms=index_duration,
+            duration_key="refresh.index",
+            result=index_result,
+            duration=index_duration,
         )
         index_rebuilt = index_rebuilt or index_rebuilt_flag
     else:
         if not stage_enabled(6):
-            index_result = OperationResult.noop(
-                "skipped by stage filter",
-                details={"status": "skipped"},
-            )
+            index_result = record_skipped_stage(6, "refresh.index", "refresh.index")
         else:
             index_result = OperationResult.noop("no index refresh required")
-        durations_ms.setdefault("refresh.index", 0.0)
+            record_stage_outcome(
+                stage_id=6,
+                stage_name="refresh.index",
+                duration_key="refresh.index",
+                result=index_result,
+                duration=0.0,
+            )
         log_event(
             {
                 "event": "index.rebuild",
@@ -1539,17 +1506,6 @@ def run_capture(
                 "message": index_result.message,
                 "details": index_result.details,
             }
-        )
-        _record_stage(
-            stage_results=stage_results,
-            stages_completed=stages_completed,
-            stages_skipped=stages_skipped,
-            warnings_accumulator=warnings,
-            log_event=log_event,
-            stage_id=6,
-            stage_name="refresh.index",
-            op_result=index_result,
-            duration_ms=0.0,
         )
 
     if stage_enabled(7):
@@ -1564,7 +1520,6 @@ def run_capture(
         persona_error = persona_outputs.error
         if persona_changed:
             artifacts_changed["persona"] = artifacts_changed.get("persona", 0) + 1
-        durations_ms["refresh.persona"] = persona_duration
         persona_event: dict[str, object] = {
             "event": "persona.status",
             "status": _stage_status(persona_result),
@@ -1577,40 +1532,21 @@ def run_capture(
         if persona_error is not None:
             persona_event["error"] = persona_error
         log_event(persona_event)
-        _record_stage(
-            stage_results=stage_results,
-            stages_completed=stages_completed,
-            stages_skipped=stages_skipped,
-            warnings_accumulator=warnings,
-            log_event=log_event,
+        record_stage_outcome(
             stage_id=7,
             stage_name="refresh.persona",
-            op_result=persona_result,
-            duration_ms=persona_duration,
+            duration_key="refresh.persona",
+            result=persona_result,
+            duration=persona_duration,
         )
     else:
-        persona_result = OperationResult.noop(
-            "skipped by stage filter",
-            details={"status": "skipped"},
-        )
-        durations_ms.setdefault("refresh.persona", 0.0)
+        persona_result = record_skipped_stage(7, "refresh.persona", "refresh.persona")
         log_event(
             {
                 "event": "persona.status",
                 "status": _stage_status(persona_result),
                 "details": persona_result.details,
             }
-        )
-        _record_stage(
-            stage_results=stage_results,
-            stages_completed=stages_completed,
-            stages_skipped=stages_skipped,
-            warnings_accumulator=warnings,
-            log_event=log_event,
-            stage_id=7,
-            stage_name="refresh.persona",
-            op_result=persona_result,
-            duration_ms=0.0,
         )
 
     if stage_enabled(8):
@@ -1624,35 +1560,15 @@ def run_capture(
         pack_duration = pack_outputs.duration_ms
         if pack_result.changed:
             artifacts_changed["pack"] = artifacts_changed.get("pack", 0) + 1
-        durations_ms["refresh.pack"] = pack_duration
-        _record_stage(
-            stage_results=stage_results,
-            stages_completed=stages_completed,
-            stages_skipped=stages_skipped,
-            warnings_accumulator=warnings,
-            log_event=log_event,
+        record_stage_outcome(
             stage_id=8,
             stage_name="pack",
-            op_result=pack_result,
-            duration_ms=pack_duration,
+            duration_key="refresh.pack",
+            result=pack_result,
+            duration=pack_duration,
         )
     else:
-        pack_result = OperationResult.noop(
-            "skipped by stage filter",
-            details={"status": "skipped"},
-        )
-        durations_ms.setdefault("refresh.pack", 0.0)
-        _record_stage(
-            stage_results=stage_results,
-            stages_completed=stages_completed,
-            stages_skipped=stages_skipped,
-            warnings_accumulator=warnings,
-            log_event=log_event,
-            stage_id=8,
-            stage_name="pack",
-            op_result=pack_result,
-            duration_ms=0.0,
-        )
+        pack_result = record_skipped_stage(8, "pack", "refresh.pack")
 
     telemetry_rel = _relative_path(telemetry_path, root)
     log_event(
