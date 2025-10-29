@@ -104,6 +104,7 @@ def test_build_config_coerces_numeric_settings(monkeypatch: pytest.MonkeyPatch) 
     assert result.seed == 99
     assert result.max_tokens == 2048
     assert result.timeout is None
+    assert result.host == "http://127.0.0.1:11434"
 
 
 def test_build_config_prefers_explicit_overrides(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -132,12 +133,34 @@ def test_build_config_prefers_explicit_overrides(monkeypatch: pytest.MonkeyPatch
 def test_build_config_respects_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("AIJOURNAL_MODEL", "env-model")
     monkeypatch.setenv("AIJOURNAL_OLLAMA_HOST", "http://env-host")
-    config: dict[str, object] = {}
+    config: dict[str, object] = {"model": "config-model", "host": "http://config-host"}
 
     result = build_ollama_config_from_mapping(config)
 
     assert result.model == "env-model"
     assert result.host == "http://env-host"
+
+
+def test_build_config_uses_config_host(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("AIJOURNAL_MODEL", raising=False)
+    monkeypatch.delenv("AIJOURNAL_OLLAMA_HOST", raising=False)
+    monkeypatch.delenv("OLLAMA_BASE_URL", raising=False)
+    config = {"host": "http://config-host:11434", "model": "config-model"}
+
+    result = build_ollama_config_from_mapping(config)
+
+    assert result.host == "http://config-host:11434"
+    assert result.model == "config-model"
+
+
+def test_environment_model_overrides_config(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("AIJOURNAL_MODEL", "env-model")
+    monkeypatch.delenv("AIJOURNAL_OLLAMA_HOST", raising=False)
+    config = {"model": "config-model"}
+
+    result = build_ollama_config_from_mapping(config)
+
+    assert result.model == "env-model"
 
 
 def test_resolve_ollama_host_precedence(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -153,6 +176,16 @@ def test_resolve_ollama_host_from_base_url(monkeypatch: pytest.MonkeyPatch) -> N
     monkeypatch.setenv("OLLAMA_BASE_URL", "http://base-host/v1")
 
     assert resolve_ollama_host(None) == "http://base-host"
+
+
+def test_resolve_ollama_host_uses_config(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("AIJOURNAL_OLLAMA_HOST", raising=False)
+    monkeypatch.delenv("OLLAMA_BASE_URL", raising=False)
+
+    assert (
+        resolve_ollama_host(None, config_host="http://config-host:11434")
+        == "http://config-host:11434"
+    )
 
 
 def test_resolve_ollama_base_url_appends_v1(monkeypatch: pytest.MonkeyPatch) -> None:
