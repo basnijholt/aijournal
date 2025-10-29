@@ -222,6 +222,62 @@ class CharacterizeStageOutputs(NamedTuple):
     review_candidates: list[str]
 
 
+class PersistStageOutputs(NamedTuple):
+    entries: list[EntryResult]
+    result: OperationResult
+    duration_ms: float
+
+
+class NormalizeStageOutputs(NamedTuple):
+    artifacts: dict[str, Any]
+    result: OperationResult
+    duration_ms: float
+    changed_dates: list[str]
+
+
+class SummarizeStageOutputs(NamedTuple):
+    result: OperationResult
+    duration_ms: float
+    paths: list[str]
+
+
+class FactsStageOutputs(NamedTuple):
+    result: OperationResult
+    duration_ms: float
+    paths: list[str]
+
+
+class ProfileStageOutputs(NamedTuple):
+    suggest_result: OperationResult
+    apply_result: OperationResult | None
+    duration_ms: float
+    suggestion_paths: list[str]
+    applied_count: int
+
+
+class IndexStageOutputs(NamedTuple):
+    result: OperationResult
+    duration_ms: float
+    updated: bool
+    rebuilt: bool
+
+
+class PersonaStageOutputs(NamedTuple):
+    result: OperationResult
+    duration_ms: float
+    persona_changed: bool
+    persona_stale_before: bool
+    persona_stale_after: bool
+    status_before: str
+    status_after: str
+    error: str | None
+
+
+class PackStageOutputs(NamedTuple):
+    result: OperationResult
+    duration_ms: float
+
+
 def _record_stage(
     *,
     stage_results: list[StageResult],
@@ -1245,13 +1301,17 @@ def run_capture(
     stage_results: list[StageResult] = []
 
     if stage_enabled(0):
-        entry_results, persist_result, persist_duration = _run_persist_stage_0(
+        persist_outputs = _run_persist_stage_0(
             inputs,
             root,
             manifest_entries,
             log_event,
         )
+        entry_results = persist_outputs.entries
+        persist_result = persist_outputs.result
+        persist_duration = persist_outputs.duration_ms
     else:
+        entry_results = []
         persist_duration = 0.0
         persist_result = OperationResult.noop(
             "skipped by stage filter",
@@ -1274,12 +1334,14 @@ def run_capture(
     changed_dates: list[str] = []
 
     if stage_enabled(1):
-        artifact_counts, normalize_result, normalize_duration, changed_dates = (
-            _run_normalize_stage_1(
-                entry_results,
-                root,
-            )
+        normalize_outputs = _run_normalize_stage_1(
+            entry_results,
+            root,
         )
+        artifact_counts = normalize_outputs.artifacts
+        normalize_result = normalize_outputs.result
+        normalize_duration = normalize_outputs.duration_ms
+        changed_dates = normalize_outputs.changed_dates
     else:
         normalize_duration = 0.0
         normalize_result = OperationResult.noop(
@@ -1311,11 +1373,14 @@ def run_capture(
         entries_changed = 0
 
     if changed_dates and stage_enabled(2):
-        summarize_result, summarize_duration, summary_paths = _run_summarize_stage_2(
+        summarize_outputs = _run_summarize_stage_2(
             changed_dates,
             inputs,
             root,
         )
+        summarize_result = summarize_outputs.result
+        summarize_duration = summarize_outputs.duration_ms
+        summary_paths = summarize_outputs.paths
         for _ in summary_paths:
             artifacts_changed["summaries"] = artifacts_changed.get("summaries", 0) + 1
         durations_ms["derive.summarize"] = summarize_duration
@@ -1355,11 +1420,14 @@ def run_capture(
         )
 
     if changed_dates and stage_enabled(3):
-        facts_result, facts_duration, facts_paths = _run_facts_stage_3(
+        facts_outputs = _run_facts_stage_3(
             changed_dates,
             inputs,
             root,
         )
+        facts_result = facts_outputs.result
+        facts_duration = facts_outputs.duration_ms
+        facts_paths = facts_outputs.paths
         for _ in facts_paths:
             artifacts_changed["microfacts"] = artifacts_changed.get("microfacts", 0) + 1
         durations_ms["derive.extract_facts"] = facts_duration
@@ -1399,13 +1467,16 @@ def run_capture(
         )
 
     if changed_dates and stage_enabled(4):
-        profile_result, apply_result, profile_duration, suggestion_paths, applied_count = (
-            _run_profile_stage_4(
-                changed_dates,
-                inputs,
-                root,
-            )
+        profile_outputs = _run_profile_stage_4(
+            changed_dates,
+            inputs,
+            root,
         )
+        profile_result = profile_outputs.suggest_result
+        apply_result = profile_outputs.apply_result
+        profile_duration = profile_outputs.duration_ms
+        suggestion_paths = profile_outputs.suggestion_paths
+        applied_count = profile_outputs.applied_count
         for _ in suggestion_paths:
             artifacts_changed["profile_suggestions"] = (
                 artifacts_changed.get("profile_suggestions", 0) + 1
@@ -1533,10 +1604,14 @@ def run_capture(
 
     index_rebuilt_flag = False
     if changed_dates and stage_enabled(6):
-        index_result, index_duration, index_updated, index_rebuilt_flag = _run_index_stage_6(
+        index_outputs = _run_index_stage_6(
             changed_dates,
             root,
         )
+        index_result = index_outputs.result
+        index_duration = index_outputs.duration_ms
+        index_updated = index_outputs.updated
+        index_rebuilt_flag = index_outputs.rebuilt
         if index_updated:
             artifacts_changed["index"] = artifacts_changed.get("index", 0) + 1
         durations_ms["refresh.index"] = index_duration
@@ -1590,16 +1665,15 @@ def run_capture(
         )
 
     if stage_enabled(7):
-        (
-            persona_result,
-            persona_duration,
-            persona_changed,
-            persona_stale_before,
-            persona_stale_after,
-            status_before,
-            status_after,
-            persona_error,
-        ) = _run_persona_stage_7(inputs, root, artifacts_changed)
+        persona_outputs = _run_persona_stage_7(inputs, root, artifacts_changed)
+        persona_result = persona_outputs.result
+        persona_duration = persona_outputs.duration_ms
+        persona_changed = persona_outputs.persona_changed
+        persona_stale_before = persona_outputs.persona_stale_before
+        persona_stale_after = persona_outputs.persona_stale_after
+        status_before = persona_outputs.status_before
+        status_after = persona_outputs.status_after
+        persona_error = persona_outputs.error
         if persona_changed:
             artifacts_changed["persona"] = artifacts_changed.get("persona", 0) + 1
         durations_ms["refresh.persona"] = persona_duration
@@ -1652,12 +1726,14 @@ def run_capture(
         )
 
     if stage_enabled(8):
-        pack_result, pack_duration = _run_pack_stage_8(
+        pack_outputs = _run_pack_stage_8(
             inputs,
             root,
             resolved_run_id,
             persona_changed,
         )
+        pack_result = pack_outputs.result
+        pack_duration = pack_outputs.duration_ms
         if pack_result.changed:
             artifacts_changed["pack"] = artifacts_changed.get("pack", 0) + 1
         durations_ms["refresh.pack"] = pack_duration
@@ -1733,7 +1809,7 @@ def _run_persist_stage_0(
     root: Path,
     manifest_entries: list[ManifestEntry],
     log_event: Callable[[dict[str, object]], None],
-) -> tuple[list[EntryResult], OperationResult, float]:
+) -> PersistStageOutputs:
     """Persist captured content and return entry results with stage metadata."""
 
     entry_results: list[EntryResult] = []
@@ -1792,13 +1868,13 @@ def _run_persist_stage_0(
         warnings=stage_entry_warnings,
         details=persist_details,
     )
-    return entry_results, op_result, duration_ms
+    return PersistStageOutputs(entry_results, op_result, duration_ms)
 
 
 def _run_normalize_stage_1(
     entry_results: list[EntryResult],
     root: Path,
-) -> tuple[dict[str, Any], OperationResult, float, list[str]]:
+) -> NormalizeStageOutputs:
     """Normalize changed entries and report artifact counts and dates."""
 
     normalize_start = perf_counter()
@@ -1822,14 +1898,14 @@ def _run_normalize_stage_1(
     changed_dates = sorted(
         {entry.date for entry in entry_results if entry.changed and not entry.deduped}
     )
-    return artifact_counts, op_result, duration_ms, changed_dates
+    return NormalizeStageOutputs(artifact_counts, op_result, duration_ms, changed_dates)
 
 
 def _run_summarize_stage_2(
     changed_dates: list[str],
     inputs: CaptureInput,
     root: Path,
-) -> tuple[OperationResult, float, list[str]]:
+) -> SummarizeStageOutputs:
     """Generate daily summaries for changed dates."""
 
     stage_start = perf_counter()
@@ -1874,14 +1950,14 @@ def _run_summarize_stage_2(
             "summaries already up to date",
             details=summary_details,
         )
-    return op_result, duration_ms, summary_paths
+    return SummarizeStageOutputs(op_result, duration_ms, summary_paths)
 
 
 def _run_facts_stage_3(
     changed_dates: list[str],
     inputs: CaptureInput,
     root: Path,
-) -> tuple[OperationResult, float, list[str]]:
+) -> FactsStageOutputs:
     """Extract micro-facts for changed dates."""
 
     stage_start = perf_counter()
@@ -1930,14 +2006,14 @@ def _run_facts_stage_3(
             "micro-facts already up to date",
             details=facts_details,
         )
-    return op_result, duration_ms, facts_paths
+    return FactsStageOutputs(op_result, duration_ms, facts_paths)
 
 
 def _run_profile_stage_4(
     changed_dates: list[str],
     inputs: CaptureInput,
     root: Path,
-) -> tuple[OperationResult, OperationResult | None, float, list[str], int]:
+) -> ProfileStageOutputs:
     """Generate profile suggestions and optionally apply them."""
 
     stage_start = perf_counter()
@@ -2042,7 +2118,13 @@ def _run_profile_stage_4(
                 details=apply_details,
             )
 
-    return suggest_result, apply_result, duration_ms, suggestion_paths, applied_count
+    return ProfileStageOutputs(
+        suggest_result=suggest_result,
+        apply_result=apply_result,
+        duration_ms=duration_ms,
+        suggestion_paths=suggestion_paths,
+        applied_count=applied_count,
+    )
 
 
 def _run_characterize_stage_5(
@@ -2185,7 +2267,7 @@ def _run_characterize_stage_5(
 def _run_index_stage_6(
     changed_dates: list[str],
     root: Path,
-) -> tuple[OperationResult, float, bool, bool]:
+) -> IndexStageOutputs:
     """Refresh the retrieval index for the provided dates."""
 
     stage_start = perf_counter()
@@ -2234,14 +2316,14 @@ def _run_index_stage_6(
             index_message or "index already up to date",
             details=index_details,
         )
-    return op_result, duration_ms, index_updated, rebuilt
+    return IndexStageOutputs(op_result, duration_ms, index_updated, rebuilt)
 
 
 def _run_persona_stage_7(
     inputs: CaptureInput,
     root: Path,
     artifacts_changed: dict[str, int],
-) -> tuple[OperationResult, float, bool, bool, bool, str, str, str | None]:
+) -> PersonaStageOutputs:
     """Refresh persona based on profile changes."""
 
     stage_start = perf_counter()
@@ -2306,15 +2388,15 @@ def _run_persona_stage_7(
             "persona already fresh",
             details=persona_details,
         )
-    return (
-        op_result,
-        duration_ms,
-        persona_changed,
-        persona_stale_before,
-        persona_stale_after,
-        status_before,
-        status_after,
-        persona_error,
+    return PersonaStageOutputs(
+        result=op_result,
+        duration_ms=duration_ms,
+        persona_changed=persona_changed,
+        persona_stale_before=persona_stale_before,
+        persona_stale_after=persona_stale_after,
+        status_before=status_before,
+        status_after=status_after,
+        error=persona_error,
     )
 
 
@@ -2323,13 +2405,16 @@ def _run_pack_stage_8(
     root: Path,
     run_id: str,
     persona_changed: bool,
-) -> tuple[OperationResult, float]:
+) -> PackStageOutputs:
     """Generate derived packs when requested."""
 
     if not inputs.pack:
-        return OperationResult.noop("no pack requested"), 0.0
+        return PackStageOutputs(OperationResult.noop("no pack requested"), 0.0)
     if not persona_changed:
-        return OperationResult.noop("persona unchanged, pack not regenerated"), 0.0
+        return PackStageOutputs(
+            OperationResult.noop("persona unchanged, pack not regenerated"),
+            0.0,
+        )
 
     stage_start = perf_counter()
     level = inputs.pack.upper()
@@ -2365,7 +2450,7 @@ def _run_pack_stage_8(
             message="pack generated",
             details=pack_details,
         )
-    return op_result, duration_ms
+    return PackStageOutputs(op_result, duration_ms)
 
 
 def normalize_entries(entries: list[EntryResult], root: Path) -> dict[str, Any]:
