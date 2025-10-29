@@ -236,7 +236,7 @@ def _record_stage(
     status = _stage_status(op_result)
     if status == "skipped":
         stages_skipped.add(stage_id)
-    else:
+    elif op_result.ok or status in {"ok", "noop"}:
         stages_completed.add(stage_id)
     _emit_stage_event(log_event, stage_result, status=status)
 
