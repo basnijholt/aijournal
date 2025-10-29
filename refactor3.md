@@ -1,5 +1,7 @@
 # Refactor Plan v3 – Strict Data Model & Artifact Unification
 
+> **This plan is adaptive.** If any step proves sub-optimal in practice, do **not** press ahead blindly. Halt at the nearest checkpoint, document the issue in `docs/refactor3_status.md#decision-log`, record (1) what was attempted, (2) why it failed, (3) the alternative chosen, and (4) migration/testing impact. Resume only after the entry is written. The **MANDATORY CHECKPOINT RULE** still applies.
+>
 > **MANDATORY CHECKPOINT RULE (DO NOT VIOLATE):** After **every** numbered sub-step: (1) finish the listed tasks, (2) run all required commands (always `uv run pytest`, plus any additional checks spelled out for that sub-step), (3) confirm a green result, and (4) commit only the files touched in that sub-step using a precise message. Never proceed to the next sub-step with uncommitted changes or failing tests.
 
 This document is the authoritative runbook for the strict-schema consolidation of `aijournal`. Every automation or AI agent must begin here, follow the sequence exactly, and produce the specified commit cadence. No human intervention will occur between steps, so clarity and determinism are paramount.
@@ -8,7 +10,7 @@ This document is the authoritative runbook for the strict-schema consolidation o
 
 ## 0. Executive Summary
 
-- **Mission:** Collapse duplicated “payload vs. derived” schemas, enforce strict structured output from the LLM, introduce versioned `Artifact[T]` envelopes, and keep capture/feedback privacy guarantees intact.
+- **Mission:** Collapse duplicated “payload vs. derived” schemas, enforce strict structured output from the LLM, introduce versioned `Artifact[T]` envelopes, and keep capture/feedback privacy safeguards intact.
 - **Why now:** The current landscape (see `scripts/data_model_report.py`) shows dozens of nearly identical Pydantic models and dataclasses. This hampers validation, complicates reasoning, and forces coercion layers. A strict, unified schema makes the system safer, easier to audit, and ready for autonomous agents.
 - **Key Deliverables:**
   1. Part A – Pain points & duplication map (for context).
@@ -24,12 +26,12 @@ This runbook expands every part of the prior proposal into actionable, testable 
 
 | Path | Purpose |
 | ---- | ------- |
-| `README.md` | Product overview, CLI workflow, personas.
-| `ARCHITECTURE.md` | Authoritative system design (pipelines, claims, persona, retrieval).
-| `docs/workflow.md` | Daily operator flow; command ordering.
-| `agents.md` | Live-mode rehearsal details, success criteria.
-| `scripts/data_model_report.py` | Inventory script for Pydantic models/dataclasses.
-| `refactor3.md` *(this file)* | Runbook – **do not modify structure without alignment**.
+| `README.md` | Product overview, CLI workflow, personas. |
+| `ARCHITECTURE.md` | Authoritative system design (pipelines, claims, persona, retrieval). |
+| `docs/workflow.md` | Daily operator flow; command ordering. |
+| `agents.md` | Live-mode rehearsal details, success criteria. |
+| `scripts/data_model_report.py` | Inventory script for Pydantic models/dataclasses. |
+| `refactor3.md` *(this file)* | Runbook – **do not modify structure without alignment**. |
 
 **Agents must confirm they have read/skimmed each document before executing Stage 0.**
 
@@ -41,8 +43,11 @@ This runbook expands every part of the prior proposal into actionable, testable 
 2. **Privacy:** Claim provenance must never persist raw text excerpts; micro-facts may carry text during analysis but it must be stripped before persisting claims.
 3. **Capture DTO Separation:** Keep `CaptureRequest` (public) distinct from `CaptureInput` (internal with `min_stage`/`max_stage`).
 4. **Event Shapes:** Preserve rich preview events and lightweight feedback adjustments via a discriminated union.
-5. **Artifact Versioning:** Persist derived outputs inside `Artifact[T]` envelopes with `schema: "v2"` and a human-readable `kind` identifier.
+5. **Artifact Versioning:** Persist derived outputs inside `Artifact[T]` envelopes with `schema: "v2"` and an `ArtifactKind` enumeration value.
 6. **Atomic Commits:** Each sub-step ends with a passing test suite and a dedicated commit.
+7. **Governance Hooks:** Install a local `pre-push` hook running `uv run pytest -q` and `pre-commit run --all-files`; pushes fail on red.
+8. **Decision Log:** Maintain a “Decision Log” table (Date / Step / Decision / Impact) in `docs/refactor3_status.md`. Every deviation, retry, or adjustment must be recorded before continuing.
+9. **Schema Mode Toggle:** Support `AIJOURNAL_SCHEMA_MODE={read-legacy-write-new,read-both-write-both,read-new-write-new}` as a temporary escape hatch during migration.
 
 ---
 
@@ -50,7 +55,7 @@ This runbook expands every part of the prior proposal into actionable, testable 
 
 | Area | Duplication | Notes |
 | ---- | ----------- | ----- |
-| **Payload vs. Derived Models** | `MicroFact` vs. `ExtractedFactPayload`; `AdviceRecommendation` vs. `AdviceLLMRecommendation`; `ClaimProposal` vs. `ClaimProposalPayload`; `FacetProposal` vs. `FacetProposalPayload`; `DailySummary` vs. `DailySummaryResponse`; `ProfileSuggestions` vs. `ProfileSuggestionsResponse`/`SimpleProfileSuggestionsResponse`. | Same semantics expressed twice to distinguish “LLM produced” vs. “persisted”. Leads to conversion code and inconsistent validation. |
+| **Payload vs. Derived Models** | `MicroFact` vs. `ExtractedFactPayload`; `AdviceRecommendation` vs. `AdviceLLMRecommendation`; `ClaimProposal` vs. `ClaimProposalPayload`; `FacetProposal` vs. `FacetProposalPayload`; `DailySummary` vs. `DailySummaryResponse`; `ProfileSuggestions` vs. `ProfileSuggestionsResponse` / `SimpleProfileSuggestionsResponse`. | Same semantics expressed twice to distinguish “LLM produced” vs. “persisted”. Leads to conversion code and inconsistent validation. |
 | **Sections & Entities** | `ingest_agent.IngestSection` vs. `models.authoritative.JournalSection`. | Only difference is presence of `para_index`. |
 | **Evidence** | `ClaimSource`/`ClaimSourceSpan` vs. `FactEvidence`/`FactEvidenceSpan`. | Identical structure; fact span adds optional `text`. |
 | **Change Events** | `ClaimPreviewEvent` (Pydantic) vs. `FeedbackAdjustment` (dataclass). | Both describe claim changes but with different payload carriers. |
@@ -59,9 +64,7 @@ This runbook expands every part of the prior proposal into actionable, testable 
 | **Chunks & Index Meta** | `ChunkManifestChunk` vs. `RetrievedChunk`; duplicate meta blocks. | Same entity at different lifecycle stages. |
 | **Capture DTOs** | `CaptureRequest` vs. `CaptureInput`. | Intentionally similar but extra fields on the latter; we retain both. |
 | **Meta Blocks** | Many derived artifacts repeat `(llm_model, prompt_path, prompt_hash, created_at)`. | Needs central `ArtifactMeta`. |
-| **Package Layout** | Domain/payload split via class names rather than module organization. | We will reorganize into `aijournal.domain`, `aijournal.artifacts`, `aijournal.api`, etc. |
-
-These duplications drive the refactor’s scope (see Part B/C for the target state).
+| **Package Layout** | Domain/payload split via class names rather than module organization. | Reorganize into `aijournal.domain`, `aijournal.artifacts`, `aijournal.api`, etc. |
 
 ---
 
@@ -87,6 +90,7 @@ class StrictModel(BaseModel):
 
 # aijournal/common/meta.py
 from typing import Generic, TypeVar, Literal
+from enum import StrEnum
 from pydantic import Field
 
 T = TypeVar("T")
@@ -100,8 +104,21 @@ class ArtifactMeta(StrictModel):
     sources: dict[str, str] | None = None
     notes: dict[str, str] | None = None
 
+class ArtifactKind(StrEnum):
+    PERSONA_CORE = "persona.core"
+    SUMMARY_DAILY = "summaries.daily"
+    MICROFACTS_DAILY = "microfacts.daily"
+    PROFILE_UPDATES = "profile.updates"
+    FEEDBACK_BATCH = "feedback.batch"
+    INDEX_META = "index.meta"
+    INDEX_CHUNKS = "index.chunks"
+    PACK_L1 = "pack.L1"
+    PACK_L3 = "pack.L3"
+    PACK_L4 = "pack.L4"
+    CHAT_TRANSCRIPT = "chat.transcript"
+
 class Artifact(Generic[T], StrictModel):
-    kind: str
+    kind: ArtifactKind
     schema: Literal["v2"] = "v2"
     meta: ArtifactMeta
     data: T
@@ -158,6 +175,8 @@ class SourceRef(StrictModel):
     spans: list[Span] = []
 ```
 
+A helper `redact_source_text` will strip `span.text` during claim persistence and the migration audit command will clean legacy files.
+
 ### 4.4 Claims & Provenance
 
 ```python
@@ -198,8 +217,8 @@ class ClaimAtom(StrictModel):
     @field_validator('provenance')
     @classmethod
     def _strip_text(cls, prov: Provenance) -> Provenance:
-        for source in prov.sources:
-            for span in source.spans:
+        for src in prov.sources:
+            for span in src.spans:
                 if span.text is not None:
                     raise ValueError("claim provenance spans must not carry raw text")
         return prov
@@ -287,6 +306,10 @@ ClaimChangeEvent = Annotated[
 ]
 
 # aijournal/domain/batches.py
+class ProfileUpdatePreview(StrictModel):
+    claim_events: list[ClaimPreviewEvent] = []
+    interview_prompts: list[str] = []
+
 class ProfileUpdateBatch(StrictModel):
     batch_id: str
     created_at: TimestampStr
@@ -294,7 +317,7 @@ class ProfileUpdateBatch(StrictModel):
     inputs: list[dict]
     proposals: ProfileUpdateProposals
     meta: ArtifactMeta
-    preview: dict | None = None  # {"claim_events": [...], "interview_prompts": [...]}
+    preview: ProfileUpdatePreview | None = None
 
 class FeedbackBatch(StrictModel):
     batch_id: str
@@ -317,7 +340,7 @@ class MicroFact(StrictModel):
 class MicroFactsFile(StrictModel):
     facts: list[MicroFact] = []
     claim_proposals: list[ClaimProposal] = []
-    preview: dict | None = None
+    preview: ProfileUpdatePreview | None = None
 
 class DailySummary(StrictModel):
     day: ISODateStr
@@ -334,6 +357,8 @@ class PersonaCore(StrictModel):
     profile: dict[str, object]
     claims: list[ClaimAtom] = []
 ```
+
+`PersonaCoreMeta` remains as a light struct stored under `ArtifactMeta.notes["persona"]`.
 
 ### 4.9 Retrieval & Chunks
 
@@ -459,24 +484,20 @@ class CaptureInput(CaptureRequest):
 
 ## 5. Part C – Migration Plan (Phased)
 
-The migration is orchestrated via the staged checklist in section 6. Highlights:
-
-1. Introduce strict base classes and artifact envelope primitives without behavioural change.
+1. Introduce strict base classes, artifact primitives, schema governance (enum + JSON schemas) without behavioural change.
 2. Collapse duplicated models (sections, evidence, proposals, facts, summaries) into strict domain modules.
-3. Update prompts & structured-output validation to enforce strict schemas.
+3. Update prompts & structured-output validation to enforce strict schemas (with logged failures & example fixtures).
 4. Unify change events and feedback handling.
-5. Align chunk/index/chat/advice surfaces with the new domain structure.
+5. Align chunk/index/chat/advice surfaces with the new domain structure; prove retriever parity.
 6. Preserve capture DTO boundaries.
-7. Wrap artifacts in `Artifact[T]`, supply compatibility shims, regenerate documentation and examples.
-8. Run end-to-end rehearsal, publish migration notes, and prepare release guidance.
-
-Each stage is decomposed below with explicit commands and acceptance criteria.
+7. Adopt artifact envelopes (dual-write rehearsal → full cut-over), supply compatibility shims with deprecation warnings, add provenance scanner, and regenerate documentation/examples.
+8. Run end-to-end rehearsal under new schema, log decisions, publish migration notes, and prepare release guidance.
 
 ---
 
 ## 6. Stage-by-Stage Execution Checklist
 
-> **Remember:** after each sub-step, run required commands → verify success → commit immediately.
+> **Reminder:** after each sub-step, run required commands → verify success → commit immediately.
 
 ### Stage 0 – Baseline & Audit
 
@@ -493,7 +514,7 @@ Each stage is decomposed below with explicit commands and acceptance criteria.
 - Tests: `uv run pytest`.
 - Commit message: `refactor3: baseline data-model inventory`.
 
-### Stage 1 – Strict Base & Artifact Infrastructure
+### Stage 1 – Strict Base, Artifact Infrastructure & Schema Freeze
 
 **1.1 StrictModel Introduction**
 - Create `aijournal/common/base.py` with `StrictModel`.
@@ -503,142 +524,172 @@ Each stage is decomposed below with explicit commands and acceptance criteria.
 - Commit: `refactor3: introduce strict base model`.
 
 **1.2 ArtifactMeta & Helpers**
-- Add `aijournal/common/meta.py` (`ArtifactMeta`, `Artifact[T]`, `LLMResult[T]`).
-- Implement `aijournal/io/artifacts.py` with helper functions: `save_artifact`, `load_artifact`, `read_legacy_or_artifact`.
-- No existing artifacts converted yet.
-- Tests: `uv run pytest`; `pre-commit run --all-files` (clean formatting).
+- Add `aijournal/common/meta.py` (`ArtifactMeta`, `ArtifactKind`, `Artifact[T]`, `LLMResult[T]`).
+- Implement `aijournal/io/artifacts.py` with helper functions: `save_artifact`, `load_artifact`, `read_legacy_or_artifact` (deterministic serialization using sorted keys, UTF-8, newline at EOF).
+- Tests: `uv run pytest`; `pre-commit run --all-files`.
 - Commit: `refactor3: add artifact envelope primitives`.
+
+**1.3 Schema Snapshot & Governance Hooks**
+- Generate JSON Schema files for every strict model under `schemas/v2/<model>.json` using `model_json_schema()`; commit them.
+- Add CI/local script (`scripts/check_schemas.py`) comparing regenerated schemas vs. committed versions; fail unless `AIJOURNAL_BLESS_SCHEMA=1` is set.
+- Audit code for raw `kind` strings; replace with `ArtifactKind` values.
+- Create `.githooks/pre-push` running `uv run pytest -q` and `pre-commit run --all-files`; document activation in `CONTRIBUTING.md`.
+- Add a “Decision Log” table (Date / Step / Decision / Impact) to `docs/refactor3_status.md`.
+- Tests: `uv run pytest`; run schema checker to confirm zero diff.
+- Commit: `refactor3: freeze v2 schemas and add governance hooks`.
 
 ### Stage 2 – Sections & Evidence
 
 **2.1 Unified Section Model**
 - Introduce `aijournal/domain/journal.py` with `Section`, `NormalizedEntry`, `NormalizedEntity`.
-- Replace `IngestSection`/`JournalSection` references in ingest agent, normalization pipeline, tests.
-- Ensure serialization parity by regenerating fixtures if required.
+- Replace `IngestSection` / `JournalSection` references in ingest agent, normalization pipeline, tests.
+- Regenerate fixtures if serialization changes.
 - Tests: `uv run pytest`.
 - Commit: `refactor3: unify journal section schema`.
 
 **2.2 Evidence Consolidation & Privacy Enforcement**
 - Create `aijournal/domain/evidence.py` with `Span`, `SourceRef`.
-- Replace `ClaimSourceSpan`, `FactEvidenceSpan`, `ClaimSource`, `FactEvidence` references.
-- Add helper `strip_provenance_text(source_ref)` that blanks `span.text`.
-- Update claim persistence to call the helper; add unit test verifying attempted persistence with text raises error.
-- Tests: `uv run pytest` (include targeted privacy test).
+- Replace `ClaimSourceSpan`, `FactEvidenceSpan`, `ClaimSource`, `FactEvidence` everywhere.
+- Implement `redact_source_text(SourceRef)` and ensure every path that writes claim provenance calls it.
+- Scaffold CLI command `aijournal ops audit provenance` (logic implemented in Stage 7.3).
+- Tests: `uv run pytest`; add unit test verifying attempts to persist spans with text raise.
 - Commit: `refactor3: standardize evidence spans and enforce privacy`.
 
-### Stage 3 – Strict Proposals, Facts, Summaries
+### Stage 3 – Strict Proposals, Facts, Summaries & Prompt Fixtures
 
 **3.1 Remove Sketch/Payload Models**
 - Delete `ClaimSketch`, `ClaimProposalPayload`, `FacetProposalPayload`, `ProfileSuggestionsResponse`, `SimpleProfileSuggestionsResponse`.
 - Add `aijournal/domain/changes.py` with `ClaimAtomInput`, `ClaimProposal`, `FacetChange`, `ProfileUpdateProposals`.
 - Update pipelines (`commands/profile.py`, `pipelines/characterize.py`, etc.) to use strict models directly.
-- Ensure validators treat missing required fields as hard errors; adjust error messaging to bubble up validation failures.
 - Tests: `uv run pytest`.
 - Commit: `refactor3: enforce strict claim and facet proposals`.
 
 **3.2 Strict Facts & Summaries**
 - Remove `ExtractedFactPayload`, `ExtractedFactsResponse`, `DailySummaryResponse`.
-- Add `aijournal/domain/facts.py` with `MicroFact`, `MicroFactsFile`, `DailySummary` (strict).
-- Update `pipelines/facts.py`, `pipelines/summarize.py`, CLI commands to rely on these models.
+- Add `aijournal/domain/facts.py` with `MicroFact`, `MicroFactsFile`, `DailySummary`.
+- Update facts/summaries pipelines and CLI commands.
 - Tests: `uv run pytest`.
 - Commit: `refactor3: tighten facts and summaries schemas`.
 
-**3.3 Prompt Updates & Structured Output Contracts**
-- Edit `prompts/profile_suggest.md`, `prompts/characterize.md`, `prompts/extract_facts.md`, `prompts/summarize_day.md` with JSON examples reflecting strict schema.
-- Document failure behaviour in each prompt header.
-- Tests: `uv run pytest`; optionally run smoke commands in fake mode (document commands run in commit message body).
+**3.3 Prompt Updates & Structured Output Fixtures**
+- Update prompts with strict JSON examples and failure guidance.
+- Add example payloads under `prompts/examples/<pipeline>.json`.
+- Add unit tests validating each example against its schema (no LLM call).
+- Tests: `uv run pytest` (include new tests).
 - Commit: `refactor3: align prompts with strict schema outputs`.
+
+**3.4 Structured-Output Runner Enhancements**
+- Extend `run_ollama_agent` to accept `response_model`, `max_retries`, `on_error_save_to` and to return `LLMResult[T]`.
+- Log invalid payloads to `derived/logs/structured_failures/<command>/<timestamp>.json`.
+- Tests: `uv run pytest`; add unit test simulating invalid payload, asserting log file created.
+- Commit: `refactor3: harden structured-output runner`.
 
 ### Stage 4 – Claim Events & Feedback
 
 **4.1 Discriminated Union for Events**
-- Add `aijournal/domain/events.py` with `ClaimPreviewEvent`, `FeedbackAdjustmentEvent`, `ClaimChangeEvent` union.
-- Update `models/derived.py`, `services/consolidator.py`, `services/feedback.py`, and pipelines to use the new types.
-- Keep preview data (signature/conflict) intact; ensure serialization uses `kind` discriminator.
-- Tests: `uv run pytest`; add snapshot test verifying preview JSON structure.
+- Add `aijournal/domain/events.py` with `ClaimPreviewEvent`, `FeedbackAdjustmentEvent`, `ClaimChangeEvent`.
+- Update consolidation, review pipelines, and persistence to use union.
+- Tests: `uv run pytest`; add snapshot test verifying discriminator works for both variants.
 - Commit: `refactor3: unify claim change event models`.
 
 **4.2 Feedback Batches Formalization**
-- Add `FeedbackBatch` model; update feedback storage to serialize events via the union.
-- Ensure `aijournal ops feedback apply` still adjusts strengths correctly; add/adjust tests accordingly.
-- Tests: `uv run pytest`; run `AIJOURNAL_FAKE_OLLAMA=1 uv run aijournal ops feedback apply` on fixture data.
+- Add `FeedbackBatch` model and migrate feedback files.
+- Ensure `aijournal ops feedback apply` still adjusts strengths correctly; add tests.
+- Tests: `uv run pytest`; run fake-mode CLI to ensure no regression.
 - Commit: `refactor3: convert feedback batches to strict schema`.
 
 ### Stage 5 – Retrieval, Chat, Advice
 
-**5.1 Chunk & Index Unification**
+**5.1 Chunk & Index Unification + Retriever Parity**
 - Create `aijournal/domain/index.py` with `Chunk`, `RetrievedChunk`, `IndexMeta`.
-- Update `pipelines/index.py`, `services/retriever.py`, tests, and chunk manifest serializers.
-- Begin using `Artifact[list[Chunk]]` and `Artifact[IndexMeta]` for persisted index outputs (others remain legacy for now).
-- Tests: `uv run pytest`; run `AIJOURNAL_FAKE_OLLAMA=1 uv run aijournal ops index rebuild` on sample data if fixtures exist.
+- Update indexing pipeline, retriever service, and tests.
+- Add mini-workspace fixture (`tests/fixtures/miniwk/`) and parity test to assert search results match pre-refactor IDs within tolerance.
+- Tests: `uv run pytest`; run `AIJOURNAL_FAKE_OLLAMA=1 uv run aijournal ops index rebuild` if fixtures exist.
 - Commit: `refactor3: unify chunk and index schema`.
 
 **5.2 Chat & Advice DTOs**
-- Replace `ChatLLMResponse`/`ChatTurn` with strict `ChatResponse` and `ChatCitation` in `aijournal/api/chat.py`.
-- Collapse `AdviceLLMRecommendation` into `AdviceRecommendation`; adjust `AdviceCard` accordingly.
-- Update CLI commands, services, tests, and transcripts to new structures.
-- Tests: `uv run pytest`; optional CLI smoke tests in fake mode (`uv run aijournal chat ...`).
+- Replace `ChatLLMResponse`/`ChatTurn` with strict `ChatResponse`/`ChatCitation`.
+- Collapse advice twins into `AdviceRecommendation`.
+- Update CLI, services, tests, transcripts.
+- Tests: `uv run pytest`; optional chat CLI smoke tests in fake mode.
 - Commit: `refactor3: streamline chat and advice responses`.
 
 ### Stage 6 – Capture Separation Reinforced
 
 **6.1 DTO Relocation & Validation**
-- Move/define `CaptureRequest` and `CaptureInput` in `aijournal/api/capture.py`, ensuring `CaptureInput` inherits `CaptureRequest`.
-- Confirm CLI uses only `CaptureRequest` (no `min_stage/max_stage` leakage).
-- Add unit test verifying serialized CLI schema lacks stage fields.
+- Define `CaptureRequest`/`CaptureInput` in `aijournal/api/capture.py`.
+- Ensure CLI exposes only `CaptureRequest` fields.
+- Add unit test verifying CLI schema lacks stage fields.
 - Tests: `uv run pytest`.
 - Commit: `refactor3: formalize capture request/input split`.
 
-### Stage 7 – Artifact Adoption & Compatibility
+### Stage 6.5 – Dual-Write Rehearsal (Safety Valve)
+
+**6.5.1 Temporary Dual-Write**
+- Implement `AIJOURNAL_SCHEMA_MODE` handling with support for `read-both-write-both`.
+- For one commit, write both legacy and v2 artifacts while reading v2 first.
+- Tests: `uv run pytest`; run smoke command ensuring both files produced.
+- Commit: `refactor3: enable dual-write schema rehearsal`.
+
+### Stage 7 – Artifact Adoption, Compatibility & Provenance Scanner
 
 **7.1 Wrap Derived Artifacts in Artifact[T]**
-- Convert persisted YAML/JSON (summaries, microfacts, persona core, profile updates, feedback, index metadata, chat transcripts, packs) to `Artifact[T]` envelopes.
-- Update IO helpers to read legacy format → convert to `Artifact[T]` on load; optionally provide CLI migration command.
-- Regenerate fixtures and golden outputs.
-- Tests: `uv run pytest`; ensure new artifact files include `schema: "v2"` and `kind` fields.
+- Convert persisted YAML/JSON (summaries, microfacts, persona core, profile updates, feedback batches, index meta/chunks, packs, chat transcripts) to `Artifact[T]` envelopes.
+- Use deterministic serialization helper for JSON/YAML dumps.
+- Tests: `uv run pytest`; add test ensuring each artifact has `schema: "v2"`, `kind in ArtifactKind`, and stable formatting.
 - Commit: `refactor3: adopt artifact envelopes for derived data`.
 
-**7.2 Compatibility Layer**
-- Add `aijournal/compat/refactor3.py` exposing legacy class names for one release (e.g., `ExtractedFactPayload = MicroFact`).
-- Update main code to import new domain modules directly; only external callers use compat layer if necessary.
-- Tests: `uv run pytest`; `pre-commit run --all-files`.
+**7.2 Compatibility Layer with Warnings**
+- Add `aijournal/compat/refactor3.py` mapping legacy class names to new ones, emitting `DeprecationWarning` with `stacklevel=2`.
+- Update codebase to import new modules; external callers rely on compat if needed.
+- Tests: `uv run pytest`; add test asserting warning raised once.
 - Commit: `refactor3: add legacy compatibility aliases`.
+
+**7.3 Provenance Audit Command**
+- Implement `aijournal ops audit provenance [--fix]` scanning `profile/claims.yaml` and derived artifacts for spans containing text.
+- `--fix` mode applies `redact_source_text`; default mode reports offenders and exits non-zero.
+- Tests: `uv run pytest`; add CLI test with deliberate offender.
+- Commit: `refactor3: add provenance audit tooling`.
+
+**7.4 Import Codemod**
+- Add `scripts/codemods/refactor3_imports.py` using LibCST to rewrite known old→new imports (supports `--dry-run`).
+- Provide test rewriting a dummy file and asserting expected diff.
+- Tests: `uv run pytest`.
+- Commit: `refactor3: provide codemod for schema v2 imports`.
 
 ### Stage 8 – Documentation & Examples
 
 **8.1 Documentation Updates**
-- Update `README.md`, `ARCHITECTURE.md`, `docs/workflow.md`, `agents.md` to describe strict schema behaviour, artifact envelopes, privacy enforcement, and event unions.
-- Link to this runbook (`refactor3.md`) as the canonical reference for the refactor.
-- Tests: `uv run pytest`; run Markdown lint (`pre-commit run --all-files`) if configured.
+- Update `README.md`, `ARCHITECTURE.md`, `docs/workflow.md`, `agents.md` to describe strict schemas, artifact envelopes, privacy enforcement, event unions, governance hooks, and temporary `AIJOURNAL_SCHEMA_MODE`.
+- Tests: `uv run pytest`; `pre-commit run --all-files` (Markdown lint).
 - Commit: `refactor3: document strict schema architecture`.
 
 **8.2 Example Artifact Regeneration**
-- Regenerate sample packs, persona files, index manifests, microfact outputs to reflect new format (fake mode allowed).
-- Store them under `tests/fixtures/` or `docs/examples/` as appropriate.
+- Regenerate sample packs, persona core, index manifests, microfacts, feedback, and chat examples reflecting new format (fake mode allowed).
 - Tests: `uv run pytest`.
 - Commit: `refactor3: refresh examples for schema v2`.
 
 ### Stage 9 – Validation & Release Prep
 
 **9.1 End-to-End Rehearsal**
-- Commands (fake mode acceptable):
+- Fake mode acceptable:
   - `export AIJOURNAL_FAKE_OLLAMA=1`
   - `uv run aijournal init --path /tmp/aijournal_refactor3`
-  - Capture fixture entries (`uv run aijournal capture --text ...`), run `status`, `chat`, `advise`, `export pack`, `ops feedback apply`.
-- Verify all generated artifacts include `schema: "v2"`/`kind`, and claim provenance has no `span.text`.
+  - Capture fixture entries; run `status`, `chat`, `advise`, `export pack`, `ops feedback apply`.
+- Verify every artifact under `derived/` includes `schema: "v2"` and `kind` (enum), and no persisted provenance spans contain text.
 - Tests: `uv run pytest`; optionally `pre-commit run --all-files`.
 - Commit: `refactor3: verify end-to-end workflow under schema v2`.
 
 **9.2 Completion Log & Changelog**
-- Create `docs/refactor3_status.md` summarizing executed steps, test results, artifacts verified.
-- Update `CHANGELOG.md` with migration notes (strict schema, artifact envelopes, compatibility layer).
+- Update `docs/refactor3_status.md` summarizing executed steps, test commands, decision log entries.
+- Update `CHANGELOG.md` with schema v2 introduction, migration notes, codemod instructions, provenance audit command, and schema-mode flag usage.
 - Tests: `uv run pytest`.
 - Commit: `refactor3: finalize strict schema release notes`.
 
 **9.3 Release Checklist (Optional)**
-- Draft instructions for tagging, packaging, communication (no actual tag pushed).
-- Tests: `uv run pytest` to ensure no drift.
-- Commit (if file changed): `refactor3: prepare release checklist`.
+- Draft instructions for tagging, packaging, communication (no tag push).
+- Tests: `uv run pytest` to confirm no drift.
+- Commit (if files added): `refactor3: prepare release checklist`.
 
 ---
 
@@ -646,56 +697,25 @@ Each stage is decomposed below with explicit commands and acceptance criteria.
 
 ### 7.1 Structured Output Settings
 
-- All pipelines must pass `response_model=<StrictModel subclass>` to the structured-output runner.
-- On schema failure: print validation errors, include sample expected object, retry once, then raise `StructuredOutputError` with actionable guidance.
-- Add logging hook to capture invalid payloads for debugging (store under `derived/logs/structured_failures/`).
+- All pipelines pass `response_model=<StrictModel subclass>` to the structured-output runner.
+- On schema failure: log validation errors, store raw payload under `derived/logs/structured_failures/<command>/`, retry once, then raise.
+- Runner returns `LLMResult[T]` containing model/prompt info.
 
 ### 7.2 Command Expectations
 
 | Command | Required Output Schema | Notes |
 | ------- | ---------------------- | ----- |
-| `aijournal ops pipeline summarize` | `DailySummary` | `bullets`, `highlights`, `todo_candidates` must be lists (empty allowed). |
-| `aijournal ops pipeline extract-facts` | `MicroFactsFile` | Each fact needs `evidence.entry_id` and ≥1 span; spans may contain `text`. |
-| `aijournal ops profile suggest` | `ProfileUpdateProposals` | Each `claim` is full `ClaimAtomInput`; `FacetChange.value` required for `set`/`merge`. |
+| `aijournal ops pipeline summarize` | `DailySummary` | Arrays may be empty but must be present. |
+| `aijournal ops pipeline extract-facts` | `MicroFactsFile` | Each fact has `evidence.entry_id` and ≥1 span; spans may include `text`. |
+| `aijournal ops profile suggest` | `ProfileUpdateProposals` | Each claim is full `ClaimAtomInput`; omit the proposal entirely if strength unknown. |
 | `aijournal ops pipeline characterize` | `ProfileUpdateProposals` + interview prompts | Same strict schema. |
-| `aijournal advise` | `AdviceCard` | All recommendations present; arrays may be empty but not omitted. |
-| Chat surfaces | `ChatResponse` | `citations` list, `timestamp` ISO string, optional `clarifying_question`. |
+| `aijournal advise` | `AdviceCard` | All sections present; arrays may be empty. |
+| `aijournal chat`/`serve chat` | `ChatResponse` | Includes citations and timestamp. |
 
-### 7.3 Prompt Snippets
+### 7.3 Prompt Snippets & Fixtures
 
-Include example JSON fragments in each prompt to illustrate the strict schema. Example for profile suggest (place in `prompts/profile_suggest.md`):
-
-```json
-{
-  "claims": [
-    {
-      "claim": {
-        "type": "habit",
-        "subject": "self",
-        "predicate": "prefers_morning_focus",
-        "value": "prefers early deep work sessions",
-        "statement": "I prefer to do deep work before noon",
-        "scope": {"domain": "work", "context": ["weekday"], "conditions": []},
-        "strength": 0.72,
-        "status": "tentative",
-        "method": "inferred",
-        "user_verified": false,
-        "review_after_days": 120
-      },
-      "normalized_ids": ["2025-10-26-planning"],
-      "evidence": [
-        {
-          "entry_id": "2025-10-26-planning",
-          "spans": [{"type": "excerpt", "index": 0, "start": 42, "end": 118, "text": "..."}]
-        }
-      ],
-      "manifest_hashes": ["abc123"],
-      "rationale": "Deep work scheduling appears repeatedly."
-    }
-  ],
-  "facets": []
-}
-```
+- Every prompt includes a JSON example consistent with the strict schema.
+- Fixtures under `prompts/examples/` are validated in unit tests to prevent drift between docs and models.
 
 ---
 
@@ -704,15 +724,17 @@ Include example JSON fragments in each prompt to illustrate the strict schema. E
 | Stage/Sub-step | Required Commands | Purpose |
 | -------------- | ----------------- | ------- |
 | All | `uv run pytest` | Baseline regression suite. |
-| 1.2 | `pre-commit run --all-files` | Ensure new utilities respect linting. |
-| 2.2 | Custom unit test verifying provenance text removal. |
-| 3.x | `AIJOURNAL_FAKE_OLLAMA=1` pipeline smoke tests (optional but recommended). |
+| 1.x | `pre-commit run --all-files` (where noted) | Formatting/linting compliance. |
+| 2.2 | Unit test verifying provenance text removal + audit scanner. |
+| 3.x | `AIJOURNAL_FAKE_OLLAMA=1` pipeline smoke tests (recommended). |
 | 4.2 | CLI feedback apply in fake mode to ensure event union works. |
-| 5.1 | `aijournal ops index rebuild` in fake mode to validate chunk schema. |
-| 7.1 | Golden file diff review (ensure only envelope changes). |
+| 5.1 | `aijournal ops index rebuild` in fake mode + parity assertion. |
+| 6.5 | Dual-write rehearsal verification. |
+| 7.1 | Golden file diff review (ensure only envelope + deterministic formatting changes). |
+| 7.4 | Codemod unit test. |
 | 9.1 | Full workflow rehearsal in temp workspace. |
 
-Record results (pass/fail, command output summary) in commit messages or `docs/refactor3_status.md` as indicated.
+Add property tests for provenance redaction and event JSON round-trips during relevant stages.
 
 ---
 
@@ -720,25 +742,25 @@ Record results (pass/fail, command output summary) in commit messages or `docs/r
 
 | Risk | Mitigation |
 | ---- | ---------- |
-| LLM fails to output strict schema initially | Enhanced prompts, structured-output retry, CI catch. |
-| Claim provenance accidentally stores text | Validators + targeted tests; redaction helper. |
-| Artifact conversion corrupts existing data | Provide legacy readers, add migration CLI, keep backups. |
-| Compatibility breaks third-party scripts | Offer import aliases for one release; document changes prominently. |
-| Commit discipline lapses | This document + automation enforcement. |
+| LLM fails to output strict schema initially | Enhanced prompts, structured-output retry, logged failures, schema fixtures. |
+| Claim provenance accidentally stores text | Validators, `redact_source_text`, audit command, dedicated tests. |
+| Artifact conversion corrupts existing data | Legacy readers, `AIJOURNAL_SCHEMA_MODE` fallback, migration CLI, deterministic serialization. |
+| Compatibility breaks third-party scripts | Compat layer with warnings, codemod, documented changes. |
+| Search/index mismatch | Retriever parity test with mini workspace. |
+| Schema drift after merge | JSON schema snapshots + CI diff, ArtifactKind enum. |
+| Commit discipline lapses | Checkpoint rule + pre-push hook. |
 
 ---
 
 ## 10. Logging & Evidence Collection
 
-- Store structured-output failures under `derived/logs/structured_failures/` (JSON per command).
-- For each major stage, append a brief note to `docs/refactor3_status.md` describing commands run and outcomes.
-- Keep copies of regenerated artifacts for review in PRs.
+- Store structured-output failures under `derived/logs/structured_failures/`.
+- Update `docs/refactor3_status.md` after every stage with test commands executed, decisions taken, and outstanding follow-ups.
+- Archive regenerated artifacts for PR review.
 
 ---
 
 ## 11. Commit Message Template
-
-Use the following structure (customize the summary):
 
 ```
 refactor3: <concise summary>
@@ -755,31 +777,31 @@ refactor3: <concise summary>
 
 - All stages complete with passing tests and sequential commits.
 - `git status` clean; no leftover artifacts or temporary files.
-- `docs/refactor3_status.md` summarises execution.
-- `CHANGELOG.md` documents schema v2 introduction and upgrade instructions.
-- Compatibility layer present; prompts/documentation updated.
-- Optional release checklist prepared (if required by maintainers).
+- `docs/refactor3_status.md` contains Decision Log entries and execution summary.
+- `CHANGELOG.md` documents schema v2 introduction, schema mode, codemod, audit command.
+- Compat layer and prompts updated; schema snapshots in place.
+- Optional release checklist prepared if required.
 
 ---
 
 ## 13. Appendix A – “Prompt Draft” for Delegated Agents
 
-Use this snippet verbatim when spawning new agents responsible for any portion of the refactor:
-
 > **Role**: Senior software architect & data modeler for `aijournal`.
 >
-> **Inputs**: `README.md`, `ARCHITECTURE.md`, `docs/workflow.md`, `agents.md`, `refactor3.md`, data model inventory (`reports/data_model_out.txt`).
+> **Inputs**: `README.md`, `ARCHITECTURE.md`, `docs/workflow.md`, `agents.md`, `refactor3.md`, `reports/data_model_out.txt`.
 >
-> **Objective**: Implement the strict v2 data model, replacing payload/response twins with unified domain classes, adopting artifact envelopes, enforcing privacy, and preserving capture/event semantics.
+> **Objective**: Implement the strict v2 data model, replacing payload/response twins with unified domain classes, adopting artifact envelopes, enforcing privacy, preserving capture/event semantics, and delivering the staged commits in `refactor3.md`.
 >
 > **Hard Requirements**:
-> 1. Strict structured output (no sketches); missing required fields = failure.
-> 2. Capture DTO separation (`CaptureRequest` public, `CaptureInput` internal).
-> 3. Evidence privacy – no `span.text` in persisted claim provenance.
+> 1. Strict structured output only; missing required fields = failure. Runner returns `LLMResult[T]` and logs invalid payloads.
+> 2. Capture DTO separation (`CaptureRequest` public, `CaptureInput` internal with stage controls).
+> 3. Evidence privacy – no `span.text` persists; use `redact_source_text` and `aijournal ops audit provenance`.
 > 4. Distinct preview vs. feedback events via discriminated union.
-> 5. Tests must pass after each `refactor3` sub-step; commit immediately.
+> 5. All pipeline outputs are `Artifact[T]` with `ArtifactKind`; deterministic serialization enforced by helper.
+> 6. Tests must pass after each `refactor3` sub-step; commit immediately.
+> 7. Document deviations in `docs/refactor3_status.md#decision-log` before proceeding.
 >
-> **Deliverables**: Completed code per `refactor3.md` checklist, updated documentation, migration utilities, compatibility aliases, changelog entry, and status log.
+> **Deliverables**: Completed code per checklist, updated documentation, migration utilities, compatibility aliases (with warnings), codemod script, schema snapshots, changelog entry, decision log updates, and green test evidence.
 
 ---
 
@@ -790,8 +812,10 @@ Use this snippet verbatim when spawning new agents responsible for any portion o
 | Run tests | `uv run pytest` |
 | Lint/format | `pre-commit run --all-files` |
 | Inventory models | `uv run python scripts/data_model_report.py` |
-| Fake-mode pipeline (example) | `AIJOURNAL_FAKE_OLLAMA=1 uv run aijournal ops pipeline summarize --date 2025-10-26` |
-| Fake-mode capture rehearsal | `AIJOURNAL_FAKE_OLLAMA=1 uv run aijournal capture --text "..." --tags sample` |
+| Schema snapshot check | `uv run python scripts/check_schemas.py` |
+| Pipeline smoke (fake mode) | `AIJOURNAL_FAKE_OLLAMA=1 uv run aijournal ops pipeline summarize --date 2025-10-26` |
+| Audit provenance | `uv run aijournal ops audit provenance --fix` |
+| Codemod imports | `uv run python scripts/codemods/refactor3_imports.py --apply path/to/file.py` |
 
 ---
 
@@ -805,4 +829,3 @@ At every sub-step boundary:
 4. **Commit immediately with an informative message.**
 
 Any agent that cannot satisfy these conditions must halt and report back rather than improvising. This discipline keeps the refactor auditable and safe for automation.
-
