@@ -264,6 +264,220 @@ def test_run_capture_records_telemetry(tmp_path: Path, monkeypatch: pytest.Monke
     assert expected.issubset(event_names)
 
 
+def test_run_capture_rebuild_skip_skips_refresh(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("AIJOURNAL_FAKE_OLLAMA", "1")
+    monkeypatch.setattr(
+        "aijournal.utils.time.now",
+        lambda: datetime(2025, 10, 28, 11, 0, tzinfo=UTC),
+    )
+    monkeypatch.chdir(tmp_path)
+
+    def _ensure_file(path: Path, content: str) -> Path:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8")
+        return path
+
+    monkeypatch.setattr(
+        "aijournal.commands.summarize.run_summarize",
+        lambda date, *, timeout, retries, progress: _ensure_file(
+            tmp_path / "derived" / "summaries" / f"{date}.yaml",
+            "summary",
+        ),
+    )
+    monkeypatch.setattr(
+        "aijournal.commands.facts.run_facts",
+        lambda date, *, timeout, retries, progress, claim_models, build_claim_preview: (
+            None,
+            _ensure_file(tmp_path / "derived" / "microfacts" / f"{date}.yaml", "facts"),
+        ),
+    )
+    monkeypatch.setattr(
+        "aijournal.commands.profile.run_profile_suggest",
+        lambda date, *, timeout, retries, progress: _ensure_file(
+            tmp_path / "derived" / "profile_suggestions" / f"{date}.yaml",
+            "suggest",
+        ),
+    )
+    monkeypatch.setattr(
+        "aijournal.commands.profile.run_profile_apply",
+        lambda *args, **kwargs: "Applied",
+    )
+    monkeypatch.setattr(
+        "aijournal.commands.characterize.run_characterize",
+        lambda date, *, timeout, retries, progress, build_claim_preview: _ensure_file(
+            tmp_path / "derived" / "pending" / "profile_updates" / f"{date}-batch.yaml",
+            "batch",
+        ),
+    )
+    monkeypatch.setattr(
+        "aijournal.services.capture.utils.apply_profile_update_batch",
+        lambda root, batch_path: True,
+    )
+
+    monkeypatch.setattr(
+        "aijournal.services.capture.stages.stage6_index.run_index_stage_6",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("index stage should be skipped when rebuild=skip")
+        ),
+    )
+    monkeypatch.setattr(
+        "aijournal.services.capture.stages.stage7_persona.run_persona_stage_7",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("persona stage should be skipped when rebuild=skip")
+        ),
+    )
+
+    inputs = CaptureInput(
+        source="stdin",
+        text="skip refresh",
+        title="Skip",
+        rebuild="skip",
+    )
+    result = run_capture(inputs)
+
+    assert 6 in result.stages_skipped
+    assert 7 in result.stages_skipped
+    assert result.index_rebuilt is False
+    assert result.durations_ms["refresh.index"] == 0.0
+    assert result.durations_ms["refresh.persona"] == 0.0
+
+
+def test_run_capture_rebuild_always_forces_refresh(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("AIJOURNAL_FAKE_OLLAMA", "1")
+    monkeypatch.setattr(
+        "aijournal.utils.time.now",
+        lambda: datetime(2025, 10, 28, 12, 0, tzinfo=UTC),
+    )
+    monkeypatch.chdir(tmp_path)
+
+    def _ensure_file(path: Path, content: str) -> Path:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8")
+        return path
+
+    monkeypatch.setattr(
+        "aijournal.commands.summarize.run_summarize",
+        lambda date, *, timeout, retries, progress: _ensure_file(
+            tmp_path / "derived" / "summaries" / f"{date}.yaml",
+            "summary",
+        ),
+    )
+    monkeypatch.setattr(
+        "aijournal.commands.facts.run_facts",
+        lambda date, *, timeout, retries, progress, claim_models, build_claim_preview: (
+            None,
+            _ensure_file(tmp_path / "derived" / "microfacts" / f"{date}.yaml", "facts"),
+        ),
+    )
+    monkeypatch.setattr(
+        "aijournal.commands.profile.run_profile_suggest",
+        lambda date, *, timeout, retries, progress: _ensure_file(
+            tmp_path / "derived" / "profile_suggestions" / f"{date}.yaml",
+            "suggest",
+        ),
+    )
+    monkeypatch.setattr(
+        "aijournal.commands.profile.run_profile_apply",
+        lambda *args, **kwargs: "Applied",
+    )
+    monkeypatch.setattr(
+        "aijournal.commands.characterize.run_characterize",
+        lambda date, *, timeout, retries, progress, build_claim_preview: _ensure_file(
+            tmp_path / "derived" / "pending" / "profile_updates" / f"{date}-batch.yaml",
+            "batch",
+        ),
+    )
+    monkeypatch.setattr(
+        "aijournal.services.capture.utils.apply_profile_update_batch",
+        lambda root, batch_path: True,
+    )
+
+    index_rebuild_calls: list[tuple[str | None, int | None]] = []
+    index_tail_calls: list[tuple[str | None, int, int | None]] = []
+
+    def fake_run_index_rebuild(since: str | None, *, limit: int | None) -> str:
+        index_rebuild_calls.append((since, limit))
+        index_root = tmp_path / "derived" / "index"
+        index_root.mkdir(parents=True, exist_ok=True)
+        (index_root / "index.db").write_text("db", encoding="utf-8")
+        (index_root / "annoy.index").write_text("ann", encoding="utf-8")
+        return "rebuild"
+
+    monkeypatch.setattr(
+        "aijournal.commands.index.run_index_rebuild",
+        fake_run_index_rebuild,
+    )
+    monkeypatch.setattr(
+        "aijournal.commands.index.run_index_tail",
+        lambda since, *, days, limit: index_tail_calls.append((since, days, limit)) or "updated",
+    )
+
+    persona_states = [
+        ("stale", ["needs rebuild"]),
+        ("fresh", []),
+        ("fresh", []),
+        ("fresh", []),
+    ]
+    persona_build_calls: list[tuple[dict[str, object], list[object]]] = []
+
+    def fake_persona_state(root: Path) -> tuple[str, list[str]]:
+        return persona_states.pop(0)
+
+    def fake_run_persona_build(
+        profile: dict[str, object],
+        claim_models: list[object],
+        *,
+        config: dict[str, object],
+        root: Path | None = None,
+    ) -> tuple[Path, bool]:
+        persona_build_calls.append((profile, claim_models))
+        persona_path = _ensure_file(
+            tmp_path / "derived" / "persona" / "persona_core.yaml",
+            "persona",
+        )
+        return persona_path, True
+
+    monkeypatch.setattr("aijournal.commands.persona.persona_state", fake_persona_state)
+    monkeypatch.setattr("aijournal.commands.persona.run_persona_build", fake_run_persona_build)
+    monkeypatch.setattr(
+        "aijournal.commands.profile._load_profile_components",
+        lambda root: ({"name": "Test"}, [object()]),
+    )
+    monkeypatch.setattr(
+        "aijournal.commands.profile._profile_to_dict",
+        lambda model: model if isinstance(model, dict) else {},
+    )
+
+    inputs_first = CaptureInput(
+        source="stdin",
+        text="force refresh",
+        title="Force",
+    )
+    run_capture(inputs_first)
+
+    inputs_second = CaptureInput(
+        source="stdin",
+        text="force refresh",
+        title="Force",
+        rebuild="always",
+    )
+    result = run_capture(inputs_second)
+
+    # index rebuild should have been triggered twice (initial + forced)
+    assert index_rebuild_calls == [(None, None), (None, None)]
+    # forced rebuild should not rely on tailing
+    assert index_tail_calls == []
+    # persona build should run on both captures (stale first, forced second)
+    assert len(persona_build_calls) == 2
+    assert result.index_rebuilt is True
+    assert result.persona_stale_before is False
+    assert result.persona_stale_after is False
+
+
 def test_run_capture_requires_text(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.chdir(tmp_path)
     inputs = CaptureInput(source="stdin")

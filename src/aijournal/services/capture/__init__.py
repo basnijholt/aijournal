@@ -1325,37 +1325,50 @@ def run_capture(
     persona_error: str | None = None
     status_before = "unknown"
     status_after = "unknown"
-    if changed_dates and stage_enabled(6):
-        index_outputs = run_index_stage_6(
-            changed_dates,
-            root,
-        )
-        index_result = index_outputs.result
-        index_duration = index_outputs.duration_ms
-        index_updated = index_outputs.updated
-        index_rebuilt_flag = index_outputs.rebuilt
-        if index_updated:
-            artifacts_changed["index"] = artifacts_changed.get("index", 0) + 1
-        record_stage_outcome(
-            stage_id=6,
-            stage_name="refresh.index",
-            duration_key="refresh.index",
-            result=index_result,
-            duration=index_duration,
-        )
-        index_rebuilt = index_rebuilt or index_rebuilt_flag
-    else:
-        if not stage_enabled(6):
-            index_result = record_skipped_stage(6, "refresh.index", "refresh.index")
-        else:
-            index_result = OperationResult.noop("no index refresh required")
-            record_stage_outcome(
-                stage_id=6,
-                stage_name="refresh.index",
-                duration_key="refresh.index",
-                result=index_result,
-                duration=0.0,
+    if stage_enabled(6):
+        if inputs.rebuild == "skip":
+            index_result = record_skipped_stage(
+                6,
+                "refresh.index",
+                "refresh.index",
+                message="skipped by --rebuild skip",
             )
+        else:
+            should_run_index = bool(changed_dates) or inputs.rebuild == "always"
+            if should_run_index:
+                index_outputs = run_index_stage_6(
+                    changed_dates,
+                    root,
+                    inputs.rebuild,
+                )
+                index_result = index_outputs.result
+                index_duration = index_outputs.duration_ms
+                index_updated = index_outputs.updated
+                index_rebuilt_flag = index_outputs.rebuilt
+                if index_updated:
+                    artifacts_changed["index"] = artifacts_changed.get("index", 0) + 1
+                record_stage_outcome(
+                    stage_id=6,
+                    stage_name="refresh.index",
+                    duration_key="refresh.index",
+                    result=index_result,
+                    duration=index_duration,
+                )
+                index_rebuilt = index_rebuilt or index_rebuilt_flag
+            else:
+                index_result = OperationResult.noop(
+                    "no index refresh required",
+                    details={"mode": inputs.rebuild, "reason": "no changed dates"},
+                )
+                record_stage_outcome(
+                    stage_id=6,
+                    stage_name="refresh.index",
+                    duration_key="refresh.index",
+                    result=index_result,
+                    duration=0.0,
+                )
+    else:
+        index_result = record_skipped_stage(6, "refresh.index", "refresh.index")
     emit_operation_event(
         log_event,
         event="index.rebuild",
@@ -1364,24 +1377,32 @@ def run_capture(
     )
 
     if stage_enabled(7):
-        persona_outputs = run_persona_stage_7(inputs, root, artifacts_changed)
-        persona_result = persona_outputs.result
-        persona_duration = persona_outputs.duration_ms
-        persona_changed = persona_outputs.persona_changed
-        persona_stale_before = persona_outputs.persona_stale_before
-        persona_stale_after = persona_outputs.persona_stale_after
-        status_before = persona_outputs.status_before
-        status_after = persona_outputs.status_after
-        persona_error = persona_outputs.error
-        if persona_changed:
-            artifacts_changed["persona"] = artifacts_changed.get("persona", 0) + 1
-        record_stage_outcome(
-            stage_id=7,
-            stage_name="refresh.persona",
-            duration_key="refresh.persona",
-            result=persona_result,
-            duration=persona_duration,
-        )
+        if inputs.rebuild == "skip":
+            persona_result = record_skipped_stage(
+                7,
+                "refresh.persona",
+                "refresh.persona",
+                message="skipped by --rebuild skip",
+            )
+        else:
+            persona_outputs = run_persona_stage_7(inputs, root, artifacts_changed)
+            persona_result = persona_outputs.result
+            persona_duration = persona_outputs.duration_ms
+            persona_changed = persona_outputs.persona_changed
+            persona_stale_before = persona_outputs.persona_stale_before
+            persona_stale_after = persona_outputs.persona_stale_after
+            status_before = persona_outputs.status_before
+            status_after = persona_outputs.status_after
+            persona_error = persona_outputs.error
+            if persona_changed:
+                artifacts_changed["persona"] = artifacts_changed.get("persona", 0) + 1
+            record_stage_outcome(
+                stage_id=7,
+                stage_name="refresh.persona",
+                duration_key="refresh.persona",
+                result=persona_result,
+                duration=persona_duration,
+            )
     else:
         persona_result = record_skipped_stage(7, "refresh.persona", "refresh.persona")
     persona_event_details = dict(persona_result.details or {})
