@@ -60,7 +60,7 @@ The top-level CLI now covers the common lifetime loop:
 
 4. **Apply feedback when ready**  
    ```bash
-   uv run aijournal feedback-apply
+   uv run aijournal ops feedback apply
    ```
 
 That’s the entire daily workflow—no manual normalization or staged pipeline runs required.
@@ -91,7 +91,7 @@ With the profile, index, and packs up to date you can use the interactive comman
 
 - **Chat daemon (API)**  
   ```bash
-  uv run aijournal chatd --host 127.0.0.1 --port 8055
+  uv run aijournal serve chat --host 127.0.0.1 --port 8055
   ```  
   Use `curl` or `httpx` to POST to `/chat`.
 
@@ -103,7 +103,7 @@ With the profile, index, and packs up to date you can use the interactive comman
 - **Feedback batches**  
   When you review chat feedback later, apply it in bulk:
   ```bash
-  uv run aijournal feedback-apply
+  uv run aijournal ops feedback apply
    ```
 
 ---
@@ -125,7 +125,7 @@ init → capture (--text/--from) → status
    ↓
 chat / advise / export pack / serve chat
    ↓
-feedback-apply (as needed)
+ops feedback apply (as needed)
 ```
 
 If you need to inspect individual stages, re-run them via `aijournal ops ...`; otherwise `capture`

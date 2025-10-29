@@ -43,7 +43,7 @@ uv run pytest -q
 ```
 
 - Runtime deps beyond Typer/PyYAML/httpx/pydantic/dateutil: `numpy`, `annoy`, `fastapi`, `uvicorn`, `orjson`. Install once via `uv add ...`; everything stays local-first.
-- Retrieval uses Ollama’s `nomic-embed-text` embeddings by default. Override it by setting `embedding_model` in `config/config.yaml`; the `AIJOURNAL_MODEL` env var only affects chat/advice, not embeddings.
+- Retrieval uses Ollama’s `embeddinggemma` embeddings by default. Override it by setting `embedding_model` in `config/config.yaml`; the `AIJOURNAL_MODEL` env var only affects chat/advice, not embeddings.
 
 - `config/config.yaml` stores runtime defaults (model, temperature, advisor settings).
 - `src/aijournal/commands/` contains orchestration logic for each Typer command (I/O, retries, progress logging). Most CLI work happens here now; `cli.py` is intentionally thin glue.
@@ -69,9 +69,9 @@ Run `aijournal init` inside a fresh directory to materialize `data/`, `derived/`
 ### Claim atoms & persona core
 
 - Claims now live as typed, scoped atoms inside `profile/claims.yaml` with `{type, subject, predicate, value, scope, strength, provenance}` fields.
-- `aijournal persona build` regenerates `derived/persona/persona_core.yaml` (≤ ~1200 tokens) by selecting top claim atoms + key profile facets. Packs/chat always include this file as L1 context.
+- `aijournal ops persona build` regenerates `derived/persona/persona_core.yaml` (≤ ~1200 tokens) by selecting top claim atoms + key profile facets. Packs/chat always include this file as L1 context.
 - There is intentionally **no** legacy format support—if schema changes, re-run `aijournal init` and regenerate data rather than carrying migration code.
-- Use `aijournal persona status` anytime you edit `profile/*.yaml` to confirm the cached persona core matches the latest mtimes. The builder now records source file mtimes and `pack` warns when the persona core is stale or missing so you remember to rebuild before sharing context bundles.
+- Use `aijournal ops persona status` anytime you edit `profile/*.yaml` to confirm the cached persona core matches the latest mtimes. The builder now records source file mtimes and `pack` warns when the persona core is stale or missing so you remember to rebuild before sharing context bundles.
 
 ## Usage
 
@@ -81,7 +81,7 @@ Fake LLM-powered commands run in fixture mode when `AIJOURNAL_FAKE_OLLAMA=1`:
 export AIJOURNAL_FAKE_OLLAMA=1
 ```
 
-Most commands below are safe to re-run: they detect unchanged inputs and either skip writes or report what was "already" present. The lone exception is `aijournal new`, which refuses to overwrite an existing slug and exits non-zero if you try to create the same entry twice.
+Most commands below are safe to re-run: they detect unchanged inputs and either skip writes or report what was "already" present. `aijournal capture` dedupes imported content by hash and leaves existing slugs intact, so repeating a command simply reports skipped entries. Fixture generation behind `aijournal ops dev new --fake` behaves similarly by refusing to clobber existing files.
 
 ### Initialize the workspace
 
@@ -119,15 +119,15 @@ Produces three Markdown files with full frontmatter (`id`, `created_at`, `title`
 ### Build or tail the retrieval index
 
 ```sh
-aijournal index rebuild          # one-shot rebuild (SQLite + Annoy) from normalized YAML
-aijournal index tail --since 7d  # optional helper: follow manifest entries and index new files
-aijournal index search "deep work ideas" --tags focus --date-from 2025-02-01
+aijournal ops index rebuild               # one-shot rebuild (SQLite + Annoy) from normalized YAML
+aijournal ops index update --since 7d     # optional helper: follow manifest entries and index new files
+aijournal ops index search "deep work ideas" --tags focus --date-from 2025-02-01
 ```
 
 - Index lives under `derived/index/` (`index.db`, `annoy.index`, `meta.json`).
 - Chunking is deterministic (700–1200 characters, sentence boundaries) and every chunk stores normalized_id/date/tags.
-- Retrieval relies on Annoy + SQLite FTS5; if those artifacts are missing, commands error loudly so you can rebuild with `aijournal index rebuild`.
-- `aijournal index search` reuses the Retriever service to stream scored snippets with source path/date metadata, honoring `--tags`, `--source`, `--date-from`, and `--date-to` filters.
+- Retrieval relies on Annoy + SQLite FTS5; if those artifacts are missing, commands error loudly so you can rebuild with `aijournal ops index rebuild`.
+- `aijournal ops index search` reuses the Retriever service to stream scored snippets with source path/date metadata, honoring `--tags`, `--source`, `--date-from`, and `--date-to` filters.
 - FTS5 is a hard requirement: verify with `python - <<'PY'\nimport sqlite3\nprint('fts5' in sqlite3.connect(':memory:').execute(\"pragma compile_options\").fetchall().__str__().lower())\nPY`. If it prints `False`, install an FTS5-enabled SQLite and rebuild Python (macOS: `brew install sqlite` then reinstall Python via `pyenv` or `uv`; Linux: `sudo apt install libsqlite3-dev` before building Python).
 - After editing retrieval-related code run `uv run pytest -q` to ensure the CLI and retriever fixtures remain deterministic.
 
@@ -192,10 +192,10 @@ model, and fake mode now emits typed `MicroFact` objects for each entry so the
 structure matches real runs even in CI. Each run now also attaches the derived
 claim proposals and a consolidation preview: micro-facts are converted into
 `ClaimProposal` atoms, pushed through the shared `ClaimConsolidator`, and the
-resulting `preview.claim_events` mirror the output of `review-updates --dry-run`.
+resulting `preview.claim_events` mirror the output of `aijournal ops pipeline review --dry-run`.
 Any conflicts are scope-split (weekday vs. weekend, solo vs. team) before falling
 back to tentative downgrades, and queued follow-up prompts surface in the CLI so
-you can jump straight into `aijournal interview`.
+you can jump straight into `aijournal ops profile interview`.
 
 Pass `--progress` to watch the entry-by-entry feed and `--retries` to control how many schema failures trigger a
 retry. Responses are validated against the `ExtractedFactsResponse` schema; if
@@ -206,7 +206,7 @@ error instead of silently emitting heuristics.
 
 ```sh
 export AIJOURNAL_FAKE_OLLAMA=1
-aijournal ollama health
+aijournal ops system ollama health
 ```
 
 Prints the fixture's advertised `models` array and its `default` model, for example:
@@ -228,11 +228,13 @@ The fake health probe never touches the network, so it is safe to call repeatedl
 ### Profile status quick-look
 
 ```sh
-aijournal profile status
-# alias: aijournal profile-status
+aijournal status
+aijournal ops profile status
 ```
 
-Ranks facets/claims needing review using `config/config.yaml` impact weights.
+The everyday `status` command prints persona/index freshness plus pending updates, while the
+`ops profile status` variant dives into facet/claim rankings using the impact weights defined in
+`config/config.yaml`.
 
 ### Advisor mode
 
@@ -244,7 +246,7 @@ Builds an advice card under `derived/advice/<DATE>/<slug>.yaml` using `prompts/a
 facets/claims referenced in each recommendation. Fake mode remains available for CI by setting
 `AIJOURNAL_FAKE_OLLAMA=1`.
 
-- Advisor Mode now consumes the same interview ranking signal used by `aijournal interview`, so
+- Advisor Mode now consumes the same interview ranking signal used by `aijournal ops profile interview`, so
   follow-up prompts and scope gaps surface in the assumptions/steps without extra prompting.
 
 ### Retrieval-backed chat (CLI)
@@ -257,8 +259,8 @@ Streams a short answer grounded in your persona core plus retrieved journal chun
 includes inline `[entry:<normalized_id>#p<idx>]` citations, a telemetry summary, and—in live mode—an
 optional follow-up question that respects `coaching_prefs.probing`. The command exits early when
 prerequisites are missing—ensure `derived/persona/persona_core.yaml`, `derived/index/index.db`, and
-`derived/index/annoy.index` exist (rebuild them with `aijournal persona build` and
-`aijournal index rebuild`). Setting `AIJOURNAL_FAKE_OLLAMA=1` keeps the loop deterministic for
+`derived/index/annoy.index` exist (rebuild them with `aijournal ops persona build` and
+`aijournal ops index rebuild`). Setting `AIJOURNAL_FAKE_OLLAMA=1` keeps the loop deterministic for
 tests/CI.
 
 - Use `--session <id>` (or accept the autogenerated `chat-YYYYMMDD-HHMMSS`) to append to a running
@@ -278,7 +280,7 @@ tests/CI.
 ### Chat daemon (FastAPI)
 
 ```sh
-aijournal chatd --host 127.0.0.1 --port 8080
+aijournal serve chat --host 127.0.0.1 --port 8080
 ```
 
 Starts a FastAPI service that reuses the CLI orchestrator. `POST /chat` accepts the same payload
@@ -301,7 +303,7 @@ Use `jq --unbuffered` or similar to stream each NDJSON frame.
 ### Feedback application
 
 ```sh
-aijournal feedback-apply
+aijournal ops feedback apply
 ```
 
 Applies pending feedback batches generated by chat, updates `profile/claims.yaml`, and archives processed files under `derived/pending/profile_updates/applied_feedback/`. The command exits non-zero when no batches were applied so scripts can detect no-op runs.
@@ -309,7 +311,7 @@ Applies pending feedback batches generated by chat, updates `profile/claims.yaml
 ### Profile suggestions
 
 ```sh
-aijournal profile suggest --date 2025-02-03
+aijournal ops profile suggest --date 2025-02-03
 ```
 
 Runs `prompts/profile_suggest.md` with the current profile + claims and stores
@@ -326,7 +328,7 @@ prompt/debugging is explicit.
 ### Apply profile suggestions
 
 ```sh
-aijournal profile apply --date 2025-02-03 --yes
+aijournal ops profile apply --date 2025-02-03 --yes
 ```
 
 Applies the derived suggestions into `profile/self_profile.yaml` and `profile/claims.yaml`, updating `last_updated` stamps only when something changes.
@@ -334,7 +336,7 @@ Applies the derived suggestions into `profile/self_profile.yaml` and `profile/cl
 ### Regenerate persona core (L1)
 
 ```sh
-aijournal persona build
+aijournal ops persona build
 ```
 
 Writes `derived/persona/persona_core.yaml` by ranking claim atoms with a
@@ -352,7 +354,7 @@ Check whether the cached persona core matches the latest profile edits at any
 time:
 
 ```sh
-aijournal persona status
+aijournal ops persona status
 ```
 
 The status command compares the recorded mtimes for `profile/*.yaml` against the
@@ -362,7 +364,7 @@ to re-run `persona build`.
 ### Characterize normalized entries
 
 ```sh
-aijournal characterize --date 2025-02-03
+aijournal ops pipeline characterize --date 2025-02-03
 ```
 
 Runs the characterization agent (or deterministic fake mode) and emits a batch
@@ -377,7 +379,7 @@ surface in the pending batch.
 ### Review pending updates
 
 ```sh
-aijournal review-updates --apply
+aijournal ops pipeline review --apply
 ```
 
 Lists the latest batch (or the one specified via `--file`) and merges accepted
@@ -387,7 +389,7 @@ step before updating the authoritative self-model.
 ### Interview probes
 
 ```sh
-aijournal interview --date 2025-02-03
+aijournal ops profile interview --date 2025-02-03
 ```
 
 Ranks facets/claims using impact weights and either (a) generates targeted questions via
@@ -401,19 +403,19 @@ heuristic probes used previously.
 
 ```sh
 # Inspect planned files without writing anything
-aijournal pack --level L2 --dry-run
+aijournal export pack --level L2 --dry-run
 
 # Persist a reusable bundle (rewrites only when content changes)
-aijournal pack --level L1 --output derived/packs/l1.yaml
+aijournal export pack --level L1 --output derived/packs/l1.yaml
 
 # Include advice + profile suggestions (optional) in an L3 pack
-aijournal pack --level L3 --date 2025-02-03 --max-tokens 2800
+aijournal export pack --level L3 --date 2025-02-03 --max-tokens 2800
 
 # L4 with 2 days of history, prompts, config, and raw journals
-aijournal pack --level L4 --date 2025-02-03 --history-days 2 --dry-run
+aijournal export pack --level L4 --date 2025-02-03 --history-days 2 --dry-run
 
 # Emit an L4 pack as JSON for piping into another tool
-aijournal pack --level L4 --date 2025-02-03 --history-days 1 --format json > /tmp/context-l4.json
+aijournal export pack --level L4 --date 2025-02-03 --history-days 1 --format json > /tmp/context-l4.json
 ```
 
 `pack` now follows the standardized layers:
@@ -424,25 +426,25 @@ aijournal pack --level L4 --date 2025-02-03 --history-days 1 --format json > /tm
 - **L4 (Background):** prompts, config, raw journals for base day ± `--history-days`.
 
 All packs log `meta.token_estimator` (default `char/4.2`), `planned_tokens`, and any trimmed files (`role`, `path`, `reason`). Token counts reuse the shared `_token_estimate` helper so changes to `token_estimator.char_per_token` in `config/config.yaml` stay consistent across persona, index, and pack budgets.
-`aijournal pack` now refuses to run until `derived/persona/persona_core.yaml` exists and injects that file at every level (even L2–L4) before layering profile history. If profile/claims files change, the command prints a yellow reminder to re-run `aijournal persona build` so your exported bundles always reflect the latest persona snapshot.
+`aijournal export pack` now refuses to run until `derived/persona/persona_core.yaml` exists and injects that file at every level (even L2–L4) before layering profile history. If profile/claims files change, the command prints a yellow reminder to re-run `aijournal ops persona build` so your exported bundles always reflect the latest persona snapshot.
 
 ### Retrieval index & filters
 
 ```sh
-aijournal index rebuild
-aijournal index tail
+aijournal ops index rebuild
+aijournal ops index update
 ```
 
 - `derived/index/index.db` stores chunk metadata + FTS5 virtual table; `derived/index/annoy.index` stores embeddings; `meta.json` records embedding model/dim/build timestamp and whether fake mode ran.
 - Chunking is deterministic (700–1200 chars, sentence boundaries) and each chunk stores `{normalized_id, date, tags, source_type, chunk_index, tokens}`.
 - Human-friendly chunk manifests under `derived/index/chunks/YYYY-MM-DD.yaml` (plus optional `.npy` vector shards) mirror the indexed data so you can inspect or reuse it elsewhere, while the built-in retriever expects the Annoy/SQLite artifacts to be present.
-- `Retriever.search("question about deep work", k=12, filters=...)` (see `src/aijournal/services/retriever.py`) powers chat/advice and the new `aijournal index search` CLI, combining Annoy cosine scores with a light recency boost. If the index artifacts are missing, retrieval fails fast and prompts you to rebuild.
+- `Retriever.search("question about deep work", k=12, filters=...)` (see `src/aijournal/services/retriever.py`) powers chat/advice and the `aijournal ops index search` CLI, combining Annoy cosine scores with a light recency boost. If the index artifacts are missing, retrieval fails fast and prompts you to rebuild.
 
 ### Configuration quick reference
 
 `config/config.yaml` ships with defaults for the chat/advice model, temperature, seed, impact weights, token estimator, and persona budgets. You can optionally add:
 
-- `embedding_model: "<model-name>"` to change the embedding model (defaults to `nomic-embed-text` when omitted).
+- `embedding_model: "<model-name>"` to change the embedding model (defaults to `embeddinggemma` when omitted).
 - `index: {ann_trees: 50, search_k_factor: 3.0}` to tweak ANN settings.
 - `chat: {max_retrieved_chunks: 12, max_claims: 16, follow_up_enabled: true, write_back_facts: true}` for retrieval/chat behaviour.
 - Custom `impact_weights.claim_types` if certain claim types should rank higher.
