@@ -104,6 +104,7 @@ This builds on items 1 & 2 but isn’t strictly required once automatic detectio
   3. Update each stage module and the orchestrator to import from `capture.utils` instead of re-defining helpers; ensure imports remain acyclic.
   4. Remove the old helper definitions from their original locations to prevent drift.
 - **Definition of done:** `capture/utils.py` houses the shared helpers, no stage redefines them, `uv run pytest` passes, and this note is updated with a completion date.
+- ✅ 2025-10-28: Helpers moved into `capture/utils.py`, orchestrator/stages import aliases wired, and `uv run pytest` succeeded post-move.
 
 ### To-Do C — Normalize skipped-stage handling
 - Introduce a helper (e.g., `record_skipped_stage(state, stage_id, name, reason)`) that wraps the noop result + duration bookkeeping.
