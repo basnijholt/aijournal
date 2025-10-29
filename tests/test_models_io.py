@@ -6,7 +6,9 @@ from typing import TYPE_CHECKING
 
 import yaml
 
+from aijournal.common.meta import Artifact, ArtifactKind, ArtifactMeta
 from aijournal.io import load_yaml_model, write_yaml_model
+from aijournal.io.artifacts import load_artifact, save_artifact
 from aijournal.models import (
     AdviceCard,
     AdviceRecommendation,
@@ -47,7 +49,10 @@ def _fixture_path(tmp_path: Path, name: str) -> Path:
 
 def _assert_schema(path: Path, schema: str) -> None:
     payload = yaml.safe_load(path.read_text(encoding="utf-8"))
-    validate_schema(schema, payload)
+    if isinstance(payload, dict) and payload.get("schema") == "v2" and "data" in payload:
+        validate_schema(schema, payload["data"])
+    else:
+        validate_schema(schema, payload)
 
 
 def test_daily_summary_roundtrip(tmp_path: Path) -> None:
@@ -65,11 +70,20 @@ def test_daily_summary_roundtrip(tmp_path: Path) -> None:
         todo_candidates=["Block deep-work mornings"],
         meta=meta,
     )
-    write_yaml_model(path, summary)
-    assert path.exists()
-
-    loaded = load_yaml_model(path, DailySummary)
-    assert loaded == summary
+    artifact = Artifact[DailySummary](
+        kind=ArtifactKind.SUMMARY_DAILY,
+        meta=ArtifactMeta(
+            created_at=meta.created_at,
+            model=meta.llm_model,
+            prompt_path=meta.prompt_path,
+            prompt_hash=meta.prompt_hash,
+        ),
+        data=summary,
+    )
+    save_artifact(path, artifact)
+    loaded = load_artifact(path, DailySummary)
+    assert loaded.data == summary
+    assert loaded.kind is ArtifactKind.SUMMARY_DAILY
     _assert_schema(path, "summary")
 
 
@@ -231,9 +245,20 @@ def test_microfacts_file_roundtrip(tmp_path: Path) -> None:
         ],
         meta=meta,
     )
-    write_yaml_model(path, facts)
-    loaded = load_yaml_model(path, MicroFactsFile)
-    assert loaded == facts
+    artifact = Artifact[MicroFactsFile](
+        kind=ArtifactKind.MICROFACTS_DAILY,
+        meta=ArtifactMeta(
+            created_at=meta.created_at,
+            model=meta.llm_model,
+            prompt_path=meta.prompt_path,
+            prompt_hash=meta.prompt_hash,
+        ),
+        data=facts,
+    )
+    save_artifact(path, artifact)
+    loaded = load_artifact(path, MicroFactsFile)
+    assert loaded.data == facts
+    assert loaded.kind is ArtifactKind.MICROFACTS_DAILY
     _assert_schema(path, "microfacts")
 
 

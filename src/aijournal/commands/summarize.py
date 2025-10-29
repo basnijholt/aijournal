@@ -13,8 +13,9 @@ import typer
 from pydantic import BaseModel
 
 from aijournal.commands.ingest import _load_config, _use_fake_llm
-from aijournal.common.meta import LLMResult
-from aijournal.io.yaml_io import load_yaml_model, write_yaml_model
+from aijournal.common.meta import Artifact, ArtifactKind, ArtifactMeta, LLMResult
+from aijournal.io.artifacts import save_artifact
+from aijournal.io.yaml_io import load_yaml_model
 from aijournal.models import DailySummary, NormalizedEntry, SummaryMeta
 from aijournal.pipelines import summarize as summarize_pipeline
 from aijournal.services import LLMResponseError, build_ollama_config_from_mapping, run_ollama_agent
@@ -187,6 +188,16 @@ def _build_meta(
     )
 
 
+def _artifact_meta_from_summary(meta: SummaryMeta) -> ArtifactMeta:
+    created_at = meta.created_at or time_utils.format_timestamp(time_utils.now())
+    return ArtifactMeta(
+        created_at=created_at,
+        model=meta.llm_model,
+        prompt_path=meta.prompt_path,
+        prompt_hash=meta.prompt_hash,
+    )
+
+
 def _summarize_day_payload(
     entries: Sequence[NormalizedEntry],
     date: str,
@@ -266,5 +277,11 @@ def run_summarize(
 
     summary_data.meta = _build_meta("prompts/summarize_day.md", config=config)
     summary_path = _derived_summary_path(root, date)
-    write_yaml_model(summary_path, summary_data)
+    artifact = Artifact[DailySummary](
+        kind=ArtifactKind.SUMMARY_DAILY,
+        schema="v2",
+        meta=_artifact_meta_from_summary(summary_data.meta),
+        data=summary_data,
+    )
+    save_artifact(summary_path, artifact)
     return summary_path

@@ -10,7 +10,17 @@ from pathlib import Path
 import pytest
 import yaml
 
-from aijournal.models import ManifestEntry
+from aijournal.common.meta import Artifact, ArtifactKind, ArtifactMeta
+from aijournal.io.artifacts import save_artifact
+from aijournal.models import (
+    DailySummary,
+    FactEvidence,
+    FactEvidenceSpan,
+    ManifestEntry,
+    MicroFact,
+    MicroFactsFile,
+    SummaryMeta,
+)
 from aijournal.services.capture import (
     CaptureInput,
     EntryResult,
@@ -63,10 +73,76 @@ def test_run_capture_records_telemetry(tmp_path: Path, monkeypatch: pytest.Monke
         path.write_text(content, encoding="utf-8")
         return path
 
+    def _write_summary_artifact(path: Path, day: str) -> Path:
+        meta = SummaryMeta(
+            llm_model="fake-ollama",
+            prompt_path="prompts/summarize_day.md",
+            prompt_hash="fake",
+            created_at=f"{day}T09:00:00Z",
+        )
+        summary = DailySummary(
+            day=day,
+            bullets=["Captured entry"],
+            highlights=["Highlight"],
+            todo_candidates=[],
+            meta=meta,
+        )
+        artifact = Artifact[DailySummary](
+            kind=ArtifactKind.SUMMARY_DAILY,
+            meta=ArtifactMeta(
+                created_at=meta.created_at,
+                model=meta.llm_model,
+                prompt_path=meta.prompt_path,
+                prompt_hash=meta.prompt_hash,
+            ),
+            data=summary,
+        )
+        save_artifact(path, artifact)
+        return path
+
+    def _write_microfacts_artifact(path: Path, day: str) -> Path:
+        meta = SummaryMeta(
+            llm_model="fake-ollama",
+            prompt_path="prompts/extract_facts.md",
+            prompt_hash="fake",
+            created_at=f"{day}T09:05:00Z",
+        )
+        facts = MicroFactsFile(
+            facts=[
+                MicroFact(
+                    id=f"fact-{day}",
+                    statement="Capture recorded",
+                    confidence=0.5,
+                    evidence=FactEvidence(
+                        entry_id=f"{day}-entry",
+                        spans=[FactEvidenceSpan(type="para", index=0)],
+                    ),
+                    first_seen=day,
+                    last_seen=day,
+                )
+            ],
+            meta=meta,
+        )
+        artifact = Artifact[MicroFactsFile](
+            kind=ArtifactKind.MICROFACTS_DAILY,
+            meta=ArtifactMeta(
+                created_at=meta.created_at,
+                model=meta.llm_model,
+                prompt_path=meta.prompt_path,
+                prompt_hash=meta.prompt_hash,
+            ),
+            data=facts,
+        )
+        save_artifact(path, artifact)
+        return path
+
     def fake_run_summarize(date: str, *, timeout: float, retries: int, progress: bool) -> Path:
         del timeout, retries, progress
         stage_calls.append(("summarize", date))
-        return _ensure_file(tmp_path / "derived" / "summaries" / f"{date}.yaml", "summary")
+        return _write_summary_artifact(
+            tmp_path / "derived" / "summaries" / f"{date}.yaml",
+            date,
+        )
 
     def fake_run_facts(
         date: str,
@@ -79,7 +155,10 @@ def test_run_capture_records_telemetry(tmp_path: Path, monkeypatch: pytest.Monke
     ) -> tuple[None, Path]:
         del timeout, retries, progress, claim_models, build_claim_preview
         stage_calls.append(("facts", date))
-        path = _ensure_file(tmp_path / "derived" / "microfacts" / f"{date}.yaml", "facts")
+        path = _write_microfacts_artifact(
+            tmp_path / "derived" / "microfacts" / f"{date}.yaml",
+            date,
+        )
         return None, path
 
     def fake_run_profile_suggest(

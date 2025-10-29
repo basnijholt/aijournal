@@ -59,7 +59,10 @@ def test_facts_generates_microfacts(
     facts_path = cli_workspace / "derived" / "microfacts" / f"{DATE}.yaml"
     assert facts_path.exists()
 
-    data = _read_yaml(facts_path)
+    artifact = _read_yaml(facts_path)
+    assert artifact.get("schema") == "v2"
+    assert artifact.get("kind") == "microfacts.daily"
+    data = artifact.get("data", {})
     facts = data.get("facts", [])
     assert isinstance(facts, list) and facts
     first_fact = facts[0]
