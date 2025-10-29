@@ -83,6 +83,17 @@ aijournal/
 - **Utilities (`src/aijournal/utils/` & `src/aijournal/io/`)** – Path mappers, YAML helpers, slug and ID generators, time utilities, filesystem safety rails.
 - **Prompts (`prompts/`)** – Markdown templates hashed into derived metadata to keep runs reproducible.
 
+### 2.3 Domain Layer and Schema Governance
+
+- The strict domain layer (`src/aijournal/domain/`) houses reusable `StrictModel` classes for journal entries, evidence spans, micro-facts, persona data, claim events, and index metadata. They act as the single source of truth for both CLI validation and serialized artifacts.
+- Public DTOs live under `src/aijournal/api/` (for example `chat.py`, `capture.py`) so Typer commands and FastAPI endpoints expose only the fields operators should control. Internal services extend these DTOs with additional context (stage bounds, telemetry) without leaking knobs to end users.
+- Derived outputs are migrating to versioned `Artifact[T]` envelopes (`kind`, `schema: "v2"`, `meta`, `data`). Deterministic helpers in `aijournal/io/artifacts.py` keep JSON/YAML dumps stable for review.
+- Migration behavior is guarded by `AIJOURNAL_SCHEMA_MODE`:
+  - `read-legacy-write-new` (default) prefers v2 artifacts when present but still emits legacy payloads for compatibility.
+  - `read-both-write-both` writes both legacy and v2 files side-by-side (for example `derived/index/meta.json` plus `meta.v2.json`).
+  - `read-new-write-new` enforces the v2 envelope exclusively and errors on legacy payloads.
+- JSON schema snapshots live under `schemas/v2/`, and `scripts/check_schemas.py` blocks commits when a schema drift is detected without blessing.
+
 ## 3. Core Concepts
 
 ### 3.1 Hierarchical Memory (L1→L4)
@@ -111,6 +122,7 @@ aijournal/
 - Each facet or claim records `method`, `user_verified`, `review_after_days`, and evidence references. `staleness = min(2.0, days_since_last_updated / review_after_days)` drives interview prioritization.
 - Default impact weights: values/goals (1.5), decision_style (1.3), affect_energy (1.2), traits (1.0), social (0.9). Claim types (value, goal, boundary, trait, preference, habit, skill) inherit these weights for ranking.
 - Freshness and impact control interview prompts and claim ordering in persona packs, advising the system where to probe next.
+- Provenance spans never persist raw text—`aijournal/domain/evidence.py` strips `span.text` before saving claims or feedback, and the audit tooling redacts any lingering text when running migrations.
 
 ## 4. Data Flow Pipelines
 
