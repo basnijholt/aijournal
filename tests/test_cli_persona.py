@@ -66,7 +66,6 @@ def test_persona_build_generates_core(
     persona_path = cli_workspace / "derived" / "persona" / "persona_core.yaml"
     assert persona_path.exists()
     artifact = yaml.safe_load(persona_path.read_text(encoding="utf-8"))
-    assert artifact.get("schema") == "v2"
     assert artifact.get("kind") == "persona.core"
     data = artifact.get("data", {})
     meta = data.get("meta", {})

@@ -9,6 +9,9 @@ import yaml
 from typer.testing import CliRunner
 
 from aijournal.cli import app
+from aijournal.common import Artifact, ArtifactKind, ArtifactMeta
+from aijournal.domain.events import FeedbackAdjustmentEvent, FeedbackBatch
+from aijournal.io.artifacts import save_artifact
 from tests.helpers import make_claim_atom
 
 
@@ -29,23 +32,30 @@ def _write_feedback_batch(
     old_strength: float,
     new_strength: float,
 ) -> None:
-    payload = {
-        "batch_id": "test-batch",
-        "created_at": "2025-10-27T17:30:48Z",
-        "session_id": "session-1",
-        "question": "What progress did I make?",
-        "feedback": "down" if new_strength < old_strength else "up",
-        "events": [
-            {
-                "kind": "feedback",
-                "claim_id": claim_id,
-                "old_strength": old_strength,
-                "new_strength": new_strength,
-                "delta": new_strength - old_strength,
-            }
+    created_at = "2025-10-27T17:30:48Z"
+    batch = FeedbackBatch(
+        batch_id="test-batch",
+        created_at=created_at,
+        session_id="session-1",
+        question="What progress did I make?",
+        feedback="down" if new_strength < old_strength else "up",
+        events=[
+            FeedbackAdjustmentEvent(
+                claim_id=claim_id,
+                old_strength=old_strength,
+                new_strength=new_strength,
+                delta=new_strength - old_strength,
+            )
         ],
-    }
-    path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
+    )
+    save_artifact(
+        path,
+        Artifact[FeedbackBatch](
+            kind=ArtifactKind.FEEDBACK_BATCH,
+            meta=ArtifactMeta(created_at=created_at),
+            data=batch,
+        ),
+    )
 
 
 def test_feedback_apply_updates_claims_and_archives(

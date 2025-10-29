@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Generic, Literal, TypeVar
-
-from pydantic import Field
+from typing import Generic, TypeVar
 
 from .base import StrictModel
 from .types import TimestampStr
@@ -43,16 +41,11 @@ class ArtifactKind(StrEnum):
 
 
 class Artifact(StrictModel, Generic[T]):
-    """Versioned artifact envelope wrapping a payload of type ``T``."""
+    """Artifact envelope wrapping a payload of type ``T``."""
 
     kind: ArtifactKind
-    schema_: Literal["v2"] = Field("v2", alias="schema")
     meta: ArtifactMeta
     data: T
-
-    @property
-    def schema_version(self) -> Literal["v2"]:
-        return self.schema_
 
 
 class LLMResult(StrictModel, Generic[T]):

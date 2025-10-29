@@ -5,7 +5,7 @@ from pathlib import Path
 import yaml
 
 from aijournal.common import Artifact, ArtifactKind, ArtifactMeta, StrictModel
-from aijournal.io import load_artifact, read_legacy_or_artifact, save_artifact
+from aijournal.io import load_artifact, load_artifact_data, save_artifact
 
 
 class _Payload(StrictModel):
@@ -31,7 +31,7 @@ def test_save_artifact_writes_deterministic_yaml(tmp_path: Path) -> None:
     assert text.splitlines()[0] == "data:"
 
     loaded_yaml = yaml.safe_load(text)
-    assert loaded_yaml["schema"] == "v2"
+    assert "schema" not in loaded_yaml
     assert loaded_yaml["kind"] == ArtifactKind.SUMMARY_DAILY.value
 
 
@@ -59,18 +59,11 @@ def test_load_artifact_roundtrip(tmp_path: Path) -> None:
     assert loaded.data.value == 3
 
 
-def test_read_legacy_or_artifact_handles_both(tmp_path: Path) -> None:
-    legacy_path = tmp_path / "legacy.yaml"
-    legacy_path.write_text("value: 7\n", encoding="utf-8")
-
-    legacy_value = read_legacy_or_artifact(legacy_path, _Payload)
-    assert isinstance(legacy_value, _Payload)
-    assert legacy_value.value == 7
-
+def test_load_artifact_data_returns_payload(tmp_path: Path) -> None:
     artifact = _make_artifact(5)
-    artifact_path = tmp_path / "wrapped.yaml"
-    save_artifact(artifact_path, artifact)
+    path = tmp_path / "example.yaml"
+    save_artifact(path, artifact)
 
-    wrapped_value = read_legacy_or_artifact(artifact_path, _Payload)
-    assert isinstance(wrapped_value, _Payload)
-    assert wrapped_value.value == 5
+    payload = load_artifact_data(path, _Payload)
+    assert isinstance(payload, _Payload)
+    assert payload.value == 5

@@ -61,7 +61,6 @@ def test_summarize_generates_summary(
     assert summary_path.exists()
 
     artifact = _read_yaml(summary_path)
-    assert artifact.get("schema") == "v2"
     assert artifact.get("kind") == "summaries.daily"
     meta = artifact.get("meta", {})
     assert meta.get("created_at")

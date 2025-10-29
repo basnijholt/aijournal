@@ -23,4 +23,3 @@ meta:
   prompt_hash: 6a32e2008868a7fabf85f096df6d312ca3c0b3b40ef9ea5d44ec00ae1d057f0e
   prompt_path: prompts/summarize_day.md
   sources: null
-schema: v2

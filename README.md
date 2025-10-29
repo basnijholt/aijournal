@@ -77,14 +77,13 @@ Run `aijournal init` inside a fresh directory to materialize `data/`, `derived/`
 - Use `aijournal ops persona status` anytime you edit `profile/*.yaml` to confirm the cached persona core matches the latest mtimes. The builder now records source file mtimes and `pack` warns when the persona core is stale or missing so you remember to rebuild before sharing context bundles.
 - Retrieval, persona, advice, and feedback all run against a strict domain layer in `src/aijournal/domain/`. These `StrictModel` classes back both the CLI and persisted artifacts so serialization bugs surface immediately.
 
-### Strict schemas, artifacts, and migration safety valves
+### Strict schemas, artifacts, and migration stance
 
-- Every derived output is migrating to versioned `Artifact[T]` envelopes (`kind`, `schema: "v2"`, `meta`, `data`). Deterministic helpers in `aijournal/io/artifacts.py` keep the JSON/YAML on disk stable.
-- During the short migration window the project emits both the legacy and v2 payloads for a handful of artifacts (for example, `derived/index/meta.json` alongside `meta.v2.json`). Treat this as a temporary aid—new tooling should consume the v2 envelope directly and plan to run in the strict `read-new-write-new` mode.
-- `AIJOURNAL_SCHEMA_MODE` exists only as a safety valve while completing refactor3. Keep it on the default (`read-legacy-write-new`) just long enough to regenerate artifacts, then switch to `read-new-write-new` and delete the legacy files. Long-term compatibility with the legacy layout is not supported.
+- Every derived output now persists as an `Artifact[T]` envelope (`kind`, `meta`, `data`). Deterministic helpers in `aijournal/io/artifacts.py` keep the JSON/YAML on disk stable.
+- Legacy payloads are gone—commands read and write only the strict envelopes that live under `derived/`.
 - Source spans now strip raw text before writing claims or feedback to disk. `aijournal/domain/evidence.py` enforces this at the schema layer and `aijournal ops audit provenance --fix` (Stage 8) will redact any lingering text during migration.
-- Governance hooks (`scripts/check_schemas.py`, JSON schema snapshots under `schemas/v2/`, and mandatory pre-commit checks) ensure every schema change is intentional and reviewable.
-- Reference outputs under `docs/examples/` showcase the new persona core, index meta v2 envelope, microfacts, packs, feedback batches, and chat transcripts generated in fake mode.
+- Governance hooks (`scripts/check_schemas.py`, JSON schema snapshots under `schemas/core/`, and mandatory pre-commit checks) ensure every schema change is intentional and reviewable.
+- Reference outputs under `docs/examples/` showcase the strict persona core, index metadata, microfacts, packs, feedback batches, and chat transcripts generated in fake mode.
 
 ## Usage
 

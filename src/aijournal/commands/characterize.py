@@ -159,7 +159,6 @@ def run_characterize(
     batch_path = _pending_updates_path(root, batch_id)
     artifact = Artifact[ProfileUpdateBatch](
         kind=ArtifactKind.PROFILE_UPDATES,
-        schema="v2",
         meta=_artifact_meta_from_summary_meta(meta_model),
         data=batch_model,
     )

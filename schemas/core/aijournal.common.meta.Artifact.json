@@ -6,6 +6,7 @@
         "persona.core",
         "summaries.daily",
         "microfacts.daily",
+        "profile.suggestions",
         "profile.updates",
         "feedback.batch",
         "index.meta",
@@ -113,7 +114,7 @@
     }
   },
   "additionalProperties": false,
-  "description": "Versioned artifact envelope wrapping a payload of type ``T``.",
+  "description": "Artifact envelope wrapping a payload of type ``T``.",
   "properties": {
     "data": {
       "title": "Data"
@@ -123,12 +124,6 @@
     },
     "meta": {
       "$ref": "#/$defs/ArtifactMeta"
-    },
-    "schema": {
-      "const": "v2",
-      "default": "v2",
-      "title": "Schema",
-      "type": "string"
     }
   },
   "required": [

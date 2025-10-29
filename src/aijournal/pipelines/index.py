@@ -16,7 +16,6 @@ import numpy as np
 from annoy import AnnoyIndex
 
 from aijournal.common.meta import Artifact, ArtifactKind, ArtifactMeta
-from aijournal.common.schema_mode import get_schema_mode
 from aijournal.domain.index import IndexMeta
 from aijournal.io.artifacts import save_artifact
 from aijournal.io.yaml_io import load_yaml_model, write_yaml_model
@@ -479,7 +478,6 @@ def write_index_meta(
     touched_dates: Iterable[str],
     index_meta_path: Callable[[Path], Path],
 ) -> None:
-    schema_mode = get_schema_mode()
     timestamp = time_utils.format_timestamp(time_utils.now())
     index_meta = IndexMeta(
         embedding_model=embedder.model,
@@ -498,22 +496,15 @@ def write_index_meta(
     )
     artifact = Artifact[IndexMeta](
         kind=ArtifactKind.INDEX_META,
-        schema="v2",
         meta=ArtifactMeta(
             created_at=timestamp,
             model=embedder.model,
-            notes={"schema_mode": schema_mode},
         ),
         data=index_meta,
     )
-    payload = index_meta.model_dump(mode="python", exclude_none=True)
     meta_path = index_meta_path(root)
-    meta_path.parent.mkdir(parents=True, exist_ok=True)
-    meta_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
-
-    v2_path = meta_path.with_name(f"{meta_path.stem}.v2{meta_path.suffix}")
     artifact_format = meta_path.suffix.lstrip(".") or "json"
-    save_artifact(v2_path, artifact, format=artifact_format)
+    save_artifact(meta_path, artifact, format=artifact_format)
 
 
 __all__ = [

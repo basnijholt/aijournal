@@ -10,11 +10,11 @@ This document is the authoritative runbook for the strict-schema consolidation o
 
 ## 0. Executive Summary
 
-- **Mission:** Collapse duplicated “payload vs. derived” schemas, enforce strict structured output from the LLM, introduce versioned `Artifact[T]` envelopes, and keep capture/feedback privacy safeguards intact.
+- **Mission:** Collapse duplicated “payload vs. derived” schemas, enforce strict structured output from the LLM, introduce canonical `Artifact[T]` envelopes, and keep capture/feedback privacy safeguards intact.
 - **Why now:** The current landscape (see `scripts/data_model_report.py`) shows dozens of nearly identical Pydantic models and dataclasses. This hampers validation, complicates reasoning, and forces coercion layers. A strict, unified schema makes the system safer, easier to audit, and ready for autonomous agents.
 - **Key Deliverables:**
   1. Part A – Pain points & duplication map (for context).
-  2. Part B – Unified v2 data model (strict Pydantic class outlines + rationale).
+  2. Part B – Unified strict data model (Pydantic class outlines + rationale).
   3. Part C – Migration plan (phased, with adapters, prompts, tests, risks).
   4. “Prompt Draft” for downstream agents ensuring they operate with these assumptions.
 
@@ -43,7 +43,7 @@ This runbook expands every part of the prior proposal into actionable, testable 
 2. **Privacy:** Claim provenance must never persist raw text excerpts; micro-facts may carry text during analysis but it must be stripped before persisting claims.
 3. **Capture DTO Separation:** Keep `CaptureRequest` (public) distinct from `CaptureInput` (internal with `min_stage`/`max_stage`).
 4. **Event Shapes:** Preserve rich preview events and lightweight feedback adjustments via a discriminated union.
-5. **Artifact Versioning:** Persist derived outputs inside `Artifact[T]` envelopes with `schema: "v2"` and an `ArtifactKind` enumeration value.
+5. **Artifact Envelopes:** Persist derived outputs inside `Artifact[T]` envelopes with `kind`, `meta`, and `data` fields—no parallel formats.
 6. **Atomic Commits:** Each sub-step ends with a passing test suite and a dedicated commit.
 7. **Governance Hooks:** Install a local `pre-push` hook running `uv run pytest -q` and `pre-commit run --all-files`; pushes fail on red.
 8. **Decision Log:** Maintain a “Decision Log” table (Date / Step / Decision / Impact) in `docs/refactor3_status.md`. Every deviation, retry, or adjustment must be recorded before continuing.
@@ -68,7 +68,7 @@ This runbook expands every part of the prior proposal into actionable, testable 
 
 ---
 
-## 4. Part B – Unified v2 Data Model (Strict)
+## 4. Part B – Unified Data Model (Strict)
 
 ### 4.1 Common Primitives
 
@@ -89,9 +89,8 @@ class StrictModel(BaseModel):
     )
 
 # aijournal/common/meta.py
-from typing import Generic, TypeVar, Literal
+from typing import Generic, TypeVar
 from enum import StrEnum
-from pydantic import Field
 
 T = TypeVar("T")
 
@@ -119,7 +118,6 @@ class ArtifactKind(StrEnum):
 
 class Artifact(Generic[T], StrictModel):
     kind: ArtifactKind
-    schema: Literal["v2"] = "v2"
     meta: ArtifactMeta
     data: T
 
@@ -530,13 +528,13 @@ class CaptureInput(CaptureRequest):
 - Commit: `refactor3: add artifact envelope primitives`.
 
 **1.3 Schema Snapshot & Governance Hooks**
-- Generate JSON Schema files for every strict model under `schemas/v2/<model>.json` using `model_json_schema()`; commit them.
+- Generate JSON Schema files for every strict model under `schemas/core/<model>.json` using `model_json_schema()`; commit them.
 - Add CI/local script (`scripts/check_schemas.py`) comparing regenerated schemas vs. committed versions; fail unless `AIJOURNAL_BLESS_SCHEMA=1` is set.
 - Audit code for raw `kind` strings; replace with `ArtifactKind` values.
 - Create `.githooks/pre-push` running `uv run pytest -q` and `pre-commit run --all-files`; document activation in `CONTRIBUTING.md`.
 - Add a “Decision Log” table (Date / Step / Decision / Impact) to `docs/refactor3_status.md`.
 - Tests: `uv run pytest`; run schema checker to confirm zero diff.
-- Commit: `refactor3: freeze v2 schemas and add governance hooks`.
+- Commit: `refactor3: freeze strict schemas and add governance hooks`.
 
 ### Stage 2 – Sections & Evidence
 
@@ -585,7 +583,7 @@ class CaptureInput(CaptureRequest):
 - CLI, persona commands, schema validators, and chat services import the domain persona models directly, ensuring a single source of truth.
 
 **4.4 Schema Blessing & Docs — DONE**
-- Regenerated persona/interview schemas (`schemas/v2/aijournal.domain.persona.*`), updated prompts/examples, and documented the strict-schema flow.
+- Regenerated persona/interview schemas (`schemas/core/aijournal.domain.persona.*`), updated prompts/examples, and documented the strict-schema flow.
 
 ### Stage 5 – Claim Events & Feedback
 
@@ -627,13 +625,13 @@ class CaptureInput(CaptureRequest):
 **8.1 Wrap Derived Artifacts in Artifact[T]**
 - Convert persisted YAML/JSON (summaries, microfacts, persona core, profile updates, feedback batches, index meta/chunks, packs, chat transcripts) to `Artifact[T]` envelopes.
 - Use deterministic serialization helper for JSON/YAML dumps.
-- Tests: `uv run pytest`; add test ensuring each artifact has `schema: "v2"`, `kind in ArtifactKind`, and stable formatting.
+- Tests: `uv run pytest`; add test ensuring each artifact has a valid `ArtifactKind` and stable formatting.
 - Commit: `refactor3: adopt artifact envelopes for derived data`.
 
 **8.2 Legacy Payload Removal**
 - Rip out any legacy data readers/writers and delete the `AIJOURNAL_SCHEMA_MODE` flag.
 - Drop redundant models, CLI options, and fixtures that referenced v1 layouts.
-- Remove stale `derived/*` examples that predate artifacts; regenerate only the v2 envelopes.
+- Remove stale `derived/*` examples that predate artifacts; regenerate only the strict envelopes.
 - Tests: `uv run pytest`.
 - Commit: `refactor3: remove legacy schema paths`.
 
@@ -647,7 +645,7 @@ class CaptureInput(CaptureRequest):
 - Add `scripts/codemods/refactor3_imports.py` using LibCST to rewrite known old→new imports (supports `--dry-run`).
 - Provide test rewriting a dummy file and asserting expected diff.
 - Tests: `uv run pytest`.
-- Commit: `refactor3: provide codemod for schema v2 imports`.
+- Commit: `refactor3: provide codemod for strict schema imports`.
 
 ### Stage 9 – Documentation & Examples
 
@@ -659,7 +657,7 @@ class CaptureInput(CaptureRequest):
 **9.2 Example Artifact Regeneration**
 - Regenerate sample packs, persona core, index manifests, microfacts, feedback, and chat examples reflecting new format (fake mode allowed).
 - Tests: `uv run pytest`.
-- Commit: `refactor3: refresh examples for schema v2`.
+- Commit: `refactor3: refresh strict schema examples`.
 
 ### Stage 10 – Validation & Release Prep
 
@@ -668,13 +666,13 @@ class CaptureInput(CaptureRequest):
   - `export AIJOURNAL_FAKE_OLLAMA=1`
   - `uv run aijournal init --path /tmp/aijournal_refactor3`
   - Capture fixture entries; run `status`, `chat`, `advise`, `export pack`, `ops feedback apply`.
-- Verify every artifact under `derived/` includes `schema: "v2"` and `kind` (enum), and no persisted provenance spans contain text.
+- Verify every artifact under `derived/` includes an `ArtifactKind` and no persisted provenance spans contain text.
 - Tests: `uv run pytest`; optionally `pre-commit run --all-files`.
-- Commit: `refactor3: verify end-to-end workflow under schema v2`.
+- Commit: `refactor3: verify end-to-end strict workflow`.
 
 **10.2 Completion Log & Changelog**
 - Update `docs/refactor3_status.md` summarizing executed steps, test commands, decision log entries.
-- Update `CHANGELOG.md` with schema v2 introduction, migration notes, codemod instructions, provenance audit command, and the removal of schema-mode toggles.
+- Update `CHANGELOG.md` with the strict schema cut-over, migration notes, codemod instructions, provenance audit command, and the removal of schema-mode toggles.
 - Tests: `uv run pytest`.
 - Commit: `refactor3: finalize strict schema release notes`.
 
@@ -769,7 +767,7 @@ refactor3: <concise summary>
 - All stages complete with passing tests and sequential commits.
 - `git status` clean; no leftover artifacts or temporary files.
 - `docs/refactor3_status.md` contains Decision Log entries and execution summary.
-- `CHANGELOG.md` documents the strict schema v2 cut-over, audit command, codemod, and hard removal of legacy formats.
+- `CHANGELOG.md` documents the strict schema cut-over, audit command, codemod, and hard removal of legacy formats.
 - Prompts updated; schema snapshots in place with no legacy fallbacks.
 - Optional release checklist prepared if required.
 
@@ -781,7 +779,7 @@ refactor3: <concise summary>
 >
 > **Inputs**: `README.md`, `ARCHITECTURE.md`, `docs/workflow.md`, `agents.md`, `refactor3.md`, `reports/data_model_out.txt`.
 >
-> **Objective**: Implement the strict v2 data model, replacing payload/response twins with unified domain classes, adopting artifact envelopes, enforcing privacy, preserving capture/event semantics, and delivering the staged commits in `refactor3.md`.
+> **Objective**: Implement the strict data model, replacing payload/response twins with unified domain classes, adopting artifact envelopes, enforcing privacy, preserving capture/event semantics, and delivering the staged commits in `refactor3.md`.
 >
 > **Hard Requirements**:
 > 1. Strict structured output only; missing required fields = failure. Runner returns `LLMResult[T]` and logs invalid payloads.

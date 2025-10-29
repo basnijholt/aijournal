@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import pytest
 
 from aijournal.commands import system
+from aijournal.common import Artifact, ArtifactKind, ArtifactMeta
+from aijournal.domain.index import IndexMeta
+from aijournal.io.artifacts import save_artifact
 
 
 def test_run_system_doctor_happy_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -63,7 +65,19 @@ def test_run_status_summary(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
         "touched_dates": ["2025-10-28"],
         "updated_at": "2025-10-28T00:00:00Z",
     }
-    meta_path.write_text(json.dumps(meta_payload), encoding="utf-8")
+    index_meta = IndexMeta(**meta_payload)
+    save_artifact(
+        meta_path,
+        Artifact[IndexMeta](
+            kind=ArtifactKind.INDEX_META,
+            meta=ArtifactMeta(
+                created_at=meta_payload["updated_at"],
+                model=meta_payload["embedding_model"],
+            ),
+            data=index_meta,
+        ),
+        format="json",
+    )
 
     pending_dir = tmp_path / "derived" / "pending" / "profile_updates"
     pending_dir.mkdir(parents=True)

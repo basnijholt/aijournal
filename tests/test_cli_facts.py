@@ -60,7 +60,6 @@ def test_facts_generates_microfacts(
     assert facts_path.exists()
 
     artifact = _read_yaml(facts_path)
-    assert artifact.get("schema") == "v2"
     assert artifact.get("kind") == "microfacts.daily"
     data = artifact.get("data", {})
     facts = data.get("facts", [])

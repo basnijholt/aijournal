@@ -11,7 +11,7 @@ import typer
 
 from aijournal.common.meta import Artifact, ArtifactKind, ArtifactMeta
 from aijournal.domain.persona import PersonaCoreFile, PersonaCoreMeta
-from aijournal.io.artifacts import read_legacy_or_artifact, save_artifact
+from aijournal.io.artifacts import load_artifact_data, save_artifact
 from aijournal.models import ClaimAtom
 from aijournal.pipelines import persona as persona_pipeline
 from aijournal.utils import time as time_utils
@@ -70,11 +70,7 @@ def persona_state(root: Path) -> tuple[str, list[str]]:
         return "missing", [f"Missing {rel}; run `aijournal persona build`."]
 
     try:
-        persona_file = read_legacy_or_artifact(
-            persona_path,
-            PersonaCoreFile,
-            artifact_model=PersonaCoreFile,
-        )
+        persona_file = load_artifact_data(persona_path, PersonaCoreFile)
     except Exception as exc:  # pragma: no cover - depends on file contents
         return (
             "stale",
@@ -238,18 +234,13 @@ def run_persona_build(
     existing: PersonaCoreFile | None = None
     if persona_path.exists():
         try:
-            existing = read_legacy_or_artifact(
-                persona_path,
-                PersonaCoreFile,
-                artifact_model=PersonaCoreFile,
-            )
+            existing = load_artifact_data(persona_path, PersonaCoreFile)
         except Exception:
             existing = None
 
     changed = existing is None or existing != persona_file
     artifact = Artifact[PersonaCoreFile](
         kind=ArtifactKind.PERSONA_CORE,
-        schema="v2",
         meta=_persona_artifact_meta(persona_file.meta),
         data=persona_file,
     )

@@ -61,15 +61,10 @@
   },
   "kind": "index.meta",
   "meta": {
-    "char_per_token": null,
     "created_at": "2025-10-29T18:07:26Z",
     "model": "embeddinggemma",
-    "notes": {
-      "schema_mode": "read-legacy-write-new"
-    },
     "prompt_hash": null,
     "prompt_path": null,
     "sources": null
   },
-  "schema": "v2"
 }

@@ -15,7 +15,6 @@ from typing import TYPE_CHECKING, Any
 
 from annoy import AnnoyIndex
 
-from aijournal.common.schema_mode import allow_legacy_read
 from aijournal.domain.index import IndexMeta, RetrievedChunk
 from aijournal.io.artifacts import load_artifact
 
@@ -63,7 +62,6 @@ class Retriever:
         self.db_path = self.index_dir / "index.db"
         self.annoy_path = self.index_dir / "annoy.index"
         self.meta_path = self.index_dir / "meta.json"
-        self.meta_v2_path = self.index_dir / "meta.v2.json"
         self._meta = self._load_meta()
         self._conn_lock = RLock()
         self._conn: sqlite3.Connection | None = None
@@ -163,27 +161,18 @@ class Retriever:
         self._annoy = None
 
     def _load_meta(self) -> IndexMeta:
-        if self.meta_v2_path.exists():
-            try:
-                artifact = load_artifact(self.meta_v2_path, IndexMeta)
-                return artifact.data
-            except Exception:  # pragma: no cover - fallback to legacy path
-                pass
+        if not self.meta_path.exists():
+            return IndexMeta()
 
-        if self.meta_path.exists():
-            if not allow_legacy_read():
-                msg = (
-                    "Legacy index meta not permitted in AIJOURNAL_SCHEMA_MODE; "
-                    "run `aijournal ops index rebuild`."
-                )
-                raise RuntimeError(msg)
-            try:
-                data = json.loads(self.meta_path.read_text(encoding="utf-8"))
-            except json.JSONDecodeError:
-                return IndexMeta()
-            return IndexMeta.model_validate(data or {})
-
-        return IndexMeta()
+        try:
+            artifact = load_artifact(self.meta_path, IndexMeta)
+        except Exception as exc:  # pragma: no cover - invalid artifact on disk
+            msg = (
+                f"Index metadata at {self.meta_path} is incompatible with the strict schema. "
+                "Delete the file and run `aijournal ops index rebuild`."
+            )
+            raise RuntimeError(msg) from exc
+        return artifact.data
 
     def _can_use_annoy(self) -> bool:
         return self.db_path.exists() and self.annoy_path.exists()

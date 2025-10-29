@@ -99,7 +99,6 @@ def test_profile_suggest_writes_suggestions(
     _, suggestions_path, _ = _invoke(cli_workspace, cli_runner)
 
     artifact = yaml.safe_load(suggestions_path.read_text(encoding="utf-8"))
-    assert artifact.get("schema") == "v2"
     assert artifact.get("kind") == "profile.suggestions"
     meta = artifact.get("meta", {})
     assert meta.get("created_at")

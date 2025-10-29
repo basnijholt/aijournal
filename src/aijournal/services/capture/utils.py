@@ -17,7 +17,7 @@ from aijournal.commands.profile import (
     _profile_to_dict,
 )
 from aijournal.domain.evidence import redact_source_text
-from aijournal.io.artifacts import read_legacy_or_artifact
+from aijournal.io.artifacts import load_artifact_data
 from aijournal.io.yaml_io import write_yaml_model
 from aijournal.models import (
     ClaimAtom,
@@ -184,11 +184,7 @@ def noop_preview(
 
 
 def apply_profile_update_batch(root: Path, batch_path: Path) -> bool:
-    batch = read_legacy_or_artifact(
-        batch_path,
-        ProfileUpdateBatch,
-        artifact_model=ProfileUpdateBatch,
-    )
+    batch = load_artifact_data(batch_path, ProfileUpdateBatch)
     claim_proposals: list[ClaimProposal] = [
         proposal.model_copy(deep=True) for proposal in batch.proposals.claims
     ]

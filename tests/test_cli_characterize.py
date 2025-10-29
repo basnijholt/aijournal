@@ -117,7 +117,6 @@ def test_characterize_generates_pending_batch(
 
     batch_path, _ = _run_characterize(cli_workspace, cli_runner)
     artifact = yaml.safe_load(batch_path.read_text(encoding="utf-8"))
-    assert artifact.get("schema") == "v2"
     assert artifact.get("kind") == "profile.updates"
     outer_meta = artifact.get("meta", {})
     assert outer_meta.get("created_at")
