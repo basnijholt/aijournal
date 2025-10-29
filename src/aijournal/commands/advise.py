@@ -138,6 +138,11 @@ def _advice_payload(
                 response_model=AdviceLLMResponse,
                 agent_name="aijournal-advise",
                 config=config,
+                max_attempts=2,
+                retry_message=(
+                    "Return JSON with keys `id`, `query`, `assumptions`, `recommendations`, "
+                    "`tradeoffs`, `next_actions`, `confidence`, `alignment`, `style`."
+                ),
             ),
         )
 

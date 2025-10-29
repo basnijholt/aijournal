@@ -19,7 +19,6 @@ from aijournal.commands.summarize import (
     _json_block,
     _load_normalized_entries,
     _log_entry_progress,
-    _structured_call_with_retry,
     _validate_timeout,
 )
 from aijournal.fakes import fake_profile_suggestions
@@ -196,24 +195,25 @@ def _profile_suggestions_payload(
     else:
         simple_response = cast(
             SimpleProfileSuggestionsResponse,
-            _structured_call_with_retry(
-                lambda: _invoke_structured_llm(
-                    "prompts/profile_suggest.md",
-                    {
-                        "date": date,
-                        "entries_json": _json_block(_entries_to_payload(entries)),
-                        "profile_json": _json_block(profile),
-                        "claims_json": _json_block(
-                            {"claims": [claim.model_dump(mode="python") for claim in claims]}
-                        ),
-                    },
-                    response_model=SimpleProfileSuggestionsResponse,
-                    agent_name="aijournal-profile-suggest",
-                    config=config,
-                    timeout=timeout,
+            _invoke_structured_llm(
+                "prompts/profile_suggest.md",
+                {
+                    "date": date,
+                    "entries_json": _json_block(_entries_to_payload(entries)),
+                    "profile_json": _json_block(profile),
+                    "claims_json": _json_block(
+                        {"claims": [claim.model_dump(mode="python") for claim in claims]}
+                    ),
+                },
+                response_model=SimpleProfileSuggestionsResponse,
+                agent_name="aijournal-profile-suggest",
+                config=config,
+                timeout=timeout,
+                max_attempts=max(1, retries + 1),
+                retry_message=(
+                    "Return JSON with keys `suggestions` only. Each suggestion must match the "
+                    "documented schema and avoid extra fields."
                 ),
-                retries=retries,
-                label=f"profile suggest {date}",
             ),
         )
         timestamp = time_utils.format_timestamp(time_utils.now())

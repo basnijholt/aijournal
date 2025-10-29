@@ -573,6 +573,8 @@ def _invoke_structured_llm(
     agent_name: str,
     config: dict[str, Any],
     timeout: float | None = None,
+    max_attempts: int = 2,
+    retry_message: str | None = None,
 ) -> Any:
     """Proxy to summarize command helper while honoring patched runners."""
 
@@ -588,6 +590,8 @@ def _invoke_structured_llm(
             agent_name=agent_name,
             config=config,
             timeout=timeout,
+            max_attempts=max_attempts,
+            retry_message=retry_message,
         )
     finally:
         summarize_commands.build_ollama_config_from_mapping = original_builder

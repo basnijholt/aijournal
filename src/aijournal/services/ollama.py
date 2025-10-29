@@ -2,15 +2,11 @@
 
 from __future__ import annotations
 
-import json
-import logging
 import os
-import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, cast
 
-from pydantic import BaseModel, TypeAdapter, ValidationError
 from pydantic_ai import Agent, ModelSettings, UnexpectedModelBehavior
 from pydantic_ai.exceptions import UserError
 from pydantic_ai.models.openai import OpenAIChatModel
@@ -24,12 +20,6 @@ _JSON_SYSTEM_PROMPT = (
     "You are part of the aijournal CLI. "
     "Respond with valid JSON only—no markdown fences, explanations, or trailing text."
 )
-
-_logger = logging.getLogger(__name__)
-
-_FENCE_PATTERN = re.compile(r"```(?:json)?\s*(.*?)```", re.IGNORECASE | re.DOTALL)
-_JSON_START_PATTERN = re.compile(r"[{\[]")
-_MAX_LOG_PAYLOAD_CHARS = 2000
 
 
 class LLMResponseError(RuntimeError):
@@ -129,6 +119,7 @@ def build_ollama_agent(
     system_prompt: str = _JSON_SYSTEM_PROMPT,
     output_type: type[Any] | None = None,
     name: str = "aijournal-json-runner",
+    retries: int | None = None,
 ) -> Agent:
     """Create a Pydantic AI agent for the given configuration."""
     model_settings = _model_settings_from_config(config)
@@ -139,105 +130,9 @@ def build_ollama_agent(
     }
     if output_type is not None:
         agent_kwargs["output_type"] = output_type
-    return Agent(
-        build_ollama_model(config.model, config.host),
-        **agent_kwargs,
-    )
-
-
-def _trim_json_suffix(payload: str) -> str:
-    """Trim trailing commentary after the first balanced JSON object/array."""
-    stack: list[str] = []
-    in_string = False
-    escape = False
-    for idx, ch in enumerate(payload):
-        if in_string:
-            if escape:
-                escape = False
-            elif ch == "\\":
-                escape = True
-            elif ch == '"':
-                in_string = False
-            continue
-
-        if ch == '"':
-            in_string = True
-            continue
-
-        if ch in "{[":
-            stack.append(ch)
-            continue
-
-        if ch in "]}":
-            if not stack:
-                break
-            opener = stack.pop()
-            if (opener == "{" and ch != "}") or (opener == "[" and ch != "]"):
-                break
-            if not stack:
-                return payload[: idx + 1].strip()
-
-    return payload.strip()
-
-
-def _sanitize_json_payload(raw_text: str) -> str:
-    """Remove markdown fences and stray commentary to isolate JSON."""
-    text = raw_text.strip()
-    if not text:
-        return ""
-
-    fence_match = _FENCE_PATTERN.search(text)
-    if fence_match:
-        text = fence_match.group(1).strip()
-
-    start_match = _JSON_START_PATTERN.search(text)
-    if start_match:
-        text = text[start_match.start() :].strip()
-
-    return _trim_json_suffix(text)
-
-
-def _log_payload_failure(cleaned: str) -> None:
-    snippet = cleaned
-    if len(snippet) > _MAX_LOG_PAYLOAD_CHARS:
-        snippet = f"{snippet[:_MAX_LOG_PAYLOAD_CHARS]}… [truncated]"
-    _logger.error("LLM JSON payload failed validation:\n%s", snippet)
-
-
-def _validate_json_payload(cleaned: str, output_type: type[Any]) -> Any:
-    """Convert sanitized JSON text into the requested Python payload."""
-    try:
-        data = json.loads(cleaned)
-    except json.JSONDecodeError as exc:
-        _log_payload_failure(cleaned)
-        msg = f"Model returned invalid JSON: {exc}"
-        raise LLMResponseError(msg) from exc
-
-    if isinstance(output_type, type) and issubclass(output_type, BaseModel):
-        try:
-            return output_type.model_validate(data)
-        except ValidationError as exc:
-            _log_payload_failure(cleaned)
-            msg = f"Model response did not match schema {output_type.__name__}: {exc}"
-            raise LLMResponseError(msg) from exc
-
-    if output_type is dict:
-        if isinstance(data, dict):
-            return data
-        _log_payload_failure(cleaned)
-        msg = f"Expected dict payload but received {type(data).__name__}"
-        raise LLMResponseError(msg)
-
-    if output_type is Any:
-        return data
-
-    adapter = TypeAdapter(output_type)
-    try:
-        return adapter.validate_python(data)
-    except ValidationError as exc:
-        _log_payload_failure(cleaned)
-        msg = f"Model response did not match expected type {output_type}: {exc}"
-        raise LLMResponseError(msg) from exc
+    if retries is not None:
+        agent_kwargs["retries"] = retries
+    return Agent(build_ollama_model(config.model, config.host), **agent_kwargs)
 
 
 def run_ollama_agent(
@@ -246,16 +141,26 @@ def run_ollama_agent(
     *,
     system_prompt: str = _JSON_SYSTEM_PROMPT,
     output_type: type[Any] | None = None,
+    max_attempts: int = 2,
+    retry_message: str | None = None,
 ) -> Any:
-    """Run a short-lived agent and return the structured payload."""
+    """Run a Pydantic AI agent and return the validated payload."""
+
+    if max_attempts < 1:
+        msg = "max_attempts must be at least 1"
+        raise ValueError(msg)
+
     resolved_output: type[Any] = output_type or dict
+
     agent = build_ollama_agent(
         config,
         system_prompt=system_prompt,
-        output_type=None,
+        output_type=resolved_output,
+        retries=max(0, max_attempts - 1),
     )
+
     try:
-        result = agent.run_sync(prompt, output_type=None)
+        result = agent.run_sync(prompt, output_type=resolved_output)
     except UnexpectedModelBehavior as exc:
         msg = f"Model returned invalid JSON: {exc}"
         raise LLMResponseError(msg) from exc
@@ -266,15 +171,7 @@ def run_ollama_agent(
         msg = f"Ollama request failed: {exc}"
         raise LLMResponseError(msg) from exc
 
-    response = result.response
-    raw_text = (response.text or "").strip() if response else ""
-    cleaned = _sanitize_json_payload(raw_text)
-    if not cleaned:
-        _log_payload_failure(raw_text)
-        msg = "Model returned an empty response when JSON was required"
-        raise LLMResponseError(msg)
-
-    return _validate_json_payload(cleaned, resolved_output)
+    return result.output
 
 
 __all__ = [
