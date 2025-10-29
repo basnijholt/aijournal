@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from collections.abc import Callable, Iterable, Sequence
 from datetime import UTC, datetime
 from hashlib import sha256
@@ -17,7 +18,7 @@ from pydantic import BaseModel, Field
 from aijournal.commands.characterize import run_characterize
 from aijournal.commands.facts import run_facts
 from aijournal.commands.index import run_index_rebuild, run_index_tail
-from aijournal.commands.ingest import _load_config
+from aijournal.commands.ingest import _fake_structured_entry, _load_config
 from aijournal.commands.pack import run_pack
 from aijournal.commands.persona import persona_state, run_persona_build
 from aijournal.commands.profile import (
@@ -29,6 +30,7 @@ from aijournal.commands.profile import (
     run_profile_suggest,
 )
 from aijournal.commands.summarize import run_summarize as run_summarize_command
+from aijournal.ingest_agent import IngestResult, build_ingest_agent, ingest_with_agent
 from aijournal.io.yaml_io import load_yaml_model, write_yaml_model
 from aijournal.models import (
     ClaimAtom,
@@ -41,6 +43,7 @@ from aijournal.models import (
     ProfileUpdateBatch,
     SelfProfile,
 )
+from aijournal.pipelines import normalization
 from aijournal.utils import time as time_utils
 from aijournal.utils.paths import normalized_entry_path
 
@@ -121,6 +124,10 @@ def _write_yaml_if_changed(path: Path, payload: dict[str, object]) -> bool:
         return False
     _write_yaml(path, payload)
     return True
+
+
+def _use_fake_llm() -> bool:
+    return os.getenv("AIJOURNAL_FAKE_OLLAMA") == "1"
 
 
 def _ensure_unique_slug(root: Path, date_str: str, base_slug: str) -> str:
@@ -644,6 +651,53 @@ def _scan_headings(text: str) -> list[dict[str, object]]:
     return sections
 
 
+def _ingest_frontmatter(
+    inputs: CaptureInput,
+    *,
+    root: Path,
+    source_path: Path,
+    raw_text: str,
+    digest: str,
+) -> tuple[dict[str, Any], str, NormalizedEntry, list[str]]:
+    """Infer front matter and normalized entry using the ingest agent."""
+
+    config = _load_config(root)
+    fallback_sections = _scan_headings(raw_text)
+    warnings: list[str] = []
+
+    if _use_fake_llm():
+        structured: IngestResult = _fake_structured_entry(source_path)
+    else:
+        agent = build_ingest_agent(
+            config, model=config.get("model") if isinstance(config, dict) else None
+        )
+        structured = ingest_with_agent(agent, source_path=source_path, markdown=raw_text)
+
+    normalized_dict, _ = normalization.normalized_from_structured(
+        structured,
+        source_path=_relative_path(source_path, root),
+        root=root,
+        digest=digest,
+        source_type=inputs.source_type,
+        fallback_sections=fallback_sections,
+        fallback_tags=[],
+        fallback_summary=None,
+    )
+    normalized_entry = NormalizedEntry.model_validate(normalized_dict)
+
+    frontmatter_data: dict[str, Any] = {
+        "id": normalized_entry.id,
+        "created_at": normalized_entry.created_at,
+        "title": normalized_entry.title,
+        "tags": list(normalized_entry.tags or []),
+    }
+    if normalized_entry.summary:
+        frontmatter_data["summary"] = normalized_entry.summary
+
+    warnings.append("front matter synthesized via ingest agent")
+    return frontmatter_data, raw_text.strip(), normalized_entry, warnings
+
+
 def _persist_file_entry(
     inputs: CaptureInput,
     root: Path,
@@ -684,8 +738,19 @@ def _persist_file_entry(
         )
 
     text = raw_bytes.decode("utf-8")
-    frontmatter_data, body = _split_frontmatter(text)
-    body = body.strip()
+    normalized_seed: NormalizedEntry | None = None
+    ingest_warnings: list[str] = []
+    try:
+        frontmatter_data, body = _split_frontmatter(text)
+        body = body.strip()
+    except ValueError:
+        frontmatter_data, body, normalized_seed, ingest_warnings = _ingest_frontmatter(
+            inputs,
+            root=root,
+            source_path=source_path,
+            raw_text=text,
+            digest=digest,
+        )
 
     created_dt = _resolve_created_dt(
         frontmatter_data.get("created_at") or inputs.date,
@@ -703,7 +768,7 @@ def _persist_file_entry(
     slug = _ensure_unique_slug(root, date_str, slug_source)
 
     aliases: list[str] = []
-    entry_warnings: list[str] = []
+    entry_warnings: list[str] = list(ingest_warnings)
     if slug != slug_source:
         aliases.append(slug_source)
         entry_warnings.append(f'slug "{slug_source}" already exists; stored as "{slug}"')
@@ -758,12 +823,25 @@ def _persist_file_entry(
 
     _write_markdown_entry(markdown_path, frontmatter_out, body)
 
-    normalized_path, normalized_changed = _normalize_markdown(
-        markdown_path,
-        root=root,
-        source_hash=digest,
-        source_type=inputs.source_type,
-    )
+    normalized_path = normalized_entry_path(root, date_str, slug)
+    if normalized_seed is not None:
+        normalized_seed.id = slug
+        normalized_seed.created_at = time_utils.format_timestamp(created_dt)
+        normalized_seed.source_path = _relative_path(markdown_path, root)
+        normalized_seed.source_hash = digest
+        normalized_seed.source_type = inputs.source_type
+        normalized_seed.tags = tags
+        if summary_text:
+            normalized_seed.summary = summary_text
+        normalized_payload = normalized_seed.model_dump(mode="python")
+        normalized_changed = _write_yaml_if_changed(normalized_path, normalized_payload)
+    else:
+        normalized_path, normalized_changed = _normalize_markdown(
+            markdown_path,
+            root=root,
+            source_hash=digest,
+            source_type=inputs.source_type,
+        )
 
     entry = _build_manifest_entry(
         digest=digest,
