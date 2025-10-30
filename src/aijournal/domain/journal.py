@@ -40,6 +40,3 @@ class NormalizedEntry(StrictModel):
     summary: str | None = None
     source_hash: str | None = None
     source_type: str | None = None
-
-
-__all__ = ["Section", "NormalizedEntity", "NormalizedEntry"]

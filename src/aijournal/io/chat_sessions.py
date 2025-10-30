@@ -192,6 +192,3 @@ class ChatSessionRecorder:
                 data=learnings,
             ),
         )
-
-
-__all__ = ["ChatSessionRecorder"]

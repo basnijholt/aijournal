@@ -16,6 +16,3 @@ class StrictModel(BaseModel):
         populate_by_name=True,
         protected_namespaces=(),
     )
-
-
-__all__ = ["StrictModel"]

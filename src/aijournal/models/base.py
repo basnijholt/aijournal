@@ -7,6 +7,3 @@ from aijournal.common import StrictModel
 
 class AijournalModel(StrictModel):
     """Project-specific base model that inherits strict settings."""
-
-
-__all__ = ["AijournalModel"]
