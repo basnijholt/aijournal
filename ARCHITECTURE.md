@@ -114,6 +114,12 @@ aijournal/
 
 `aijournal ops persona build` ranks claim atoms by `effective_strength × impact_weight` (weights defined in `config/config.yaml`) and selects enough claims to fit within the configured token budget alongside key facets (values, goals, boundaries, coaching preferences). The builder records trimming metadata, source mtimes, and refuses to run packs or chat when the persona core is stale.
 
+#### Optional Calibration Inputs (Surveys / EMA)
+
+- Operators can supply external measurements—short trait/value surveys or quick EMA (ecological momentary assessment) pings—via `aijournal ops persona calibrate --surveys <file> --ema <file>`. Files are plain JSON/YAML dumps the user generates elsewhere; the command validates them into `Artifact[CalibrationRecord]` entries stored under `derived/persona/calibration/`.
+- `aijournal ops persona metrics` aggregates all stored calibration records with the current claims file to produce `Artifact[PersonaMetrics]` in `derived/persona/metrics/`. The report includes simple means/stddevs for each survey/EMA label and compares them to relevant claim strengths, highlighting gaps that deserve follow-up.
+- The calibration pipeline is deliberately KISS: no prompts or LLM calls, just optional structured evidence the user already tracks. It keeps the persona grounded in measurable signals without complicating the core journal→persona path.
+
 ### 3.5 Provenance, Re-Validation, and Impact Weights
 
 - Each facet or claim records `method`, `user_verified`, `review_after_days`, and evidence references. `staleness = min(2.0, days_since_last_updated / review_after_days)` drives interview prioritization.
