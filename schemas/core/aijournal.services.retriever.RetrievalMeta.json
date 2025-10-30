@@ -1,0 +1,30 @@
+{
+  "additionalProperties": false,
+  "description": "Metadata describing a retrieval invocation.",
+  "properties": {
+    "fake_mode": {
+      "title": "Fake Mode",
+      "type": "boolean"
+    },
+    "k": {
+      "title": "K",
+      "type": "integer"
+    },
+    "mode": {
+      "title": "Mode",
+      "type": "string"
+    },
+    "source": {
+      "title": "Source",
+      "type": "string"
+    }
+  },
+  "required": [
+    "mode",
+    "source",
+    "k",
+    "fake_mode"
+  ],
+  "title": "RetrievalMeta",
+  "type": "object"
+}

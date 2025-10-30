@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import math
 from collections.abc import Sequence
-from dataclasses import dataclass
 from typing import Any
 
+from pydantic import ConfigDict, Field
+
+from aijournal.common.base import StrictModel
 from aijournal.domain.claims import ClaimAtom, ClaimSource, ClaimSourceSpan, Provenance, Scope
 from aijournal.domain.evidence import redact_source_text
 
@@ -56,8 +58,8 @@ _SCOPE_COMPLEMENTS: dict[str, str] = {
 }
 
 
-@dataclass(frozen=True)
-class ClaimSignature:
+class ClaimSignature(StrictModel):
+    model_config = ConfigDict(frozen=True)
     """Canonical identifier for matching claims without relying on the claim id."""
 
     claim_type: str
@@ -78,8 +80,8 @@ class ClaimSignature:
         return (self.claim_type, self.subject, self.predicate, self.scope)
 
 
-@dataclass(frozen=True)
-class ClaimConflict:
+class ClaimConflict(StrictModel):
+    model_config = ConfigDict(frozen=True)
     """Conflict emitted when incoming evidence contradicts an existing claim."""
 
     claim_id: str
@@ -87,11 +89,10 @@ class ClaimConflict:
     statement: str
     existing_value: str
     incoming_value: str
-    incoming_sources: list[ClaimSource]
+    incoming_sources: list[ClaimSource] = Field(default_factory=list)
 
 
-@dataclass
-class ClaimMergeOutcome:
+class ClaimMergeOutcome(StrictModel):
     """Result of attempting to incorporate a claim observation."""
 
     changed: bool

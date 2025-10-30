@@ -1,0 +1,147 @@
+{
+  "$defs": {
+    "RetrievalMeta": {
+      "additionalProperties": false,
+      "description": "Metadata describing a retrieval invocation.",
+      "properties": {
+        "fake_mode": {
+          "title": "Fake Mode",
+          "type": "boolean"
+        },
+        "k": {
+          "title": "K",
+          "type": "integer"
+        },
+        "mode": {
+          "title": "Mode",
+          "type": "string"
+        },
+        "source": {
+          "title": "Source",
+          "type": "string"
+        }
+      },
+      "required": [
+        "mode",
+        "source",
+        "k",
+        "fake_mode"
+      ],
+      "title": "RetrievalMeta",
+      "type": "object"
+    },
+    "RetrievedChunk": {
+      "additionalProperties": false,
+      "description": "Chunk returned from retrieval with a similarity score.",
+      "properties": {
+        "chunk_id": {
+          "title": "Chunk Id",
+          "type": "string"
+        },
+        "chunk_index": {
+          "title": "Chunk Index",
+          "type": "integer"
+        },
+        "date": {
+          "title": "Date",
+          "type": "string"
+        },
+        "manifest_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Manifest Hash"
+        },
+        "normalized_id": {
+          "title": "Normalized Id",
+          "type": "string"
+        },
+        "score": {
+          "title": "Score",
+          "type": "number"
+        },
+        "source_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Hash"
+        },
+        "source_path": {
+          "title": "Source Path",
+          "type": "string"
+        },
+        "source_type": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Type"
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Tags",
+          "type": "array"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        },
+        "tokens": {
+          "title": "Tokens",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "chunk_id",
+        "normalized_id",
+        "chunk_index",
+        "text",
+        "date",
+        "source_path",
+        "tokens",
+        "score"
+      ],
+      "title": "RetrievedChunk",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Chunks plus metadata returned from a search.",
+  "properties": {
+    "chunks": {
+      "items": {
+        "$ref": "#/$defs/RetrievedChunk"
+      },
+      "title": "Chunks",
+      "type": "array"
+    },
+    "meta": {
+      "$ref": "#/$defs/RetrievalMeta"
+    }
+  },
+  "required": [
+    "chunks",
+    "meta"
+  ],
+  "title": "RetrievalResult",
+  "type": "object"
+}

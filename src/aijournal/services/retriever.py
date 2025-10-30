@@ -7,14 +7,15 @@ import os
 import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
-from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 from pathlib import Path
 from threading import RLock
 from typing import TYPE_CHECKING, Any
 
 from annoy import AnnoyIndex
+from pydantic import ConfigDict, Field
 
+from aijournal.common.base import StrictModel
 from aijournal.domain.index import IndexMeta, RetrievedChunk
 from aijournal.io.artifacts import load_artifact
 
@@ -24,26 +25,31 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
 
-@dataclass(frozen=True)
-class RetrievalFilters:
+class RetrievalFilters(StrictModel):
     """Optional filters applied during retrieval."""
 
-    tags: frozenset[str] = field(default_factory=frozenset)
-    source_types: frozenset[str] = field(default_factory=frozenset)
+    model_config = ConfigDict(frozen=True)
+
+    tags: frozenset[str] = Field(default_factory=frozenset)
+    source_types: frozenset[str] = Field(default_factory=frozenset)
     date_from: str | None = None
     date_to: str | None = None
 
 
-@dataclass(frozen=True)
-class RetrievalMeta:
+class RetrievalMeta(StrictModel):
+    """Metadata describing a retrieval invocation."""
+
+    model_config = ConfigDict(frozen=True)
+
     mode: str
     source: str
     k: int
     fake_mode: bool
 
 
-@dataclass(frozen=True)
-class RetrievalResult:
+class RetrievalResult(StrictModel):
+    """Chunks plus metadata returned from a search."""
+
     chunks: list[RetrievedChunk]
     meta: RetrievalMeta
 
