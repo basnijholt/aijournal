@@ -197,11 +197,6 @@ Coercions applied inside the runner are emitted through `LLMResult.coercions_app
 ### 6.4 Metrics
 `LLMResult` now records `attempts`, `repair_attempts`, and `coercions_applied`. Successful calls append a telemetry row to `derived/logs/structured_metrics.jsonl`; `scripts/check_structured_metrics.py` enforces fleet-wide thresholds (repair rate ≤10%, average coercions ≤3) and is covered by dedicated tests.
 
-### 6.5 Calibration Toolkit (KISS)
-- `aijournal ops persona calibrate --surveys SURVEYS.json --ema EMA.json` reads lightweight JSON/YAML payloads (instrument scores, EMA pings) and stores them under `derived/persona/calibration/` as `Artifact[CalibrationRecord]`.
-- `aijournal ops persona metrics` aggregates all calibration records plus the current claims file to emit `derived/persona/metrics/...yaml` (`Artifact[PersonaMetrics]`) with simple means/stddevs and strength-vs-scale deltas for matching claims.
-- Helpers live in `services/persona/calibration.py`; they deliberately accept pre-normalized payloads and avoid bespoke schemas to keep the ingestion surface minimal.
-
 ## 7. Scientific Credibility & Validation Plan
 The L1→L4 memory hierarchy aligns with contemporary personality science when treated as a measurement system.
 
@@ -247,7 +242,7 @@ The L1→L4 memory hierarchy aligns with contemporary personality science when t
 - [x] Introduce shared `StrEnum` vocabularies in `domain/enums.py`, refactor models/prompts/tests to use them, and bless the resulting schema snapshots.
 - [x] Add skeleton injection + two-step repair loop + coercion logging to structured runners, exposing metrics in `LLMResult` and CI (implemented in `services/ollama.run_ollama_agent`, now returning attempt/repair/coercion metadata consumed by CLI pipelines).
 - [x] Build telemetry surfaces that aggregate validation/coercion counts and enforce thresholds in CI (`services/ollama.run_ollama_agent` now emits to `derived/logs/structured_metrics.jsonl`; thresholds enforced via `scripts/check_structured_metrics.py` and associated tests).
-- [x] Ship survey/EMA ingestion + reporting commands (`ops persona calibrate`, `ops persona metrics`) to track convergent/discriminant/test–retest/calibration stats and enforce kill criteria.
+- [ ] Ship survey/EMA ingestion + reporting commands (`ops persona calibrate`, `ops persona metrics`) to track convergent/discriminant/test–retest/calibration stats and enforce kill criteria.
 - [ ] Extend `AdviceCard` with COM-B / implementation-intention fields and ensure recommendations cite both claims and recent evidence.
 - [ ] (Optional) Implement trusted-other ingestion with separate evidence channels and document usage.
 

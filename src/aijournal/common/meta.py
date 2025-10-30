@@ -44,8 +44,6 @@ class ArtifactKind(StrEnum):
     CHAT_SUMMARY = "chat.summary"
     CHAT_LEARNINGS = "chat.learnings"
     ADVICE_CARD = "advice.card"
-    PERSONA_CALIBRATION = "persona.calibration"
-    PERSONA_METRICS = "persona.metrics"
 
 
 class Artifact(StrictModel, Generic[T]):
