@@ -26,11 +26,11 @@ from aijournal.commands.summarize import (
 )
 from aijournal.common.meta import Artifact, ArtifactKind, ArtifactMeta
 from aijournal.domain.changes import ClaimProposal
+from aijournal.domain.claims import ClaimAtom, ClaimSource
 from aijournal.domain.facts import MicroFactsFile, SummaryMeta
 from aijournal.domain.journal import NormalizedEntry
 from aijournal.io.artifacts import save_artifact
 from aijournal.models.authoritative import ManifestEntry
-from aijournal.models.claim_atoms import ClaimAtom, ClaimSource
 from aijournal.models.derived import ProfileUpdatePreview
 from aijournal.pipelines import facts as facts_pipeline
 from aijournal.services.ollama import LLMResponseError
@@ -131,7 +131,7 @@ def run_facts(
         typer.secho(f"Facts extraction failed: {exc}", fg=typer.colors.RED, err=True)
         raise typer.Exit(1)
 
-    facts_data.meta = _build_meta("prompts/extract_facts.md", config=config)
+    summary_meta = _build_meta("prompts/extract_facts.md", config=config)
     preview = build_claim_preview(
         facts_data.claim_proposals,
         [claim.model_copy(deep=True) for claim in claim_models],
@@ -140,7 +140,7 @@ def run_facts(
     facts_data.preview = preview
 
     facts_path = _derived_microfacts_path(root, date)
-    artifact_meta = _artifact_meta_from_summary_meta(facts_data.meta)
+    artifact_meta = _artifact_meta_from_summary_meta(summary_meta)
     save_artifact(
         facts_path,
         Artifact[MicroFactsFile](

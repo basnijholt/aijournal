@@ -280,11 +280,11 @@ def run_summarize(
         typer.secho(f"Summarize failed: {exc}", fg=typer.colors.RED, err=True)
         raise typer.Exit(1)
 
-    summary_data.meta = _build_meta("prompts/summarize_day.md", config=config)
+    summary_meta = _build_meta("prompts/summarize_day.md", config=config)
     summary_path = _derived_summary_path(root, date)
     artifact = Artifact[DailySummary](
         kind=ArtifactKind.SUMMARY_DAILY,
-        meta=_artifact_meta_from_summary(summary_data.meta),
+        meta=_artifact_meta_from_summary(summary_meta),
         data=summary_data,
     )
     save_artifact(summary_path, artifact)

@@ -1,8 +1,102 @@
 {
   "$defs": {
+    "ClaimAtom": {
+      "additionalProperties": false,
+      "description": "Typed, scoped claim describing part of the persona.",
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "method": {
+          "enum": [
+            "self_report",
+            "inferred",
+            "behavioral"
+          ],
+          "title": "Method",
+          "type": "string"
+        },
+        "predicate": {
+          "title": "Predicate",
+          "type": "string"
+        },
+        "provenance": {
+          "$ref": "#/$defs/Provenance"
+        },
+        "review_after_days": {
+          "default": 120,
+          "title": "Review After Days",
+          "type": "integer"
+        },
+        "scope": {
+          "$ref": "#/$defs/Scope"
+        },
+        "statement": {
+          "title": "Statement",
+          "type": "string"
+        },
+        "status": {
+          "default": "tentative",
+          "enum": [
+            "accepted",
+            "tentative",
+            "rejected"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "strength": {
+          "default": 0.5,
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Strength",
+          "type": "number"
+        },
+        "subject": {
+          "title": "Subject",
+          "type": "string"
+        },
+        "type": {
+          "enum": [
+            "preference",
+            "value",
+            "goal",
+            "boundary",
+            "trait",
+            "habit",
+            "aversion",
+            "skill"
+          ],
+          "title": "Type",
+          "type": "string"
+        },
+        "user_verified": {
+          "default": false,
+          "title": "User Verified",
+          "type": "boolean"
+        },
+        "value": {
+          "title": "Value",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "subject",
+        "predicate",
+        "value",
+        "statement",
+        "method",
+        "provenance"
+      ],
+      "title": "ClaimAtom",
+      "type": "object"
+    },
     "Provenance": {
       "additionalProperties": false,
-      "description": "Provenance metadata for a claim atom.",
+      "description": "Provenance metadata recorded for a claim atom.",
       "properties": {
         "first_seen": {
           "anyOf": [
@@ -161,95 +255,16 @@
     }
   },
   "additionalProperties": false,
-  "description": "Typed, scoped claim describing the persona.",
+  "description": "Container persisted on disk for multiple claim atoms.",
   "properties": {
-    "id": {
-      "title": "Id",
-      "type": "string"
-    },
-    "method": {
-      "enum": [
-        "self_report",
-        "inferred",
-        "behavioral"
-      ],
-      "title": "Method",
-      "type": "string"
-    },
-    "predicate": {
-      "title": "Predicate",
-      "type": "string"
-    },
-    "provenance": {
-      "$ref": "#/$defs/Provenance"
-    },
-    "review_after_days": {
-      "default": 120,
-      "title": "Review After Days",
-      "type": "integer"
-    },
-    "scope": {
-      "$ref": "#/$defs/Scope"
-    },
-    "statement": {
-      "title": "Statement",
-      "type": "string"
-    },
-    "status": {
-      "default": "tentative",
-      "enum": [
-        "accepted",
-        "tentative",
-        "rejected"
-      ],
-      "title": "Status",
-      "type": "string"
-    },
-    "strength": {
-      "default": 0.5,
-      "maximum": 1.0,
-      "minimum": 0.0,
-      "title": "Strength",
-      "type": "number"
-    },
-    "subject": {
-      "title": "Subject",
-      "type": "string"
-    },
-    "type": {
-      "enum": [
-        "preference",
-        "value",
-        "goal",
-        "boundary",
-        "trait",
-        "habit",
-        "aversion",
-        "skill"
-      ],
-      "title": "Type",
-      "type": "string"
-    },
-    "user_verified": {
-      "default": false,
-      "title": "User Verified",
-      "type": "boolean"
-    },
-    "value": {
-      "title": "Value",
-      "type": "string"
+    "claims": {
+      "items": {
+        "$ref": "#/$defs/ClaimAtom"
+      },
+      "title": "Claims",
+      "type": "array"
     }
   },
-  "required": [
-    "id",
-    "type",
-    "subject",
-    "predicate",
-    "value",
-    "statement",
-    "method",
-    "provenance"
-  ],
-  "title": "ClaimAtom",
+  "title": "ClaimAtomsFile",
   "type": "object"
 }

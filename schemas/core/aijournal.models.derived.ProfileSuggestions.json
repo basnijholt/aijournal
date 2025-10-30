@@ -2,7 +2,7 @@
   "$defs": {
     "ClaimAtom": {
       "additionalProperties": false,
-      "description": "Typed, scoped claim describing the persona.",
+      "description": "Typed, scoped claim describing part of the persona.",
       "properties": {
         "id": {
           "title": "Id",
@@ -205,7 +205,7 @@
     },
     "Provenance": {
       "additionalProperties": false,
-      "description": "Provenance metadata for a claim atom.",
+      "description": "Provenance metadata recorded for a claim atom.",
       "properties": {
         "first_seen": {
           "anyOf": [
@@ -361,55 +361,10 @@
       ],
       "title": "Span",
       "type": "object"
-    },
-    "SummaryMeta": {
-      "additionalProperties": false,
-      "properties": {
-        "created_at": {
-          "default": "",
-          "title": "Created At",
-          "type": "string"
-        },
-        "llm_model": {
-          "default": "unknown",
-          "title": "Llm Model",
-          "type": "string"
-        },
-        "prompt_hash": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Prompt Hash"
-        },
-        "prompt_path": {
-          "default": "",
-          "title": "Prompt Path",
-          "type": "string"
-        }
-      },
-      "title": "SummaryMeta",
-      "type": "object"
     }
   },
   "additionalProperties": false,
   "properties": {
-    "meta": {
-      "anyOf": [
-        {
-          "$ref": "#/$defs/SummaryMeta"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null
-    },
     "updates": {
       "items": {
         "$ref": "#/$defs/ProfileSuggestionUpdate"

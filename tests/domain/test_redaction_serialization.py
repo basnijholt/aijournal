@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from aijournal.cli import _claim_proposal_to_atom
 from aijournal.domain.changes import ClaimAtomInput, ClaimProposal
+from aijournal.domain.claims import Scope
 from aijournal.domain.evidence import SourceRef, Span
-from aijournal.models.claim_atoms import Scope
 from aijournal.pipelines import normalization
 from aijournal.pipelines.facts import normalize_claim_proposals
 

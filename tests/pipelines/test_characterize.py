@@ -8,14 +8,14 @@ from aijournal.domain.changes import (
     FacetChange,
     ProfileUpdateProposals,
 )
-from aijournal.domain.journal import NormalizedEntry
-from aijournal.models.claim_atoms import (
+from aijournal.domain.claims import (
     ClaimAtom,
     ClaimSource,
     ClaimSourceSpan,
     Provenance,
     Scope,
 )
+from aijournal.domain.journal import NormalizedEntry
 from aijournal.pipelines import characterize
 
 

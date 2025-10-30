@@ -1,5 +1,6 @@
 {
   "additionalProperties": false,
+  "description": "References included to ground why advice fits.",
   "properties": {
     "claims": {
       "items": {

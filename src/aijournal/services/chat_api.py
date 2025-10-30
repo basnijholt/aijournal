@@ -11,9 +11,9 @@ from typing import Any
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
 
 from aijournal.api.capture import CaptureInput, CaptureRequest
+from aijournal.api.chat import ChatRequest
 from aijournal.services.chat import ChatService
 from aijournal.services.feedback import FeedbackAdjustment, apply_chat_feedback
 from aijournal.services.retriever import RetrievalFilters
@@ -23,20 +23,6 @@ try:  # pragma: no cover - optional dependency
     import orjson
 except ModuleNotFoundError:  # pragma: no cover - optional dependency
     orjson = None  # type: ignore[assignment]
-
-
-class ChatRequest(BaseModel):
-    """Incoming chat payload for the API endpoint."""
-
-    question: str = Field(min_length=1)
-    top: int | None = Field(default=None, ge=1)
-    tags: list[str] | None = None
-    source: list[str] | None = None
-    date_from: str | None = None
-    date_to: str | None = None
-    session_id: str | None = Field(default=None, pattern=r"^[A-Za-z0-9_.\-]+$")
-    save: bool = True
-    feedback: str | None = None
 
 
 def _json_line(payload: dict[str, Any]) -> bytes:

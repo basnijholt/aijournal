@@ -102,12 +102,11 @@ def test_profile_suggest_writes_suggestions(
     assert artifact.get("kind") == "profile.suggestions"
     meta = artifact.get("meta", {})
     assert meta.get("created_at")
+    assert meta.get("model") == "fake-ollama"
+    assert meta.get("prompt_path") == "prompts/profile_suggest.md"
     data = artifact.get("data", {})
     assert data.get("upserts") or data.get("updates"), "Expected suggested changes"
-    detail_meta = data.get("meta", {})
-    for key in ("llm_model", "prompt_path", "prompt_hash", "created_at"):
-        assert detail_meta.get(key)
-    assert detail_meta.get("llm_model") == "fake-ollama"
+    assert "meta" not in data
 
 
 def test_profile_suggest_is_idempotent(

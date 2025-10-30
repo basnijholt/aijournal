@@ -12,10 +12,10 @@ from aijournal.domain.changes import (
     FacetChange,
     ProfileUpdateProposals,
 )
+from aijournal.domain.claims import ClaimAtom, ClaimSource
 from aijournal.domain.evidence import SourceRef
 from aijournal.domain.journal import NormalizedEntry
 from aijournal.fakes import fake_characterize
-from aijournal.models.claim_atoms import ClaimAtom, ClaimSource
 from aijournal.pipelines import facts as facts_pipeline
 from aijournal.utils.coercion import coerce_float, coerce_int
 

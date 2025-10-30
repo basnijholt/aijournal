@@ -23,6 +23,13 @@ from aijournal.commands.summarize import (
 )
 from aijournal.common.meta import Artifact, ArtifactKind, ArtifactMeta
 from aijournal.domain.changes import ClaimProposal, FacetChange, ProfileUpdateProposals
+from aijournal.domain.claims import (
+    ClaimAtom,
+    ClaimSource,
+    ClaimSourceSpan,
+    Provenance,
+    Scope,
+)
 from aijournal.domain.evidence import SourceRef, redact_source_text
 from aijournal.domain.facts import SummaryMeta
 from aijournal.domain.journal import NormalizedEntry
@@ -30,13 +37,6 @@ from aijournal.fakes import fake_profile_suggestions
 from aijournal.io.artifacts import load_artifact_data, save_artifact
 from aijournal.io.yaml_io import load_yaml_model, write_yaml_model
 from aijournal.models.authoritative import ClaimsFile, SelfProfile
-from aijournal.models.claim_atoms import (
-    ClaimAtom,
-    ClaimSource,
-    ClaimSourceSpan,
-    Provenance,
-    Scope,
-)
 from aijournal.models.derived import (
     ProfileSuggestions,
     ProfileSuggestionUpdate,
@@ -102,9 +102,10 @@ def run_profile_suggest(
         raise typer.Exit(1)
 
     path = _derived_profile_suggestions_path(root, date)
+    summary_meta = _build_meta("prompts/profile_suggest.md", config=config)
     artifact = Artifact[ProfileSuggestions](
         kind=ArtifactKind.PROFILE_SUGGESTIONS,
-        meta=_artifact_meta_from_summary_meta(suggestions_model.meta),
+        meta=_artifact_meta_from_summary_meta(summary_meta),
         data=suggestions_model,
     )
     save_artifact(path, artifact)
@@ -230,7 +231,6 @@ def _profile_suggestions_payload(
         timestamp = time_utils.format_timestamp(time_utils.now())
         suggestions = _proposals_to_profile(proposals, timestamp=timestamp)
 
-    suggestions.meta = _build_meta("prompts/profile_suggest.md", config=config)
     return suggestions
 
 

@@ -28,7 +28,6 @@ class DailySummary(StrictModel):
     bullets: list[str] = Field(default_factory=list)
     highlights: list[str] = Field(default_factory=list)
     todo_candidates: list[str] = Field(default_factory=list)
-    meta: SummaryMeta = Field(default_factory=SummaryMeta)
 
 
 FactEvidenceSpan = Span
@@ -48,4 +47,3 @@ class MicroFactsFile(StrictModel):
     facts: list[MicroFact] = Field(default_factory=list)
     claim_proposals: list[ClaimProposal] = Field(default_factory=list)
     preview: ProfileUpdatePreview | None = None
-    meta: SummaryMeta = Field(default_factory=SummaryMeta)

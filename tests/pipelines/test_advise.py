@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from aijournal.models.claim_atoms import ClaimAtom, Provenance, Scope
+from aijournal.domain.claims import ClaimAtom, Provenance, Scope
 from aijournal.models.derived import AdviceCard
 from aijournal.models.responses import AdviceLLMResponse
 from aijournal.pipelines import advise

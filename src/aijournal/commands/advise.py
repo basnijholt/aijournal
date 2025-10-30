@@ -26,8 +26,8 @@ from aijournal.commands.summarize import (
     _load_normalized_entries,
 )
 from aijournal.common.meta import Artifact, ArtifactKind
+from aijournal.domain.claims import ClaimAtom
 from aijournal.io.artifacts import load_artifact, save_artifact
-from aijournal.models.claim_atoms import ClaimAtom
 from aijournal.models.derived import AdviceCard, ProfileUpdateBatch
 from aijournal.models.responses import AdviceLLMResponse
 from aijournal.pipelines import advise as advise_pipeline
@@ -69,11 +69,10 @@ def run_advise(question: str) -> Path:
     model_name = (
         "fake-ollama" if _use_fake_llm() else build_ollama_config_from_mapping(config).model
     )
-    advice_card.meta = _build_meta("prompts/advise.md", model=model_name)
-
     day = time_utils.created_date(time_utils.format_timestamp(time_utils.now()))
     advice_path = _derived_advice_path(root, day, question)
-    artifact_meta = _artifact_meta_from_summary(advice_card.meta)
+    summary_meta = _build_meta("prompts/advise.md", model=model_name)
+    artifact_meta = _artifact_meta_from_summary(summary_meta)
     save_artifact(
         advice_path,
         Artifact[AdviceCard](

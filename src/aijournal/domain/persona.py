@@ -9,8 +9,8 @@ from pydantic import Field
 from aijournal.common.base import StrictModel
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
+    from aijournal.domain.claims import ClaimAtom
     from aijournal.domain.facts import SummaryMeta
-    from aijournal.models.claim_atoms import ClaimAtom
 
 
 class PersonaCoreMeta(StrictModel):

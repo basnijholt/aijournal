@@ -99,7 +99,7 @@ def _invoke(
     files = sorted(folder.glob("*.yaml"))
     assert files, "No advice file generated"
     artifact = load_artifact(files[0], AdviceCard)
-    return artifact.kind, artifact.data, files[0], len(files)
+    return artifact.kind, artifact.data, artifact.meta, files[0], len(files)
 
 
 def test_advise_generates_advice(
@@ -109,7 +109,7 @@ def test_advise_generates_advice(
     _seed_profile(cli_workspace)
     _seed_pending_prompt(cli_workspace)
 
-    kind, card, advice_file, _count = _invoke(cli_workspace, cli_runner)
+    kind, card, meta, advice_file, _count = _invoke(cli_workspace, cli_runner)
 
     assert kind is ArtifactKind.ADVICE_CARD
 
@@ -122,9 +122,7 @@ def test_advise_generates_advice(
     assert "deep-work" in steps[0]
     assert "How to plan next week" in steps[1]
     assert any("morning routines" in step and "travel weeks" in step for step in steps)
-    meta = card.meta
-    assert meta is not None
-    assert meta.llm_model
+    assert meta.model
     assert meta.prompt_path
     assert meta.prompt_hash
     assert meta.created_at
@@ -137,10 +135,10 @@ def test_advise_is_idempotent(
     _seed_profile(cli_workspace)
     _seed_pending_prompt(cli_workspace)
 
-    kind1, data1, advice_file, count1 = _invoke(cli_workspace, cli_runner)
+    kind1, data1, meta1, advice_file, count1 = _invoke(cli_workspace, cli_runner)
     before = advice_file.stat().st_mtime
 
-    kind2, data2, advice_file_again, count2 = _invoke(cli_workspace, cli_runner)
+    kind2, data2, meta2, advice_file_again, count2 = _invoke(cli_workspace, cli_runner)
     assert kind1 is ArtifactKind.ADVICE_CARD
     assert kind2 is ArtifactKind.ADVICE_CARD
     assert advice_file_again == advice_file

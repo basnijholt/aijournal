@@ -7,9 +7,7 @@ from collections.abc import Iterable, Sequence
 from datetime import UTC, datetime
 from typing import Any, cast
 
-from aijournal.domain.evidence import redact_source_text
-from aijournal.ingest_agent import IngestResult, IngestSection
-from aijournal.models.claim_atoms import (
+from aijournal.domain.claims import (
     ClaimAtom,
     ClaimSource,
     ClaimSourceSpan,
@@ -17,6 +15,8 @@ from aijournal.models.claim_atoms import (
     Provenance,
     Scope,
 )
+from aijournal.domain.evidence import redact_source_text
+from aijournal.ingest_agent import IngestResult, IngestSection
 from aijournal.utils import time as time_utils
 from aijournal.utils.coercion import coerce_float, coerce_int
 

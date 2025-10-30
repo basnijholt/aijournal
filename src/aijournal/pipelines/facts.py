@@ -8,17 +8,17 @@ from typing import Any, cast
 from pydantic import ValidationError
 
 from aijournal.domain.changes import ClaimAtomInput, ClaimProposal
-from aijournal.domain.evidence import SourceRef, redact_source_text
-from aijournal.domain.facts import MicroFact, MicroFactsFile
-from aijournal.domain.journal import NormalizedEntry
-from aijournal.fakes import fake_microfacts
-from aijournal.models.authoritative import ManifestEntry
-from aijournal.models.claim_atoms import (
+from aijournal.domain.claims import (
     ClaimAtom,
     ClaimSource,
     ClaimSourceSpan,
     Scope,
 )
+from aijournal.domain.evidence import SourceRef, redact_source_text
+from aijournal.domain.facts import MicroFact, MicroFactsFile
+from aijournal.domain.journal import NormalizedEntry
+from aijournal.fakes import fake_microfacts
+from aijournal.models.authoritative import ManifestEntry
 from aijournal.pipelines import normalization
 from aijournal.utils import time as time_utils
 

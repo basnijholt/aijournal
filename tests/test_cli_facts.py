@@ -61,6 +61,11 @@ def test_facts_generates_microfacts(
 
     artifact = _read_yaml(facts_path)
     assert artifact.get("kind") == "microfacts.daily"
+    meta = artifact.get("meta", {})
+    assert meta.get("model") == "fake-ollama"
+    assert meta.get("prompt_path") == "prompts/extract_facts.md"
+    assert meta.get("prompt_hash")
+    assert meta.get("created_at")
     data = artifact.get("data", {})
     facts = data.get("facts", [])
     assert isinstance(facts, list) and facts
@@ -69,10 +74,7 @@ def test_facts_generates_microfacts(
     statement = first_fact.get("statement", "")
     assert "sync notes" in statement.lower()
     assert "section" in statement.lower()
-    meta = data.get("meta", {})
-    assert meta.get("llm_model") == "fake-ollama"
-    for key in ("prompt_path", "prompt_hash", "created_at"):
-        assert meta.get(key), f"Missing {key}"
+    assert "meta" not in data
     proposals = data.get("claim_proposals", [])
     assert isinstance(proposals, list) and proposals, "Expected claim proposals from micro-facts"
     proposal = proposals[0]

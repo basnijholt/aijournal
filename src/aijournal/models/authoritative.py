@@ -6,10 +6,10 @@ from typing import Any
 
 from pydantic import ConfigDict, Field
 
+from aijournal.domain.claims import ClaimAtom
 from aijournal.domain.journal import Section
 
 from .base import AijournalModel
-from .claim_atoms import ClaimAtom
 
 JsonScalar = str | int | float | bool | None
 JsonValue = JsonScalar | list[Any] | dict[str, Any]
