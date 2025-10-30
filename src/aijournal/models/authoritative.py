@@ -6,7 +6,7 @@ from typing import Any
 
 from pydantic import ConfigDict, Field
 
-from aijournal.domain.journal import NormalizedEntity, NormalizedEntry, Section
+from aijournal.domain.journal import Section
 
 from .base import AijournalModel
 from .claim_atoms import ClaimAtom
@@ -69,16 +69,3 @@ class SelfProfile(AijournalModel):
     social: dict[str, Any] = Field(default_factory=dict)
     boundaries_ethics: dict[str, Any] = Field(default_factory=dict)
     coaching_prefs: dict[str, Any] = Field(default_factory=dict)
-
-
-__all__ = [
-    "JsonScalar",
-    "JsonValue",
-    "ManifestEntry",
-    "JournalEntry",
-    "JournalSection",
-    "NormalizedEntity",
-    "NormalizedEntry",
-    "ClaimsFile",
-    "SelfProfile",
-]

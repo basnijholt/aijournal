@@ -6,7 +6,7 @@ import yaml
 
 from aijournal.common.base import StrictModel
 from aijournal.common.meta import Artifact, ArtifactKind, ArtifactMeta
-from aijournal.io import load_artifact, load_artifact_data, save_artifact
+from aijournal.io.artifacts import load_artifact, load_artifact_data, save_artifact
 
 
 class _Payload(StrictModel):

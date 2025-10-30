@@ -12,7 +12,7 @@ from typer.testing import CliRunner
 
 from aijournal.cli import app
 from aijournal.domain.index import IndexMeta
-from aijournal.io import load_artifact_data
+from aijournal.io.artifacts import load_artifact_data
 from aijournal.services.retriever import RetrievalFilters, Retriever
 from tests.helpers import copy_fixture_workspace, write_manifest, write_normalized_entry
 

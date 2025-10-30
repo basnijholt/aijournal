@@ -7,8 +7,8 @@ from typing import TYPE_CHECKING
 import yaml
 
 from aijournal.common.meta import Artifact, ArtifactKind, ArtifactMeta
-from aijournal.io import load_yaml_model, write_yaml_model
 from aijournal.io.artifacts import load_artifact, save_artifact
+from aijournal.io.yaml_io import load_yaml_model, write_yaml_model
 from aijournal.models import (
     AdviceCard,
     AdviceRecommendation,
