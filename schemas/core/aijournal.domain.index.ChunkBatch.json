@@ -1,7 +1,8 @@
 {
   "$defs": {
-    "ChunkManifestChunk": {
+    "Chunk": {
       "additionalProperties": false,
+      "description": "Normalized chunk persisted in the retrieval index.",
       "properties": {
         "chunk_id": {
           "title": "Chunk Id",
@@ -11,8 +12,8 @@
           "title": "Chunk Index",
           "type": "integer"
         },
-        "chunk_text": {
-          "title": "Chunk Text",
+        "date": {
+          "title": "Date",
           "type": "string"
         },
         "manifest_hash": {
@@ -66,8 +67,11 @@
           "title": "Tags",
           "type": "array"
         },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        },
         "tokens": {
-          "default": 0,
           "title": "Tokens",
           "type": "integer"
         }
@@ -76,42 +80,21 @@
         "chunk_id",
         "normalized_id",
         "chunk_index",
-        "chunk_text",
-        "source_path"
+        "text",
+        "date",
+        "source_path",
+        "tokens"
       ],
-      "title": "ChunkManifestChunk",
-      "type": "object"
-    },
-    "ChunkManifestMeta": {
-      "additionalProperties": false,
-      "properties": {
-        "embedding_model": {
-          "title": "Embedding Model",
-          "type": "string"
-        },
-        "generated_at": {
-          "title": "Generated At",
-          "type": "string"
-        },
-        "vector_dimension": {
-          "title": "Vector Dimension",
-          "type": "integer"
-        }
-      },
-      "required": [
-        "embedding_model",
-        "vector_dimension",
-        "generated_at"
-      ],
-      "title": "ChunkManifestMeta",
+      "title": "Chunk",
       "type": "object"
     }
   },
   "additionalProperties": false,
+  "description": "Exported chunk set for a given journal day.",
   "properties": {
     "chunks": {
       "items": {
-        "$ref": "#/$defs/ChunkManifestChunk"
+        "$ref": "#/$defs/Chunk"
       },
       "title": "Chunks",
       "type": "array"
@@ -119,15 +102,11 @@
     "day": {
       "title": "Day",
       "type": "string"
-    },
-    "meta": {
-      "$ref": "#/$defs/ChunkManifestMeta"
     }
   },
   "required": [
-    "day",
-    "meta"
+    "day"
   ],
-  "title": "ChunkManifest",
+  "title": "ChunkBatch",
   "type": "object"
 }

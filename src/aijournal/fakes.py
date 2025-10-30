@@ -23,9 +23,6 @@ from aijournal.models.derived import (
     AdviceCard,
     AdviceRecommendation,
     AdviceReference,
-    ProfileSuggestions,
-    ProfileSuggestionUpdate,
-    ProfileSuggestionUpsert,
 )
 from aijournal.utils import time as time_utils
 
@@ -158,15 +155,15 @@ def fake_advise(
     )
 
 
-def fake_profile_suggestions(
+def fake_profile_proposals(
     entries: Sequence[NormalizedEntry],
     profile: dict[str, Any],
     claims: Sequence[ClaimAtom],
     *,
     build_claim: Callable[..., ClaimAtom],
-) -> ProfileSuggestions:
-    upserts: list[ProfileSuggestionUpsert] = []
-    updates: list[ProfileSuggestionUpdate] = []
+) -> ProfileUpdateProposals:
+    claim_proposals: list[ClaimProposal] = []
+    facet_changes: list[FacetChange] = []
 
     for entry in entries[:1]:
         statement = entry.title or "New observation"
@@ -178,24 +175,41 @@ def fake_profile_suggestions(
             strength=0.6,
             status="tentative",
         )
-        upserts.append(
-            ProfileSuggestionUpsert(
-                target="claims",
-                operation="upsert",
-                value=claim_model.model_copy(deep=True),
-            ),
+        claim_input = ClaimAtomInput(
+            type=claim_model.type,
+            subject=claim_model.subject,
+            predicate=claim_model.predicate,
+            value=claim_model.value,
+            statement=claim_model.statement,
+            scope=claim_model.scope,
+            strength=claim_model.strength,
+            status=claim_model.status,
+            method=claim_model.method,
+            user_verified=claim_model.user_verified,
+            review_after_days=claim_model.review_after_days,
+        )
+        evidence = [SourceRef(entry_id=entry.id or claim_id, spans=[])]
+        claim_proposals.append(
+            ClaimProposal(
+                claim=claim_input,
+                normalized_ids=[claim_id],
+                evidence=evidence,
+                rationale="Captured new observation",
+            )
         )
 
     if profile:
-        updates.append(
-            ProfileSuggestionUpdate(
-                target="values_motivations.schwartz_top5",
-                operation="update",
+        facet_changes.append(
+            FacetChange(
+                path="values_motivations.schwartz_top5",
+                operation="set",
                 value=profile.get("values_motivations", {}).get("schwartz_top5", []),
-            ),
+                evidence=[SourceRef(entry_id="profile.snapshot", spans=[])],
+                rationale="Retain existing Schwartz ranking in fake mode",
+            )
         )
 
-    return ProfileSuggestions(upserts=upserts, updates=updates)
+    return ProfileUpdateProposals(claims=claim_proposals, facets=facet_changes)
 
 
 def fake_characterize(

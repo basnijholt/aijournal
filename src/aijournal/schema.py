@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, ValidationError
 
+from aijournal.domain.changes import ProfileUpdateProposals
 from aijournal.domain.facts import DailySummary
 from aijournal.domain.journal import NormalizedEntry
 from aijournal.domain.persona import InterviewSet, PersonaCoreFile
@@ -13,7 +14,6 @@ from aijournal.models.authoritative import ClaimsFile, JournalEntry, SelfProfile
 from aijournal.models.derived import (
     AdviceCard,
     MicroFactsFile,
-    ProfileSuggestions,
     ProfileUpdateBatch,
 )
 
@@ -39,7 +39,7 @@ _MODEL_REGISTRY: dict[str, type[BaseModel]] = {
     "microfacts": MicroFactsFile,
     "normalized_entry": NormalizedEntry,
     "persona_core": PersonaCoreFile,
-    "profile_suggestions": ProfileSuggestions,
+    "profile_proposals": ProfileUpdateProposals,
     "profile_updates": ProfileUpdateBatch,
     "self_profile": SelfProfile,
     "summary": DailySummary,

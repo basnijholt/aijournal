@@ -6,7 +6,7 @@
         "persona.core",
         "summaries.daily",
         "microfacts.daily",
-        "profile.suggestions",
+        "profile.proposals",
         "profile.updates",
         "feedback.batch",
         "index.meta",

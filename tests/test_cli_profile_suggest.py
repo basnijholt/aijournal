@@ -82,7 +82,7 @@ def _invoke(
         args.extend(extra_args)
     result = cli_runner.invoke(app, ["ops", "profile", *args[1:]])
     assert result.exit_code == 0, result.output
-    path = workspace / "derived" / "profile_suggestions" / f"{DATE}.yaml"
+    path = workspace / "derived" / "profile_proposals" / f"{DATE}.yaml"
     assert path.exists()
     folder = path.parent
     count = len(list(folder.glob("*.yaml")))
@@ -99,13 +99,15 @@ def test_profile_suggest_writes_suggestions(
     _, suggestions_path, _ = _invoke(cli_workspace, cli_runner)
 
     artifact = yaml.safe_load(suggestions_path.read_text(encoding="utf-8"))
-    assert artifact.get("kind") == "profile.suggestions"
+    assert artifact.get("kind") == "profile.proposals"
     meta = artifact.get("meta", {})
     assert meta.get("created_at")
     assert meta.get("model") == "fake-ollama"
     assert meta.get("prompt_path") == "prompts/profile_suggest.md"
     data = artifact.get("data", {})
-    assert data.get("upserts") or data.get("updates"), "Expected suggested changes"
+    claims = data.get("claims", [])
+    facets = data.get("facets", [])
+    assert claims or facets, "Expected proposed changes"
     assert "meta" not in data
 
 

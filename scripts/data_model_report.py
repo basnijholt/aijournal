@@ -44,6 +44,7 @@ class ClassSummary:
     module: str
     kind: str
     fields: list[FieldSummary]
+    file_path: str
 
     @property
     def signature(self) -> tuple[tuple[str, str], ...]:
@@ -71,6 +72,18 @@ def main() -> None:
                 continue
             if cls is BaseModel:
                 continue
+            # Get the file path where the class is defined
+            try:
+                file_path = inspect.getfile(cls)
+                # Make path relative to root for cleaner output
+                try:
+                    file_path = str(Path(file_path).relative_to(root))
+                except ValueError:
+                    # If not relative to root, keep absolute path
+                    pass
+            except (TypeError, OSError):
+                file_path = "<unknown>"
+
             if issubclass(cls, BaseModel):
                 classes.append(
                     ClassSummary(
@@ -78,6 +91,7 @@ def main() -> None:
                         module=module_name,
                         kind="pydantic",
                         fields=list(_iter_pydantic_fields(cls)),
+                        file_path=file_path,
                     ),
                 )
             elif dataclasses.is_dataclass(cls):
@@ -87,6 +101,7 @@ def main() -> None:
                         module=module_name,
                         kind="dataclass",
                         fields=list(_iter_dataclass_fields(cls)),
+                        file_path=file_path,
                     ),
                 )
 
@@ -119,7 +134,7 @@ def _print_group_report(title: str, summaries: Iterable[ClassSummary]) -> None:
         print(f"### Group {index} ({len(items)} classes)\n")
         print(f"Fields: {fields_display or '<no fields>'}\n")
         for summary in sorted(items, key=lambda c: c.qualified_name):
-            print(f"- {summary.qualified_name}")
+            print(f"- {summary.qualified_name} ({summary.file_path})")
         print()
 
 

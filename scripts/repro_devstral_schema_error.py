@@ -25,7 +25,7 @@ STRUCTURED_SYSTEM_PROMPT = (
 )
 
 
-class MiniProfileSuggestions(BaseModel):
+class MiniProfileProposals(BaseModel):
     summary: str
     ideas: list[str]
 
@@ -75,7 +75,7 @@ def build_prompt(mode: str, date: str) -> tuple[type[BaseModel], str]:
         prompt = (
             "Summarize why schema-constrained responses might fail and list three debugging ideas."
         )
-        return MiniProfileSuggestions, prompt
+        return MiniProfileProposals, prompt
     if mode == "simple":
         prompt = """
 Return JSON exactly following the `ProfileUpdateProposals` schema:

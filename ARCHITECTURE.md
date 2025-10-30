@@ -63,7 +63,7 @@ aijournal/
   derived/
     summaries/
     microfacts/
-    profile_suggestions/
+    profile_proposals/
     pending/profile_updates/
     persona/
     index/
@@ -136,7 +136,7 @@ Refer to `docs/workflow.md` for the operational command order. This section expl
 Once normalized entries exist for a date, `aijournal capture` drives the derivation stack automatically. Advanced operators can run the same steps manually via:
 1. `aijournal ops pipeline summarize --date <date>` – writes `derived/summaries/<date>.yaml` with bullets, highlights, and TODO candidates.
 2. `aijournal ops pipeline extract-facts --date <date>` – produces `derived/microfacts/<date>.yaml`, claim proposals, and consolidation previews.
-3. `aijournal ops profile suggest --date <date>` – generates `derived/profile_suggestions/<date>.yaml` with claim/facet upserts.
+3. `aijournal ops profile suggest --date <date>` – generates `derived/profile_proposals/<date>.yaml` with claim/facet proposals.
 4. `aijournal ops profile apply --date <date> --yes` – merges accepted suggestions into `profile/claims.yaml` and `profile/self_profile.yaml` (capture runs this automatically when `--apply-profile=auto`).
 
 All outputs include `meta.{llm_model, prompt_path, prompt_hash, created_at}` and are validated against Pydantic models. Each capture run logs NDJSON telemetry (`derived/logs/capture/<run_id>.jsonl`) with per-stage durations, counters, and warnings.
@@ -152,7 +152,7 @@ All outputs include `meta.{llm_model, prompt_path, prompt_hash, created_at}` and
 - `aijournal ops index rebuild` transforms normalized entries into deterministic chunks (700–1200 characters, sentence-aware, including section headings) and stores:
   - SQLite FTS5 database (`derived/index/index.db`) with chunk metadata.
   - Annoy index (`derived/index/annoy.index`) keyed by SQLite row IDs.
-  - Chunk manifests (`derived/index/chunks/YYYY-MM-DD.yaml`) and optional vector shards for inspection.
+  - Chunk artifacts (`ArtifactKind.INDEX_CHUNKS`) in `derived/index/chunks/YYYY-MM-DD.yaml`, wrapping `ChunkBatch` payloads plus optional `.npy` vector shards for inspection.
 - Incremental refreshes call `aijournal ops index update` with the dates touched during the last capture run (fallback `--since` window) so rebuilds stay fast.
 - Chat and advisor mode share the same orchestrator:
   1. Load the persona core and rank claims by effective strength (bounded by `chat.max_claims`).
@@ -183,7 +183,7 @@ Authoritative schemas (see `src/aijournal/models/authoritative.py`):
 - `ClaimAtom` / `ClaimsFile` – Typed claims with scope, strength, provenance, `review_after_days`, and timestamps.
 
 Derived schemas (see `src/aijournal/models/derived.py`):
-- `DailySummary`, `MicroFactsFile`, `ProfileSuggestions`, `ProfileUpdateBatch`.
+- `DailySummary`, `MicroFactsFile`, `ProfileUpdateProposals`, `ProfileUpdateBatch`.
 - `PersonaCoreFile`, `AdviceCard`, `InterviewSet`, `ChatTranscript`, `ChatTelemetry`, `IndexMeta`.
 - Every derived YAML includes a deterministic `meta` block with the Ollama model, prompt path, prompt hash, creation time, and (where applicable) manifest hashes.
 

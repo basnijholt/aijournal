@@ -11,12 +11,13 @@ import yaml
 from pydantic import BaseModel
 
 from aijournal.common.meta import Artifact, ArtifactKind
+from aijournal.domain.changes import ProfileUpdateProposals
 from aijournal.domain.evidence import SourceRef, redact_source_text
 from aijournal.domain.persona import PersonaCoreFile
 from aijournal.io.artifacts import load_artifact, save_artifact
 from aijournal.io.yaml_io import write_yaml_model
 from aijournal.models.authoritative import ClaimsFile
-from aijournal.models.derived import ProfileSuggestions, ProfileUpdateBatch
+from aijournal.models.derived import ProfileUpdateBatch
 
 
 @dataclass(frozen=True)
@@ -41,7 +42,7 @@ class AuditFileResult:
 
 
 _AUDIT_ARTIFACT_MODELS: dict[ArtifactKind, type[BaseModel]] = {
-    ArtifactKind.PROFILE_SUGGESTIONS: ProfileSuggestions,
+    ArtifactKind.PROFILE_PROPOSALS: ProfileUpdateProposals,
     ArtifactKind.PROFILE_UPDATES: ProfileUpdateBatch,
     ArtifactKind.PERSONA_CORE: PersonaCoreFile,
 }
@@ -71,7 +72,7 @@ def run_audit_provenance(*, root: Path, fix: bool) -> list[AuditFileResult]:
             )
 
     for relative_dir in (
-        "derived/profile_suggestions",
+        "derived/profile_proposals",
         "derived/pending/profile_updates",
     ):
         for path in _iter_artifact_files(root / relative_dir):

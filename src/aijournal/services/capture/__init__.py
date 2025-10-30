@@ -577,8 +577,8 @@ def run_capture(
         suggestion_paths = profile_outputs.suggestion_paths
         applied_count = profile_outputs.applied_count
         for _ in suggestion_paths:
-            artifacts_changed["profile_suggestions"] = (
-                artifacts_changed.get("profile_suggestions", 0) + 1
+            artifacts_changed["profile_proposals"] = (
+                artifacts_changed.get("profile_proposals", 0) + 1
             )
         if apply_result and apply_result.changed:
             artifacts_changed["profile"] = artifacts_changed.get("profile", 0) + applied_count
@@ -606,7 +606,7 @@ def run_capture(
             )
         else:
             profile_result = OperationResult.noop(
-                "no dates required profile suggestions",
+                "no dates required profile proposals",
                 details={"dates": []},
             )
             record_stage_outcome(

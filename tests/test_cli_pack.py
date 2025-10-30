@@ -11,14 +11,15 @@ from typer.testing import CliRunner
 
 from aijournal.cli import app
 from aijournal.common.meta import Artifact, ArtifactKind, ArtifactMeta
+from aijournal.domain.changes import ClaimAtomInput, ClaimProposal, ProfileUpdateProposals
+from aijournal.domain.claims import ClaimAtom
+from aijournal.domain.evidence import SourceRef
 from aijournal.domain.facts import SummaryMeta
 from aijournal.io.artifacts import save_artifact
 from aijournal.models.derived import (
     AdviceCard,
     AdviceRecommendation,
     AdviceReference,
-    ProfileSuggestions,
-    ProfileSuggestionUpsert,
 )
 from tests.helpers import make_claim_atom
 
@@ -136,37 +137,52 @@ def _seed_advice(tmp_path: Path, day: str = DATE, question: str = ADVICE_QUESTIO
     return advice_path
 
 
-def _seed_profile_suggestions(tmp_path: Path, day: str = DATE) -> Path:
-    suggestions_path = tmp_path / "derived" / "profile_suggestions" / f"{day}.yaml"
+def _seed_profile_proposals(tmp_path: Path, day: str = DATE) -> Path:
+    proposals_path = tmp_path / "derived" / "profile_proposals" / f"{day}.yaml"
     meta = SummaryMeta(
         llm_model="fake-ollama",
         prompt_path="prompts/profile_suggest.md",
         prompt_hash="seed",
         created_at=f"{day}T10:00:00Z",
     )
-    payload = ProfileSuggestions(
-        upserts=[
-            ProfileSuggestionUpsert(
-                target="claims",
-                operation="upsert",
-                value=make_claim_atom(
-                    "pref_afternoon_break",
-                    "Energy dips shortly after 15:00",
-                    strength=0.68,
-                    status="tentative",
-                    last_updated=f"{day}T11:00:00Z",
-                ),
-            )
-        ],
-        updates=[],
+    claim_model = ClaimAtom.model_validate(
+        make_claim_atom(
+            "pref_afternoon_break",
+            "Energy dips shortly after 15:00",
+            strength=0.68,
+            status="tentative",
+            last_updated=f"{day}T11:00:00Z",
+        )
     )
-    artifact = Artifact[ProfileSuggestions](
-        kind=ArtifactKind.PROFILE_SUGGESTIONS,
+    claim_input = ClaimAtomInput(
+        type=claim_model.type,
+        subject=claim_model.subject,
+        predicate=claim_model.predicate,
+        value=claim_model.value,
+        statement=claim_model.statement,
+        scope=claim_model.scope,
+        strength=claim_model.strength,
+        status=claim_model.status,
+        method=claim_model.method,
+        user_verified=claim_model.user_verified,
+        review_after_days=claim_model.review_after_days,
+    )
+    claim_proposal = ClaimProposal(
+        claim=claim_input,
+        normalized_ids=[claim_model.id],
+        evidence=[SourceRef(entry_id=f"{day}-entry", spans=[])],
+    )
+    payload = ProfileUpdateProposals(
+        claims=[claim_proposal],
+        facets=[],
+    )
+    artifact = Artifact[ProfileUpdateProposals](
+        kind=ArtifactKind.PROFILE_PROPOSALS,
         meta=ArtifactMeta(created_at=meta.created_at, model=meta.llm_model),
         data=payload,
     )
-    save_artifact(suggestions_path, artifact)
-    return suggestions_path
+    save_artifact(proposals_path, artifact)
+    return proposals_path
 
 
 def _seed_config(tmp_path: Path, *, char_per_token: float | None = None) -> Path:
@@ -408,7 +424,7 @@ def test_pack_json_format(
     assert payload["data"]["level"] == "L1"
 
 
-def test_pack_l3_includes_advice_and_profile_suggestions(
+def test_pack_l3_includes_advice_and_profile_proposals(
     cli_workspace: Path,
     cli_runner: CliRunner,
 ) -> None:
@@ -416,7 +432,7 @@ def test_pack_l3_includes_advice_and_profile_suggestions(
     _ensure_persona_core(cli_workspace, cli_runner)
     _seed_daily_artifacts(cli_workspace)
     advice_path = _seed_advice(cli_workspace)
-    suggestions_path = _seed_profile_suggestions(cli_workspace)
+    suggestions_path = _seed_profile_proposals(cli_workspace)
 
     result = cli_runner.invoke(
         app,
@@ -558,7 +574,7 @@ def test_pack_l4_handles_missing_optional_artifacts(
     assert result.exit_code == 0
     artifact = yaml.safe_load(result.stdout)
     paths = [entry["path"] for entry in artifact["data"].get("files", [])]
-    assert all("profile_suggestions" not in path for path in paths)
+    assert all("profile_proposals" not in path for path in paths)
 
 
 def test_pack_l4_supports_json_output(
@@ -603,7 +619,7 @@ def test_pack_l4_dry_run_lists_expected_files(
     _seed_daily_artifacts(cli_workspace)
     _seed_daily_artifacts(cli_workspace, day=PRIOR_DATE, entry_id=PRIOR_ENTRY_ID)
     _seed_advice(cli_workspace)
-    _seed_profile_suggestions(cli_workspace)
+    _seed_profile_proposals(cli_workspace)
     _seed_config(cli_workspace)
     _seed_prompt(cli_workspace)
     _seed_journal_entry(cli_workspace, DATE, "focus-journal")
@@ -626,4 +642,4 @@ def test_pack_l4_dry_run_lists_expected_files(
     assert "Planned files:" in result.output
     assert "profile/self_profile.yaml" in result.output
     assert "derived/advice" in result.output
-    assert "derived/profile_suggestions" in result.output
+    assert "derived/profile_proposals" in result.output
