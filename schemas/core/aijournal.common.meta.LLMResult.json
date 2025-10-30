@@ -2,6 +2,21 @@
   "additionalProperties": false,
   "description": "Captured LLM invocation details paired with the structured payload.",
   "properties": {
+    "attempts": {
+      "default": 1,
+      "title": "Attempts",
+      "type": "integer"
+    },
+    "coercions_applied": {
+      "items": {
+        "additionalProperties": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "title": "Coercions Applied",
+      "type": "array"
+    },
     "created_at": {
       "title": "Created At",
       "type": "string"
@@ -28,6 +43,11 @@
     "prompt_path": {
       "title": "Prompt Path",
       "type": "string"
+    },
+    "repair_attempts": {
+      "default": 0,
+      "title": "Repair Attempts",
+      "type": "integer"
     }
   },
   "required": [
