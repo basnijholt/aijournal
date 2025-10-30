@@ -1,0 +1,54 @@
+data:
+  meta:
+    created_at: '2025-10-29T21:09:23Z'
+    llm_model: fake-ollama
+    prompt_hash: 5651bd66fec954f980775684db4bdd15a6496450a30cf1acb748da2ffeeba14b
+    prompt_path: prompts/profile_suggest.md
+  updates:
+  - evidence: null
+    method: null
+    operation: update
+    rationale: null
+    target: values_motivations.schwartz_top5
+    user_verified: null
+    value: []
+  upserts:
+  - operation: upsert
+    rationale: null
+    target: claims
+    value:
+      id: auto_2025-10-29-finally-got-aijournal-characterize-working-using-llama-cpp-instead-of-ollama
+      method: inferred
+      predicate: insight
+      provenance:
+        first_seen: '2025-10-29'
+        last_updated: '2025-10-29T21:09:23Z'
+        observation_count: 1
+        sources:
+        - entry_id: 2025-10-29-finally-got-aijournal-characterize-working-using-llama-cpp-instead-of-ollama
+          spans: []
+      review_after_days: 120
+      scope:
+        conditions: []
+        context: []
+        domain: null
+      statement: finally got aijournal characterize working using llama.cpp instead
+        of ollama
+      status: tentative
+      strength: 0.6
+      subject: finally got aijournal characterize working using llama.cpp instead
+        of ollama
+      type: preference
+      user_verified: false
+      value: finally got aijournal characterize working using llama.cpp instead of
+        ollama
+kind: profile.suggestions
+meta:
+  char_per_token: null
+  created_at: '2025-10-29T21:09:23Z'
+  model: fake-ollama
+  notes: null
+  prompt_hash: 5651bd66fec954f980775684db4bdd15a6496450a30cf1acb748da2ffeeba14b
+  prompt_path: prompts/profile_suggest.md
+  sources: null
+schema: v2

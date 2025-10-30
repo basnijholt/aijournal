@@ -98,12 +98,17 @@ def test_profile_suggest_writes_suggestions(
 
     _, suggestions_path, _ = _invoke(cli_workspace, cli_runner)
 
-    data = yaml.safe_load(suggestions_path.read_text(encoding="utf-8"))
+    artifact = yaml.safe_load(suggestions_path.read_text(encoding="utf-8"))
+    assert artifact.get("schema") == "v2"
+    assert artifact.get("kind") == "profile.suggestions"
+    meta = artifact.get("meta", {})
+    assert meta.get("created_at")
+    data = artifact.get("data", {})
     assert data.get("upserts") or data.get("updates"), "Expected suggested changes"
-    meta = data.get("meta", {})
+    detail_meta = data.get("meta", {})
     for key in ("llm_model", "prompt_path", "prompt_hash", "created_at"):
-        assert meta.get(key)
-    assert meta.get("llm_model") == "fake-ollama"
+        assert detail_meta.get(key)
+    assert detail_meta.get("llm_model") == "fake-ollama"
 
 
 def test_profile_suggest_is_idempotent(

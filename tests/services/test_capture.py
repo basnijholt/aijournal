@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 import yaml
+from tests.helpers import make_claim_atom
 
 from aijournal.common.meta import Artifact, ArtifactKind, ArtifactMeta
 from aijournal.io.artifacts import save_artifact
@@ -19,6 +20,12 @@ from aijournal.models import (
     ManifestEntry,
     MicroFact,
     MicroFactsFile,
+    ProfileSuggestions,
+    ProfileSuggestionUpsert,
+    ProfileUpdateBatch,
+    ProfileUpdateInput,
+    ProfileUpdatePreview,
+    ProfileUpdateProposals,
     SummaryMeta,
 )
 from aijournal.services.capture import (
@@ -136,6 +143,67 @@ def test_run_capture_records_telemetry(tmp_path: Path, monkeypatch: pytest.Monke
         save_artifact(path, artifact)
         return path
 
+    def _write_profile_suggestions_artifact(path: Path, day: str) -> Path:
+        meta = SummaryMeta(
+            llm_model="fake-ollama",
+            prompt_path="prompts/profile_suggest.md",
+            prompt_hash="fake",
+            created_at=f"{day}T09:10:00Z",
+        )
+        suggestions = ProfileSuggestions(
+            upserts=[
+                ProfileSuggestionUpsert(
+                    target="claims",
+                    operation="upsert",
+                    value=make_claim_atom(
+                        "pref_capture",
+                        "Capture suggestion",
+                        strength=0.5,
+                        last_updated=f"{day}T09:00:00Z",
+                    ),
+                )
+            ],
+            updates=[],
+            meta=meta,
+        )
+        artifact = Artifact[ProfileSuggestions](
+            kind=ArtifactKind.PROFILE_SUGGESTIONS,
+            meta=ArtifactMeta(created_at=meta.created_at, model=meta.llm_model),
+            data=suggestions,
+        )
+        save_artifact(path, artifact)
+        return path
+
+    def _write_profile_update_batch_artifact(path: Path, day: str) -> Path:
+        meta = SummaryMeta(
+            llm_model="fake-ollama",
+            prompt_path="prompts/characterize.md",
+            prompt_hash="fake",
+            created_at=f"{day}T09:20:00Z",
+        )
+        batch = ProfileUpdateBatch(
+            batch_id=f"batch-{day}",
+            created_at=f"{day}T09:20:00Z",
+            date=day,
+            inputs=[
+                ProfileUpdateInput(
+                    id=f"{day}-entry",
+                    normalized_path=f"data/normalized/{day}/entry.yaml",
+                    tags=["test"],
+                )
+            ],
+            proposals=ProfileUpdateProposals(),
+            meta=meta,
+            preview=ProfileUpdatePreview(),
+        )
+        artifact = Artifact[ProfileUpdateBatch](
+            kind=ArtifactKind.PROFILE_UPDATES,
+            meta=ArtifactMeta(created_at=meta.created_at, model=meta.llm_model),
+            data=batch,
+        )
+        save_artifact(path, artifact)
+        return path
+
     def fake_run_summarize(date: str, *, timeout: float, retries: int, progress: bool) -> Path:
         del timeout, retries, progress
         stage_calls.append(("summarize", date))
@@ -166,9 +234,9 @@ def test_run_capture_records_telemetry(tmp_path: Path, monkeypatch: pytest.Monke
     ) -> Path:
         del timeout, retries, progress
         stage_calls.append(("profile_suggest", date))
-        return _ensure_file(
+        return _write_profile_suggestions_artifact(
             tmp_path / "derived" / "profile_suggestions" / f"{date}.yaml",
-            "suggest",
+            date,
         )
 
     def fake_run_profile_apply(
@@ -191,9 +259,9 @@ def test_run_capture_records_telemetry(tmp_path: Path, monkeypatch: pytest.Monke
     ) -> Path:
         del timeout, retries, progress, build_claim_preview
         stage_calls.append(("characterize", date))
-        return _ensure_file(
+        return _write_profile_update_batch_artifact(
             tmp_path / "derived" / "pending" / "profile_updates" / f"{date}-batch.yaml",
-            "batch",
+            date,
         )
 
     def fake_apply_batch(root: Path, batch_path: Path) -> bool:

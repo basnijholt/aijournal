@@ -9,8 +9,9 @@ from typing import Any
 
 import typer
 
+from aijournal.common.meta import Artifact, ArtifactKind, ArtifactMeta
 from aijournal.domain.persona import PersonaCoreFile, PersonaCoreMeta
-from aijournal.io.yaml_io import load_yaml_model, write_yaml_model
+from aijournal.io.artifacts import read_legacy_or_artifact, save_artifact
 from aijournal.models import ClaimAtom
 from aijournal.pipelines import persona as persona_pipeline
 from aijournal.utils import time as time_utils
@@ -47,6 +48,21 @@ def _persona_source_mtimes(root: Path) -> dict[str, float]:
     return state
 
 
+def _persona_artifact_meta(meta: PersonaCoreMeta) -> ArtifactMeta:
+    created_at = meta.generated_at or time_utils.format_timestamp(time_utils.now())
+    return ArtifactMeta(
+        created_at=created_at,
+        model=None,
+        prompt_path=None,
+        prompt_hash=None,
+        notes={
+            "token_budget": str(meta.token_budget),
+            "planned_tokens": str(meta.planned_tokens),
+        },
+        sources={**meta.sources},
+    )
+
+
 def persona_state(root: Path) -> tuple[str, list[str]]:
     persona_path = root / "derived" / "persona" / "persona_core.yaml"
     if not persona_path.exists():
@@ -54,7 +70,11 @@ def persona_state(root: Path) -> tuple[str, list[str]]:
         return "missing", [f"Missing {rel}; run `aijournal persona build`."]
 
     try:
-        persona_file = load_yaml_model(persona_path, PersonaCoreFile)
+        persona_file = read_legacy_or_artifact(
+            persona_path,
+            PersonaCoreFile,
+            artifact_model=PersonaCoreFile,
+        )
     except Exception as exc:  # pragma: no cover - depends on file contents
         return (
             "stale",
@@ -218,12 +238,22 @@ def run_persona_build(
     existing: PersonaCoreFile | None = None
     if persona_path.exists():
         try:
-            existing = load_yaml_model(persona_path, PersonaCoreFile)
+            existing = read_legacy_or_artifact(
+                persona_path,
+                PersonaCoreFile,
+                artifact_model=PersonaCoreFile,
+            )
         except Exception:
             existing = None
 
     changed = existing is None or existing != persona_file
-    write_yaml_model(persona_path, persona_file)
+    artifact = Artifact[PersonaCoreFile](
+        kind=ArtifactKind.PERSONA_CORE,
+        schema="v2",
+        meta=_persona_artifact_meta(persona_file.meta),
+        data=persona_file,
+    )
+    save_artifact(persona_path, artifact)
     return persona_path, changed
 
 

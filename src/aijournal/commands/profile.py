@@ -21,9 +21,11 @@ from aijournal.commands.summarize import (
     _log_entry_progress,
     _validate_timeout,
 )
+from aijournal.common.meta import Artifact, ArtifactKind, ArtifactMeta
 from aijournal.domain.changes import ClaimProposal, FacetChange, ProfileUpdateProposals
 from aijournal.domain.evidence import SourceRef, redact_source_text
 from aijournal.fakes import fake_profile_suggestions
+from aijournal.io.artifacts import read_legacy_or_artifact, save_artifact
 from aijournal.io.yaml_io import load_yaml_model, write_yaml_model
 from aijournal.models import (
     ClaimAtom,
@@ -37,6 +39,7 @@ from aijournal.models import (
     Provenance,
     Scope,
     SelfProfile,
+    SummaryMeta,
 )
 from aijournal.pipelines import normalization
 from aijournal.services import ClaimConsolidator, ClaimMergeOutcome, LLMResponseError
@@ -97,7 +100,13 @@ def run_profile_suggest(
         raise typer.Exit(1)
 
     path = _derived_profile_suggestions_path(root, date)
-    write_yaml_model(path, suggestions_model)
+    artifact = Artifact[ProfileSuggestions](
+        kind=ArtifactKind.PROFILE_SUGGESTIONS,
+        schema="v2",
+        meta=_artifact_meta_from_summary_meta(suggestions_model.meta),
+        data=suggestions_model,
+    )
+    save_artifact(path, artifact)
     return path
 
 
@@ -120,7 +129,11 @@ def run_profile_apply(
         )
         raise typer.Exit(1)
 
-    suggestions_model = load_yaml_model(resolved_path, ProfileSuggestions)
+    suggestions_model = read_legacy_or_artifact(
+        resolved_path,
+        ProfileSuggestions,
+        artifact_model=ProfileSuggestions,
+    )
     profile_model, claim_models = _load_profile_components(root)
     profile = _profile_to_dict(profile_model)
     claims = [claim.model_copy(deep=True) for claim in claim_models]
@@ -222,6 +235,21 @@ def _profile_suggestions_payload(
 
     suggestions.meta = _build_meta("prompts/profile_suggest.md", config=config)
     return suggestions
+
+
+def _artifact_meta_from_summary_meta(meta: SummaryMeta | None) -> ArtifactMeta:
+    created_at = (
+        meta.created_at
+        if meta and meta.created_at
+        else time_utils.format_timestamp(time_utils.now())
+    )
+    model = meta.llm_model if meta else None
+    return ArtifactMeta(
+        created_at=created_at,
+        model=model,
+        prompt_path=meta.prompt_path if meta else None,
+        prompt_hash=meta.prompt_hash if meta else None,
+    )
 
 
 def _proposals_to_profile(

@@ -7,8 +7,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Final, Literal
 
-import yaml
-
+from aijournal.common.meta import Artifact, ArtifactKind, ArtifactMeta
+from aijournal.io.artifacts import save_artifact
 from aijournal.io.yaml_io import load_yaml_model, write_yaml_model
 from aijournal.models import ClaimsFile, FeedbackAdjustmentEvent, FeedbackBatch
 
@@ -124,9 +124,14 @@ def apply_chat_feedback(
             for adj in adjustments
         ],
     )
-    feedback_path.write_text(
-        yaml.safe_dump(batch.model_dump(mode="python"), sort_keys=False),
-        encoding="utf-8",
+    save_artifact(
+        feedback_path,
+        Artifact[FeedbackBatch](
+            kind=ArtifactKind.FEEDBACK_BATCH,
+            schema="v2",
+            meta=ArtifactMeta(created_at=timestamp, model=None),
+            data=batch,
+        ),
     )
     return adjustments, feedback_path
 

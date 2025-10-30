@@ -116,11 +116,17 @@ def test_characterize_generates_pending_batch(
     _seed_profile(cli_workspace)
 
     batch_path, _ = _run_characterize(cli_workspace, cli_runner)
-    data = yaml.safe_load(batch_path.read_text(encoding="utf-8"))
+    artifact = yaml.safe_load(batch_path.read_text(encoding="utf-8"))
+    assert artifact.get("schema") == "v2"
+    assert artifact.get("kind") == "profile.updates"
+    outer_meta = artifact.get("meta", {})
+    assert outer_meta.get("created_at")
+    data = artifact.get("data", {})
 
     assert data.get("inputs")
-    assert data.get("meta", {}).get("prompt_path") == "prompts/characterize.md"
-    assert data.get("meta", {}).get("llm_model") == "fake-ollama"
+    inner_meta = data.get("meta", {})
+    assert inner_meta.get("prompt_path") == "prompts/characterize.md"
+    assert inner_meta.get("llm_model") == "fake-ollama"
     proposals = data.get("proposals", {})
     claims = proposals.get("claims")
     assert claims, "Expected at least one claim proposal"
@@ -168,7 +174,8 @@ def test_characterize_preview_flags_conflict(
     _seed_conflicting_claim(cli_workspace)
 
     batch_path, _ = _run_characterize(cli_workspace, cli_runner)
-    data = yaml.safe_load(batch_path.read_text(encoding="utf-8"))
+    artifact = yaml.safe_load(batch_path.read_text(encoding="utf-8"))
+    data = artifact.get("data", {})
     preview = data.get("preview", {})
     events = preview.get("claim_events") or []
     actions = {event.get("action") for event in events}
@@ -254,7 +261,8 @@ def test_characterize_live_mode_structured(
         cli_runner,
         env_override={"AIJOURNAL_FAKE_OLLAMA": "0"},
     )
-    data = yaml.safe_load(batch_path.read_text(encoding="utf-8"))
+    artifact = yaml.safe_load(batch_path.read_text(encoding="utf-8"))
+    data = artifact.get("data", {})
     assert captured.get("raw_claims"), "Expected structured claims to flow into normalization"
     claims = data["proposals"]["claims"]
     assert all("id" not in item.get("claim", {}) for item in claims)

@@ -214,10 +214,18 @@ def test_persona_core_roundtrip(tmp_path: Path) -> None:
         claim_count=1,
     )
     payload = PersonaCoreFile(persona=persona, meta=meta)
-    write_yaml_model(path, payload)
+    artifact = Artifact[PersonaCoreFile](
+        kind=ArtifactKind.PERSONA_CORE,
+        meta=ArtifactMeta(
+            created_at=meta.generated_at,
+            model=None,
+        ),
+        data=payload,
+    )
+    save_artifact(path, artifact)
 
-    loaded = load_yaml_model(path, PersonaCoreFile)
-    assert loaded == payload
+    loaded = load_artifact(path, PersonaCoreFile)
+    assert loaded.data == payload
     _assert_schema(path, "persona_core")
 
 
@@ -347,7 +355,12 @@ def test_profile_suggestions_schema(tmp_path: Path) -> None:
         ],
         meta=meta,
     )
-    write_yaml_model(path, suggestions)
+    artifact = Artifact[ProfileSuggestions](
+        kind=ArtifactKind.PROFILE_SUGGESTIONS,
+        meta=ArtifactMeta(created_at=meta.created_at, model=meta.llm_model),
+        data=suggestions,
+    )
+    save_artifact(path, artifact)
     _assert_schema(path, "profile_suggestions")
 
 
