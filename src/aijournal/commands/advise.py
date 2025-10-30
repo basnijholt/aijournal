@@ -29,7 +29,6 @@ from aijournal.common.meta import Artifact, ArtifactKind
 from aijournal.domain.claims import ClaimAtom
 from aijournal.io.artifacts import load_artifact, save_artifact
 from aijournal.models.derived import AdviceCard, ProfileUpdateBatch
-from aijournal.models.responses import AdviceLLMResponse
 from aijournal.pipelines import advise as advise_pipeline
 from aijournal.services.ollama import build_ollama_config_from_mapping
 from aijournal.utils import time as time_utils
@@ -135,9 +134,9 @@ def _advice_payload(
         for target in rankings[:8]
     ]
 
-    def request_advice() -> AdviceLLMResponse:
+    def request_advice() -> AdviceCard:
         return cast(
-            AdviceLLMResponse,
+            AdviceCard,
             _invoke_structured_llm(
                 "prompts/advise.md",
                 {
@@ -150,7 +149,7 @@ def _advice_payload(
                     "rankings_json": _json_block(rankings_payload),
                     "pending_prompts_json": _json_block(list(pending_prompts)),
                 },
-                response_model=AdviceLLMResponse,
+                response_model=AdviceCard,
                 agent_name="aijournal-advise",
                 config=config,
                 max_attempts=2,
