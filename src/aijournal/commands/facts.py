@@ -24,7 +24,8 @@ from aijournal.commands.summarize import (
     _structured_call_with_retry,
     _validate_timeout,
 )
-from aijournal.io.yaml_io import write_yaml_model
+from aijournal.common.meta import Artifact, ArtifactKind, ArtifactMeta
+from aijournal.io.artifacts import save_artifact
 from aijournal.models import (
     ClaimAtom,
     ClaimProposal,
@@ -33,6 +34,7 @@ from aijournal.models import (
     MicroFactsFile,
     NormalizedEntry,
     ProfileUpdatePreview,
+    SummaryMeta,
 )
 from aijournal.pipelines import facts as facts_pipeline
 from aijournal.services import LLMResponseError
@@ -142,8 +144,27 @@ def run_facts(
     facts_data.preview = preview
 
     facts_path = _derived_microfacts_path(root, date)
-    write_yaml_model(facts_path, facts_data)
+    artifact_meta = _artifact_meta_from_summary_meta(facts_data.meta)
+    save_artifact(
+        facts_path,
+        Artifact[MicroFactsFile](
+            kind=ArtifactKind.MICROFACTS_DAILY,
+            schema="v2",
+            meta=artifact_meta,
+            data=facts_data,
+        ),
+    )
     return preview, facts_path
+
+
+def _artifact_meta_from_summary_meta(meta: SummaryMeta) -> ArtifactMeta:
+    created_at = meta.created_at or time_utils.format_timestamp(time_utils.now())
+    return ArtifactMeta(
+        created_at=created_at,
+        model=meta.llm_model,
+        prompt_path=meta.prompt_path,
+        prompt_hash=meta.prompt_hash,
+    )
 
 
 # Re-export helpers needed by other commands.

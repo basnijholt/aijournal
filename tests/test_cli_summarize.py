@@ -60,14 +60,19 @@ def test_summarize_generates_summary(
     summary_path = cli_workspace / "derived" / "summaries" / f"{DATE}.yaml"
     assert summary_path.exists()
 
-    data = _read_yaml(summary_path)
+    artifact = _read_yaml(summary_path)
+    assert artifact.get("schema") == "v2"
+    assert artifact.get("kind") == "summaries.daily"
+    meta = artifact.get("meta", {})
+    assert meta.get("created_at")
+    data = artifact.get("data", {})
     assert data.get("day") == DATE
     assert isinstance(data.get("highlights"), list)
     assert isinstance(data.get("todo_candidates"), list)
-    meta = data.get("meta", {})
-    assert meta.get("llm_model") == "fake-ollama"
+    detail_meta = data.get("meta", {})
+    assert detail_meta.get("llm_model") == "fake-ollama"
     for key in ("prompt_path", "prompt_hash", "created_at"):
-        assert meta.get(key), f"Missing {key}"
+        assert detail_meta.get(key), f"Missing {key}"
     assert str(summary_path) in result.stdout
 
 
