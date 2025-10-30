@@ -29,7 +29,7 @@ This runbook expands every part of the prior proposal into actionable, testable 
 | `README.md` | Product overview, CLI workflow, personas. |
 | `ARCHITECTURE.md` | Authoritative system design (pipelines, claims, persona, retrieval). |
 | `docs/workflow.md` | Daily operator flow; command ordering. |
-| `agents.md` | Live-mode rehearsal details, success criteria. |
+| `AGENTS.md` | Live-mode rehearsal details, success criteria. |
 | `scripts/data_model_report.py` | Inventory script for Pydantic models/dataclasses. |
 | `refactor3.md` *(this file)* | Runbook – **do not modify structure without alignment**. |
 
@@ -271,6 +271,7 @@ class FacetChange(StrictModel):
 class ProfileUpdateProposals(StrictModel):
     claims: list[ClaimProposal] = []
     facets: list[FacetChange] = []
+    interview_prompts: list[str] = []
 ```
 
 ### 4.6 Events & Batches
@@ -327,6 +328,8 @@ class FeedbackBatch(StrictModel):
 
 ```python
 # aijournal/domain/facts.py
+from pydantic import Field
+
 class MicroFact(StrictModel):
     id: str
     statement: str
@@ -339,12 +342,14 @@ class MicroFactsFile(StrictModel):
     facts: list[MicroFact] = []
     claim_proposals: list[ClaimProposal] = []
     preview: ProfileUpdatePreview | None = None
+    meta: SummaryMeta = Field(default_factory=SummaryMeta)
 
 class DailySummary(StrictModel):
     day: ISODateStr
     bullets: list[str] = []
     highlights: list[str] = []
     todo_candidates: list[str] = []
+    meta: SummaryMeta = Field(default_factory=SummaryMeta)
 ```
 
 ### 4.8 Persona & Packs
@@ -397,6 +402,8 @@ class IndexMeta(StrictModel):
 ### 4.10 Chat & Advice
 
 ```python
+from pydantic import BaseModel
+
 # aijournal/api/chat.py
 class ChatCitation(StrictModel):
     chunk_id: str
@@ -408,7 +415,15 @@ class ChatCitation(StrictModel):
     tags: list[str] = []
     score: float
 
-class ChatRequest(StrictModel):
+class ChatResponse(StrictModel):
+    answer: str
+    citations: list[str] = []
+    clarifying_question: str | None = None
+    telemetry: dict[str, object] = {}
+    timestamp: TimestampStr | None = None
+
+# aijournal/services/chat_api.py
+class ChatRequest(BaseModel):
     question: str
     top: int | None = None
     tags: list[str] | None = None
@@ -418,13 +433,6 @@ class ChatRequest(StrictModel):
     session_id: str | None = None
     save: bool = True
     feedback: Literal['up','down'] | None = None
-
-class ChatResponse(StrictModel):
-    answer: str
-    citations: list[ChatCitation] = []
-    clarifying_question: str | None = None
-    telemetry: dict[str, object] = {}
-    timestamp: TimestampStr
 
 # aijournal/domain/advice.py
 class AdviceReference(StrictModel):
@@ -529,7 +537,7 @@ class CaptureInput(CaptureRequest):
 
 **1.3 Schema Snapshot & Governance Hooks**
 - Generate JSON Schema files for every strict model under `schemas/core/<model>.json` using `model_json_schema()`; commit them.
-- Add CI/local script (`scripts/check_schemas.py`) comparing regenerated schemas vs. committed versions; fail unless `AIJOURNAL_BLESS_SCHEMA=1` is set.
+- Add CI/local script (`scripts/check_schemas.py`) comparing regenerated schemas vs. committed versions; fail unless `SCHEMAS_BLESS=1` is set.
 - Audit code for raw `kind` strings; replace with `ArtifactKind` values.
 - Create `.githooks/pre-push` running `uv run pytest -q` and `pre-commit run --all-files`; document activation in `CONTRIBUTING.md`.
 - Add a “Decision Log” table (Date / Step / Decision / Impact) to `docs/refactor3_status.md`.
