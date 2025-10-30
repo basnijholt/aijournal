@@ -184,7 +184,7 @@ Authoritative schemas (see `src/aijournal/models/authoritative.py`):
 
 Derived schemas (see `src/aijournal/models/derived.py`):
 - `DailySummary`, `MicroFactsFile`, `ProfileUpdateProposals`, `ProfileUpdateBatch`.
-- `PersonaCoreFile`, `AdviceCard`, `InterviewSet`, `ChatTranscript`, `ChatTelemetry`, `IndexMeta`.
+- `PersonaCore`, `AdviceCard`, `InterviewSet`, `ChatTranscript`, `ChatTelemetry`, `IndexMeta`.
 - Every derived YAML includes a deterministic `meta` block with the Ollama model, prompt path, prompt hash, creation time, and (where applicable) manifest hashes.
 
 ## 6. Prompts and Structured Output

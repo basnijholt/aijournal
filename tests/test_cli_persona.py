@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import TYPE_CHECKING
 
 import yaml
@@ -68,11 +69,13 @@ def test_persona_build_generates_core(
     artifact = yaml.safe_load(persona_path.read_text(encoding="utf-8"))
     assert artifact.get("kind") == "persona.core"
     data = artifact.get("data", {})
-    meta = data.get("meta", {})
-    assert data.get("persona", {}).get("claims"), "claims should be present"
-    assert meta.get("claim_count") == len(data.get("persona", {}).get("claims", []))
-    assert meta.get("planned_tokens") > 0
-    source_mtimes = meta.get("source_mtimes", {})
+    meta = artifact.get("meta", {})
+    notes = meta.get("notes", {}) or {}
+    persona_claims = data.get("claims", [])
+    assert persona_claims, "claims should be present"
+    assert notes.get("claim_count") == str(len(persona_claims))
+    assert int(notes.get("planned_tokens", "0")) > 0
+    source_mtimes = json.loads(notes.get("source_mtimes", "{}"))
     assert "profile/self_profile.yaml" in source_mtimes
     assert "profile/claims.yaml" in source_mtimes
 
@@ -101,12 +104,13 @@ def test_persona_build_trims_when_budget_forced(
 
     persona_path = cli_workspace / "derived" / "persona" / "persona_core.yaml"
     artifact = yaml.safe_load(persona_path.read_text(encoding="utf-8"))
-    meta = artifact.get("data", {}).get("meta", {})
-    trimmed = meta.get("trimmed", [])
+    meta = artifact.get("meta", {})
+    notes = meta.get("notes", {}) or {}
+    trimmed = json.loads(notes.get("trimmed", "[]"))
     assert trimmed, "expect at least one trimmed claim when forcing small budget"
-    trimmed_ids = [item["id"] for item in trimmed]
+    trimmed_ids = [item.get("id") for item in trimmed]
     assert "pref.evening" in trimmed_ids
-    assert isinstance(meta.get("budget_exceeded"), bool)
+    assert json.loads(notes.get("budget_exceeded", "false")) is True
 
 
 def test_persona_build_handles_empty_claims(
@@ -121,7 +125,7 @@ def test_persona_build_handles_empty_claims(
     artifact = yaml.safe_load(
         (cli_workspace / "derived" / "persona" / "persona_core.yaml").read_text(encoding="utf-8"),
     )
-    persona_data = artifact.get("data", {}).get("persona", {})
+    persona_data = artifact.get("data", {})
     assert persona_data.get("claims") == []
     assert persona_data.get("profile"), "profile slice should be included when available"
 
@@ -150,9 +154,9 @@ def test_persona_build_respects_min_claims(
     artifact = yaml.safe_load(
         (cli_workspace / "derived" / "persona" / "persona_core.yaml").read_text(encoding="utf-8"),
     )
-    meta = artifact.get("data", {}).get("meta", {})
-    assert meta.get("claim_count") == 2
-    assert meta.get("budget_exceeded") is True
+    notes = artifact.get("meta", {}).get("notes", {}) or {}
+    assert notes.get("claim_count") == "2"
+    assert json.loads(notes.get("budget_exceeded", "false")) is True
 
 
 def test_persona_status_reports_fresh(

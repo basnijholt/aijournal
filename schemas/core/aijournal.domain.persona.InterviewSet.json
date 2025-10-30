@@ -43,56 +43,11 @@
       ],
       "title": "InterviewQuestion",
       "type": "object"
-    },
-    "SummaryMeta": {
-      "additionalProperties": false,
-      "properties": {
-        "created_at": {
-          "default": "",
-          "title": "Created At",
-          "type": "string"
-        },
-        "llm_model": {
-          "default": "unknown",
-          "title": "Llm Model",
-          "type": "string"
-        },
-        "prompt_hash": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Prompt Hash"
-        },
-        "prompt_path": {
-          "default": "",
-          "title": "Prompt Path",
-          "type": "string"
-        }
-      },
-      "title": "SummaryMeta",
-      "type": "object"
     }
   },
   "additionalProperties": false,
   "description": "Collection of interview questions to review with the operator.",
   "properties": {
-    "meta": {
-      "anyOf": [
-        {
-          "$ref": "#/$defs/SummaryMeta"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null
-    },
     "questions": {
       "items": {
         "$ref": "#/$defs/InterviewQuestion"

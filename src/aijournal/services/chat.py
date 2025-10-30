@@ -15,8 +15,8 @@ from pydantic import ValidationError
 from aijournal.api.chat import ChatCitation, ChatCitationRef, ChatResponse
 from aijournal.common.meta import LLMResult
 from aijournal.domain.chat import ChatTelemetry, ChatTurn
-from aijournal.domain.persona import PersonaCore, PersonaCoreFile
-from aijournal.io.artifacts import load_artifact_data
+from aijournal.domain.persona import PersonaCore
+from aijournal.io.artifacts import load_artifact
 from aijournal.services.ollama import (
     LLMResponseError,
     OllamaConfig,
@@ -178,14 +178,14 @@ class ChatService:
             msg = "Persona core not found. Run `aijournal persona build` before using chat."
             raise RuntimeError(msg)
         try:
-            persona_file = load_artifact_data(self._persona_path, PersonaCoreFile)
+            persona_artifact = load_artifact(self._persona_path, PersonaCore)
         except FileNotFoundError as exc:
             msg = "Persona core not found. Run `aijournal persona build` before using chat."
             raise RuntimeError(msg) from exc
         except ValidationError as exc:
             msg = f"Persona core failed validation: {exc}"
             raise RuntimeError(msg) from exc
-        return persona_file.persona
+        return persona_artifact.data
 
     def _build_citations(
         self,

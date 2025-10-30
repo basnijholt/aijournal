@@ -13,11 +13,7 @@ from aijournal.domain.changes import (
 )
 from aijournal.domain.claims import ClaimAtom
 from aijournal.domain.evidence import SourceRef
-from aijournal.domain.facts import (
-    DailySummary,
-    FactEvidence,
-    MicroFact,
-)
+from aijournal.domain.facts import DailySummary, FactEvidence, MicroFact
 from aijournal.domain.journal import NormalizedEntry
 from aijournal.models.derived import (
     AdviceCard,

@@ -1,25 +1,24 @@
-data:
-  meta:
-    budget_exceeded: true
-    char_per_token: 4.2
-    claim_count: 0
-    claim_pool: 0
-    generated_at: '2025-10-29T21:08:22Z'
-    max_claims: 24
-    min_claims: 8
-    planned_tokens: 1795
+kind: persona.core
+meta:
+  created_at: '2025-10-29T21:08:22Z'
+  char_per_token: 4.2
+  notes:
+    budget_exceeded: 'true'
+    claim_count: '0'
+    claim_pool: '0'
+    max_claims: '24'
+    min_claims: '8'
+    planned_tokens: '1795'
     selection_strategy: strength*impact*decay
-    source_mtimes:
-      profile/claims.yaml: 1761702549.006278
-      profile/self_profile.yaml: 1761702549.006627
-    sources:
-      claims: profile/claims.yaml
-      profile: profile/self_profile.yaml
-    token_budget: 1200
-    trimmed: []
-  persona:
-    claims: []
-    profile:
+    source_mtimes: '{"profile/claims.yaml": 1761702549.006278, "profile/self_profile.yaml": 1761702549.006627}'
+    token_budget: '1200'
+    trimmed: '[]'
+  sources:
+    claims: profile/claims.yaml
+    profile: profile/self_profile.yaml
+data:
+  claims: []
+  profile:
       affect_energy:
         coping_strategies:
         - Take walks and revisit task lists when context feels noisy.
