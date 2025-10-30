@@ -3,13 +3,12 @@
 from __future__ import annotations
 
 import json
+import shutil
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any
+from pathlib import Path
+from typing import Any
 
 import yaml
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 
 def make_claim_atom(
@@ -102,3 +101,23 @@ def read_index_meta(base: Path) -> dict[str, Any]:
     if not meta_path.exists():
         return {}
     return json.loads(meta_path.read_text(encoding="utf-8"))
+
+
+def copy_fixture_workspace(name: str, destination: Path) -> Path:
+    """Copy a named fixture workspace into the destination directory."""
+
+    fixture_root = FIXTURES_ROOT / name
+    if not fixture_root.exists():
+        msg = f"Fixture {name} not found under {FIXTURES_ROOT}"
+        raise FileNotFoundError(msg)
+    for item in fixture_root.iterdir():
+        target = destination / item.name
+        if item.is_dir():
+            shutil.copytree(item, target, dirs_exist_ok=True)
+        else:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(item, target)
+    return destination
+
+
+FIXTURES_ROOT = Path(__file__).parent / "fixtures"

@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Any
 
 from annoy import AnnoyIndex
 
-from aijournal.models import IndexMeta
+from aijournal.domain.index import IndexMeta, RetrievedChunk
 
 from .embedding import EmbeddingBackend
 
@@ -31,20 +31,6 @@ class RetrievalFilters:
     source_types: frozenset[str] = field(default_factory=frozenset)
     date_from: str | None = None
     date_to: str | None = None
-
-
-@dataclass(frozen=True)
-class RetrievedChunk:
-    chunk_id: str
-    normalized_id: str
-    chunk_index: int
-    text: str
-    date: str
-    tags: list[str]
-    source_type: str | None
-    source_path: str
-    tokens: int
-    score: float
 
 
 @dataclass(frozen=True)
@@ -272,6 +258,9 @@ class Retriever:
 
     def _row_to_chunk(self, row: sqlite3.Row, score: float) -> RetrievedChunk:
         tags = json.loads(row["tags"] or "[]")
+        keys = set(row.keys())
+        source_hash = row["source_hash"] if "source_hash" in keys else None
+        manifest_hash = row["manifest_hash"] if "manifest_hash" in keys else None
         return RetrievedChunk(
             chunk_id=row["chunk_id"],
             normalized_id=row["normalized_id"],
@@ -282,6 +271,8 @@ class Retriever:
             source_type=row["source_type"],
             source_path=row["source_path"],
             tokens=row["tokens"],
+            source_hash=source_hash,
+            manifest_hash=manifest_hash,
             score=score,
         )
 
