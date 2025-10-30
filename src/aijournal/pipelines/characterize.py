@@ -7,13 +7,13 @@ from typing import Any, cast
 
 from pydantic import ValidationError
 
+from aijournal.domain.changes import FacetChange
 from aijournal.domain.evidence import SourceRef
 from aijournal.fakes import fake_characterize
 from aijournal.models import (
     ClaimAtom,
     ClaimProposal,
     ClaimSource,
-    FacetProposal,
     NormalizedEntry,
     ProfileUpdateProposals,
 )
@@ -23,15 +23,15 @@ from aijournal.utils.coercion import coerce_float, coerce_int
 StructuredCall = Callable[..., Any]
 CharacterizeRequestFactory = Callable[[], ProfileUpdateProposals]
 NormalizeClaims = Callable[..., list[ClaimProposal]]
-NormalizeFacets = Callable[..., list[FacetProposal]]
+NormalizeFacets = Callable[..., list[FacetChange]]
 
 
 def normalize_facet_proposals(
     raw_facets: Iterable[Any],
-) -> list[FacetProposal]:
-    proposals: list[FacetProposal] = []
+) -> list[FacetChange]:
+    proposals: list[FacetChange] = []
     for raw in raw_facets:
-        if isinstance(raw, FacetProposal):
+        if isinstance(raw, FacetChange):
             proposals.append(raw)
             continue
 
@@ -65,7 +65,7 @@ def normalize_facet_proposals(
         }
 
         try:
-            proposals.append(FacetProposal.model_validate(proposal_data))
+            proposals.append(FacetChange.model_validate(proposal_data))
         except ValidationError:
             continue
     return proposals
