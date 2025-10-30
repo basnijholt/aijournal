@@ -243,7 +243,7 @@ The L1→L4 memory hierarchy aligns with contemporary personality science when t
 
 ### To-Do Checklist
 - [x] Audit repo for legacy meta classes (`SummaryMeta`, `PersonaCoreMeta`); confirmed only historical docs mention them and no schema/code updates required.
-- [ ] Update all prompts and examples to the new ClaimAtomInput/enum/`para` span requirements and convert the advice flow to emit `AdviceCard` objects.
+- [x] Update all prompts and examples to the new ClaimAtomInput/enum/`para` span requirements and align the advice flow with strict `AdviceCard` payloads (bounded style enums, placeholder ID format).
 - [ ] Introduce shared `StrEnum` vocabularies in `domain/enums.py`, refactor models/prompts/tests to use them, and bless the resulting schema snapshots.
 - [ ] Add skeleton injection + two-step repair loop + coercion logging to structured runners, exposing metrics in `LLMResult` and CI.
 - [ ] Build telemetry surfaces that aggregate validation/coercion counts and enforce thresholds in CI.

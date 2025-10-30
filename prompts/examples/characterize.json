@@ -28,7 +28,7 @@
           "entry_id": "2025-10-25-focus-log",
           "spans": [
             {
-              "type": "paragraph",
+              "type": "para",
               "index": 1
             }
           ]
@@ -44,10 +44,7 @@
     {
       "path": "values_motivations.recurring_theme",
       "operation": "set",
-      "value": {
-        "label": "Morning momentum",
-        "last_seen": "2025-10-25"
-      },
+      "value": "Morning momentum shows up in recent reflections.",
       "method": "inferred",
       "confidence": 0.65,
       "review_after_days": 60,
@@ -57,7 +54,7 @@
           "entry_id": "2025-10-25-focus-log",
           "spans": [
             {
-              "type": "paragraph",
+              "type": "para",
               "index": 2
             }
           ]

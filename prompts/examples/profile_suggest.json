@@ -28,7 +28,7 @@
           "entry_id": "2025-10-24-plan-review",
           "spans": [
             {
-              "type": "paragraph",
+              "type": "para",
               "index": 0
             }
           ]
@@ -44,7 +44,7 @@
     {
       "path": "habits.focus_block.length_minutes",
       "operation": "set",
-      "value": 45,
+      "value": "45-minute focus blocks",
       "method": "inferred",
       "confidence": 0.7,
       "review_after_days": 60,
@@ -54,7 +54,7 @@
           "entry_id": "2025-10-24-plan-review",
           "spans": [
             {
-              "type": "paragraph",
+              "type": "para",
               "index": 1
             }
           ]
