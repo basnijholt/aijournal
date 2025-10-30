@@ -728,18 +728,3 @@ def _print_rankings(ranked: Sequence[InterviewTarget]) -> None:
         typer.echo(f"{idx}. {label} (score {target.score:.2f})")
         for reason in target.reasons:
             typer.echo(f"   - {reason}")
-
-
-__all__ = [
-    "InterviewTarget",
-    "run_profile_suggest",
-    "run_profile_apply",
-    "run_profile_status",
-    "_build_claim_atom_from_entry",
-    "_apply_claim_upsert",
-    "_apply_profile_update",
-    "_claim_last_updated",
-    "_compute_rankings",
-    "_load_profile_components",
-    "_profile_to_dict",
-]

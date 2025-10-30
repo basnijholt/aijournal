@@ -406,14 +406,3 @@ def _prepare_index_schema(conn: sqlite3.Connection) -> None:
             )
             raise RuntimeError(msg) from exc
         raise
-
-
-__all__ = [
-    "run_index_rebuild",
-    "run_index_tail",
-    "run_index_search",
-    "_split_filter_values",
-    "_validate_date_option",
-    "_format_search_snippet",
-    "_index_settings",
-]

@@ -186,9 +186,3 @@ def _log_pack_metrics(
         "output": str(output) if output else None,
     }
     typer.echo(json.dumps(payload, ensure_ascii=False), err=True)
-
-
-__all__ = [
-    "run_pack",
-    "_latest_normalized_day",
-]
