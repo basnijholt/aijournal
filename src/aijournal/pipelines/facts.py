@@ -372,10 +372,3 @@ def generate_microfacts(
     facts_model.claim_proposals = combined
 
     return facts_model
-
-
-__all__ = [
-    "generate_microfacts",
-    "merge_unique",
-    "normalize_claim_proposals",
-]

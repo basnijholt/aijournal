@@ -76,6 +76,3 @@ class EmbeddingBackend:
         dim = self.dimension or DEFAULT_EMBED_DIM
         self.dimension = dim
         return [rng.uniform(-1.0, 1.0) for _ in range(dim)]
-
-
-__all__ = ["DEFAULT_EMBED_DIM", "EmbeddingBackend"]

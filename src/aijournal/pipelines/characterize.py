@@ -132,9 +132,3 @@ def generate_characterization(
         interview_prompts=merged_prompts,
     )
     return proposals, merged_prompts
-
-
-__all__ = [
-    "generate_characterization",
-    "normalize_facet_proposals",
-]

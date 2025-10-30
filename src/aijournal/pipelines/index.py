@@ -505,23 +505,3 @@ def write_index_meta(
     meta_path = index_meta_path(root)
     artifact_format = meta_path.suffix.lstrip(".") or "json"
     save_artifact(meta_path, artifact, format=artifact_format)
-
-
-__all__ = [
-    "ANN_METRIC",
-    "CHUNK_MAX_CHARS",
-    "CHUNK_TARGET_CHARS",
-    "ChunkRecord",
-    "IndexTask",
-    "SourceRecord",
-    "prepare_index_tasks",
-    "filter_tasks_for_tail",
-    "build_chunk_records",
-    "index_entries",
-    "rebuild_annoy_index",
-    "write_chunk_manifests",
-    "gather_index_stats",
-    "write_index_meta",
-    "select_source_hash",
-    "hash_file",
-]
