@@ -79,8 +79,8 @@ def run_profile_suggest(
     timeout_value = _validate_timeout(timeout)
     _log_entry_progress(f"Generating profile suggestions for {date}", entries, progress)
 
-    profile_model, claim_models = _load_profile_components(root)
-    profile = _profile_to_dict(profile_model)
+    profile_model, claim_models = load_profile_components(root)
+    profile = profile_to_dict(profile_model)
     claims = [claim.model_copy(deep=True) for claim in claim_models]
     if not profile and not claims:
         typer.secho("No profile data", fg=typer.colors.RED, err=True)
@@ -131,22 +131,22 @@ def run_profile_apply(
         raise typer.Exit(1)
 
     suggestions_model = load_artifact_data(resolved_path, ProfileSuggestions)
-    profile_model, claim_models = _load_profile_components(root)
-    profile = _profile_to_dict(profile_model)
+    profile_model, claim_models = load_profile_components(root)
+    profile = profile_to_dict(profile_model)
     claims = [claim.model_copy(deep=True) for claim in claim_models]
     timestamp = time_utils.format_timestamp(time_utils.now())
     changed = False
 
     for upsert in suggestions_model.upserts:
         if upsert.target == "claims":
-            if _apply_claim_upsert(claims, upsert.value, timestamp):
+            if apply_claim_upsert(claims, upsert.value, timestamp):
                 changed = True
 
     for update in suggestions_model.updates:
         target = update.target
         if not target:
             continue
-        if _apply_profile_update(profile, target, update.value, timestamp):
+        if apply_profile_update(profile, target, update.value, timestamp):
             changed = True
 
     if not changed:
@@ -163,8 +163,8 @@ def run_profile_apply(
 def run_profile_status(*, root: Path | None = None) -> None:
     """Show ranked facets/claims requiring review."""
     resolved_root = root or Path.cwd()
-    profile_model, claim_models = _load_profile_components(resolved_root)
-    profile = _profile_to_dict(profile_model)
+    profile_model, claim_models = load_profile_components(resolved_root)
+    profile = profile_to_dict(profile_model)
 
     config_path = resolved_root / "config" / "config.yaml"
     config = _load_yaml(config_path) if config_path.exists() else {}
@@ -431,7 +431,7 @@ def _build_claim_atom_from_entry(
     )
 
 
-def _load_profile_components(root: Path) -> tuple[SelfProfile | None, list[ClaimAtom]]:
+def load_profile_components(root: Path) -> tuple[SelfProfile | None, list[ClaimAtom]]:
     profile_path = root / "profile" / "self_profile.yaml"
     claims_path = root / "profile" / "claims.yaml"
 
@@ -448,7 +448,7 @@ def _load_profile_components(root: Path) -> tuple[SelfProfile | None, list[Claim
     return profile, claim_models
 
 
-def _profile_to_dict(profile: SelfProfile | None) -> dict[str, Any]:
+def profile_to_dict(profile: SelfProfile | None) -> dict[str, Any]:
     return profile.model_dump(mode="python") if profile else {}
 
 
@@ -470,7 +470,7 @@ def _claims_to_models(claims: Iterable[Any]) -> list[ClaimAtom]:
     return normalized
 
 
-def _apply_profile_update(profile: dict[str, Any], target: str, value: Any, timestamp: str) -> bool:
+def apply_profile_update(profile: dict[str, Any], target: str, value: Any, timestamp: str) -> bool:
     parts = target.split(".")
     current = profile
     for part in parts[:-1]:
@@ -484,7 +484,7 @@ def _apply_profile_update(profile: dict[str, Any], target: str, value: Any, time
     return True
 
 
-def _apply_claim_upsert(
+def apply_claim_upsert(
     claims: list[ClaimAtom],
     value: ClaimAtom | dict[str, Any],
     timestamp: str,

@@ -2,30 +2,33 @@
 
 from __future__ import annotations
 
+import json
 import os
 from collections.abc import Callable, Iterable, Mapping, Sequence
-from datetime import datetime
+from datetime import UTC, datetime
 from hashlib import sha256
 from pathlib import Path
 
 import yaml
 
 from aijournal.commands.profile import (
-    _apply_claim_upsert,
-    _apply_profile_update,
-    _load_profile_components,
-    _profile_to_dict,
+    apply_claim_upsert,
+    apply_profile_update,
+    load_profile_components,
+    profile_to_dict,
 )
 from aijournal.domain.changes import ClaimProposal, FacetChange
 from aijournal.domain.evidence import redact_source_text
+from aijournal.domain.journal import NormalizedEntry
 from aijournal.io.artifacts import load_artifact_data
 from aijournal.io.yaml_io import write_yaml_model
-from aijournal.models.authoritative import ClaimsFile, ManifestEntry, SelfProfile
+from aijournal.models.authoritative import ClaimsFile, JournalSection, ManifestEntry, SelfProfile
 from aijournal.models.claim_atoms import ClaimAtom, ClaimSource
 from aijournal.models.derived import ProfileUpdateBatch
 from aijournal.pipelines import normalization
 from aijournal.services.capture.results import OperationResult
 from aijournal.utils import time as time_utils
+from aijournal.utils.paths import normalized_entry_path
 
 MARKDOWN_SUFFIXES = {".md", ".markdown"}
 
@@ -186,21 +189,21 @@ def apply_profile_update_batch(root: Path, batch_path: Path) -> bool:
         proposal.model_copy(deep=True) for proposal in batch.proposals.facets
     ]
 
-    profile_model, claim_models = _load_profile_components(root)
-    profile = _profile_to_dict(profile_model)
+    profile_model, claim_models = load_profile_components(root)
+    profile = profile_to_dict(profile_model)
     claims_data = [claim.model_copy(deep=True) for claim in claim_models]
     timestamp = time_utils.format_timestamp(time_utils.now())
 
     applied = False
     for claim_proposal in claim_proposals:
         incoming_atom = _proposal_claim_to_atom(claim_proposal, timestamp=timestamp)
-        if _apply_claim_upsert(claims_data, incoming_atom, timestamp):
+        if apply_claim_upsert(claims_data, incoming_atom, timestamp):
             applied = True
 
     for facet_proposal in facet_proposals:
         if not facet_proposal.path:
             continue
-        if _apply_profile_update(profile, facet_proposal.path, facet_proposal.value, timestamp):
+        if apply_profile_update(profile, facet_proposal.path, facet_proposal.value, timestamp):
             applied = True
 
     if not applied:
@@ -265,3 +268,192 @@ def emit_operation_event(
     if extra:
         payload.update(dict(extra))
     log_event(payload)
+
+
+def coerce_frontmatter_tags(raw: object) -> list[str]:
+    if raw is None:
+        return []
+    if isinstance(raw, list):
+        return [str(item) for item in raw if isinstance(item, (str, int, float))]
+    if isinstance(raw, str):
+        return [raw]
+    return []
+
+
+def resolve_created_dt(preferred: object, fallback: datetime) -> datetime:
+    if preferred:
+        if isinstance(preferred, datetime):
+            parsed = preferred
+        elif (
+            hasattr(preferred, "year") and hasattr(preferred, "month") and hasattr(preferred, "day")
+        ):
+            parsed = datetime(preferred.year, preferred.month, preferred.day, tzinfo=UTC)
+        else:
+            text = str(preferred)
+            try:
+                parsed = datetime.fromisoformat(text)
+            except ValueError:
+                parsed = datetime.strptime(text, "%Y-%m-%d")
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=UTC)
+        return parsed
+    return fallback
+
+
+def scan_headings(text: str) -> list[dict[str, object]]:
+    sections: list[dict[str, object]] = []
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped.startswith("#"):
+            continue
+        hashes, _, heading = stripped.partition(" ")
+        if not heading:
+            continue
+        level = len(hashes)
+        sections.append({"heading": heading.strip(), "level": level})
+    return sections
+
+
+def extract_json_frontmatter_block(text: str) -> tuple[str, str]:
+    depth = 0
+    in_string = False
+    escape = False
+    start_index = None
+    for index, char in enumerate(text):
+        if start_index is None:
+            if char.isspace():
+                continue
+            if char != "{":
+                raise ValueError("JSON frontmatter must start with '{'")
+            start_index = index
+            depth = 1
+            continue
+
+        if in_string:
+            if escape:
+                escape = False
+                continue
+            if char == "\\":
+                escape = True
+                continue
+            if char == '"':
+                in_string = False
+            continue
+
+        if char == '"':
+            in_string = True
+            continue
+        if char == "{":
+            depth += 1
+            continue
+        if char == "}":
+            depth -= 1
+            if depth == 0 and start_index is not None:
+                end_index = index + 1
+                block = text[start_index:end_index]
+                remainder = text[end_index:]
+                return block, remainder
+    raise ValueError("Unterminated JSON frontmatter block")
+
+
+def _extract_json_frontmatter(text: str) -> tuple[dict[str, object], str]:
+    block, body = extract_json_frontmatter_block(text)
+    try:
+        data = json.loads(block) or {}
+    except json.JSONDecodeError as exc:  # pragma: no cover - defensive
+        raise ValueError("Invalid JSON frontmatter") from exc
+    if not isinstance(data, dict):
+        data = {}
+    return data, body.lstrip("\n")
+
+
+def split_frontmatter(text: str) -> tuple[dict[str, object], str]:
+    stripped = text.lstrip()
+    if stripped.startswith("{"):
+        return _extract_json_frontmatter(stripped)
+
+    delimiter = None
+    if stripped.startswith("---"):
+        delimiter = "---"
+    elif stripped.startswith("+++"):
+        delimiter = "+++"
+    if delimiter is None:
+        msg = "Markdown entry missing YAML/TOML frontmatter delimiter"
+        raise ValueError(msg)
+
+    parts = stripped.split(delimiter, 2)
+    if len(parts) < 3:
+        msg = "Incomplete YAML/TOML frontmatter block"
+        raise ValueError(msg)
+
+    frontmatter_raw = parts[1].strip()
+    body = parts[2].lstrip("\n")
+    data = yaml.safe_load(frontmatter_raw) or {}
+    if not isinstance(data, dict):
+        data = {}
+    return data, body
+
+
+def normalize_markdown(
+    markdown_path: Path,
+    *,
+    root: Path,
+    source_hash: str,
+    source_type: str,
+) -> tuple[Path, bool]:
+    frontmatter, body = split_frontmatter(markdown_path.read_text(encoding="utf-8"))
+
+    created_dt = resolve_created_dt(frontmatter.get("created_at"), time_utils.now())
+    created_str = time_utils.format_timestamp(created_dt)
+    date_str = created_dt.strftime("%Y-%m-%d")
+
+    entry_id_raw = frontmatter.get("id") or frontmatter.get("slug")
+    if entry_id_raw is None:
+        entry_id_raw = markdown_path.stem
+    entry_id = str(entry_id_raw)
+
+    title_raw = frontmatter.get("title") or entry_id.replace("-", " ").title()
+    title = str(title_raw)
+
+    tags = coerce_frontmatter_tags(frontmatter.get("tags"))
+    sections_raw = scan_headings(body)
+    sections_models: list[JournalSection] = []
+    for section in sections_raw:
+        heading = str(section.get("heading", title))
+        level_raw = section.get("level", 1)
+        if isinstance(level_raw, (int, float, str)):
+            try:
+                level = int(level_raw)
+            except (TypeError, ValueError):
+                level = 1
+        else:
+            level = 1
+        sections_models.append(
+            JournalSection(
+                heading=heading,
+                level=level,
+                summary=None,
+            ),
+        )
+    summary_raw = frontmatter.get("summary")
+    summary_text = str(summary_raw) if summary_raw is not None else (body.strip() or None)
+    if not sections_models:
+        sections_models = [JournalSection(heading=title, level=1, summary=summary_text)]
+
+    normalized_entry = NormalizedEntry(
+        id=entry_id,
+        created_at=created_str,
+        source_path=relative_path(markdown_path, root),
+        title=title,
+        tags=tags,
+        sections=sections_models,
+        summary=summary_text,
+        source_hash=source_hash,
+        source_type=source_type,
+    )
+    normalized_path = normalized_entry_path(root, date_str, entry_id)
+    changed = write_yaml_if_changed(
+        normalized_path,
+        normalized_entry.model_dump(mode="python"),
+    )
+    return normalized_path, changed

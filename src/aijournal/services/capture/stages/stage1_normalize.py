@@ -4,8 +4,10 @@ from pathlib import Path
 from time import perf_counter
 from typing import TYPE_CHECKING
 
+from .stage0_persist import EntryResult
+
 if TYPE_CHECKING:
-    from .. import EntryResult, NormalizeStageOutputs
+    from .. import NormalizeStageOutputs
 
 
 def run_normalize_stage_1(

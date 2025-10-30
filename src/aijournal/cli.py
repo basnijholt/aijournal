@@ -55,11 +55,11 @@ from aijournal.commands.pack import run_pack
 from aijournal.commands.persona import persona_state, run_persona_build
 from aijournal.commands.profile import (
     InterviewTarget,
-    _apply_claim_upsert,
-    _apply_profile_update,
     _compute_rankings,
-    _load_profile_components,
-    _profile_to_dict,
+    apply_claim_upsert,
+    apply_profile_update,
+    load_profile_components,
+    profile_to_dict,
     run_profile_apply,
     run_profile_status,
     run_profile_suggest,
@@ -896,7 +896,7 @@ def facts(
     """Generate micro-facts from normalized entries."""
     _emit_deprecation("aijournal ops pipeline extract-facts", "aijournal capture --from/--text")
     root = Path.cwd()
-    _, claim_models = _load_profile_components(root)
+    _, claim_models = load_profile_components(root)
     preview, facts_path = run_facts(
         date,
         timeout=timeout,
@@ -1071,8 +1071,8 @@ def review_updates(
             typer.echo("Hint: run `aijournal interview` to follow up on the queued prompts.")
         return
 
-    profile_model, claim_models = _load_profile_components(root)
-    profile = _profile_to_dict(profile_model)
+    profile_model, claim_models = load_profile_components(root)
+    profile = profile_to_dict(profile_model)
     claims_data = [claim.model_copy(deep=True) for claim in claim_models]
     timestamp = time_utils.format_timestamp(time_utils.now())
     applied = 0
@@ -1080,13 +1080,13 @@ def review_updates(
 
     for claim_proposal in claim_proposals:
         incoming_atom = _claim_proposal_to_atom(claim_proposal, timestamp=timestamp)
-        if _apply_claim_upsert(claims_data, incoming_atom, timestamp, events=merge_events):
+        if apply_claim_upsert(claims_data, incoming_atom, timestamp, events=merge_events):
             applied += 1
 
     for facet_proposal in facet_proposals:
         if not facet_proposal.path:
             continue
-        if _apply_profile_update(profile, facet_proposal.path, facet_proposal.value, timestamp):
+        if apply_profile_update(profile, facet_proposal.path, facet_proposal.value, timestamp):
             applied += 1
 
     if not applied:
@@ -1177,8 +1177,8 @@ def persona_build(
 ) -> None:
     """Regenerate derived/persona/persona_core.yaml."""
     root = Path.cwd()
-    profile_model, claim_models = _load_profile_components(root)
-    profile = _profile_to_dict(profile_model)
+    profile_model, claim_models = load_profile_components(root)
+    profile = profile_to_dict(profile_model)
     config = _load_config(root)
     path, changed = run_persona_build(
         profile,
@@ -1355,7 +1355,7 @@ def _preview_claim_consolidation(
 ) -> None:
     if not claim_proposals:
         return
-    _, claim_models = _load_profile_components(root)
+    _, claim_models = load_profile_components(root)
     if not claim_models:
         return
     timestamp = time_utils.format_timestamp(time_utils.now())
@@ -1541,8 +1541,8 @@ def interview(
 ) -> None:
     """Surface targeted interview probes based on stale facets."""
     root = Path.cwd()
-    profile_model, claim_models = _load_profile_components(root)
-    profile = _profile_to_dict(profile_model)
+    profile_model, claim_models = load_profile_components(root)
+    profile = profile_to_dict(profile_model)
     claims = [claim.model_copy(deep=True) for claim in claim_models]
     if not profile and not claims:
         typer.secho("No profile data", fg=typer.colors.RED, err=True)

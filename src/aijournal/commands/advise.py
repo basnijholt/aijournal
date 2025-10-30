@@ -15,8 +15,8 @@ from aijournal.commands.pack import _latest_normalized_day
 from aijournal.commands.profile import (
     InterviewTarget,
     _compute_rankings,
-    _load_profile_components,
-    _profile_to_dict,
+    load_profile_components,
+    profile_to_dict,
 )
 from aijournal.commands.summarize import (
     _artifact_meta_from_summary,
@@ -38,8 +38,8 @@ from aijournal.utils import time as time_utils
 def run_advise(question: str) -> Path:
     """Generate advice from the current profile and return the output path."""
     root = Path.cwd()
-    profile_model, claim_models = _load_profile_components(root)
-    profile = _profile_to_dict(profile_model)
+    profile_model, claim_models = load_profile_components(root)
+    profile = profile_to_dict(profile_model)
     claims = [claim.model_copy(deep=True) for claim in claim_models]
     if not profile and not claims:
         typer.secho("No profile data", fg=typer.colors.RED, err=True)
