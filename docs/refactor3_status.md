@@ -15,6 +15,7 @@
 | 2025-10-30 | Stage 8.2 | Eliminated legacy pending-batch readers and enforced strict artifact loads across advise/chat surfaces. | All CLI/services now load profile suggestions/updates via `Artifact[T]`; malformed legacy files raise guidance errors instead of being auto-coerced. |
 | 2025-10-30 | Stage 8.3 | Added `aijournal ops audit provenance [--fix]` with recursive span scanning and redaction helpers. | CLI audit reports/fixes persisted `span.text` remnants across claims, persona, and profile update artifacts. |
 | 2025-10-30 | Stage 9 | Updated operator docs (`AGENTS.md`, workflow) to reference strict artifacts & audit flow; refreshed example fixtures remain aligned with envelopes. | Docs now point to the new governance command and confirm envelope-based examples; Stage 9 checklist marked complete. |
+| 2025-10-30 | Stage 10 | Ran fake-mode rehearsal (`capture`, pipelines, chat/advise, audit) in a fresh workspace and recorded the outcome. | End-to-end flow succeeds without legacy paths; audit confirms no persisted span text. |
 
 ## Stage 8 Execution Plan (Artifact Adoption)
 
