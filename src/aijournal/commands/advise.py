@@ -175,9 +175,3 @@ def _advice_payload(
 def _derived_advice_path(root: Path, day: str, question: str) -> Path:
     slug = time_utils.slugify_title(question)
     return root / "derived" / "advice" / day / f"{slug}.yaml"
-
-
-__all__ = [
-    "run_advise",
-    "_collect_pending_interview_prompts",
-]

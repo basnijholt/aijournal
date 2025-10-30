@@ -48,6 +48,3 @@ class CaptureInput(CaptureRequest):
         payload = request.model_dump(mode="python")
         payload.update({"min_stage": min_stage, "max_stage": max_stage})
         return cls.model_validate(payload)
-
-
-__all__ = ["CaptureRequest", "CaptureInput"]

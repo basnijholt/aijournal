@@ -77,11 +77,3 @@ def ingest_with_agent(agent: Agent, *, source_path: Path, markdown: str) -> Inge
         return payload
     msg = "Agent did not return the expected structured payload"
     raise ValueError(msg)
-
-
-__all__ = [
-    "IngestResult",
-    "IngestSection",
-    "build_ingest_agent",
-    "ingest_with_agent",
-]
