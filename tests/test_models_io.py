@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import TYPE_CHECKING
 
 import yaml
@@ -29,13 +30,7 @@ from aijournal.domain.facts import (
     SummaryMeta,
 )
 from aijournal.domain.journal import NormalizedEntry
-from aijournal.domain.persona import (
-    InterviewQuestion,
-    InterviewSet,
-    PersonaCore,
-    PersonaCoreFile,
-    PersonaCoreMeta,
-)
+from aijournal.domain.persona import InterviewQuestion, InterviewSet, PersonaCore, PersonaCoreMeta
 from aijournal.io.artifacts import load_artifact, save_artifact
 from aijournal.io.yaml_io import load_yaml_model, write_yaml_model
 from aijournal.models.authoritative import ClaimsFile, JournalEntry, JournalSection, SelfProfile
@@ -223,19 +218,34 @@ def test_persona_core_roundtrip(tmp_path: Path) -> None:
         claim_pool=1,
         claim_count=1,
     )
-    payload = PersonaCoreFile(persona=persona, meta=meta)
-    artifact = Artifact[PersonaCoreFile](
+    notes = {
+        "token_budget": str(meta.token_budget),
+        "planned_tokens": str(meta.planned_tokens),
+        "selection_strategy": meta.selection_strategy or "",
+        "trimmed": json.dumps(meta.trimmed, sort_keys=True, separators=(",", ":")),
+        "claim_pool": str(meta.claim_pool or 0),
+        "claim_count": str(meta.claim_count or 0),
+        "max_claims": str(meta.max_claims or 0),
+        "min_claims": str(meta.min_claims or 0),
+        "budget_exceeded": json.dumps(bool(meta.budget_exceeded)),
+        "source_mtimes": json.dumps(meta.source_mtimes, sort_keys=True, separators=(",", ":")),
+    }
+    notes = {key: value for key, value in notes.items() if value not in {"", "{}", "[]"}}
+    artifact = Artifact[PersonaCore](
         kind=ArtifactKind.PERSONA_CORE,
         meta=ArtifactMeta(
             created_at=meta.generated_at,
             model=None,
+            char_per_token=meta.char_per_token,
+            notes=notes or None,
+            sources={"profile": "profile/self_profile.yaml"},
         ),
-        data=payload,
+        data=persona,
     )
     save_artifact(path, artifact)
 
-    loaded = load_artifact(path, PersonaCoreFile)
-    assert loaded.data == payload
+    loaded = load_artifact(path, PersonaCore)
+    assert loaded.data == persona
     _assert_schema(path, "persona_core")
 
 
@@ -293,12 +303,6 @@ def test_load_with_default(tmp_path: Path) -> None:
 
 def test_interview_set_roundtrip(tmp_path: Path) -> None:
     path = _fixture_path(tmp_path, "interviews")
-    meta = SummaryMeta(
-        llm_model="llama3.1:8b-instruct",
-        prompt_path="prompts/profile_probe.md",
-        prompt_hash="ghi",
-        created_at="2025-10-25T12:10:00Z",
-    )
     interviews = InterviewSet(
         questions=[
             InterviewQuestion(
@@ -308,7 +312,6 @@ def test_interview_set_roundtrip(tmp_path: Path) -> None:
                 priority="high",
             ),
         ],
-        meta=meta,
     )
     write_yaml_model(path, interviews)
     loaded = load_yaml_model(path, InterviewSet)

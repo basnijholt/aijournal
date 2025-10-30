@@ -10,28 +10,15 @@ from aijournal.domain.advice import AdviceReference as _AdviceReference
 from aijournal.domain.changes import ProfileUpdateProposals
 from aijournal.domain.claims import ClaimAtom
 from aijournal.domain.events import ClaimPreviewEvent
-from aijournal.domain.facts import MicroFactsFile, SummaryMeta
-from aijournal.domain.persona import (
-    InterviewQuestion,
-    InterviewSet,
-    PersonaCore,
-    PersonaCoreFile,
-    PersonaCoreMeta,
-)
+from aijournal.domain.facts import MicroFactsFile
+from aijournal.domain.persona import InterviewQuestion, InterviewSet, PersonaCore
 
 from .base import AijournalModel
 
 PersonaCore.model_rebuild(_types_namespace={"ClaimAtom": ClaimAtom})
-PersonaCoreFile.model_rebuild(
-    _types_namespace={
-        "PersonaCore": PersonaCore,
-        "PersonaCoreMeta": PersonaCoreMeta,
-    }
-)
 InterviewSet.model_rebuild(
     _types_namespace={
         "InterviewQuestion": InterviewQuestion,
-        "SummaryMeta": SummaryMeta,
     }
 )
 

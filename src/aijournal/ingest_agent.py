@@ -3,14 +3,16 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from pydantic_ai import Agent
 
+from aijournal.common.types import TimestampStr
 from aijournal.domain.journal import Section as IngestSection
 from aijournal.services.ollama import build_ollama_agent, build_ollama_config_from_mapping
+from aijournal.utils import time as time_utils
 
 INGEST_SYSTEM_PROMPT = """
 You are part of a local journaling pipeline. Given a Markdown or Hugo document with optional
@@ -39,11 +41,41 @@ class IngestResult(BaseModel):
     """Structured output returned by the ingestion agent."""
 
     entry_id: str | None = Field(default=None, description="Slug or identifier for this entry")
-    created_at: datetime
+    created_at: TimestampStr
     title: str = Field(..., max_length=280)
     tags: list[str] = Field(default_factory=list)
     sections: list[IngestSection] = Field(default_factory=list)
     summary: str | None = Field(default=None, max_length=500)
+
+    @field_validator("created_at", mode="before")
+    @classmethod
+    def _coerce_created_at(cls, value: object) -> str:
+        if isinstance(value, datetime):
+            dt = value.astimezone(UTC)
+            return time_utils.format_timestamp(dt)
+        if value is None:
+            return time_utils.format_timestamp(time_utils.now())
+        if hasattr(value, "year") and hasattr(value, "month") and hasattr(value, "day"):
+            dt = datetime(
+                getattr(value, "year"),
+                getattr(value, "month"),
+                getattr(value, "day"),
+                tzinfo=UTC,
+            )
+            return time_utils.format_timestamp(dt)
+        if isinstance(value, str):
+            candidate = value.strip()
+            if not candidate:
+                return time_utils.format_timestamp(time_utils.now())
+            normalized = candidate.replace("Z", "+00:00") if candidate.endswith("Z") else candidate
+            try:
+                dt = datetime.fromisoformat(normalized)
+            except ValueError:
+                return candidate
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=UTC)
+            return time_utils.format_timestamp(dt)
+        return str(value)
 
 
 def build_ingest_agent(

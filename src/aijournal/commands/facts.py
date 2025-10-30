@@ -160,6 +160,3 @@ def _artifact_meta_from_summary_meta(meta: SummaryMeta) -> ArtifactMeta:
         prompt_path=meta.prompt_path,
         prompt_hash=meta.prompt_hash,
     )
-
-
-# Re-export helpers needed by other commands.

@@ -2,15 +2,12 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from pydantic import Field
 
 from aijournal.common.base import StrictModel
-
-if TYPE_CHECKING:  # pragma: no cover - typing only
-    from aijournal.domain.claims import ClaimAtom
-    from aijournal.domain.facts import SummaryMeta
+from aijournal.domain.claims import ClaimAtom
 
 
 class PersonaCoreMeta(StrictModel):
@@ -38,13 +35,6 @@ class PersonaCore(StrictModel):
     claims: list[ClaimAtom] = Field(default_factory=list)
 
 
-class PersonaCoreFile(StrictModel):
-    """Persona core artifact envelope stored on disk."""
-
-    persona: PersonaCore = Field(default_factory=PersonaCore)
-    meta: PersonaCoreMeta
-
-
 class InterviewQuestion(StrictModel):
     """Structured interview question proposed by the characterization pipeline."""
 
@@ -58,4 +48,3 @@ class InterviewSet(StrictModel):
     """Collection of interview questions to review with the operator."""
 
     questions: list[InterviewQuestion] = Field(default_factory=list)
-    meta: SummaryMeta | None = None

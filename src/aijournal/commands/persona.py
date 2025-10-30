@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
@@ -11,8 +12,8 @@ import typer
 
 from aijournal.common.meta import Artifact, ArtifactKind, ArtifactMeta
 from aijournal.domain.claims import ClaimAtom
-from aijournal.domain.persona import PersonaCoreFile, PersonaCoreMeta
-from aijournal.io.artifacts import load_artifact_data, save_artifact
+from aijournal.domain.persona import PersonaCore, PersonaCoreMeta
+from aijournal.io.artifacts import load_artifact, save_artifact
 from aijournal.pipelines import persona as persona_pipeline
 from aijournal.utils import time as time_utils
 from aijournal.utils.coercion import coerce_float
@@ -50,16 +51,28 @@ def _persona_source_mtimes(root: Path) -> dict[str, float]:
 
 def _persona_artifact_meta(meta: PersonaCoreMeta) -> ArtifactMeta:
     created_at = meta.generated_at or time_utils.format_timestamp(time_utils.now())
+    notes: dict[str, str] = {
+        "token_budget": str(meta.token_budget),
+        "planned_tokens": str(meta.planned_tokens),
+        "selection_strategy": meta.selection_strategy or "",
+        "trimmed": json.dumps(meta.trimmed, sort_keys=True, separators=(",", ":")),
+        "claim_pool": str(meta.claim_pool or 0),
+        "claim_count": str(meta.claim_count or 0),
+        "max_claims": str(meta.max_claims or 0),
+        "min_claims": str(meta.min_claims or 0),
+        "budget_exceeded": json.dumps(bool(meta.budget_exceeded)),
+        "source_mtimes": json.dumps(meta.source_mtimes, sort_keys=True, separators=(",", ":")),
+    }
+    # Drop empty strings to keep notes compact
+    notes = {key: value for key, value in notes.items() if value not in {"", "{}", "[]"}}
     return ArtifactMeta(
         created_at=created_at,
         model=None,
         prompt_path=None,
         prompt_hash=None,
-        notes={
-            "token_budget": str(meta.token_budget),
-            "planned_tokens": str(meta.planned_tokens),
-        },
-        sources={**meta.sources},
+        char_per_token=meta.char_per_token,
+        notes=notes or None,
+        sources={**meta.sources} or None,
     )
 
 
@@ -70,14 +83,23 @@ def persona_state(root: Path) -> tuple[str, list[str]]:
         return "missing", [f"Missing {rel}; run `aijournal persona build`."]
 
     try:
-        persona_file = load_artifact_data(persona_path, PersonaCoreFile)
+        persona_artifact = load_artifact(persona_path, PersonaCore)
     except Exception as exc:  # pragma: no cover - depends on file contents
         return (
             "stale",
             [f"Persona core failed validation ({exc.__class__.__name__}); rebuild to refresh."],
         )
 
-    stored_raw = persona_file.meta.source_mtimes
+    notes = persona_artifact.meta.notes or {}
+    source_mtimes_raw = notes.get("source_mtimes")
+    stored_raw: dict[str, float] = {}
+    if source_mtimes_raw:
+        try:
+            parsed = json.loads(source_mtimes_raw)
+            if isinstance(parsed, dict):
+                stored_raw = {str(key): float(value) for key, value in parsed.items()}
+        except (ValueError, TypeError):
+            stored_raw = {}
     if not stored_raw:
         return (
             "stale",
@@ -229,20 +251,25 @@ def run_persona_build(
         source_mtimes=source_mtimes,
     )
 
-    persona_file = PersonaCoreFile(persona=persona_core, meta=meta_model)
     persona_path = root / "derived" / "persona" / "persona_core.yaml"
-    existing: PersonaCoreFile | None = None
+    existing_artifact = None
     if persona_path.exists():
         try:
-            existing = load_artifact_data(persona_path, PersonaCoreFile)
+            existing_artifact = load_artifact(persona_path, PersonaCore)
         except Exception:
-            existing = None
+            existing_artifact = None
 
-    changed = existing is None or existing != persona_file
-    artifact = Artifact[PersonaCoreFile](
+    artifact_meta = _persona_artifact_meta(meta_model)
+    artifact = Artifact[PersonaCore](
         kind=ArtifactKind.PERSONA_CORE,
-        meta=_persona_artifact_meta(persona_file.meta),
-        data=persona_file,
+        meta=artifact_meta,
+        data=persona_core,
     )
+    if existing_artifact is not None:
+        changed = existing_artifact.data != persona_core or existing_artifact.meta.model_dump(
+            mode="json"
+        ) != artifact_meta.model_dump(mode="json")
+    else:
+        changed = True
     save_artifact(persona_path, artifact)
     return persona_path, changed

@@ -189,6 +189,7 @@ def _fake_structured_entry(entry_path: Path) -> IngestResult:
         or time_utils.format_timestamp(time_utils.now())
     )
     created_dt = _parse_datetime(str(created_value)) or time_utils.now()
+    created_str = time_utils.format_timestamp(created_dt)
     title = str(frontmatter.get("title") or entry_path.stem)
     section_models = [
         IngestSection(
@@ -206,7 +207,7 @@ def _fake_structured_entry(entry_path: Path) -> IngestResult:
 
     return IngestResult(
         entry_id=str(entry_id) if entry_id else None,
-        created_at=created_dt,
+        created_at=created_str,
         title=title,
         tags=tags,
         sections=section_models,
