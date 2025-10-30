@@ -228,6 +228,3 @@ def build_chat_app(root: Path, config: dict[str, Any] | None = None) -> FastAPI:
         return result.model_dump(mode="json")
 
     return app
-
-
-__all__ = ["build_chat_app", "ChatRequest", "CaptureRequest"]

@@ -41,6 +41,3 @@ def generate_advice(
 
     response = request_advice()
     return AdviceCard.model_validate(response.model_dump(mode="python"))
-
-
-__all__ = ["generate_advice"]

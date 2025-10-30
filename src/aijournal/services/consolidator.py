@@ -447,11 +447,3 @@ def _source_key(
         return (span.type, span.index, span.start, span.end)
 
     return (source.entry_id, tuple(span_key(span) for span in source.spans))
-
-
-__all__ = [
-    "ClaimConsolidator",
-    "ClaimConflict",
-    "ClaimMergeOutcome",
-    "ClaimSignature",
-]
