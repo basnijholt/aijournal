@@ -67,6 +67,3 @@ def generate_summary(
         highlights=highlights,
         todo_candidates=todo_candidates,
     )
-
-
-__all__ = ["generate_summary"]
