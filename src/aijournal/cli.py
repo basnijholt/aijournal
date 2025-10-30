@@ -100,21 +100,23 @@ from aijournal.models import (
     SelfProfile,
 )
 from aijournal.pipelines import normalization
-from aijournal.services import (
-    ClaimConflict,
-    ClaimConsolidator,
-    ClaimMergeOutcome,
-    ClaimSignature,
-    LLMResponseError,
-    build_ollama_config_from_mapping,
-    resolve_ollama_host,
-    run_ollama_agent,
-)
 from aijournal.services.capture import (
     CAPTURE_MAX_STAGE,
     CAPTURE_STAGES,
     CaptureInput,
     run_capture,
+)
+from aijournal.services.consolidator import (
+    ClaimConflict,
+    ClaimConsolidator,
+    ClaimMergeOutcome,
+    ClaimSignature,
+)
+from aijournal.services.ollama import (
+    LLMResponseError,
+    build_ollama_config_from_mapping,
+    resolve_ollama_host,
+    run_ollama_agent,
 )
 from aijournal.utils import time as time_utils
 from aijournal.utils.coercion import coerce_int

@@ -18,7 +18,11 @@ from aijournal.io.artifacts import save_artifact
 from aijournal.io.yaml_io import load_yaml_model
 from aijournal.models import DailySummary, NormalizedEntry, SummaryMeta
 from aijournal.pipelines import summarize as summarize_pipeline
-from aijournal.services import LLMResponseError, build_ollama_config_from_mapping, run_ollama_agent
+from aijournal.services.ollama import (
+    LLMResponseError,
+    build_ollama_config_from_mapping,
+    run_ollama_agent,
+)
 from aijournal.utils import time as time_utils
 from aijournal.utils.paths import resolve_prompt_path
 

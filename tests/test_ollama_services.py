@@ -10,7 +10,7 @@ from pydantic_ai import ModelSettings, UnexpectedModelBehavior
 from pydantic_ai.exceptions import UserError
 
 from aijournal.common.meta import LLMResult
-from aijournal.services import (
+from aijournal.services.ollama import (
     LLMResponseError,
     OllamaConfig,
     build_ollama_agent,

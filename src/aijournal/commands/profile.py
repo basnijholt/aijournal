@@ -42,7 +42,8 @@ from aijournal.models import (
     SummaryMeta,
 )
 from aijournal.pipelines import normalization
-from aijournal.services import ClaimConsolidator, ClaimMergeOutcome, LLMResponseError
+from aijournal.services.consolidator import ClaimConsolidator, ClaimMergeOutcome
+from aijournal.services.ollama import LLMResponseError
 from aijournal.utils import time as time_utils
 
 DEFAULT_PROFILE_RETRIES = 1

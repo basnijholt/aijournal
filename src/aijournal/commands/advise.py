@@ -29,7 +29,7 @@ from aijournal.common.meta import Artifact, ArtifactKind
 from aijournal.io.artifacts import load_artifact, save_artifact
 from aijournal.models import AdviceCard, AdviceLLMResponse, ClaimAtom, ProfileUpdateBatch
 from aijournal.pipelines import advise as advise_pipeline
-from aijournal.services import build_ollama_config_from_mapping
+from aijournal.services.ollama import build_ollama_config_from_mapping
 from aijournal.utils import time as time_utils
 
 

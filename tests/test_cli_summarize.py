@@ -11,7 +11,7 @@ from typer.testing import CliRunner
 from aijournal.cli import app
 from aijournal.common.meta import LLMResult
 from aijournal.models import DailySummary, JournalSection, NormalizedEntry
-from aijournal.services import LLMResponseError, OllamaConfig
+from aijournal.services.ollama import LLMResponseError, OllamaConfig
 
 if TYPE_CHECKING:
     from pathlib import Path
