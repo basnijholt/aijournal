@@ -10,6 +10,7 @@ import yaml
 from pydantic import BaseModel, TypeAdapter
 
 from aijournal.common.meta import Artifact, ArtifactKind
+from aijournal.common.schema_mode import allow_legacy_read
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -100,6 +101,10 @@ def read_legacy_or_artifact(
         payload_model = artifact_model or legacy_model
         data = payload_model.model_validate(artifact_any.data)
         return data
+
+    if not allow_legacy_read():
+        msg = "Legacy artifact format not permitted in current schema mode."
+        raise ValueError(msg)
 
     adapter = TypeAdapter(legacy_model)
     return adapter.validate_python(raw)
