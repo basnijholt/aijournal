@@ -31,18 +31,20 @@ from aijournal.commands.summarize import (
     _structured_call_with_retry,
 )
 from aijournal.common.meta import Artifact, ArtifactKind, ArtifactMeta
+from aijournal.domain.changes import (
+    ClaimProposal,
+    ProfileUpdateProposals,
+)
+from aijournal.domain.facts import SummaryMeta
+from aijournal.domain.journal import NormalizedEntry
 from aijournal.io.artifacts import save_artifact
 from aijournal.io.yaml_io import load_yaml_model
-from aijournal.models import (
-    ClaimAtom,
-    ClaimProposal,
-    ManifestEntry,
-    NormalizedEntry,
+from aijournal.models.authoritative import ManifestEntry
+from aijournal.models.claim_atoms import ClaimAtom
+from aijournal.models.derived import (
     ProfileUpdateBatch,
     ProfileUpdateInput,
     ProfileUpdatePreview,
-    ProfileUpdateProposals,
-    SummaryMeta,
 )
 from aijournal.pipelines import characterize as characterize_pipeline
 from aijournal.pipelines import facts as facts_pipeline

@@ -6,11 +6,9 @@ from collections.abc import Callable, Sequence
 from typing import Any
 
 from aijournal.fakes import fake_advise
-from aijournal.models import (
-    AdviceCard,
-    AdviceLLMResponse,
-    ClaimAtom,
-)
+from aijournal.models.claim_atoms import ClaimAtom
+from aijournal.models.derived import AdviceCard
+from aijournal.models.responses import AdviceLLMResponse
 
 AdviceRequest = Callable[[], AdviceLLMResponse]
 AdviceIdentifier = Callable[[str], str]

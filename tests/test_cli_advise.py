@@ -10,12 +10,12 @@ from typer.testing import CliRunner
 
 from aijournal.cli import app
 from aijournal.common.meta import Artifact, ArtifactKind, ArtifactMeta
+from aijournal.domain.changes import ProfileUpdateProposals
 from aijournal.io.artifacts import load_artifact, save_artifact
-from aijournal.models import (
+from aijournal.models.derived import (
     AdviceCard,
     ProfileUpdateBatch,
     ProfileUpdatePreview,
-    ProfileUpdateProposals,
 )
 from tests.helpers import make_claim_atom
 

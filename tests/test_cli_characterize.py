@@ -8,7 +8,7 @@ import yaml
 from typer.testing import CliRunner
 
 from aijournal.cli import app
-from aijournal.models import ProfileUpdateProposals
+from aijournal.domain.changes import ProfileUpdateProposals
 
 DATE = "2025-02-03"
 ENTRY_ID = "2025-02-03-focus-notes"

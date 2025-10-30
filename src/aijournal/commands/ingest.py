@@ -21,7 +21,7 @@ from aijournal.ingest_agent import (
     build_ingest_agent,
     ingest_with_agent,
 )
-from aijournal.models import ManifestEntry
+from aijournal.models.authoritative import ManifestEntry
 from aijournal.pipelines import normalization
 from aijournal.schema import SchemaValidationError, validate_schema
 from aijournal.services.ollama import build_ollama_config_from_mapping

@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 
 import pytest
 
-from aijournal.models import ClaimAtom, Provenance, Scope
+from aijournal.models.claim_atoms import ClaimAtom, Provenance, Scope
 from aijournal.pipelines import persona as persona_pipeline
 
 

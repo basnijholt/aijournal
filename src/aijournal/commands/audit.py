@@ -12,10 +12,11 @@ from pydantic import BaseModel
 
 from aijournal.common.meta import Artifact, ArtifactKind
 from aijournal.domain.evidence import SourceRef, redact_source_text
+from aijournal.domain.persona import PersonaCoreFile
 from aijournal.io.artifacts import load_artifact, save_artifact
 from aijournal.io.yaml_io import write_yaml_model
-from aijournal.models import ClaimsFile, PersonaCoreFile, ProfileSuggestions
-from aijournal.models.derived import ProfileUpdateBatch
+from aijournal.models.authoritative import ClaimsFile
+from aijournal.models.derived import ProfileSuggestions, ProfileUpdateBatch
 
 
 @dataclass(frozen=True)

@@ -9,7 +9,7 @@ from typing import Any, cast
 
 from aijournal.domain.evidence import redact_source_text
 from aijournal.ingest_agent import IngestResult, IngestSection
-from aijournal.models import (
+from aijournal.models.claim_atoms import (
     ClaimAtom,
     ClaimSource,
     ClaimSourceSpan,

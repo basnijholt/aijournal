@@ -9,15 +9,14 @@ from pydantic import ValidationError
 
 from aijournal.domain.changes import ClaimAtomInput, ClaimProposal
 from aijournal.domain.evidence import SourceRef, redact_source_text
+from aijournal.domain.facts import MicroFact, MicroFactsFile
+from aijournal.domain.journal import NormalizedEntry
 from aijournal.fakes import fake_microfacts
-from aijournal.models import (
+from aijournal.models.authoritative import ManifestEntry
+from aijournal.models.claim_atoms import (
     ClaimAtom,
     ClaimSource,
     ClaimSourceSpan,
-    ManifestEntry,
-    MicroFact,
-    MicroFactsFile,
-    NormalizedEntry,
     Scope,
 )
 from aijournal.pipelines import normalization

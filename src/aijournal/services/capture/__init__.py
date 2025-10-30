@@ -14,12 +14,9 @@ from pydantic import BaseModel, Field
 
 from aijournal.api.capture import CaptureInput
 from aijournal.commands.ingest import _fake_structured_entry, _load_config
+from aijournal.domain.journal import NormalizedEntry
 from aijournal.ingest_agent import IngestResult, build_ingest_agent, ingest_with_agent
-from aijournal.models import (
-    JournalSection,
-    ManifestEntry,
-    NormalizedEntry,
-)
+from aijournal.models.authoritative import JournalSection, ManifestEntry
 from aijournal.pipelines import normalization
 from aijournal.services.capture.results import OperationResult, StageResult
 from aijournal.services.ollama import build_ollama_config_from_mapping

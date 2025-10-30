@@ -7,16 +7,15 @@ from typing import Any, cast
 
 from pydantic import ValidationError
 
-from aijournal.domain.evidence import SourceRef
-from aijournal.fakes import fake_characterize
-from aijournal.models import (
-    ClaimAtom,
+from aijournal.domain.changes import (
     ClaimProposal,
-    ClaimSource,
     FacetChange,
-    NormalizedEntry,
     ProfileUpdateProposals,
 )
+from aijournal.domain.evidence import SourceRef
+from aijournal.domain.journal import NormalizedEntry
+from aijournal.fakes import fake_characterize
+from aijournal.models.claim_atoms import ClaimAtom, ClaimSource
 from aijournal.pipelines import facts as facts_pipeline
 from aijournal.utils.coercion import coerce_float, coerce_int
 

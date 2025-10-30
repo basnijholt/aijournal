@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from aijournal.models import ClaimAtom, ClaimAtomsFile
+from aijournal.models.claim_atoms import ClaimAtom, ClaimAtomsFile
 
 
 def _sample_atom_dict() -> dict:
