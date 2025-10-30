@@ -649,12 +649,12 @@ class CaptureInput(CaptureRequest):
 
 ### Stage 9 – Documentation & Examples
 
-**9.1 Documentation Updates**
+**9.1 Documentation Updates — DONE**
 - Update `README.md`, `ARCHITECTURE.md`, `docs/workflow.md`, `agents.md` to describe strict schemas, artifact envelopes, privacy enforcement, event unions, and governance hooks with a hard cutover stance (no compatibility knobs).
 - Tests: `uv run pytest`; `pre-commit run --all-files` (Markdown lint).
 - Commit: `refactor3: document strict schema architecture`.
 
-**9.2 Example Artifact Regeneration**
+**9.2 Example Artifact Regeneration — DONE**
 - Regenerate sample packs, persona core, index manifests, microfacts, feedback, and chat examples reflecting new format (fake mode allowed).
 - Tests: `uv run pytest`.
 - Commit: `refactor3: refresh strict schema examples`.
