@@ -641,11 +641,9 @@ class CaptureInput(CaptureRequest):
 - Tests: `uv run pytest`; add CLI test with deliberate offender.
 - Commit: `refactor3: add provenance audit tooling`.
 
-**8.4 Import Codemod**
-- Add `scripts/codemods/refactor3_imports.py` using LibCST to rewrite known old→new imports (supports `--dry-run`).
-- Provide test rewriting a dummy file and asserting expected diff.
-- Tests: `uv run pytest`.
-- Commit: `refactor3: provide codemod for strict schema imports`.
+**8.4 Import Codemod — N/A**
+- Obsolete after the hard cutover; the repository no longer carries legacy import paths that require automated rewriting.
+- No action required.
 
 ### Stage 9 – Documentation & Examples
 
