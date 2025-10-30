@@ -5,8 +5,9 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from typing import Any, cast
 
+from aijournal.domain.facts import DailySummary
+from aijournal.domain.journal import NormalizedEntry
 from aijournal.fakes import fake_summarize
-from aijournal.models import DailySummary, NormalizedEntry
 
 StructuredCall = Callable[..., Any]
 ResponseFactory = Callable[[], DailySummary]

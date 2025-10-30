@@ -10,7 +10,9 @@ from typer.testing import CliRunner
 
 from aijournal.cli import app
 from aijournal.common.meta import LLMResult
-from aijournal.models import DailySummary, JournalSection, NormalizedEntry
+from aijournal.domain.facts import DailySummary
+from aijournal.domain.journal import NormalizedEntry
+from aijournal.models.authoritative import JournalSection
 from aijournal.services.ollama import LLMResponseError, OllamaConfig
 
 if TYPE_CHECKING:

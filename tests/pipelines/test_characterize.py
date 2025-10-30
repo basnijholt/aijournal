@@ -2,15 +2,17 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from aijournal.domain.changes import ClaimAtomInput
-from aijournal.models import (
-    ClaimAtom,
+from aijournal.domain.changes import (
+    ClaimAtomInput,
     ClaimProposal,
+    FacetChange,
+    ProfileUpdateProposals,
+)
+from aijournal.domain.journal import NormalizedEntry
+from aijournal.models.claim_atoms import (
+    ClaimAtom,
     ClaimSource,
     ClaimSourceSpan,
-    FacetChange,
-    NormalizedEntry,
-    ProfileUpdateProposals,
     Provenance,
     Scope,
 )

@@ -8,9 +8,10 @@ from pathlib import Path
 from typing import Final, Literal
 
 from aijournal.common.meta import Artifact, ArtifactKind, ArtifactMeta
+from aijournal.domain.events import FeedbackAdjustmentEvent, FeedbackBatch
 from aijournal.io.artifacts import save_artifact
 from aijournal.io.yaml_io import load_yaml_model, write_yaml_model
-from aijournal.models import ClaimsFile, FeedbackAdjustmentEvent, FeedbackBatch
+from aijournal.models.authoritative import ClaimsFile
 
 _CLAIM_PATTERN: Final[re.Pattern[str]] = re.compile(r"\[claim:([A-Za-z0-9_.:-]+)\]")
 

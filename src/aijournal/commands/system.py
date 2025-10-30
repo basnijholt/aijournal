@@ -12,8 +12,8 @@ import httpx
 
 from aijournal.commands.ingest import _load_config, _use_fake_llm
 from aijournal.commands.persona import persona_state
+from aijournal.domain.index import IndexMeta
 from aijournal.io.artifacts import load_artifact_data
-from aijournal.models import IndexMeta
 from aijournal.services.ollama import (
     DEFAULT_OLLAMA_HOST,
     build_ollama_config_from_mapping,

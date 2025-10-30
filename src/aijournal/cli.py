@@ -77,28 +77,21 @@ from aijournal.commands.summarize import (
     _structured_call_with_retry as _commands_structured_call_with_retry,
 )
 from aijournal.commands.system import run_status_summary, run_system_doctor
+from aijournal.domain.changes import ClaimProposal, FacetChange
 from aijournal.domain.events import (
     ClaimConflictPayload,
     ClaimPreviewEvent,
     ClaimSignaturePayload,
+    FeedbackBatch,
 )
 from aijournal.domain.evidence import redact_source_text
+from aijournal.domain.journal import NormalizedEntry
 from aijournal.domain.persona import InterviewQuestion, InterviewSet
 from aijournal.io.artifacts import load_artifact_data
 from aijournal.io.yaml_io import load_yaml_model, write_yaml_model
-from aijournal.models import (
-    ClaimAtom,
-    ClaimProposal,
-    ClaimsFile,
-    ClaimSource,
-    FacetChange,
-    FeedbackBatch,
-    NormalizedEntry,
-    ProfileUpdateBatch,
-    ProfileUpdatePreview,
-    Scope,
-    SelfProfile,
-)
+from aijournal.models.authoritative import ClaimsFile, SelfProfile
+from aijournal.models.claim_atoms import ClaimAtom, ClaimSource, Scope
+from aijournal.models.derived import ProfileUpdateBatch, ProfileUpdatePreview
 from aijournal.pipelines import normalization
 from aijournal.services.capture import (
     CAPTURE_MAX_STAGE,

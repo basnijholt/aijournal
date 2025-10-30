@@ -17,15 +17,11 @@ from annoy import AnnoyIndex
 
 from aijournal.common.meta import Artifact, ArtifactKind, ArtifactMeta
 from aijournal.domain.index import IndexMeta
+from aijournal.domain.journal import NormalizedEntry
 from aijournal.io.artifacts import save_artifact
 from aijournal.io.yaml_io import load_yaml_model, write_yaml_model
-from aijournal.models import (
-    ChunkManifest,
-    ChunkManifestChunk,
-    ChunkManifestMeta,
-    ManifestEntry,
-    NormalizedEntry,
-)
+from aijournal.models.authoritative import ManifestEntry
+from aijournal.models.derived import ChunkManifest, ChunkManifestChunk, ChunkManifestMeta
 from aijournal.pipelines import normalization
 from aijournal.services.embedding import EmbeddingBackend
 from aijournal.utils import time as time_utils

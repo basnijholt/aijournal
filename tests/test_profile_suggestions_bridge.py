@@ -10,7 +10,7 @@ from aijournal.domain.changes import (
     ProfileUpdateProposals,
 )
 from aijournal.domain.evidence import SourceRef
-from aijournal.models import ProfileSuggestions, ProfileSuggestionUpdate
+from aijournal.models.derived import ProfileSuggestions, ProfileSuggestionUpdate
 from aijournal.utils import time as time_utils
 
 

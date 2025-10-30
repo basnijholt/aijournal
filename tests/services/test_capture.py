@@ -12,21 +12,23 @@ import yaml
 from tests.helpers import make_claim_atom
 
 from aijournal.common.meta import Artifact, ArtifactKind, ArtifactMeta
-from aijournal.io.artifacts import save_artifact
-from aijournal.models import (
+from aijournal.domain.changes import ProfileUpdateProposals
+from aijournal.domain.facts import (
     DailySummary,
     FactEvidence,
     FactEvidenceSpan,
-    ManifestEntry,
     MicroFact,
     MicroFactsFile,
+    SummaryMeta,
+)
+from aijournal.io.artifacts import save_artifact
+from aijournal.models.authoritative import ManifestEntry
+from aijournal.models.derived import (
     ProfileSuggestions,
     ProfileSuggestionUpsert,
     ProfileUpdateBatch,
     ProfileUpdateInput,
     ProfileUpdatePreview,
-    ProfileUpdateProposals,
-    SummaryMeta,
 )
 from aijournal.services.capture import (
     CaptureInput,

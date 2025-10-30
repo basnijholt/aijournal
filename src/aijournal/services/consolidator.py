@@ -8,8 +8,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from aijournal.domain.evidence import redact_source_text
-
-from ..models import ClaimAtom, ClaimSource, ClaimSourceSpan, Provenance, Scope
+from aijournal.models.claim_atoms import ClaimAtom, ClaimSource, ClaimSourceSpan, Provenance, Scope
 
 
 def _clamp01(value: float) -> float:

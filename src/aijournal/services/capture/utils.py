@@ -16,19 +16,13 @@ from aijournal.commands.profile import (
     _load_profile_components,
     _profile_to_dict,
 )
+from aijournal.domain.changes import ClaimProposal, FacetChange
 from aijournal.domain.evidence import redact_source_text
 from aijournal.io.artifacts import load_artifact_data
 from aijournal.io.yaml_io import write_yaml_model
-from aijournal.models import (
-    ClaimAtom,
-    ClaimProposal,
-    ClaimsFile,
-    ClaimSource,
-    FacetChange,
-    ManifestEntry,
-    ProfileUpdateBatch,
-    SelfProfile,
-)
+from aijournal.models.authoritative import ClaimsFile, ManifestEntry, SelfProfile
+from aijournal.models.claim_atoms import ClaimAtom, ClaimSource
+from aijournal.models.derived import ProfileUpdateBatch
 from aijournal.pipelines import normalization
 from aijournal.services.capture.results import OperationResult
 from aijournal.utils import time as time_utils

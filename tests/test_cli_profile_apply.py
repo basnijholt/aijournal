@@ -10,8 +10,9 @@ from typer.testing import CliRunner
 
 from aijournal.cli import app
 from aijournal.common.meta import Artifact, ArtifactKind, ArtifactMeta
+from aijournal.domain.facts import SummaryMeta
 from aijournal.io.artifacts import save_artifact
-from aijournal.models import ProfileSuggestions, ProfileSuggestionUpsert, SummaryMeta
+from aijournal.models.derived import ProfileSuggestions, ProfileSuggestionUpsert
 from tests.helpers import make_claim_atom
 
 if TYPE_CHECKING:

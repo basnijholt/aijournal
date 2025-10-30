@@ -14,9 +14,10 @@ from pydantic import BaseModel
 
 from aijournal.commands.ingest import _load_config, _use_fake_llm
 from aijournal.common.meta import Artifact, ArtifactKind, ArtifactMeta, LLMResult
+from aijournal.domain.facts import DailySummary, SummaryMeta
+from aijournal.domain.journal import NormalizedEntry
 from aijournal.io.artifacts import save_artifact
 from aijournal.io.yaml_io import load_yaml_model
-from aijournal.models import DailySummary, NormalizedEntry, SummaryMeta
 from aijournal.pipelines import summarize as summarize_pipeline
 from aijournal.services.ollama import (
     LLMResponseError,

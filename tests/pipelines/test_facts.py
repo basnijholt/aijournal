@@ -5,17 +5,12 @@ from datetime import UTC, datetime
 
 import pytest
 
-from aijournal.domain.changes import ClaimAtomInput
+from aijournal.domain.changes import ClaimAtomInput, ClaimProposal
 from aijournal.domain.evidence import SourceRef
-from aijournal.models import (
-    ClaimProposal,
-    ClaimSource,
-    ManifestEntry,
-    MicroFact,
-    MicroFactsFile,
-    NormalizedEntry,
-    Scope,
-)
+from aijournal.domain.facts import MicroFact, MicroFactsFile
+from aijournal.domain.journal import NormalizedEntry
+from aijournal.models.authoritative import ManifestEntry
+from aijournal.models.claim_atoms import ClaimSource, Scope
 from aijournal.pipelines import facts as facts_pipeline
 
 

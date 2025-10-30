@@ -25,17 +25,13 @@ from aijournal.commands.summarize import (
     _validate_timeout,
 )
 from aijournal.common.meta import Artifact, ArtifactKind, ArtifactMeta
+from aijournal.domain.changes import ClaimProposal
+from aijournal.domain.facts import MicroFactsFile, SummaryMeta
+from aijournal.domain.journal import NormalizedEntry
 from aijournal.io.artifacts import save_artifact
-from aijournal.models import (
-    ClaimAtom,
-    ClaimProposal,
-    ClaimSource,
-    ManifestEntry,
-    MicroFactsFile,
-    NormalizedEntry,
-    ProfileUpdatePreview,
-    SummaryMeta,
-)
+from aijournal.models.authoritative import ManifestEntry
+from aijournal.models.claim_atoms import ClaimAtom, ClaimSource
+from aijournal.models.derived import ProfileUpdatePreview
 from aijournal.pipelines import facts as facts_pipeline
 from aijournal.services.ollama import LLMResponseError
 from aijournal.utils import time as time_utils

@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from aijournal.models import DailySummary, JournalSection, NormalizedEntry
+from aijournal.domain.facts import DailySummary
+from aijournal.domain.journal import NormalizedEntry
+from aijournal.models.authoritative import JournalSection
 from aijournal.pipelines import summarize
 
 

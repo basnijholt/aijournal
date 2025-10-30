@@ -6,7 +6,7 @@ from time import perf_counter
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from aijournal.models import ManifestEntry
+    from aijournal.models.authoritative import ManifestEntry
 
     from .. import CaptureInput, PersistStage0Outputs
 

@@ -13,7 +13,7 @@ from typer.testing import CliRunner
 
 from aijournal.api.chat import ChatResponse
 from aijournal.cli import app
-from aijournal.models import PersonaCore
+from aijournal.domain.persona import PersonaCore
 from aijournal.services.chat import ChatService, ChatTelemetry, ChatTurn
 from aijournal.services.chat_api import build_chat_app
 from tests.helpers import make_claim_atom, write_manifest, write_normalized_entry

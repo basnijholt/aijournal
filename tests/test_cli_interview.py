@@ -9,7 +9,7 @@ import yaml
 from typer.testing import CliRunner
 
 from aijournal.cli import app
-from aijournal.models import InterviewQuestion, InterviewSet
+from aijournal.domain.persona import InterviewQuestion, InterviewSet
 
 DATE = "2025-02-03"
 

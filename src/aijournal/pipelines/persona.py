@@ -11,7 +11,8 @@ from typing import Any
 
 import yaml
 
-from aijournal.models import ClaimAtom, PersonaCore
+from aijournal.domain.persona import PersonaCore
+from aijournal.models.claim_atoms import ClaimAtom
 from aijournal.utils.coercion import coerce_float
 
 PERSONA_PROFILE_KEYS = (

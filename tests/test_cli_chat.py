@@ -13,8 +13,8 @@ from aijournal.api.chat import ChatResponse
 from aijournal.cli import app
 from aijournal.common.meta import ArtifactKind
 from aijournal.domain.chat_sessions import ChatSessionLearnings, ChatSessionSummary
+from aijournal.domain.persona import PersonaCore
 from aijournal.io.artifacts import load_artifact
-from aijournal.models import PersonaCore
 from aijournal.services.chat import ChatService, ChatTelemetry, ChatTurn
 from tests.helpers import make_claim_atom, write_manifest, write_normalized_entry
 

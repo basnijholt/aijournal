@@ -13,8 +13,8 @@ from aijournal.common.meta import Artifact, ArtifactKind, ArtifactMeta
 from aijournal.domain.changes import ClaimAtomInput, ClaimProposal, ProfileUpdateProposals
 from aijournal.domain.evidence import SourceRef, Span
 from aijournal.io.artifacts import load_artifact, save_artifact
-from aijournal.models import ProfileUpdateBatch
 from aijournal.models.claim_atoms import Scope
+from aijournal.models.derived import ProfileUpdateBatch
 from tests.helpers import make_claim_atom
 
 

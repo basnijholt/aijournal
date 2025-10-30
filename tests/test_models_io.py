@@ -7,35 +7,38 @@ from typing import TYPE_CHECKING
 import yaml
 
 from aijournal.common.meta import Artifact, ArtifactKind, ArtifactMeta
-from aijournal.io.artifacts import load_artifact, save_artifact
-from aijournal.io.yaml_io import load_yaml_model, write_yaml_model
-from aijournal.models import (
-    AdviceCard,
-    AdviceRecommendation,
-    AdviceReference,
-    Claim,
-    ClaimsFile,
-    ClaimSource,
-    ClaimSourceSpan,
+from aijournal.domain.facts import (
     DailySummary,
     FactEvidence,
     FactEvidenceSpan,
-    InterviewQuestion,
-    InterviewSet,
-    JournalEntry,
-    JournalSection,
     MicroFact,
     MicroFactsFile,
-    NormalizedEntry,
+    SummaryMeta,
+)
+from aijournal.domain.journal import NormalizedEntry
+from aijournal.domain.persona import (
+    InterviewQuestion,
+    InterviewSet,
     PersonaCore,
     PersonaCoreFile,
     PersonaCoreMeta,
+)
+from aijournal.io.artifacts import load_artifact, save_artifact
+from aijournal.io.yaml_io import load_yaml_model, write_yaml_model
+from aijournal.models.authoritative import ClaimsFile, JournalEntry, JournalSection, SelfProfile
+from aijournal.models.claim_atoms import (
+    ClaimAtom,
+    ClaimSource,
+    ClaimSourceSpan,
+    Scope,
+)
+from aijournal.models.derived import (
+    AdviceCard,
+    AdviceRecommendation,
+    AdviceReference,
     ProfileSuggestions,
     ProfileSuggestionUpdate,
     ProfileSuggestionUpsert,
-    Scope,
-    SelfProfile,
-    SummaryMeta,
 )
 from aijournal.schema import validate_schema
 
@@ -89,7 +92,7 @@ def test_daily_summary_roundtrip(tmp_path: Path) -> None:
 
 def test_claim_file_roundtrip(tmp_path: Path) -> None:
     path = _fixture_path(tmp_path, "claims")
-    claim = Claim(
+    claim = ClaimAtom(
         id="pref.deep_work.window",
         type="preference",
         subject="deep_work",
@@ -190,7 +193,7 @@ def test_journal_and_normalized_models_structure(tmp_path: Path) -> None:
 
 def test_persona_core_roundtrip(tmp_path: Path) -> None:
     path = _fixture_path(tmp_path, "persona_core")
-    claim = Claim(
+    claim = ClaimAtom(
         id="pref.test",
         type="preference",
         subject="focus",

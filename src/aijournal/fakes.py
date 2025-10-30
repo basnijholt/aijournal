@@ -5,23 +5,27 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable, Sequence
 from typing import Any
 
-from aijournal.domain.changes import ClaimAtomInput
+from aijournal.domain.changes import (
+    ClaimAtomInput,
+    ClaimProposal,
+    FacetChange,
+    ProfileUpdateProposals,
+)
 from aijournal.domain.evidence import SourceRef
-from aijournal.models import (
+from aijournal.domain.facts import (
+    DailySummary,
+    FactEvidence,
+    MicroFact,
+)
+from aijournal.domain.journal import NormalizedEntry
+from aijournal.models.claim_atoms import ClaimAtom
+from aijournal.models.derived import (
     AdviceCard,
     AdviceRecommendation,
     AdviceReference,
-    ClaimAtom,
-    ClaimProposal,
-    DailySummary,
-    FacetChange,
-    FactEvidence,
-    MicroFact,
-    NormalizedEntry,
     ProfileSuggestions,
     ProfileSuggestionUpdate,
     ProfileSuggestionUpsert,
-    ProfileUpdateProposals,
 )
 from aijournal.utils import time as time_utils
 
