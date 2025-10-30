@@ -20,6 +20,9 @@
 | 2025-10-30 | Post-Cutover Cleanup | Promoted chat citations to typed payloads across CLI/API/tests. | Chat transcripts and streaming responses now emit structured citation objects; schema snapshots/tests enforce the contract. |
 | 2025-10-30 | Post-Cutover Cleanup | Replaced chunk manifests with `ArtifactKind.INDEX_CHUNKS` chunk batches and added regression coverage. | Retrieval exports now reuse domain index models, docs/schemas/tests align, and legacy manifest models are gone. |
 | 2025-10-30 | Post-Cutover Cleanup | Aligned claim preview action vocabulary with the refactor3 enum. | Consolidator outputs, CLI previews, and schema snapshots now use `upsert/update/delete/conflict/strength_delta`, eliminating legacy action codes. |
+| 2025-10-30 | Post-Cutover Cleanup | Normalized ingest timestamps to ISO strings across capture/ingest flows. | `IngestResult` now carries strings, fake ingest paths emit ISO timestamps, and normalization/tests were updated accordingly. |
+| 2025-10-30 | Post-Cutover Cleanup | Removed persona/interview double-meta payloads in favor of artifact metadata. | Persona artifacts persist `Artifact[PersonaCore]` with metadata in `ArtifactMeta`; interview sets dropped inner `SummaryMeta`, and docs/schemas/examples were refreshed. |
+| 2025-10-30 | Post-Cutover Cleanup | Audited domain models for mutable defaults. | Confirmed all strict models rely on `Field(default_factory=...)`; schema snapshots guard against regressions. |
 
 ## Stage 8 Execution Plan (Artifact Adoption)
 

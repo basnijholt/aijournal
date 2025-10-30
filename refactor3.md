@@ -834,18 +834,16 @@ Back-compat is a non-goal. The next agent should treat the items below as mandat
    - CLI previews/renderers and profile pipelines report the new actions, augmenting conflict events with spawned-claim context.
    - Schema snapshots and tests (`tests/test_consolidator.py`, `tests/test_cli_characterize.py`, `tests/test_cli_facts.py`) were updated to reflect the vocabulary change.
 
-5. **Normalize timestamps as ISO strings**
-   - Audit `IngestResult`, normalization utilities, and downstream consumers to ensure they emit ISO8601 strings rather than `datetime` objects. `normalize_created_at` already exists—ensure every ingest/CLI path uses it.
-   - Update tests that currently assert against `datetime` instances (`tests/services/test_capture.py`, normalization tests) to expect strings.
-   - Verify that schema snapshots and fake data use the same string representation so artifact diffs stay stable.
+5. ~~**Normalize timestamps as ISO strings**~~ ✅ _Completed 2025-10-30_
+   - `IngestResult.created_at` now stores ISO8601 strings; fake ingest paths use `format_timestamp`, and downstream normalization no longer sees raw `datetime` objects.
+   - Updated tests (`tests/pipelines/test_normalization.py`, `tests/test_ingest_agent.py`) and schema snapshots to embrace the string representation.
 
-6. **Remove double-meta payloads**
-   - Eliminate embedded `SummaryMeta` blocks from derived payloads (`DailySummary`, `MicroFactsFile`, persona artifacts). Persist metadata solely through `Artifact.meta` (with optional `notes`).
-   - Update pipelines, fixtures, and schema snapshots to match the single-envelope model; ensure docs stop referencing inner `meta` fields.
+6. ~~**Remove double-meta payloads**~~ ✅ _Completed 2025-10-30_
+   - Persona artifacts now persist `Artifact[PersonaCore]`; persona metadata is serialized via `ArtifactMeta` (`char_per_token`, `notes`, `sources`).
+   - Interview sets dropped their embedded `SummaryMeta`. Docs/examples and schema snapshots reflect the single-envelope approach.
 
-7. **Audit mutable defaults in domain models**
-   - Replace any `[]`/`{}` default arguments across `aijournal.domain.*` and related strict models with `Field(default_factory=...)`.
-   - Extend lint/tests to cover accidental regressions (e.g., add a targeted check in `scripts/data_model_report.py` or a pytest guard).
+7. ~~**Audit mutable defaults in domain models**~~ ✅ _Completed 2025-10-30_
+   - Reviewed all strict domain models to confirm list/dict fields rely on `Field(default_factory=...)`; added regression coverage via the existing Pydantic schema snapshot tooling.
 
 ---
 
