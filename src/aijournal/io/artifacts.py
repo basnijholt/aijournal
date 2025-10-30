@@ -86,6 +86,3 @@ def load_artifact_data(path: Path | str, data_model: type[T]) -> T:
     """Convenience wrapper returning the artifact payload only."""
 
     return load_artifact(path, data_model).data
-
-
-__all__ = ["save_artifact", "load_artifact", "load_artifact_data"]

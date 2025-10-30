@@ -77,16 +77,3 @@ class ClaimAtomsFile(AijournalModel):
     """Container for multiple claim atoms."""
 
     claims: list[ClaimAtom] = Field(default_factory=list)
-
-
-__all__ = [
-    "ClaimAtom",
-    "ClaimAtomsFile",
-    "ClaimMethod",
-    "ClaimSource",
-    "ClaimSourceSpan",
-    "ClaimStatus",
-    "ClaimType",
-    "Provenance",
-    "Scope",
-]

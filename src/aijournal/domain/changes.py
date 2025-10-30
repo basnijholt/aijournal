@@ -81,11 +81,3 @@ class ProfileUpdateProposals(StrictModel):
     claims: list[ClaimProposal] = Field(default_factory=list)
     facets: list[FacetChange] = Field(default_factory=list)
     interview_prompts: list[str] = Field(default_factory=list)
-
-
-__all__ = [
-    "ClaimAtomInput",
-    "ClaimProposal",
-    "FacetChange",
-    "ProfileUpdateProposals",
-]

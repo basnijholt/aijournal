@@ -40,11 +40,3 @@ class PackBundle(StrictModel):
     date: str
     files: list[PackEntry] = Field(default_factory=list)
     meta: PackMeta
-
-
-__all__ = [
-    "PackBundle",
-    "PackEntry",
-    "PackMeta",
-    "TrimmedFile",
-]

@@ -34,6 +34,3 @@ class ChatTurn(StrictModel):
     clarifying_question: str | None = None
     telemetry: ChatTelemetry
     timestamp: TimestampStr
-
-
-__all__ = ["ChatTelemetry", "ChatTurn"]

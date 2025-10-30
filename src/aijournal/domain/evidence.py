@@ -29,6 +29,3 @@ def redact_source_text(source: SourceRef) -> SourceRef:
 
     redacted_spans = [span.model_copy(update={"text": None}) for span in source.spans]
     return source.model_copy(update={"spans": redacted_spans})
-
-
-__all__ = ["Span", "SourceRef", "redact_source_text"]
