@@ -7,7 +7,7 @@ from typing import Annotated, Literal
 from pydantic import Field
 
 from aijournal.common.base import StrictModel
-from aijournal.models.claim_atoms import ClaimSource
+from aijournal.domain.claims import ClaimSource
 
 
 class ClaimSignaturePayload(StrictModel):

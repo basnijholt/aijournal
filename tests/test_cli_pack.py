@@ -13,7 +13,13 @@ from aijournal.cli import app
 from aijournal.common.meta import Artifact, ArtifactKind, ArtifactMeta
 from aijournal.domain.facts import SummaryMeta
 from aijournal.io.artifacts import save_artifact
-from aijournal.models.derived import ProfileSuggestions, ProfileSuggestionUpsert
+from aijournal.models.derived import (
+    AdviceCard,
+    AdviceRecommendation,
+    AdviceReference,
+    ProfileSuggestions,
+    ProfileSuggestionUpsert,
+)
 from tests.helpers import make_claim_atom
 
 if TYPE_CHECKING:
@@ -89,26 +95,44 @@ def _seed_daily_artifacts(
 def _seed_advice(tmp_path: Path, day: str = DATE, question: str = ADVICE_QUESTION) -> Path:
     slug = "-".join(part for part in question.lower().split())
     advice_path = tmp_path / "derived" / "advice" / day / f"{slug}.yaml"
-    payload = {
-        "question": question,
-        "recommendations": [
-            {
-                "title": "Protect maker time",
-                "actions": [
-                    "Hold a 90-minute deep-work block",
-                    "Push non-urgent syncs to the afternoon",
-                ],
-                "respecting": ["No sharing private family data"],
-            },
+    recommendation = AdviceRecommendation(
+        title="Protect maker time",
+        why_this_fits_you=AdviceReference(claims=["pref_focus"], facets=["values.self_direction"]),
+        steps=[
+            "Hold a 90-minute deep-work block",
+            "Push non-urgent syncs to the afternoon",
         ],
-        "alignment": {"claims": ["pref_focus"], "values": ["Self-Direction"]},
-        "meta": {
-            "llm_model": "fake-ollama",
-            "prompt_path": "prompts/advise.md",
-            "created_at": f"{day}T10:00:00Z",
-        },
-    }
-    _write(advice_path, yaml.safe_dump(payload, sort_keys=False))
+        risks=["Stakeholder updates slip"],
+        mitigations=["Send async recap before logging off"],
+    )
+    advice_card = AdviceCard(
+        id="adv-test",
+        query=question,
+        assumptions=["You already block mornings for deep work"],
+        recommendations=[recommendation],
+        tradeoffs=["Team visibility may dip"],
+        next_actions=["Schedule two focus blocks for next week"],
+        confidence=0.6,
+        alignment=AdviceReference(claims=["pref_focus"], facets=["values.self_direction"]),
+        style={"tone": "direct"},
+    )
+    summary_meta = SummaryMeta(
+        llm_model="fake-ollama",
+        prompt_path="prompts/advise.md",
+        prompt_hash="seed",
+        created_at=f"{day}T10:00:00Z",
+    )
+    artifact = Artifact[AdviceCard](
+        kind=ArtifactKind.ADVICE_CARD,
+        meta=ArtifactMeta(
+            created_at=summary_meta.created_at,
+            model=summary_meta.llm_model,
+            prompt_path=summary_meta.prompt_path,
+            prompt_hash=summary_meta.prompt_hash,
+        ),
+        data=advice_card,
+    )
+    save_artifact(advice_path, artifact)
     return advice_path
 
 
@@ -135,7 +159,6 @@ def _seed_profile_suggestions(tmp_path: Path, day: str = DATE) -> Path:
             )
         ],
         updates=[],
-        meta=meta,
     )
     artifact = Artifact[ProfileSuggestions](
         kind=ArtifactKind.PROFILE_SUGGESTIONS,

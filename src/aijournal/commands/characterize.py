@@ -35,12 +35,12 @@ from aijournal.domain.changes import (
     ClaimProposal,
     ProfileUpdateProposals,
 )
+from aijournal.domain.claims import ClaimAtom
 from aijournal.domain.facts import SummaryMeta
 from aijournal.domain.journal import NormalizedEntry
 from aijournal.io.artifacts import save_artifact
 from aijournal.io.yaml_io import load_yaml_model
 from aijournal.models.authoritative import ManifestEntry
-from aijournal.models.claim_atoms import ClaimAtom
 from aijournal.models.derived import (
     ProfileUpdateBatch,
     ProfileUpdateInput,
@@ -153,7 +153,6 @@ def run_characterize(
         date=date,
         inputs=inputs,
         proposals=proposals_model,
-        meta=meta_model,
         preview=preview_model,
     )
     pending_dir = _pending_updates_dir(root)

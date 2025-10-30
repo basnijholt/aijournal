@@ -2,6 +2,7 @@
   "$defs": {
     "AdviceRecommendation": {
       "additionalProperties": false,
+      "description": "Single recommendation within an advice card.",
       "properties": {
         "mitigations": {
           "items": {
@@ -40,6 +41,7 @@
     },
     "AdviceReference": {
       "additionalProperties": false,
+      "description": "References included to ground why advice fits.",
       "properties": {
         "claims": {
           "items": {
@@ -58,43 +60,10 @@
       },
       "title": "AdviceReference",
       "type": "object"
-    },
-    "SummaryMeta": {
-      "additionalProperties": false,
-      "properties": {
-        "created_at": {
-          "default": "",
-          "title": "Created At",
-          "type": "string"
-        },
-        "llm_model": {
-          "default": "unknown",
-          "title": "Llm Model",
-          "type": "string"
-        },
-        "prompt_hash": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Prompt Hash"
-        },
-        "prompt_path": {
-          "default": "",
-          "title": "Prompt Path",
-          "type": "string"
-        }
-      },
-      "title": "SummaryMeta",
-      "type": "object"
     }
   },
   "additionalProperties": false,
+  "description": "Structured advice payload produced by LLM pipelines.",
   "properties": {
     "alignment": {
       "$ref": "#/$defs/AdviceReference"
@@ -121,9 +90,6 @@
     "id": {
       "title": "Id",
       "type": "string"
-    },
-    "meta": {
-      "$ref": "#/$defs/SummaryMeta"
     },
     "next_actions": {
       "items": {

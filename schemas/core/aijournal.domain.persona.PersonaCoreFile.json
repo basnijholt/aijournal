@@ -2,7 +2,7 @@
   "$defs": {
     "ClaimAtom": {
       "additionalProperties": false,
-      "description": "Typed, scoped claim describing the persona.",
+      "description": "Typed, scoped claim describing part of the persona.",
       "properties": {
         "id": {
           "title": "Id",
@@ -233,7 +233,7 @@
     },
     "Provenance": {
       "additionalProperties": false,
-      "description": "Provenance metadata for a claim atom.",
+      "description": "Provenance metadata recorded for a claim atom.",
       "properties": {
         "first_seen": {
           "anyOf": [

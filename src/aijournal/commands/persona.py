@@ -10,9 +10,9 @@ from typing import Any
 import typer
 
 from aijournal.common.meta import Artifact, ArtifactKind, ArtifactMeta
+from aijournal.domain.claims import ClaimAtom
 from aijournal.domain.persona import PersonaCoreFile, PersonaCoreMeta
 from aijournal.io.artifacts import load_artifact_data, save_artifact
-from aijournal.models.claim_atoms import ClaimAtom
 from aijournal.pipelines import persona as persona_pipeline
 from aijournal.utils import time as time_utils
 from aijournal.utils.coercion import coerce_float

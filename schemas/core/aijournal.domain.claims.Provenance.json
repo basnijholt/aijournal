@@ -87,7 +87,7 @@
     }
   },
   "additionalProperties": false,
-  "description": "Provenance metadata for a claim atom.",
+  "description": "Provenance metadata recorded for a claim atom.",
   "properties": {
     "first_seen": {
       "anyOf": [

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import Field
 
@@ -49,3 +49,17 @@ class ChatResponse(StrictModel):
     clarifying_question: str | None = None
     telemetry: dict[str, Any] = Field(default_factory=dict)
     timestamp: str | None = None
+
+
+class ChatRequest(StrictModel):
+    """Incoming chat payload for both CLI and FastAPI surfaces."""
+
+    question: str = Field(min_length=1)
+    top: int | None = Field(default=None, ge=1)
+    tags: list[str] | None = None
+    source: list[str] | None = None
+    date_from: str | None = None
+    date_to: str | None = None
+    session_id: str | None = Field(default=None, pattern=r"^[A-Za-z0-9_.\-]+$")
+    save: bool = True
+    feedback: Literal["up", "down"] | None = None

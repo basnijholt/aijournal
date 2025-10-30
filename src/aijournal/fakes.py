@@ -11,6 +11,7 @@ from aijournal.domain.changes import (
     FacetChange,
     ProfileUpdateProposals,
 )
+from aijournal.domain.claims import ClaimAtom
 from aijournal.domain.evidence import SourceRef
 from aijournal.domain.facts import (
     DailySummary,
@@ -18,7 +19,6 @@ from aijournal.domain.facts import (
     MicroFact,
 )
 from aijournal.domain.journal import NormalizedEntry
-from aijournal.models.claim_atoms import ClaimAtom
 from aijournal.models.derived import (
     AdviceCard,
     AdviceRecommendation,

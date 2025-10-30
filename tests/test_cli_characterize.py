@@ -120,12 +120,12 @@ def test_characterize_generates_pending_batch(
     assert artifact.get("kind") == "profile.updates"
     outer_meta = artifact.get("meta", {})
     assert outer_meta.get("created_at")
+    assert outer_meta.get("prompt_path") == "prompts/characterize.md"
+    assert outer_meta.get("model") == "fake-ollama"
     data = artifact.get("data", {})
 
     assert data.get("inputs")
-    inner_meta = data.get("meta", {})
-    assert inner_meta.get("prompt_path") == "prompts/characterize.md"
-    assert inner_meta.get("llm_model") == "fake-ollama"
+    assert "meta" not in data
     proposals = data.get("proposals", {})
     claims = proposals.get("claims")
     assert claims, "Expected at least one claim proposal"

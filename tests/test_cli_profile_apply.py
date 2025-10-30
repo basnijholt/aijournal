@@ -61,6 +61,12 @@ def _seed_authoritative(workspace: Path) -> None:
 
 
 def _seed_suggestions(workspace: Path) -> Path:
+    summary_meta = SummaryMeta(
+        llm_model="fake-ollama",
+        prompt_path="prompts/profile_suggest.md",
+        prompt_hash="seed",
+        created_at=f"{DATE}T10:00:00Z",
+    )
     suggestions = ProfileSuggestions(
         upserts=[
             ProfileSuggestionUpsert(
@@ -83,16 +89,10 @@ def _seed_suggestions(workspace: Path) -> Path:
                 "value": ["Universalism", "Benevolence"],
             },
         ],
-        meta=SummaryMeta(
-            llm_model="fake-ollama",
-            prompt_path="prompts/profile_suggest.md",
-            prompt_hash="seed",
-            created_at=f"{DATE}T10:00:00Z",
-        ),
     )
     artifact = Artifact[ProfileSuggestions](
         kind=ArtifactKind.PROFILE_SUGGESTIONS,
-        meta=ArtifactMeta(created_at=suggestions.meta.created_at, model=suggestions.meta.llm_model),
+        meta=ArtifactMeta(created_at=summary_meta.created_at, model=summary_meta.llm_model),
         data=suggestions,
     )
     path = workspace / "derived" / "profile_suggestions" / f"{DATE}.yaml"

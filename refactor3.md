@@ -313,9 +313,8 @@ class ProfileUpdateBatch(StrictModel):
     batch_id: str
     created_at: TimestampStr
     date: ISODateStr
-    inputs: list[dict]
+    inputs: list[ProfileUpdateInput]
     proposals: ProfileUpdateProposals
-    meta: ArtifactMeta
     preview: ProfileUpdatePreview | None = None
 
 class FeedbackBatch(StrictModel):
@@ -342,14 +341,12 @@ class MicroFactsFile(StrictModel):
     facts: list[MicroFact] = []
     claim_proposals: list[ClaimProposal] = []
     preview: ProfileUpdatePreview | None = None
-    meta: SummaryMeta = Field(default_factory=SummaryMeta)
 
 class DailySummary(StrictModel):
     day: ISODateStr
     bullets: list[str] = []
     highlights: list[str] = []
     todo_candidates: list[str] = []
-    meta: SummaryMeta = Field(default_factory=SummaryMeta)
 ```
 
 ### 4.8 Persona & Packs
@@ -402,7 +399,7 @@ class IndexMeta(StrictModel):
 ### 4.10 Chat & Advice
 
 ```python
-from pydantic import BaseModel
+from pydantic import Field
 
 # aijournal/api/chat.py
 class ChatCitation(StrictModel):
@@ -416,21 +413,20 @@ class ChatCitation(StrictModel):
     score: float
 
 class ChatResponse(StrictModel):
-    answer: str
-    citations: list[str] = []
+    answer: str = Field(..., max_length=4000)
+    citations: list[str] = Field(default_factory=list)
     clarifying_question: str | None = None
-    telemetry: dict[str, object] = {}
+    telemetry: dict[str, object] = Field(default_factory=dict)
     timestamp: TimestampStr | None = None
 
-# aijournal/services/chat_api.py
-class ChatRequest(BaseModel):
-    question: str
-    top: int | None = None
+class ChatRequest(StrictModel):
+    question: str = Field(min_length=1)
+    top: int | None = Field(default=None, ge=1)
     tags: list[str] | None = None
     source: list[str] | None = None
     date_from: ISODateStr | None = None
     date_to: ISODateStr | None = None
-    session_id: str | None = None
+    session_id: str | None = Field(default=None, pattern=r"^[A-Za-z0-9_.\-]+$")
     save: bool = True
     feedback: Literal['up','down'] | None = None
 

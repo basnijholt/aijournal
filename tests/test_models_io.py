@@ -7,6 +7,12 @@ from typing import TYPE_CHECKING
 import yaml
 
 from aijournal.common.meta import Artifact, ArtifactKind, ArtifactMeta
+from aijournal.domain.claims import (
+    ClaimAtom,
+    ClaimSource,
+    ClaimSourceSpan,
+    Scope,
+)
 from aijournal.domain.facts import (
     DailySummary,
     FactEvidence,
@@ -26,12 +32,6 @@ from aijournal.domain.persona import (
 from aijournal.io.artifacts import load_artifact, save_artifact
 from aijournal.io.yaml_io import load_yaml_model, write_yaml_model
 from aijournal.models.authoritative import ClaimsFile, JournalEntry, JournalSection, SelfProfile
-from aijournal.models.claim_atoms import (
-    ClaimAtom,
-    ClaimSource,
-    ClaimSourceSpan,
-    Scope,
-)
 from aijournal.models.derived import (
     AdviceCard,
     AdviceRecommendation,
@@ -71,7 +71,6 @@ def test_daily_summary_roundtrip(tmp_path: Path) -> None:
         bullets=["Planned the week"],
         highlights=["Family scheduling sorted"],
         todo_candidates=["Block deep-work mornings"],
-        meta=meta,
     )
     artifact = Artifact[DailySummary](
         kind=ArtifactKind.SUMMARY_DAILY,
@@ -137,12 +136,6 @@ def test_advice_card_roundtrip(tmp_path: Path) -> None:
         risks=["Unexpected pings"],
         mitigations=["Set Slack status"],
     )
-    meta = SummaryMeta(
-        llm_model="llama3.1:8b-instruct",
-        prompt_path="prompts/advise.md",
-        prompt_hash="xyz",
-        created_at="2025-10-25T12:00:00Z",
-    )
     card = AdviceCard(
         id="adv_2025-10-25_01",
         query="How should I schedule my week?",
@@ -153,15 +146,14 @@ def test_advice_card_roundtrip(tmp_path: Path) -> None:
         confidence=0.72,
         alignment=reference,
         style={"tone": "direct"},
-        meta=meta,
     )
     artifact = Artifact[AdviceCard](
         kind=ArtifactKind.ADVICE_CARD,
         meta=ArtifactMeta(
-            created_at=meta.created_at,
-            model=meta.llm_model,
-            prompt_path=meta.prompt_path,
-            prompt_hash=meta.prompt_hash,
+            created_at="2025-10-25T12:00:00Z",
+            model="llama3.1:8b-instruct",
+            prompt_path="prompts/advise.md",
+            prompt_hash="xyz",
         ),
         data=card,
     )
@@ -265,7 +257,6 @@ def test_microfacts_file_roundtrip(tmp_path: Path) -> None:
                 last_seen="2025-10-25",
             ),
         ],
-        meta=meta,
     )
     artifact = Artifact[MicroFactsFile](
         kind=ArtifactKind.MICROFACTS_DAILY,
@@ -289,12 +280,8 @@ def test_load_with_default(tmp_path: Path) -> None:
     default = DailySummary(
         day="2025-10-25",
         bullets=[],
-        meta=SummaryMeta(
-            llm_model="llama3.1:8b-instruct",
-            prompt_path="prompts/summarize_day.md",
-            prompt_hash=None,
-            created_at="2025-10-25T00:00:00Z",
-        ),
+        highlights=[],
+        todo_candidates=[],
     )
     loaded = load_yaml_model(missing, DailySummary, default=default)
     assert loaded == default
@@ -367,7 +354,6 @@ def test_profile_suggestions_schema(tmp_path: Path) -> None:
                 method="inferred",
             ),
         ],
-        meta=meta,
     )
     artifact = Artifact[ProfileSuggestions](
         kind=ArtifactKind.PROFILE_SUGGESTIONS,

@@ -6,7 +6,11 @@ from typing import Any, cast
 
 from pydantic import Field, field_validator
 
+from aijournal.domain.advice import AdviceCard as _AdviceCard
+from aijournal.domain.advice import AdviceRecommendation as _AdviceRecommendation
+from aijournal.domain.advice import AdviceReference as _AdviceReference
 from aijournal.domain.changes import ProfileUpdateProposals
+from aijournal.domain.claims import ClaimAtom, ClaimSource, ClaimSourceSpan, Provenance, Scope
 from aijournal.domain.events import (
     ClaimPreviewEvent,
 )
@@ -23,7 +27,6 @@ from aijournal.domain.persona import (
 )
 
 from .base import AijournalModel
-from .claim_atoms import ClaimAtom, ClaimSource, ClaimSourceSpan, Provenance, Scope
 
 PersonaCore.model_rebuild(_types_namespace={"ClaimAtom": ClaimAtom})
 PersonaCoreFile.model_rebuild(
@@ -217,33 +220,11 @@ class ProfileSuggestionUpdate(AijournalModel):
 class ProfileSuggestions(AijournalModel):
     upserts: list[ProfileSuggestionUpsert] = Field(default_factory=list)
     updates: list[ProfileSuggestionUpdate] = Field(default_factory=list)
-    meta: SummaryMeta | None = None
 
 
-class AdviceReference(AijournalModel):
-    facets: list[str] = Field(default_factory=list)
-    claims: list[str] = Field(default_factory=list)
-
-
-class AdviceRecommendation(AijournalModel):
-    title: str
-    why_this_fits_you: AdviceReference = Field(default_factory=AdviceReference)
-    steps: list[str] = Field(default_factory=list)
-    risks: list[str] = Field(default_factory=list)
-    mitigations: list[str] = Field(default_factory=list)
-
-
-class AdviceCard(AijournalModel):
-    id: str
-    query: str
-    assumptions: list[str] = Field(default_factory=list)
-    recommendations: list[AdviceRecommendation] = Field(default_factory=list)
-    tradeoffs: list[str] = Field(default_factory=list)
-    next_actions: list[str] = Field(default_factory=list)
-    confidence: float | None = None
-    alignment: AdviceReference = Field(default_factory=AdviceReference)
-    style: dict[str, Any] = Field(default_factory=dict)
-    meta: SummaryMeta = Field(default_factory=SummaryMeta)
+AdviceReference = _AdviceReference
+AdviceRecommendation = _AdviceRecommendation
+AdviceCard = _AdviceCard
 
 
 class ProfileUpdatePreview(AijournalModel):
@@ -271,7 +252,6 @@ class ProfileUpdateBatch(AijournalModel):
     date: str
     inputs: list[ProfileUpdateInput] = Field(default_factory=list)
     proposals: ProfileUpdateProposals = Field(default_factory=ProfileUpdateProposals)
-    meta: SummaryMeta = Field(default_factory=SummaryMeta)
     preview: ProfileUpdatePreview | None = None
 
 

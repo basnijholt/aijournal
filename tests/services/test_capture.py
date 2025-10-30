@@ -96,7 +96,6 @@ def test_run_capture_records_telemetry(tmp_path: Path, monkeypatch: pytest.Monke
             bullets=["Captured entry"],
             highlights=["Highlight"],
             todo_candidates=[],
-            meta=meta,
         )
         artifact = Artifact[DailySummary](
             kind=ArtifactKind.SUMMARY_DAILY,
@@ -132,7 +131,6 @@ def test_run_capture_records_telemetry(tmp_path: Path, monkeypatch: pytest.Monke
                     last_seen=day,
                 )
             ],
-            meta=meta,
         )
         artifact = Artifact[MicroFactsFile](
             kind=ArtifactKind.MICROFACTS_DAILY,
@@ -168,7 +166,6 @@ def test_run_capture_records_telemetry(tmp_path: Path, monkeypatch: pytest.Monke
                 )
             ],
             updates=[],
-            meta=meta,
         )
         artifact = Artifact[ProfileSuggestions](
             kind=ArtifactKind.PROFILE_SUGGESTIONS,
@@ -197,7 +194,6 @@ def test_run_capture_records_telemetry(tmp_path: Path, monkeypatch: pytest.Monke
                 )
             ],
             proposals=ProfileUpdateProposals(),
-            meta=meta,
             preview=ProfileUpdatePreview(),
         )
         artifact = Artifact[ProfileUpdateBatch](

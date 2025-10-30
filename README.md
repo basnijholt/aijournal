@@ -203,8 +203,9 @@ Produces `data/normalized/2025-02-03/<entry_id>.yaml`. Files are only rewritten 
 aijournal ops pipeline summarize --date 2025-02-03
 ```
 
-Calls `prompts/summarize_day.md` through Ollama and writes `derived/summaries/<DATE>.yaml` with
-`bullets`, `highlights`, `todo_candidates`, plus a stamped `meta` block. Set
+Calls `prompts/summarize_day.md` through Ollama and writes `derived/summaries/<DATE>.yaml` as an
+`Artifact[DailySummary]` envelope. The payload carries `bullets`, `highlights`, and
+`todo_candidates`; model/prompt metadata lives in the artifact `meta`. Set
 `AIJOURNAL_FAKE_OLLAMA=1` for deterministic fixtures.
 
 `summarize` (and the other LLM-backed commands) now streams responses through
@@ -220,10 +221,11 @@ command aborts with an actionable error so you can inspect the upstream output.
 aijournal ops pipeline extract-facts --date 2025-02-03
 ```
 
-Uses `prompts/extract_facts.md` to create `derived/microfacts/<DATE>.yaml` filled with
-evidence-backed statements. Outputs are validated against the `MicroFactsFile`
-model, and fake mode now emits typed `MicroFact` objects for each entry so the
-structure matches real runs even in CI. Each run now also attaches the derived
+Uses `prompts/extract_facts.md` to create `derived/microfacts/<DATE>.yaml` (an
+`Artifact[MicroFactsFile]`) filled with evidence-backed statements. Outputs are
+validated against the `MicroFactsFile` model, and fake mode now emits typed
+`MicroFact` objects for each entry so the structure matches real runs even in CI.
+Each run now also attaches the derived
 claim proposals and a consolidation preview: micro-facts are converted into
 `ClaimProposal` atoms, pushed through the shared `ClaimConsolidator`, and the
 resulting `preview.claim_events` mirror the output of `aijournal ops pipeline review --dry-run`.
