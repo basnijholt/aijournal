@@ -45,7 +45,7 @@ uv run pytest -q
 - Runtime deps beyond Typer/PyYAML/httpx/pydantic/dateutil: `numpy`, `annoy`, `fastapi`, `uvicorn`, `orjson`. Install once via `uv add ...`; everything stays local-first.
 - Retrieval uses Ollama’s `embeddinggemma` embeddings by default. Override it by setting `embedding_model` in `config/config.yaml`; the `AIJOURNAL_MODEL` env var only affects chat/advice, not embeddings.
 
-- `config/config.yaml` stores runtime defaults (model, temperature, advisor settings).
+- `config/config.yaml` stores runtime defaults (model, host, temperature, advisor settings).
 - `src/aijournal/commands/` contains orchestration logic for each Typer command (I/O, retries, progress logging). Most CLI work happens here now; `cli.py` is intentionally thin glue.
 - `src/aijournal/pipelines/` hosts deterministic workflows that combine services, prompts, and normalization for a single feature (summaries, facts, persona, packs, characterize, advise).
 - `src/aijournal/models/` defines the Pydantic schemas the CLI enforces on every write.
@@ -59,9 +59,12 @@ Run `aijournal init` inside a fresh directory to materialize `data/`, `derived/`
 
 - **Live mode (default):** uses Pydantic AI's Ollama provider via the shared `run_ollama_agent`
   helper. `build_ollama_config_from_mapping` fuses `config/config.yaml`, environment overrides, and
-  per-command tweaks so every CLI surface hits the same configuration pipeline. Set
-  `AIJOURNAL_OLLAMA_HOST=http://localhost:11434` if you run Ollama elsewhere, or
-  `AIJOURNAL_MODEL="llama3.1:8b-instruct"` to pick a different chat/advice model.
+  per-command tweaks so every CLI surface hits the same configuration pipeline. Populate
+  `host: http://192.168.1.143:11434` (or your own endpoint) in `config/config.yaml` for a
+  workspace default; precedence is per-command override → environment
+  (`AIJOURNAL_OLLAMA_HOST` or `OLLAMA_BASE_URL`) → config `host` → the
+  built-in `http://127.0.0.1:11434`. Model selection follows the same ordering:
+  explicit override → `AIJOURNAL_MODEL` → config → default.
   Commands retry schema issues once (`--retries`) and then fail loudly with an error.
 - **Fake mode (tests/CI):** `export AIJOURNAL_FAKE_OLLAMA=1` to route every agent call through
   deterministic fixtures. This mode must be set explicitly; the CLI never auto-falls back from live mode.
