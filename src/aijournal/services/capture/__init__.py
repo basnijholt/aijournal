@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 
 from aijournal.api.capture import CaptureInput
 from aijournal.commands.ingest import _load_config
+from aijournal.common.logging import StructuredLogger
 from aijournal.models.authoritative import ManifestEntry
 from aijournal.services.capture.results import OperationResult, StageResult
 from aijournal.services.capture.stages.stage0_persist import EntryResult
@@ -243,23 +244,16 @@ def _make_telemetry_logger(
     sink: Callable[[dict[str, object]], None] | None = None,
 ) -> tuple[Callable[[dict[str, object]], None], Path]:
     log_path = _telemetry_log_path(root, run_id)
-    log_path.parent.mkdir(parents=True, exist_ok=True)
-
-    def _write(event: dict[str, object]) -> None:
-        payload = {
-            "run_id": run_id,
-            "timestamp": time_utils.format_timestamp(time_utils.now()),
-            **event,
-        }
-        with log_path.open("a", encoding="utf-8") as handle:
-            handle.write(json.dumps(payload, ensure_ascii=False) + "\n")
-        if sink is not None:
-            try:
-                sink(payload)
-            except Exception:  # pragma: no cover - defensive sink guard
-                return
-
-    return _write, log_path
+    sinks: list[Callable[[dict[str, object]], None]] = []
+    if sink is not None:
+        sinks.append(sink)
+    logger = StructuredLogger(
+        path=log_path,
+        base={"run_id": run_id, "command": "capture"},
+        sinks=sinks,
+        enabled=True,
+    )
+    return logger.emit, log_path
 
 
 def _capture_result_path(root: Path, run_id: str) -> Path:

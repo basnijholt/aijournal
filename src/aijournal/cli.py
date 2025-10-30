@@ -12,9 +12,11 @@ import json
 import os
 import sys
 from collections.abc import Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal, cast
 
+import click
 import httpx
 import typer
 from pydantic import ValidationError
@@ -23,8 +25,9 @@ from typer.models import CommandInfo
 from aijournal.api.capture import CaptureRequest
 from aijournal.commands import summarize as summarize_commands
 from aijournal.commands.advise import (
+    AdviceOptions,
     _collect_pending_interview_prompts,
-    run_advise,
+    run_advise_command,
 )
 from aijournal.commands.audit import run_audit_provenance
 from aijournal.commands.characterize import (
@@ -34,7 +37,10 @@ from aijournal.commands.characterize import (
 )
 from aijournal.commands.chat import run_chat
 from aijournal.commands.chatd import run_chatd
-from aijournal.commands.facts import run_facts
+from aijournal.commands.facts import (
+    FactsOptions,
+    run_facts_command,
+)
 from aijournal.commands.index import (
     run_index_rebuild,
     run_index_search,
@@ -64,10 +70,11 @@ from aijournal.commands.profile import (
     run_profile_suggest,
 )
 from aijournal.commands.summarize import (
+    DailySummaryOptions,
     _entries_to_payload,
     _json_block,
     _load_normalized_entries,
-    run_summarize,
+    run_summarize_command,
 )
 from aijournal.commands.summarize import (
     _invoke_structured_llm as _commands_invoke_structured_llm,
@@ -76,6 +83,7 @@ from aijournal.commands.summarize import (
     _structured_call_with_retry as _commands_structured_call_with_retry,
 )
 from aijournal.commands.system import run_status_summary, run_system_doctor
+from aijournal.common.context import RunContext, create_run_context
 from aijournal.domain.changes import ClaimProposal, FacetChange
 from aijournal.domain.claims import ClaimAtom, ClaimSource, Scope
 from aijournal.domain.events import (
@@ -128,6 +136,7 @@ persona_app = typer.Typer(help="Persona utilities.")
 ops_app = typer.Typer(help="Advanced operations namespace.")
 ops_pipeline_app = typer.Typer(help="Pipeline tools (normalize, summarize, characterize).")
 ops_feedback_app = typer.Typer(help="Feedback processing utilities.")
+ops_logs_app = typer.Typer(help="Log utilities.")
 ops_system_app = typer.Typer(help="System diagnostics and doctor helpers.")
 ops_dev_app = typer.Typer(help="Developer fixtures and helpers.")
 ops_audit_app = typer.Typer(help="Audit and governance utilities.")
@@ -137,6 +146,7 @@ ops_app.add_typer(profile_app, name="profile")
 ops_app.add_typer(index_app, name="index")
 ops_app.add_typer(persona_app, name="persona")
 ops_app.add_typer(ops_feedback_app, name="feedback")
+ops_app.add_typer(ops_logs_app, name="logs")
 ops_app.add_typer(ops_system_app, name="system")
 ops_app.add_typer(ops_dev_app, name="dev")
 ops_app.add_typer(ops_audit_app, name="audit")
@@ -151,6 +161,58 @@ serve_app = typer.Typer(help="Service runners and daemons.")
 app.add_typer(export_app, name="export")
 app.add_typer(serve_app, name="serve")
 
+
+@dataclass
+class CLISettings:
+    trace: bool = False
+    verbose_json: bool = False
+
+
+@app.callback()
+def _main_callback(
+    ctx: typer.Context,
+    trace: bool = typer.Option(
+        False,
+        "--trace",
+        help="Mirror structured trace events to stdout.",
+    ),
+    verbose_json: bool = typer.Option(
+        False,
+        "--verbose-json",
+        help="Mirror structured trace events as JSON to stdout.",
+    ),
+) -> None:
+    ctx.obj = CLISettings(trace=trace, verbose_json=verbose_json)
+
+
+def _cli_settings() -> CLISettings:
+    context = click.get_current_context(silent=True)
+    while context is not None:
+        obj = getattr(context, "obj", None)
+        if isinstance(obj, CLISettings):
+            return obj
+        context = context.parent
+    settings = CLISettings()
+    context = click.get_current_context(silent=True)
+    if context is not None:
+        context.obj = settings
+    return settings
+
+
+def _run_context(command: str, *, root: Path | None = None) -> RunContext:
+    settings = _cli_settings()
+    actual_root = root or Path.cwd()
+    config = _load_config(actual_root)
+    return create_run_context(
+        command=command,
+        root=actual_root,
+        config=config,
+        use_fake_llm=_use_fake_llm(),
+        trace=settings.trace,
+        verbose_json=settings.verbose_json,
+    )
+
+
 CAPTURE_STAGE_LOOKUP = {stage.stage_id: stage for stage in CAPTURE_STAGES}
 CAPTURE_STAGE_TABLE = "\n".join(
     f"[{stage.stage_id}] {stage.name} – {stage.description}" for stage in CAPTURE_STAGES
@@ -163,6 +225,93 @@ def _emit_deprecation(command: str, replacement: str | None = None) -> None:
     if replacement:
         message += f" Use `{replacement}` instead."
     typer.secho(message, fg=typer.colors.YELLOW, err=True)
+
+
+def _format_trace_line(payload: dict[str, Any]) -> tuple[str, str | None]:
+    timestamp = payload.get("timestamp", "?")
+    run_id = payload.get("run_id")
+    command = payload.get("command", "")
+    event = payload.get("event", "")
+    step = payload.get("step")
+    duration = payload.get("duration_ms")
+    error = payload.get("error")
+
+    parts: list[str] = [str(timestamp)]
+    if run_id:
+        parts.append(f"#{run_id}")
+    if command:
+        parts.append(str(command))
+    if event:
+        parts.append(str(event))
+    if step:
+        parts.append(f"step={step}")
+    if isinstance(duration, (int, float)):
+        parts.append(f"{duration:.1f}ms")
+    elif isinstance(duration, str) and duration:
+        parts.append(duration)
+    if error:
+        parts.append(f"error={error}")
+
+    color: str | None = None
+    if error or event == "error":
+        color = typer.colors.RED
+    elif event == "start":
+        color = typer.colors.BLUE
+    elif event == "end":
+        color = typer.colors.GREEN
+
+    message = " | ".join(part for part in parts if part)
+    return message, color
+
+
+@ops_logs_app.command("tail")
+def logs_tail(
+    last: int = typer.Option(
+        10,
+        "--last",
+        "-n",
+        min=1,
+        help="Number of recent trace events to display.",
+    ),
+    raw: bool = typer.Option(
+        False,
+        "--raw",
+        help="Emit raw JSON lines instead of formatted output.",
+    ),
+    path: Path | None = typer.Option(
+        None,
+        "--path",
+        help="Override trace log path (defaults to derived/logs/run_trace.jsonl).",
+    ),
+) -> None:
+    """Show the most recent structured trace events."""
+
+    root = Path.cwd()
+    log_path = path or root / "derived" / "logs" / "run_trace.jsonl"
+    if not log_path.exists():
+        typer.secho(f"No run trace log found at {log_path}", fg=typer.colors.YELLOW, err=True)
+        raise typer.Exit(1)
+
+    lines = log_path.read_text(encoding="utf-8").splitlines()
+    if not lines:
+        typer.secho("Log file is empty.", fg=typer.colors.YELLOW)
+        return
+
+    slice_start = max(0, len(lines) - last)
+    for line in lines[slice_start:]:
+        if raw:
+            typer.echo(line)
+            continue
+        try:
+            payload = json.loads(line)
+        except json.JSONDecodeError:
+            typer.echo(line)
+            continue
+        message, color = _format_trace_line(payload)
+        if color:
+            typer.secho(message, fg=color)
+        else:
+            typer.echo(message)
 
 
 @app.command(help="Capture Markdown into the journal workspace and refresh derived artifacts.")
@@ -853,11 +1002,15 @@ def summarize(
 ) -> None:
     """Generate a daily summary from normalized entries."""
     _emit_deprecation("aijournal ops pipeline summarize", "aijournal capture --from/--text")
-    summary_path = run_summarize(
-        date,
-        timeout=timeout,
-        retries=retries,
-        progress=progress,
+    ctx = _run_context("summarize")
+    summary_path = run_summarize_command(
+        ctx,
+        DailySummaryOptions(
+            date=date,
+            timeout=timeout,
+            retries=retries,
+            progress=progress,
+        ),
     )
     typer.echo(str(summary_path))
 
@@ -897,18 +1050,23 @@ def facts(
     _emit_deprecation("aijournal ops pipeline extract-facts", "aijournal capture --from/--text")
     root = Path.cwd()
     _, claim_models = load_profile_components(root)
-    preview, facts_path = run_facts(
-        date,
-        timeout=timeout,
-        retries=retries,
-        progress=progress,
-        claim_models=claim_models,
-        build_claim_preview=lambda proposals, claims, timestamp: _build_claim_preview(
-            proposals,
-            claims,
-            timestamp=timestamp,
+    ctx = _run_context("facts", root=root)
+    output = run_facts_command(
+        ctx,
+        FactsOptions(
+            date=date,
+            timeout=timeout,
+            retries=retries,
+            progress=progress,
+            claim_models=claim_models,
+            preview_builder=lambda proposals, claims, timestamp: _build_claim_preview(
+                proposals,
+                claims,
+                timestamp=timestamp,
+            ),
         ),
     )
+    preview, facts_path = output.preview, output.path
     if preview:
         _print_claim_preview(preview)
     typer.echo(str(facts_path))
@@ -1106,7 +1264,8 @@ def advise(
     question: str = typer.Argument(..., help="Question for the advisor to answer."),
 ) -> None:
     """Generate advice from the current profile."""
-    advice_path = run_advise(question)
+    ctx = _run_context("advise")
+    advice_path = run_advise_command(ctx, AdviceOptions(question=question))
     typer.echo(str(advice_path))
 
 

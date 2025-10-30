@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path
 from string import Template
@@ -12,7 +13,9 @@ from typing import Any, cast
 import typer
 from pydantic import BaseModel
 
-from aijournal.commands.ingest import _load_config, _use_fake_llm
+from aijournal.commands.ingest import _use_fake_llm
+from aijournal.common.command_runner import run_command_pipeline
+from aijournal.common.context import RunContext
 from aijournal.common.meta import Artifact, ArtifactKind, ArtifactMeta, LLMResult
 from aijournal.domain.facts import DailySummary
 from aijournal.domain.journal import NormalizedEntry
@@ -45,6 +48,28 @@ _STRUCTURED_SYSTEM_PROMPT = (
     "Read the user's prompt carefully and respond with JSON that matches the declared response schema. "
     "Do not include markdown fences or commentary."
 )
+
+
+class DailySummaryOptions(BaseModel):
+    date: str
+    timeout: float
+    retries: int
+    progress: bool
+
+
+@dataclass(slots=True)
+class DailySummaryPrepared:
+    date: str
+    entries: list[NormalizedEntry]
+    timeout: float
+    retries: int
+
+
+@dataclass(slots=True)
+class DailySummaryResult:
+    summary: DailySummary
+    date: str
+    model_name: str
 
 
 def _load_prompt_template(prompt_path: str) -> str:
@@ -194,6 +219,71 @@ def _build_meta(
     )
 
 
+def prepare_inputs(ctx: RunContext, options: DailySummaryOptions) -> DailySummaryPrepared:
+    entries = _load_normalized_entries(ctx.root, options.date)
+    if not entries:
+        typer.secho(f"No normalized entries for {options.date}", fg=typer.colors.RED, err=True)
+        ctx.emit({"event": "command_failed", "reason": "missing_entries"})
+        raise typer.Exit(1)
+
+    timeout_value = _validate_timeout(options.timeout)
+    _log_entry_progress(
+        f"Summarizing entries for {options.date}",
+        entries,
+        options.progress,
+    )
+    ctx.emit(
+        {
+            "event": "prepare_summary",
+            "entries": len(entries),
+            "timeout": timeout_value,
+            "retries": options.retries,
+        }
+    )
+    return DailySummaryPrepared(
+        date=options.date,
+        entries=list(entries),
+        timeout=timeout_value,
+        retries=options.retries,
+    )
+
+
+def invoke_pipeline(ctx: RunContext, prepared: DailySummaryPrepared) -> DailySummaryResult:
+    config = dict(ctx.config) if isinstance(ctx.config, dict) else {}
+    summary = _summarize_day_payload(
+        prepared.entries,
+        prepared.date,
+        config,
+        timeout=prepared.timeout,
+        retries=prepared.retries,
+        use_fake_llm=ctx.use_fake_llm,
+    )
+    model_name = "fake-ollama"
+    if not ctx.use_fake_llm:
+        model_name = build_ollama_config_from_mapping(config).model
+    ctx.emit(
+        {
+            "event": "pipeline_complete",
+            "bullets": len(summary.bullets),
+            "highlights": len(summary.highlights),
+        }
+    )
+    return DailySummaryResult(summary=summary, date=prepared.date, model_name=model_name)
+
+
+def persist_output(ctx: RunContext, result: DailySummaryResult) -> Path:
+    summary_path = _derived_summary_path(ctx.root, result.date)
+    artifact_meta = _build_meta("prompts/summarize_day.md", model=result.model_name)
+    artifact = Artifact[DailySummary](
+        kind=ArtifactKind.SUMMARY_DAILY,
+        meta=artifact_meta,
+        data=result.summary,
+    )
+    save_artifact(summary_path, artifact)
+    ctx.emit({"event": "artifact_written", "path": str(summary_path)})
+    return summary_path
+
+
 def _summarize_day_payload(
     entries: Sequence[NormalizedEntry],
     date: str,
@@ -207,7 +297,7 @@ def _summarize_day_payload(
 ) -> DailySummary:
     invoke = invoke_structured_llm or _invoke_structured_llm
     structured = structured_call or _structured_call_with_retry
-    fake_mode = _use_fake_llm() if use_fake_llm is None else use_fake_llm
+    fake_mode = use_fake_llm if use_fake_llm is not None else _use_fake_llm()
 
     def request_summary() -> DailySummary:
         return cast(
@@ -247,36 +337,39 @@ def run_summarize(
     retries: int,
     progress: bool,
 ) -> Path:
-    """Generate a daily summary and return the output path."""
+    """Backward-compatible entrypoint using current working directory."""
+    from aijournal.commands.ingest import _load_config, _use_fake_llm
+    from aijournal.common.context import create_run_context
+
     root = Path.cwd()
-    entries = _load_normalized_entries(root, date)
-    if not entries:
-        typer.secho(f"No normalized entries for {date}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(1)
-
-    timeout_value = _validate_timeout(timeout)
-    _log_entry_progress(f"Summarizing entries for {date}", entries, progress)
-
     config = _load_config(root)
+    ctx = create_run_context(
+        command="summarize",
+        root=root,
+        config=config,
+        use_fake_llm=_use_fake_llm(),
+        trace=False,
+        verbose_json=False,
+    )
+    options = DailySummaryOptions(
+        date=date,
+        timeout=timeout,
+        retries=retries,
+        progress=progress,
+    )
+    return run_summarize_command(ctx, options)
 
+
+def run_summarize_command(ctx: RunContext, options: DailySummaryOptions) -> Path:
     try:
-        summary_data = _summarize_day_payload(
-            entries,
-            date,
-            config,
-            timeout=timeout_value,
-            retries=retries,
+        return run_command_pipeline(
+            ctx,
+            options,
+            prepare_inputs=prepare_inputs,
+            invoke_pipeline=invoke_pipeline,
+            persist_output=persist_output,
         )
     except LLMResponseError as exc:
         typer.secho(f"Summarize failed: {exc}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(1)
-
-    artifact_meta = _build_meta("prompts/summarize_day.md", config=config)
-    summary_path = _derived_summary_path(root, date)
-    artifact = Artifact[DailySummary](
-        kind=ArtifactKind.SUMMARY_DAILY,
-        meta=artifact_meta,
-        data=summary_data,
-    )
-    save_artifact(summary_path, artifact)
-    return summary_path
+        ctx.emit({"event": "command_failed", "reason": "llm_response_error", "error": str(exc)})
+        raise typer.Exit(1) from exc
