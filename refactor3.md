@@ -857,3 +857,77 @@ At every sub-step boundary:
 4. **Commit immediately with an informative message.**
 
 Any agent that cannot satisfy these conditions must halt and report back rather than improvising. This discipline keeps the refactor auditable and safe for automation.
+
+---
+
+## 17. Detailed Follow-Up Work Packages (Post-Review Commitments)
+
+> **Context:** An external reviewer examined `README.md`, `ARCHITECTURE.md`, `docs/workflow.md`, `AGENTS.md`, `refactor3.md`, `docs/refactor3_status.md`, and `reports/data_model_out.txt` without direct code access. Their actionable feedback revealed four concrete gaps between the documented plan and the current codebase. This section decomposes those gaps into executable work packages so future agents can complete the cleanup without re-discovery or guesswork. Treat each package as a mini-stage: run green tests, regenerate schemas, and commit before proceeding.
+
+### 17.1 Retire `AdviceLLMResponse` (Strict Advice DTO Cutover)
+
+- **Problem:** The legacy response model `AdviceLLMResponse` still mediates between the LLM and downstream services (`src/aijournal/models/responses.py:11`, consumed by `commands/advise.py`, `pipelines/advise.py`, and unit tests). The refactor intent is for the LLM to emit the strict `AdviceCard` domain model directly.
+- **Scope of change:**
+  - Delete `AdviceLLMResponse` and any helper aliases from `src/aijournal/models/responses.py`.
+  - Update `src/aijournal/commands/advise.py` so the structured-output runner requests and validates `AdviceCard` (import from `aijournal.domain.advice`). Ensure retry/error logging remain intact.
+  - Adjust `src/aijournal/pipelines/advise.py` to type the `request_advice` callable as returning `AdviceCard` and drop conversions.
+  - Rewrite fixtures/tests (`tests/pipelines/test_advise.py`, `tests/prompts/test_prompt_examples.py`) to instantiate `AdviceCard` instead of the legacy wrapper.
+  - Remove the stale JSON schema snapshot `schemas/core/aijournal.models.responses.AdviceLLMResponse.json` and bless the updated `AdviceCard` schema by running `uv run python scripts/check_schemas.py --bless`.
+- **Acceptance criteria:**
+  - `git grep "AdviceLLMResponse"` returns only historical references (e.g., changelog) or zero results.
+  - `uv run pytest -q` passes.
+  - Prompt examples under `prompts/examples/advise.json` validate against `AdviceCard` via `tests/prompts/test_prompt_examples.py`.
+  - Decision log entry added in `docs/refactor3_status.md` (Date, Step “Post-Review Cleanup”, Decision summary, Impact).
+
+### 17.2 Collapse Per-Feature Meta (`SummaryMeta`, `PersonaCoreMeta`)
+
+- **Problem:** Despite Stage 8’s goal, `SummaryMeta` (`src/aijournal/domain/facts.py:17`) and `PersonaCoreMeta` (`src/aijournal/domain/persona.py:13`) persist as separate payload structs used by multiple commands/tests. Artifact envelopes therefore carry duplicate metadata (payload meta + `ArtifactMeta`).
+- **Scope of change:**
+  - Remove both classes from their modules and any re-exports.
+  - Update command helpers that currently translate `SummaryMeta` / `PersonaCoreMeta` into `ArtifactMeta`. Instead, have pipelines construct `ArtifactMeta` directly and, when extra context is still useful (e.g., persona token budgets, prompt hashes), stash it under `ArtifactMeta.notes` (e.g., `notes={"persona": {...}}`).
+  - Touchpoints include `commands/summarize.py`, `commands/facts.py`, `commands/profile.py`, `commands/characterize.py`, `commands/persona.py`, plus their tests (`tests/services/test_capture.py`, `tests/test_cli_pack.py`, `tests/test_models_io.py`).
+  - Regenerate golden artifacts/examples (`derived/` fixtures, `docs/examples/*.yaml`) so they no longer embed payload meta.
+- **Acceptance criteria:**
+  - `rg "SummaryMeta"` and `rg "PersonaCoreMeta"` only match changelog/history after removal.
+  - Artifact YAML for summaries, microfacts, persona, and profile updates show meta fields exclusively inside the envelope’s `meta` block (no nested `meta` under `data`).
+  - Schema snapshots updated: drop `aijournal.domain.facts.SummaryMeta.json` and `aijournal.domain.persona.PersonaCoreMeta.json`.
+  - Full test suite green; document the change in `docs/refactor3_status.md` and adjust `ARCHITECTURE.md` to state that `ArtifactMeta` is the sole meta carrier.
+
+### 17.3 Normalize Cross-Surface Types (Replace IO Dataclasses with Strict Models)
+
+- **Problem:** Several dataclasses that pre-date Refactor3 still travel across CLI/service boundaries:
+  - Consolidator events: `ClaimSignature`, `ClaimConflict`, `ClaimMergeOutcome` in `src/aijournal/services/consolidator.py`, bubbled up through CLI rendering and profile commands.
+  - Feedback adjustments: same dataclasses exposed when applying profile updates.
+  - Retrieval results: `RetrievalFilters`, `RetrievalMeta`, `RetrievalResult` in `src/aijournal/services/retriever.py` are returned to consumers.
+- **Plan:**
+  1. Introduce strict equivalents in the domain layer (`aijournal/domain/events.py` or a new `aijournal/domain/consolidator.py`) mirroring the dataclass fields.
+  2. Refactor consolidator methods to produce these `StrictModel` instances, ensuring `ClaimMergeOutcome.action` uses the canonical enum (`PreviewAction`). Update CLI code (`src/aijournal/cli.py:105` onwards) to consume the new models.
+  3. Replace `RetrievalMeta/Result` with strict models (e.g., `domain/index.py` additions or a new `aijournal/domain/retrieval.py`). Confirm FastAPI/chat telemetry serializes the structured payload without manual dict conversion.
+  4. Keep lightweight dataclasses for purely internal helper state if needed for performance, but enforce a clear rule in `refactor3.md`: nothing leaving the service layer uses dataclasses.
+- **Acceptance criteria:**
+  - `reports/data_model_out.txt` lists the new strict models instead of the dataclasses; remove dataclass entries or mark them module-private.
+  - CLI/profile/chat code no longer imports dataclasses from `services/consolidator` or `services/retriever`.
+  - New/updated schemas blessed; tests covering consolidation (`tests/test_cli_characterize.py`, `tests/test_cli_profile_apply.py`) and retrieval (`tests/services/test_retriever.py`, `tests/test_cli_chat.py`) pass.
+  - Decision log updated with rationale.
+
+### 17.4 Introduce Enumerations for Claim & Event Types
+
+- **Problem:** Claim types/status/methods and preview actions are still declared as `Literal[...]` unions (`src/aijournal/domain/claims.py:15`, `src/aijournal/domain/events.py`). Literals work but provide poor error messages and anonymous enums in JSON schema.
+- **Scope of change:**
+  - Add `aijournal/domain/enums.py` defining `ClaimType`, `ClaimStatus`, `ClaimMethod`, and `PreviewAction` as `StrEnum` subclasses.
+  - Update all domain models to use these enums (`ClaimAtom`, `ClaimAtomInput`, `ClaimProposal`, consolidator events, CLI choice validation).
+  - Ensure serialization still produces the exact string values so prompts/examples remain compatible.
+  - Regenerate schema snapshots (expect enum entries to appear with `enum` + `description`).
+- **Acceptance criteria:**
+  - `git grep "Literal['preference'"` returns zero matches outside of historical docs.
+  - Updated prompts/examples validated via `tests/prompts/test_prompt_examples.py` prove the LLM response schema remains aligned.
+  - Any FastAPI OpenAPI generation (if applicable) now exposes named enums.
+  - Document the enum adoption in `docs/refactor3_status.md` and cross-reference in `ARCHITECTURE.md` (claims section).
+
+### 17.5 Execution Instructions (All Work Packages)
+
+- Always run `uv run pytest -q` and `uv run python scripts/check_schemas.py --bless` (after verifying schema diffs) before committing. The reviewer does not value backwards compatibility, so delete legacy files rather than deprecating unless a temporary alias is absolutely required.
+- After each package, append a Decision Log row noting the date, package ID (17.1–17.4), summary, and impact.
+- When all packages complete, re-run the fake-mode rehearsal (`AIJOURNAL_FAKE_OLLAMA=1`) covering capture → summarize → facts → profile suggest/apply → characterize → persona → pack → chat to guarantee no runtime path still references removed models.
+
+> **Reminder:** These work packages are prerequisites for claiming Refactor3 is fully realized. Do not close the refactor until each bullet in this section is resolved, tested, documented, and committed.
