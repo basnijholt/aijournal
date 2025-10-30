@@ -5,6 +5,7 @@
 - Chat service fully migrated to strict domain models: `ChatService` now returns `ChatTurn`/`ChatTelemetry` `StrictModel`s end-to-end and CLI/API/tests no longer depend on legacy dataclasses.
 - Advice cards plus chat summaries/learnings now persist as `Artifact[T]` envelopes with dedicated domain schemas and updated fixtures/tests.
 - Added `aijournal ops audit provenance [--fix]` to report or redact any persisted `span.text` provenance and wired it into docs/workflow guidance.
+- Removed the legacy pending-batch YAML readers; CLI/modules now require strict `Artifact[ProfileUpdateBatch]` envelopes and surface guidance when stale files are discovered.
 - CLI commands `summarize`, `facts`, `profile suggest`, and `characterize` now run through the shared Pydantic AI agent pipeline (`run_ollama_agent` + structured response models) and surface errors when schemas fail validation instead of emitting heuristic fallbacks.
 - Centralized float/int coercion in `aijournal.utils.coercion` and extended the chat service to respect `config.chat` overrides (model, temperature, seed, timeout).
 - Expanded README/plan docs and tests to describe and exercise the unified Pydantic AI configuration helper.

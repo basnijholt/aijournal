@@ -661,7 +661,7 @@ class CaptureInput(CaptureRequest):
 
 ### Stage 10 – Validation & Release Prep
 
-**10.1 End-to-End Rehearsal**
+**10.1 End-to-End Rehearsal — DONE**
 - Fake mode acceptable:
   - `export AIJOURNAL_FAKE_OLLAMA=1`
   - `uv run aijournal init --path /tmp/aijournal_refactor3`
@@ -670,7 +670,7 @@ class CaptureInput(CaptureRequest):
 - Tests: `uv run pytest`; optionally `pre-commit run --all-files`.
 - Commit: `refactor3: verify end-to-end strict workflow`.
 
-**10.2 Completion Log & Changelog**
+**10.2 Completion Log & Changelog — DONE**
 - Update `docs/refactor3_status.md` summarizing executed steps, test commands, decision log entries.
 - Update `CHANGELOG.md` with the strict schema cut-over, migration notes, codemod instructions, provenance audit command, and the removal of schema-mode toggles.
 - Tests: `uv run pytest`.
