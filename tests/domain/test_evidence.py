@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from aijournal.domain import SourceRef, Span, redact_source_text
+from aijournal.domain.evidence import SourceRef, Span, redact_source_text
 
 
 def test_span_allows_text_field() -> None:
