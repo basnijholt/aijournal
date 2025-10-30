@@ -27,7 +27,7 @@ class AdviceRecommendation(StrictModel):
 class AdviceCard(StrictModel):
     """Structured advice payload produced by LLM pipelines."""
 
-    id: str
+    id: str | None = None
     query: str
     assumptions: list[str] = Field(default_factory=list)
     recommendations: list[AdviceRecommendation] = Field(default_factory=list)
