@@ -77,7 +77,6 @@ from aijournal.commands.summarize import (
     _structured_call_with_retry as _commands_structured_call_with_retry,
 )
 from aijournal.commands.system import run_status_summary, run_system_doctor
-from aijournal.domain.changes import FacetChange
 from aijournal.domain.events import (
     ClaimConflictPayload,
     ClaimPreviewEvent,
@@ -92,6 +91,7 @@ from aijournal.models import (
     ClaimProposal,
     ClaimsFile,
     ClaimSource,
+    FacetProposal,
     FeedbackBatch,
     NormalizedEntry,
     ProfileUpdateBatch,
@@ -1046,7 +1046,7 @@ def review_updates(
     claim_proposals: list[ClaimProposal] = [
         proposal.model_copy(deep=True) for proposal in batch.proposals.claims
     ]
-    facet_proposals: list[FacetChange] = [
+    facet_proposals: list[FacetProposal] = [
         proposal.model_copy(deep=True) for proposal in batch.proposals.facets
     ]
 

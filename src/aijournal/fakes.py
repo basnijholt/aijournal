@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable, Sequence
 from typing import Any
 
-from aijournal.domain.changes import ClaimAtomInput, FacetChange
+from aijournal.domain.changes import ClaimAtomInput
 from aijournal.domain.evidence import SourceRef
 from aijournal.models import (
     AdviceCard,
@@ -14,6 +14,7 @@ from aijournal.models import (
     ClaimAtom,
     ClaimProposal,
     DailySummary,
+    FacetProposal,
     FactEvidence,
     MicroFact,
     NormalizedEntry,
@@ -221,7 +222,7 @@ def fake_characterize(
         status="tentative",
     )
 
-    facet = FacetChange(
+    facet = FacetProposal(
         path="values_motivations.recurring_theme",
         value={
             "label": theme,
