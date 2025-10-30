@@ -1,5 +1,65 @@
 {
   "$defs": {
+    "ChatLearningEntry": {
+      "additionalProperties": false,
+      "description": "Entry capturing a single learning from a chat turn.",
+      "properties": {
+        "citations": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Citations",
+          "type": "array"
+        },
+        "clarifying_question": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Clarifying Question"
+        },
+        "feedback": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Feedback"
+        },
+        "intent": {
+          "title": "Intent",
+          "type": "string"
+        },
+        "question": {
+          "title": "Question",
+          "type": "string"
+        },
+        "telemetry": {
+          "$ref": "#/$defs/ChatTelemetry"
+        },
+        "turn_index": {
+          "title": "Turn Index",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "turn_index",
+        "question",
+        "intent",
+        "telemetry"
+      ],
+      "title": "ChatLearningEntry",
+      "type": "object"
+    },
     "ChatTelemetry": {
       "additionalProperties": false,
       "description": "Telemetry captured during a chat turn.",
@@ -29,100 +89,25 @@
       ],
       "title": "ChatTelemetry",
       "type": "object"
-    },
-    "ChatTranscriptTurn": {
-      "additionalProperties": false,
-      "description": "Captured question/answer pair within a chat transcript.",
-      "properties": {
-        "answer": {
-          "title": "Answer",
-          "type": "string"
-        },
-        "citations": {
-          "items": {
-            "type": "string"
-          },
-          "title": "Citations",
-          "type": "array"
-        },
-        "clarifying_question": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Clarifying Question"
-        },
-        "fake_mode": {
-          "title": "Fake Mode",
-          "type": "boolean"
-        },
-        "feedback": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Feedback"
-        },
-        "intent": {
-          "title": "Intent",
-          "type": "string"
-        },
-        "question": {
-          "title": "Question",
-          "type": "string"
-        },
-        "telemetry": {
-          "$ref": "#/$defs/ChatTelemetry"
-        },
-        "timestamp": {
-          "title": "Timestamp",
-          "type": "string"
-        },
-        "turn_index": {
-          "title": "Turn Index",
-          "type": "integer"
-        }
-      },
-      "required": [
-        "turn_index",
-        "timestamp",
-        "question",
-        "answer",
-        "intent",
-        "telemetry",
-        "fake_mode"
-      ],
-      "title": "ChatTranscriptTurn",
-      "type": "object"
     }
   },
   "additionalProperties": false,
-  "description": "Artifact describing a full chat session transcript.",
+  "description": "Rollup of learnings captured across a chat session.",
   "properties": {
     "created_at": {
       "title": "Created At",
       "type": "string"
     },
+    "learnings": {
+      "items": {
+        "$ref": "#/$defs/ChatLearningEntry"
+      },
+      "title": "Learnings",
+      "type": "array"
+    },
     "session_id": {
       "title": "Session Id",
       "type": "string"
-    },
-    "turns": {
-      "items": {
-        "$ref": "#/$defs/ChatTranscriptTurn"
-      },
-      "title": "Turns",
-      "type": "array"
     },
     "updated_at": {
       "title": "Updated At",
@@ -134,6 +119,6 @@
     "created_at",
     "updated_at"
   ],
-  "title": "ChatTranscript",
+  "title": "ChatSessionLearnings",
   "type": "object"
 }

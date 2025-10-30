@@ -19,12 +19,14 @@ from aijournal.commands.profile import (
     _profile_to_dict,
 )
 from aijournal.commands.summarize import (
+    _artifact_meta_from_summary,
     _build_meta,
     _invoke_structured_llm,
     _json_block,
     _load_normalized_entries,
 )
-from aijournal.io.yaml_io import write_yaml_model
+from aijournal.common.meta import Artifact, ArtifactKind
+from aijournal.io.artifacts import save_artifact
 from aijournal.models import AdviceCard, AdviceLLMResponse, ClaimAtom
 from aijournal.pipelines import advise as advise_pipeline
 from aijournal.services import build_ollama_config_from_mapping
@@ -69,7 +71,15 @@ def run_advise(question: str) -> Path:
 
     day = time_utils.created_date(time_utils.format_timestamp(time_utils.now()))
     advice_path = _derived_advice_path(root, day, question)
-    write_yaml_model(advice_path, advice_card)
+    artifact_meta = _artifact_meta_from_summary(advice_card.meta)
+    save_artifact(
+        advice_path,
+        Artifact[AdviceCard](
+            kind=ArtifactKind.ADVICE_CARD,
+            meta=artifact_meta,
+            data=advice_card,
+        ),
+    )
     return advice_path
 
 

@@ -10,6 +10,9 @@
 | 2025-10-29 | Stage 8.1a | Wrapped daily summaries and micro-facts in `Artifact[T]` envelopes; updated CLI/tests/docs. | Derived context now carries deterministic envelopes; doc examples refreshed. |
 | 2025-10-29 | Stage 8.1b | Persona core, profile suggestions, pending update batches, and feedback files now emit artifact envelopes. | All persona/profile derived artifacts share the strict structure; CLI and capture tests consume the envelopes. |
 | 2025-10-29 | Stage 8.1c | Packs and chat transcripts now persist as `Artifact[T]` envelopes; CLI/tests/docs refreshed. | Pack exports gain `kind/meta` headers and chat transcripts write deterministic JSON artifacts in `derived/chat_sessions/`. |
+| 2025-10-30 | Stage 3 | Replaced the remaining chat dataclasses with strict domain models and propagated telemetry updates through CLI/API/tests. | ChatService returns `ChatTurn`/`ChatTelemetry` (StrictModel) objects end-to-end, eliminating the legacy wrappers. |
+| 2025-10-30 | Stage 8.1d | Wrapped advice cards plus chat summaries/learnings in artifact envelopes with new domain schemas; refreshed fixtures/tests. | Advice outputs and chat session rollups now share deterministic `Artifact[T]` envelopes and typed payloads. |
+| 2025-10-30 | Stage 8.3 | Added `aijournal ops audit provenance [--fix]` with recursive span scanning and redaction helpers. | CLI audit reports/fixes persisted `span.text` remnants across claims, persona, and profile update artifacts. |
 
 ## Stage 8 Execution Plan (Artifact Adoption)
 

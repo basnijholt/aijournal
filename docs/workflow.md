@@ -124,6 +124,7 @@ With the profile, index, and packs up to date you can use the interactive comman
 - `uv run aijournal ops profile interview --date YYYY-MM-DD` — generate follow-up questions for that day’s entries.
 - `uv run aijournal export pack --level L4 --date YYYY-MM-DD --history-days N --format json` — build a long-horizon pack for external assistants.
 - `uv run aijournal ops system ollama health` — verify available models on the Ollama host.
+- `uv run aijournal ops audit provenance [--fix]` — report (or redact with `--fix`) any persisted provenance spans that still carry raw text.
 
 ---
 

@@ -32,12 +32,8 @@
     }
   },
   "additionalProperties": false,
-  "description": "Captured question/answer pair within a chat transcript.",
+  "description": "Entry capturing a single learning from a chat turn.",
   "properties": {
-    "answer": {
-      "title": "Answer",
-      "type": "string"
-    },
     "citations": {
       "items": {
         "type": "string"
@@ -56,10 +52,6 @@
       ],
       "default": null,
       "title": "Clarifying Question"
-    },
-    "fake_mode": {
-      "title": "Fake Mode",
-      "type": "boolean"
     },
     "feedback": {
       "anyOf": [
@@ -84,10 +76,6 @@
     "telemetry": {
       "$ref": "#/$defs/ChatTelemetry"
     },
-    "timestamp": {
-      "title": "Timestamp",
-      "type": "string"
-    },
     "turn_index": {
       "title": "Turn Index",
       "type": "integer"
@@ -95,13 +83,10 @@
   },
   "required": [
     "turn_index",
-    "timestamp",
     "question",
-    "answer",
     "intent",
-    "telemetry",
-    "fake_mode"
+    "telemetry"
   ],
-  "title": "ChatTranscriptTurn",
+  "title": "ChatLearningEntry",
   "type": "object"
 }

@@ -152,10 +152,21 @@ def test_advice_card_roundtrip(tmp_path: Path) -> None:
         style={"tone": "direct"},
         meta=meta,
     )
-    write_yaml_model(path, card)
+    artifact = Artifact[AdviceCard](
+        kind=ArtifactKind.ADVICE_CARD,
+        meta=ArtifactMeta(
+            created_at=meta.created_at,
+            model=meta.llm_model,
+            prompt_path=meta.prompt_path,
+            prompt_hash=meta.prompt_hash,
+        ),
+        data=card,
+    )
+    save_artifact(path, artifact)
 
-    loaded = load_yaml_model(path, AdviceCard)
-    assert loaded == card
+    loaded = load_artifact(path, AdviceCard)
+    assert loaded.kind is ArtifactKind.ADVICE_CARD
+    assert loaded.data == card
     _assert_schema(path, "advice")
 
 
