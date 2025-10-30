@@ -152,7 +152,7 @@ def _advice_payload(
                 config=config,
                 max_attempts=2,
                 retry_message=(
-                    "Return JSON with keys `id`, `query`, `assumptions`, `recommendations`, "
+                    "Return JSON with keys `query`, `assumptions`, `recommendations`, "
                     "`tradeoffs`, `next_actions`, `confidence`, `alignment`, `style`."
                 ),
             ),
