@@ -87,7 +87,7 @@ def test_facts_generates_microfacts(
     events = preview.get("claim_events") or []
     assert events, "Expected preview events for micro-facts consolidation"
     event = events[0]
-    assert event.get("action") == "created"
+    assert event.get("action") == "upsert"
     assert f"fact-{ENTRY_ID}" in (event.get("claim_id") or "")
     assert "Preview (claim consolidation)" in result.stdout
     assert str(facts_path) in result.stdout

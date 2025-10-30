@@ -1315,15 +1315,20 @@ def _format_scope_label(scope: tuple[str | None, tuple[str, ...], tuple[str, ...
 
 
 def _emit_claim_merge_events(events: list[ClaimMergeOutcome], heading: str) -> None:
-    relevant = [event for event in events if event.action != "noop"]
+    relevant = [event for event in events if event.changed]
     if not relevant:
         return
     typer.echo(heading)
     for event in relevant:
-        if event.action == "created":
+        if event.action == "upsert":
             typer.echo(f"  • new claim {event.claim_id}")
-        elif event.action == "merged":
-            typer.echo(f"  • merged {event.claim_id} (Δstrength {event.delta_strength:+0.2f})")
+        elif event.action == "update":
+            note = f" (Δstrength {event.delta_strength:+0.2f})" if event.delta_strength else ""
+            typer.echo(f"  • updated {event.claim_id}{note}")
+        elif event.action == "strength_delta":
+            typer.echo(
+                f"  • strength adjusted {event.claim_id} (Δ {event.delta_strength:+0.2f})",
+            )
         elif event.action == "conflict" and event.conflict:
             conflict = event.conflict
             scope_label = _format_scope_label(conflict.signature.scope)
@@ -1334,19 +1339,14 @@ def _emit_claim_merge_events(events: list[ClaimMergeOutcome], heading: str) -> N
                 ),
                 fg=typer.colors.YELLOW,
             )
-        elif event.action == "scope_split":
-            existing_scope = (
-                _format_scope_label(event.conflict.signature.scope) if event.conflict else "global"
-            )
-            related_scope = (
-                _format_scope_label(event.related_signature.scope)
-                if event.related_signature
-                else "global"
-            )
-            target = event.related_claim_id or "new-claim"
-            typer.echo(
-                f"  • scope split {event.claim_id} [{existing_scope}] -> {target} [{related_scope}]"
-            )
+            if event.related_claim_id and event.related_signature:
+                related_scope = _format_scope_label(event.related_signature.scope)
+                action_note = f" ({event.related_action})" if event.related_action else ""
+                typer.echo(
+                    f"    ↳ spawned {event.related_claim_id} [{related_scope}]{action_note}",
+                )
+        elif event.action == "delete":
+            typer.echo(f"  • deleted {event.claim_id}")
 
 
 def _preview_claim_consolidation(
@@ -1376,7 +1376,7 @@ def _preview_claim_consolidation(
         else:
             continue
         outcome = consolidator.upsert(working_claims, incoming)
-        if outcome.action != "noop":
+        if outcome.changed:
             events.append(outcome)
     _emit_claim_merge_events(events, "Preview (claim consolidation):")
 
@@ -1420,7 +1420,7 @@ def _build_claim_preview(
     for proposal in claim_proposals:
         incoming = _claim_proposal_to_atom(proposal, timestamp=timestamp)
         outcome = consolidator.upsert(working_claims, incoming)
-        if outcome.action == "noop":
+        if not outcome.changed:
             continue
         signature_payload = (
             _signature_payload_from_signature(outcome.signature)
@@ -1440,13 +1440,12 @@ def _build_claim_preview(
                 f"Clarify claim {outcome.claim_id} [{scope_label}]: "
                 f"existing='{outcome.conflict.existing_value}' vs incoming='{outcome.conflict.incoming_value}'."
             )
-        action_literal = cast(
-            Literal["created", "merged", "conflict", "scope_split", "noop"],
-            outcome.action,
-        )
         events.append(
             ClaimPreviewEvent(
-                action=action_literal,
+                action=cast(
+                    Literal["upsert", "update", "delete", "conflict", "strength_delta"],
+                    outcome.action,
+                ),
                 claim_id=outcome.claim_id,
                 delta_strength=float(outcome.delta_strength or 0.0),
                 statement=incoming.statement,
@@ -1478,35 +1477,26 @@ def _scope_tuple_from_payload(
 
 
 def _print_claim_preview(preview: ProfileUpdatePreview) -> None:
-    events = [event for event in preview.claim_events if event.action != "noop"]
+    events = list(preview.claim_events)
     if events:
         typer.echo("Preview (claim consolidation):")
         for event in events:
             scope_label = _format_scope_label(_scope_tuple_from_payload(event.signature))
-            if event.action == "created":
+            if event.action == "upsert":
                 typer.echo(f"  • new claim {event.claim_id} [{scope_label}]")
-            elif event.action == "merged":
+            elif event.action == "update":
+                note = f" (Δstrength {event.delta_strength:+0.2f})" if event.delta_strength else ""
+                typer.echo(f"  • updated {event.claim_id} [{scope_label}]{note}")
+            elif event.action == "strength_delta":
                 typer.echo(
                     (
-                        f"  • merged {event.claim_id} [{scope_label}] "
-                        f"(Δstrength {event.delta_strength:+0.2f})"
-                    ),
-                )
-            elif event.action == "scope_split":
-                new_scope_label = _format_scope_label(
-                    _scope_tuple_from_payload(event.related_signature),
-                )
-                target = event.related_claim_id or "new-claim"
-                action_note = f" ({event.related_action})" if event.related_action else ""
-                typer.echo(
-                    (
-                        f"  • scope split {event.claim_id} [{scope_label}] -> "
-                        f"{target} [{new_scope_label}]{action_note}"
+                        f"  • strength adjusted {event.claim_id} [{scope_label}] "
+                        f"(Δ {event.delta_strength:+0.2f})"
                     ),
                 )
             elif event.action == "conflict" and event.conflict:
                 conflict = event.conflict
-                scope_label = _format_scope_label(
+                conflict_scope = _format_scope_label(
                     (
                         conflict.signature.domain,
                         tuple(conflict.signature.context),
@@ -1515,11 +1505,24 @@ def _print_claim_preview(preview: ProfileUpdatePreview) -> None:
                 )
                 typer.secho(
                     (
-                        f"  • conflict {event.claim_id} [{scope_label}]: "
+                        f"  • conflict {event.claim_id} [{conflict_scope}]: "
                         f"'{conflict.existing_value}' vs '{conflict.incoming_value}'"
                     ),
                     fg=typer.colors.YELLOW,
                 )
+                if event.related_claim_id and event.related_signature:
+                    new_scope_label = _format_scope_label(
+                        _scope_tuple_from_payload(event.related_signature),
+                    )
+                    action_note = f" ({event.related_action})" if event.related_action else ""
+                    typer.echo(
+                        (
+                            f"    ↳ spawned {event.related_claim_id} [{new_scope_label}]"
+                            f"{action_note}"
+                        ),
+                    )
+            elif event.action == "delete":
+                typer.echo(f"  • deleted {event.claim_id} [{scope_label}]")
             else:
                 typer.echo(f"  • {event.action} {event.claim_id} [{scope_label}]")
 
