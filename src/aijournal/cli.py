@@ -17,7 +17,6 @@ from typing import Any, Literal, cast
 
 import httpx
 import typer
-import yaml
 from pydantic import ValidationError
 from typer.models import CommandInfo
 
@@ -81,6 +80,7 @@ from aijournal.domain.changes import ClaimProposal, FacetChange
 from aijournal.domain.claims import ClaimAtom, ClaimSource, Scope
 from aijournal.domain.events import (
     ClaimConflictPayload,
+    ClaimEventAction,
     ClaimPreviewEvent,
     ClaimSignaturePayload,
     FeedbackBatch,
@@ -89,7 +89,7 @@ from aijournal.domain.evidence import redact_source_text
 from aijournal.domain.journal import NormalizedEntry
 from aijournal.domain.persona import InterviewQuestion, InterviewSet
 from aijournal.io.artifacts import load_artifact_data
-from aijournal.io.yaml_io import load_yaml_model, write_yaml_model
+from aijournal.io.yaml_io import dump_yaml, load_yaml_model, write_yaml_model
 from aijournal.models.authoritative import ClaimsFile, SelfProfile
 from aijournal.models.derived import ProfileUpdateBatch, ProfileUpdatePreview
 from aijournal.pipelines import normalization
@@ -1123,7 +1123,7 @@ def ollama_health() -> None:
             "default": models[0]["name"],
             "models": models,
         }
-        typer.echo(yaml.safe_dump(payload, sort_keys=False).rstrip())
+        typer.echo(dump_yaml(payload, sort_keys=False).rstrip())
         return
 
     host = os.getenv("AIJOURNAL_OLLAMA_HOST")
@@ -1157,7 +1157,7 @@ def ollama_health() -> None:
         "default": build_ollama_config_from_mapping(config).model,
         "models": models_payload,
     }
-    typer.echo(yaml.safe_dump(payload, sort_keys=False).rstrip())
+    typer.echo(dump_yaml(payload, sort_keys=False).rstrip())
 
 
 @persona_app.command("build")
@@ -1442,10 +1442,7 @@ def _build_claim_preview(
             )
         events.append(
             ClaimPreviewEvent(
-                action=cast(
-                    Literal["upsert", "update", "delete", "conflict", "strength_delta"],
-                    outcome.action,
-                ),
+                action=ClaimEventAction(outcome.action),
                 claim_id=outcome.claim_id,
                 delta_strength=float(outcome.delta_strength or 0.0),
                 statement=incoming.statement,

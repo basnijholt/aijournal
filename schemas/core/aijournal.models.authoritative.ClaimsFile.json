@@ -9,13 +9,7 @@
           "type": "string"
         },
         "method": {
-          "enum": [
-            "self_report",
-            "inferred",
-            "behavioral"
-          ],
-          "title": "Method",
-          "type": "string"
+          "$ref": "#/$defs/ClaimMethod"
         },
         "predicate": {
           "title": "Predicate",
@@ -37,14 +31,8 @@
           "type": "string"
         },
         "status": {
-          "default": "tentative",
-          "enum": [
-            "accepted",
-            "tentative",
-            "rejected"
-          ],
-          "title": "Status",
-          "type": "string"
+          "$ref": "#/$defs/ClaimStatus",
+          "default": "tentative"
         },
         "strength": {
           "default": 0.5,
@@ -58,18 +46,7 @@
           "type": "string"
         },
         "type": {
-          "enum": [
-            "preference",
-            "value",
-            "goal",
-            "boundary",
-            "trait",
-            "habit",
-            "aversion",
-            "skill"
-          ],
-          "title": "Type",
-          "type": "string"
+          "$ref": "#/$defs/ClaimType"
         },
         "user_verified": {
           "default": false,
@@ -93,6 +70,38 @@
       ],
       "title": "ClaimAtom",
       "type": "object"
+    },
+    "ClaimMethod": {
+      "enum": [
+        "self_report",
+        "inferred",
+        "behavioral"
+      ],
+      "title": "ClaimMethod",
+      "type": "string"
+    },
+    "ClaimStatus": {
+      "enum": [
+        "accepted",
+        "tentative",
+        "rejected"
+      ],
+      "title": "ClaimStatus",
+      "type": "string"
+    },
+    "ClaimType": {
+      "enum": [
+        "preference",
+        "value",
+        "goal",
+        "boundary",
+        "trait",
+        "habit",
+        "aversion",
+        "skill"
+      ],
+      "title": "ClaimType",
+      "type": "string"
     },
     "Provenance": {
       "additionalProperties": false,

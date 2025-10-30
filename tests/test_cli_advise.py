@@ -5,13 +5,13 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import pytest
-import yaml
 from typer.testing import CliRunner
 
 from aijournal.cli import app
 from aijournal.common.meta import Artifact, ArtifactKind, ArtifactMeta
 from aijournal.domain.changes import ProfileUpdateProposals
 from aijournal.io.artifacts import load_artifact, save_artifact
+from aijournal.io.yaml_io import dump_yaml
 from aijournal.models.derived import (
     AdviceCard,
     ProfileUpdateBatch,
@@ -49,7 +49,7 @@ boundaries_ethics:
   red_lines:
     - "No health advice"
 """
-    claims = yaml.safe_dump(
+    claims = dump_yaml(
         {
             "claims": [
                 make_claim_atom(

@@ -9,7 +9,6 @@ class StrictModel(BaseModel):
     """Pydantic model with strict settings and forbidden extras."""
 
     model_config = ConfigDict(
-        strict=True,
         extra="forbid",
         validate_assignment=True,
         arbitrary_types_allowed=False,

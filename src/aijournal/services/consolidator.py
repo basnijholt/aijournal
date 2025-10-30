@@ -10,6 +10,7 @@ from pydantic import ConfigDict, Field
 
 from aijournal.common.base import StrictModel
 from aijournal.domain.claims import ClaimAtom, ClaimSource, ClaimSourceSpan, Provenance, Scope
+from aijournal.domain.enums import ClaimMethod, ClaimStatus
 from aijournal.domain.evidence import redact_source_text
 
 
@@ -252,17 +253,21 @@ class ClaimConsolidator:
         return changed
 
     def _maybe_promote_status(self, existing: ClaimAtom, incoming: ClaimAtom) -> bool:
-        if existing.status == "accepted":
+        if existing.status == ClaimStatus.ACCEPTED:
             return False
-        if incoming.status == "accepted":
-            existing.status = "accepted"
+        if incoming.status == ClaimStatus.ACCEPTED:
+            existing.status = ClaimStatus.ACCEPTED
             return True
         return False
 
     def _maybe_upgrade_method(self, existing: ClaimAtom, incoming: ClaimAtom) -> bool:
-        priorities = {"behavioral": 3, "self_report": 2, "inferred": 1}
-        existing_method = priorities.get(existing.method, 0)
-        incoming_method = priorities.get(incoming.method, 0)
+        priorities = {
+            ClaimMethod.BEHAVIORAL.value: 3,
+            ClaimMethod.SELF_REPORT.value: 2,
+            ClaimMethod.INFERRED.value: 1,
+        }
+        existing_method = priorities.get(str(existing.method), 0)
+        incoming_method = priorities.get(str(incoming.method), 0)
         if incoming_method > existing_method:
             existing.method = incoming.method
             return True
@@ -294,8 +299,8 @@ class ClaimConsolidator:
         if new_strength != prev_strength:
             existing.strength = new_strength
             changed = True
-        if existing.status != "tentative":
-            existing.status = "tentative"
+        if existing.status != ClaimStatus.TENTATIVE:
+            existing.status = ClaimStatus.TENTATIVE
             changed = True
 
         provenance = existing.provenance

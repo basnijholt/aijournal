@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-import yaml
+from aijournal.io.yaml_io import dump_yaml
 
 
 def make_claim_atom(
@@ -85,14 +85,14 @@ def write_normalized_entry(
         "source_hash": source_hash or f"hash-{entry_id}",
         "source_type": source_type,
     }
-    path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
+    path.write_text(dump_yaml(payload, sort_keys=False), encoding="utf-8")
     return path
 
 
 def write_manifest(base: Path, entries: list[dict[str, Any]]) -> Path:
     path = base / "data" / "manifest" / "ingested.yaml"
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(yaml.safe_dump(entries, sort_keys=False), encoding="utf-8")
+    path.write_text(dump_yaml(entries, sort_keys=False), encoding="utf-8")
     return path
 
 

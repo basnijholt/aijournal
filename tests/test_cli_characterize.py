@@ -9,6 +9,7 @@ from typer.testing import CliRunner
 
 from aijournal.cli import app
 from aijournal.domain.changes import ProfileUpdateProposals
+from aijournal.io.yaml_io import dump_yaml
 
 DATE = "2025-02-03"
 ENTRY_ID = "2025-02-03-focus-notes"
@@ -17,7 +18,7 @@ SOURCE_HASH = "abc123hash"
 
 def _write_yaml(path: Path, payload: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
+    path.write_text(dump_yaml(payload, sort_keys=False), encoding="utf-8")
 
 
 def _seed_normalized(tmp_path: Path) -> None:

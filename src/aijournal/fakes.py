@@ -12,6 +12,7 @@ from aijournal.domain.changes import (
     ProfileUpdateProposals,
 )
 from aijournal.domain.claims import ClaimAtom
+from aijournal.domain.enums import ClaimStatus, FacetOperation
 from aijournal.domain.evidence import SourceRef
 from aijournal.domain.facts import DailySummary, FactEvidence, MicroFact
 from aijournal.domain.journal import NormalizedEntry
@@ -198,7 +199,7 @@ def fake_profile_proposals(
         facet_changes.append(
             FacetChange(
                 path="values_motivations.schwartz_top5",
-                operation="set",
+                operation=FacetOperation.SET,
                 value=profile.get("values_motivations", {}).get("schwartz_top5", []),
                 evidence=[SourceRef(entry_id="profile.snapshot", spans=[])],
                 rationale="Retain existing Schwartz ranking in fake mode",
@@ -233,7 +234,7 @@ def fake_characterize(
         claim_id=claim_id[:64],
         statement=f"{theme} remains top-of-mind on {date}.",
         strength=0.64,
-        status="tentative",
+        status=ClaimStatus.TENTATIVE,
     )
 
     facet = FacetChange(
@@ -243,7 +244,7 @@ def fake_characterize(
             "tag_hint": tag,
             "last_seen": date,
         },
-        operation="set",
+        operation=FacetOperation.SET,
         method="inferred",
         confidence=0.55,
         review_after_days=90,

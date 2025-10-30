@@ -179,15 +179,15 @@ def _microfact_claim_proposals(
             continue
 
         claim_input = ClaimAtomInput(
-            type=claim_model.type,  # type: ignore[arg-type]
+            type=claim_model.type,
             subject=claim_model.subject,
             predicate=claim_model.predicate,
             value=claim_model.value,
             statement=claim_model.statement,
             scope=claim_model.scope,
             strength=claim_model.strength,
-            status=claim_model.status,  # type: ignore[arg-type]
-            method=claim_model.method,  # type: ignore[arg-type]
+            status=claim_model.status,
+            method=claim_model.method,
             user_verified=claim_model.user_verified,
             review_after_days=claim_model.review_after_days,
         )
@@ -230,15 +230,15 @@ def normalize_claim_proposals(
         )
 
         claim_input = ClaimAtomInput(
-            type=claim_atom.type,  # type: ignore[arg-type]
+            type=claim_atom.type,
             subject=claim_atom.subject,
             predicate=claim_atom.predicate,
             value=claim_atom.value,
             statement=claim_atom.statement,
             scope=claim_atom.scope,
             strength=claim_atom.strength,
-            status=claim_atom.status,  # type: ignore[arg-type]
-            method=claim_atom.method,  # type: ignore[arg-type]
+            status=claim_atom.status,
+            method=claim_atom.method,
             user_verified=claim_atom.user_verified,
             review_after_days=claim_atom.review_after_days,
         )

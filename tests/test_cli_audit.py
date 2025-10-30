@@ -14,6 +14,7 @@ from aijournal.domain.changes import ClaimAtomInput, ClaimProposal, ProfileUpdat
 from aijournal.domain.claims import Scope
 from aijournal.domain.evidence import SourceRef, Span
 from aijournal.io.artifacts import load_artifact, save_artifact
+from aijournal.io.yaml_io import dump_yaml
 from aijournal.models.derived import ProfileUpdateBatch
 from tests.helpers import make_claim_atom
 
@@ -30,7 +31,7 @@ def _write_claims_with_text(path: Path) -> None:
         },
     )
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(yaml.safe_dump({"claims": [claim]}, sort_keys=False), encoding="utf-8")
+    path.write_text(dump_yaml({"claims": [claim]}, sort_keys=False), encoding="utf-8")
 
 
 def _write_profile_update_batch(path: Path) -> None:

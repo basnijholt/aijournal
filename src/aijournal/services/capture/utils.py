@@ -22,7 +22,7 @@ from aijournal.domain.claims import ClaimAtom, ClaimSource
 from aijournal.domain.evidence import redact_source_text
 from aijournal.domain.journal import NormalizedEntry
 from aijournal.io.artifacts import load_artifact_data
-from aijournal.io.yaml_io import write_yaml_model
+from aijournal.io.yaml_io import dump_yaml, write_yaml_model
 from aijournal.models.authoritative import ClaimsFile, JournalSection, ManifestEntry, SelfProfile
 from aijournal.models.derived import ProfileUpdateBatch
 from aijournal.pipelines import normalization
@@ -62,7 +62,7 @@ def load_manifest(path: Path) -> list[ManifestEntry]:
 def write_manifest(path: Path, entries: Iterable[ManifestEntry]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = [entry.model_dump(mode="python") for entry in entries]
-    path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
+    path.write_text(dump_yaml(payload, sort_keys=False), encoding="utf-8")
 
 
 def manifest_index(entries: Iterable[ManifestEntry]) -> dict[str, ManifestEntry]:
@@ -84,7 +84,7 @@ def relative_path(path: Path, root: Path) -> str:
 
 def write_markdown_entry(path: Path, frontmatter: dict[str, object], body: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    yaml_block = yaml.safe_dump(frontmatter, sort_keys=False).strip()
+    yaml_block = dump_yaml(frontmatter, sort_keys=False).strip()
     content = f"---\n{yaml_block}\n---\n"
     if body:
         content += f"\n{body.strip()}\n"
@@ -95,7 +95,7 @@ def write_markdown_entry(path: Path, frontmatter: dict[str, object], body: str) 
 
 def write_yaml(path: Path, payload: dict[str, object]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
+    path.write_text(dump_yaml(payload, sort_keys=False), encoding="utf-8")
 
 
 def load_existing_yaml(path: Path) -> dict[str, object] | None:

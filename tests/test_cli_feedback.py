@@ -12,6 +12,7 @@ from aijournal.cli import app
 from aijournal.common.meta import Artifact, ArtifactKind, ArtifactMeta
 from aijournal.domain.events import FeedbackAdjustmentEvent, FeedbackBatch
 from aijournal.io.artifacts import save_artifact
+from aijournal.io.yaml_io import dump_yaml
 from tests.helpers import make_claim_atom
 
 
@@ -22,7 +23,7 @@ def _fake_mode(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def _write_claims(path: Path, *, claim_id: str, strength: float) -> None:
     payload = {"claims": [make_claim_atom(claim_id, "Focus work", strength=strength)]}
-    path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
+    path.write_text(dump_yaml(payload, sort_keys=False), encoding="utf-8")
 
 
 def _write_feedback_batch(

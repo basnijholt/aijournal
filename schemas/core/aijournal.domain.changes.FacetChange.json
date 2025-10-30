@@ -1,5 +1,14 @@
 {
   "$defs": {
+    "FacetOperation": {
+      "enum": [
+        "set",
+        "remove",
+        "merge"
+      ],
+      "title": "FacetOperation",
+      "type": "string"
+    },
     "SourceRef": {
       "additionalProperties": false,
       "description": "Reference to a normalized entry and the supporting spans.",
@@ -121,13 +130,7 @@
       "title": "Method"
     },
     "operation": {
-      "enum": [
-        "set",
-        "remove",
-        "merge"
-      ],
-      "title": "Operation",
-      "type": "string"
+      "$ref": "#/$defs/FacetOperation"
     },
     "path": {
       "title": "Path",

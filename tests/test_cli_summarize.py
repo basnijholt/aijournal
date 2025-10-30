@@ -12,6 +12,7 @@ from aijournal.cli import app
 from aijournal.common.meta import LLMResult
 from aijournal.domain.facts import DailySummary
 from aijournal.domain.journal import NormalizedEntry
+from aijournal.io.yaml_io import dump_yaml
 from aijournal.models.authoritative import JournalSection
 from aijournal.services.ollama import LLMResponseError, OllamaConfig
 
@@ -26,7 +27,7 @@ def _write_normalized(workspace: Path) -> Path:
     normalized = workspace / "data" / "normalized" / DATE / f"{ENTRY_ID}.yaml"
     normalized.parent.mkdir(parents=True, exist_ok=True)
     normalized.write_text(
-        yaml.safe_dump(
+        dump_yaml(
             {
                 "id": ENTRY_ID,
                 "created_at": "2025-02-03T14:05:00Z",

@@ -14,6 +14,7 @@ from typer.testing import CliRunner
 from aijournal.api.chat import ChatResponse
 from aijournal.cli import app
 from aijournal.domain.persona import PersonaCore
+from aijournal.io.yaml_io import dump_yaml
 from aijournal.services.chat import ChatService, ChatTelemetry, ChatTurn
 from aijournal.services.chat_api import build_chat_app
 from tests.helpers import make_claim_atom, write_manifest, write_normalized_entry
@@ -212,7 +213,7 @@ def test_chatd_feedback_adjusts_claims(tmp_path: Path, monkeypatch: pytest.Monke
 
     claims_path = tmp_path / "profile" / "claims.yaml"
     claims_payload = {"claims": [make_claim_atom("focus-claim", "Focus work", strength=0.5)]}
-    claims_path.write_text(yaml.safe_dump(claims_payload, sort_keys=False), encoding="utf-8")
+    claims_path.write_text(dump_yaml(claims_payload, sort_keys=False), encoding="utf-8")
 
     def _fake_run(self, question: str, *, top: int = 6, filters=None) -> ChatTurn:  # type: ignore[override]
         telemetry = ChatTelemetry(

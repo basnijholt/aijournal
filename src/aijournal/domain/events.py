@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from typing import Annotated, Literal
+from typing import Annotated
 
 from pydantic import Field
 
 from aijournal.common.base import StrictModel
 from aijournal.domain.claims import ClaimSource
+from aijournal.domain.enums import ClaimEventAction, FeedbackDirection
 
 
 class ClaimSignaturePayload(StrictModel):
@@ -35,8 +36,8 @@ class ClaimConflictPayload(StrictModel):
 class ClaimPreviewEvent(StrictModel):
     """Outcome of attempting to merge a claim proposal into existing atoms."""
 
-    kind: Literal["preview"] = "preview"
-    action: Literal["upsert", "update", "delete", "conflict", "strength_delta"]
+    kind: str = "preview"
+    action: ClaimEventAction
     claim_id: str
     delta_strength: float | None = None
     statement: str | None = None
@@ -52,7 +53,7 @@ class ClaimPreviewEvent(StrictModel):
 class FeedbackAdjustmentEvent(StrictModel):
     """Record of a claim strength adjustment triggered by chat feedback."""
 
-    kind: Literal["feedback"] = "feedback"
+    kind: str = "feedback"
     claim_id: str
     old_strength: float
     new_strength: float
@@ -72,5 +73,5 @@ class FeedbackBatch(StrictModel):
     created_at: str
     session_id: str
     question: str
-    feedback: Literal["up", "down"]
+    feedback: FeedbackDirection
     events: list[FeedbackAdjustmentEvent] = Field(default_factory=list)

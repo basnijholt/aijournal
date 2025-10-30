@@ -8,6 +8,7 @@ import yaml
 from typer.testing import CliRunner
 
 from aijournal.cli import app
+from aijournal.io.yaml_io import dump_yaml
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -20,7 +21,7 @@ def _write_normalized(workspace: Path) -> Path:
     normalized = workspace / "data" / "normalized" / DATE / f"{ENTRY_ID}.yaml"
     normalized.parent.mkdir(parents=True, exist_ok=True)
     normalized.write_text(
-        yaml.safe_dump(
+        dump_yaml(
             {
                 "id": ENTRY_ID,
                 "created_at": "2025-02-03T14:05:00Z",
