@@ -9,6 +9,7 @@ import pytest
 import yaml
 from typer.testing import CliRunner
 
+from aijournal.api.chat import ChatResponse
 from aijournal.cli import app
 from aijournal.models import PersonaCore
 from aijournal.services.chat import ChatService, ChatTelemetry, ChatTurn
@@ -199,9 +200,16 @@ def test_chat_feedback_adjusts_claim_strength(
             retriever_source="stub",
             model="fake",
         )
+        response = ChatResponse(
+            answer="It aligns with your focus routines [claim:focus-claim].",
+            citations=[],
+            clarifying_question=None,
+            timestamp="2025-02-03T00:00:00Z",
+        )
         return ChatTurn(
             question=question,
-            answer="It aligns with your focus routines [claim:focus-claim].",
+            answer=response.answer,
+            response=response,
             persona=PersonaCore(),
             citations=[],
             retrieved_chunks=[],

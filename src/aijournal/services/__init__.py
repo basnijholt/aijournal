@@ -1,6 +1,6 @@
 """Service utilities for aijournal."""
 
-from .chat import ChatCitation, ChatService, ChatTelemetry, ChatTurn
+from .chat import ChatCitation, ChatResponse, ChatService, ChatTelemetry, ChatTurn
 from .chat_api import build_chat_app
 from .consolidator import (
     ClaimConflict,
@@ -33,6 +33,7 @@ __all__ = [
     "ChatService",
     "ChatTurn",
     "ChatTelemetry",
+    "ChatResponse",
     "build_chat_app",
     "FeedbackAdjustment",
     "apply_chat_feedback",
