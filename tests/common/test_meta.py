@@ -21,7 +21,8 @@ def test_artifact_defaults_and_strictness() -> None:
         meta=meta,
         data=_Payload(value=1),
     )
-    assert artifact.schema_version == "v2"
+    assert artifact.kind is ArtifactKind.SUMMARY_DAILY
+    assert artifact.model_dump().keys() == {"kind", "meta", "data"}
 
     with pytest.raises(Exception):
         Artifact[_Payload](

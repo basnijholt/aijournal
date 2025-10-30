@@ -25,7 +25,7 @@ from aijournal.common.meta import Artifact, ArtifactKind, ArtifactMeta
 from aijournal.domain.changes import ClaimProposal, FacetChange, ProfileUpdateProposals
 from aijournal.domain.evidence import SourceRef, redact_source_text
 from aijournal.fakes import fake_profile_suggestions
-from aijournal.io.artifacts import read_legacy_or_artifact, save_artifact
+from aijournal.io.artifacts import load_artifact_data, save_artifact
 from aijournal.io.yaml_io import load_yaml_model, write_yaml_model
 from aijournal.models import (
     ClaimAtom,
@@ -102,7 +102,6 @@ def run_profile_suggest(
     path = _derived_profile_suggestions_path(root, date)
     artifact = Artifact[ProfileSuggestions](
         kind=ArtifactKind.PROFILE_SUGGESTIONS,
-        schema="v2",
         meta=_artifact_meta_from_summary_meta(suggestions_model.meta),
         data=suggestions_model,
     )
@@ -129,11 +128,7 @@ def run_profile_apply(
         )
         raise typer.Exit(1)
 
-    suggestions_model = read_legacy_or_artifact(
-        resolved_path,
-        ProfileSuggestions,
-        artifact_model=ProfileSuggestions,
-    )
+    suggestions_model = load_artifact_data(resolved_path, ProfileSuggestions)
     profile_model, claim_models = _load_profile_components(root)
     profile = _profile_to_dict(profile_model)
     claims = [claim.model_copy(deep=True) for claim in claim_models]

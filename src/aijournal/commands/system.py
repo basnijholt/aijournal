@@ -12,6 +12,7 @@ import httpx
 
 from aijournal.commands.ingest import _load_config, _use_fake_llm
 from aijournal.commands.persona import persona_state
+from aijournal.io.artifacts import load_artifact_data
 from aijournal.models import IndexMeta
 from aijournal.services.ollama import (
     DEFAULT_OLLAMA_HOST,
@@ -49,9 +50,7 @@ def _check_index_artifacts(root: Path) -> dict[str, Any]:
     meta_error: str | None = None
     if meta_path.exists():
         try:
-            meta_payload = IndexMeta.model_validate_json(
-                meta_path.read_text(encoding="utf-8")
-            ).model_dump()
+            meta_payload = load_artifact_data(meta_path, IndexMeta).model_dump()
         except Exception as exc:
             meta_error = str(exc)
 
@@ -184,9 +183,7 @@ def run_status_summary(root: Path) -> dict[str, Any]:
     meta_path = index_dir / "meta.json"
     if meta_path.exists():
         try:
-            index_info["meta"] = IndexMeta.model_validate_json(
-                meta_path.read_text(encoding="utf-8")
-            ).model_dump()
+            index_info["meta"] = load_artifact_data(meta_path, IndexMeta).model_dump()
         except Exception as exc:
             index_info["meta_error"] = str(exc)
 

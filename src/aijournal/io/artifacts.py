@@ -7,10 +7,9 @@ from pathlib import Path
 from typing import Any, TypeVar, cast
 
 import yaml
-from pydantic import BaseModel, TypeAdapter
+from pydantic import BaseModel
 
 from aijournal.common.meta import Artifact, ArtifactKind
-from aijournal.common.schema_mode import allow_legacy_read
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -83,31 +82,10 @@ def load_artifact(path: Path | str, data_model: type[T]) -> Artifact[T]:
     return cast(Artifact[T], artifact_typed)
 
 
-def read_legacy_or_artifact(
-    path: Path | str,
-    legacy_model: type[T],
-    *,
-    artifact_model: type[T] | None = None,
-) -> T:
-    """Read legacy payloads while accepting new Artifact envelopes."""
+def load_artifact_data(path: Path | str, data_model: type[T]) -> T:
+    """Convenience wrapper returning the artifact payload only."""
 
-    target = Path(path)
-    raw = _load_raw(target)
-
-    if isinstance(raw, dict) and raw.get("schema") == "v2":
-        if isinstance(raw.get("kind"), str):
-            raw = {**raw, "kind": ArtifactKind(raw["kind"])}
-        artifact_any = Artifact[Any].model_validate(raw, strict=True)
-        payload_model = artifact_model or legacy_model
-        data = payload_model.model_validate(artifact_any.data)
-        return data
-
-    if not allow_legacy_read():
-        msg = "Legacy artifact format not permitted in current schema mode."
-        raise ValueError(msg)
-
-    adapter = TypeAdapter(legacy_model)
-    return adapter.validate_python(raw)
+    return load_artifact(path, data_model).data
 
 
-__all__ = ["save_artifact", "load_artifact", "read_legacy_or_artifact"]
+__all__ = ["save_artifact", "load_artifact", "load_artifact_data"]

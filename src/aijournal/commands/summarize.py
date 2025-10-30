@@ -279,7 +279,6 @@ def run_summarize(
     summary_path = _derived_summary_path(root, date)
     artifact = Artifact[DailySummary](
         kind=ArtifactKind.SUMMARY_DAILY,
-        schema="v2",
         meta=_artifact_meta_from_summary(summary_data.meta),
         data=summary_data,
     )

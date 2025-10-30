@@ -87,9 +87,9 @@ aijournal/
 
 - The strict domain layer (`src/aijournal/domain/`) houses reusable `StrictModel` classes for journal entries, evidence spans, micro-facts, persona data, claim events, and index metadata. They act as the single source of truth for both CLI validation and serialized artifacts.
 - Public DTOs live under `src/aijournal/api/` (for example `chat.py`, `capture.py`) so Typer commands and FastAPI endpoints expose only the fields operators should control. Internal services extend these DTOs with additional context (stage bounds, telemetry) without leaking knobs to end users.
-- Derived outputs are migrating to versioned `Artifact[T]` envelopes (`kind`, `schema: "v2"`, `meta`, `data`). Deterministic helpers in `aijournal/io/artifacts.py` keep JSON/YAML dumps stable for review.
-- Migration behavior is guarded by `AIJOURNAL_SCHEMA_MODE`, but the switch is temporary. Run with the default just long enough to regenerate artifacts, then flip to `read-new-write-new`. We deliberately avoid long-term legacy support; expect the escape hatch to disappear after refactor3 lands.
-- JSON schema snapshots live under `schemas/v2/`, and `scripts/check_schemas.py` blocks commits when a schema drift is detected without blessing.
+- Derived outputs persist exclusively as `Artifact[T]` envelopes (`kind`, `meta`, `data`). Deterministic helpers in `aijournal/io/artifacts.py` keep JSON/YAML dumps stable for review.
+- There is no compatibility flag or legacy reader—the artifact envelopes are the only supported format moving forward.
+- JSON schema snapshots live under `schemas/core/`, and `scripts/check_schemas.py` blocks commits when a schema drift is detected without blessing.
 
 ## 3. Core Concepts
 

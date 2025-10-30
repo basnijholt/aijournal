@@ -14,7 +14,7 @@ from typing import Any
 
 from aijournal.common.base import StrictModel
 
-SCHEMA_DIR = Path("schemas/v2")
+SCHEMA_DIR = Path("schemas/core")
 BASE_PACKAGE = "aijournal"
 
 

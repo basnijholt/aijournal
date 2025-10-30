@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-import json
 import sqlite3
 from pathlib import Path
 
+from aijournal.domain.index import IndexMeta
+from aijournal.io import load_artifact_data
 from aijournal.io.yaml_io import write_yaml_model
 from aijournal.models import ManifestEntry, NormalizedEntry
 from aijournal.pipelines import index as index_pipeline
@@ -145,9 +146,9 @@ def test_write_index_meta(tmp_path: Path) -> None:
         index_meta_path=lambda base: meta_path,
     )
 
-    payload = json.loads(meta_path.read_text(encoding="utf-8"))
-    assert payload["chunk_count"] == 10
-    assert payload["annoy_trees"] == 10
+    meta = load_artifact_data(meta_path, IndexMeta)
+    assert meta.chunk_count == 10
+    assert meta.annoy_trees == 10
 
 
 def test_token_estimate_defaults() -> None:

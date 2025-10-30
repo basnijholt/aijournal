@@ -72,4 +72,3 @@ meta:
   prompt_hash: ce917e2847b1450f643d1f7c5192e31571cbe060f44b90f2931dd0645fd76d08
   prompt_path: prompts/extract_facts.md
   sources: null
-schema: v2

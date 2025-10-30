@@ -49,7 +49,7 @@ def _fixture_path(tmp_path: Path, name: str) -> Path:
 
 def _assert_schema(path: Path, schema: str) -> None:
     payload = yaml.safe_load(path.read_text(encoding="utf-8"))
-    if isinstance(payload, dict) and payload.get("schema") == "v2" and "data" in payload:
+    if isinstance(payload, dict) and "data" in payload and "kind" in payload:
         validate_schema(schema, payload["data"])
     else:
         validate_schema(schema, payload)

@@ -83,7 +83,7 @@ from aijournal.domain.events import (
 )
 from aijournal.domain.evidence import redact_source_text
 from aijournal.domain.persona import InterviewQuestion, InterviewSet
-from aijournal.io.artifacts import read_legacy_or_artifact
+from aijournal.io.artifacts import load_artifact_data
 from aijournal.io.yaml_io import load_yaml_model, write_yaml_model
 from aijournal.models import (
     ClaimAtom,
@@ -1000,11 +1000,7 @@ def review_updates(
         typer.secho(f"Batch file not found: {batch_path}", fg=typer.colors.RED, err=True)
         raise typer.Exit(1)
 
-    batch = read_legacy_or_artifact(
-        batch_path,
-        ProfileUpdateBatch,
-        artifact_model=ProfileUpdateBatch,
-    )
+    batch = load_artifact_data(batch_path, ProfileUpdateBatch)
     claim_proposals: list[ClaimProposal] = [
         proposal.model_copy(deep=True) for proposal in batch.proposals.claims
     ]
@@ -1873,11 +1869,7 @@ def feedback_apply(
 
     for path in batch_paths:
         try:
-            batch = read_legacy_or_artifact(
-                path,
-                FeedbackBatch,
-                artifact_model=FeedbackBatch,
-            )
+            batch = load_artifact_data(path, FeedbackBatch)
         except Exception as exc:  # pragma: no cover - malformed artifact
             typer.secho(
                 f"Skipping {path.name}: {exc}",

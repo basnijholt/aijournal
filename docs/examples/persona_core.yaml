@@ -228,4 +228,3 @@ meta:
   sources:
     claims: profile/claims.yaml
     profile: profile/self_profile.yaml
-schema: v2

@@ -149,7 +149,6 @@ def run_facts(
         facts_path,
         Artifact[MicroFactsFile](
             kind=ArtifactKind.MICROFACTS_DAILY,
-            schema="v2",
             meta=artifact_meta,
             data=facts_data,
         ),

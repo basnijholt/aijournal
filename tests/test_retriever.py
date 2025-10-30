@@ -11,6 +11,8 @@ import yaml
 from typer.testing import CliRunner
 
 from aijournal.cli import app
+from aijournal.domain.index import IndexMeta
+from aijournal.io import load_artifact_data
 from aijournal.services.retriever import RetrievalFilters, Retriever
 from tests.helpers import copy_fixture_workspace, write_manifest, write_normalized_entry
 
@@ -41,8 +43,10 @@ def _bootstrap_index(tmp_path: Path, *, day: str, entry_id: str, summary: str) -
         env={"AIJOURNAL_FAKE_OLLAMA": "1"},
     )
     assert result.exit_code == 0, result.stdout
-    meta_v2 = tmp_path / "derived" / "index" / "meta.v2.json"
-    assert meta_v2.exists(), "Expected v2 index meta artifact to be written"
+    meta_path = tmp_path / "derived" / "index" / "meta.json"
+    assert meta_path.exists(), "Expected index meta artifact to be written"
+    meta = load_artifact_data(meta_path, IndexMeta)
+    assert meta.embedding_model is not None
 
 
 def test_retriever_parity_with_fixture(
@@ -59,7 +63,8 @@ def test_retriever_parity_with_fixture(
         env={"AIJOURNAL_FAKE_OLLAMA": "1"},
     )
     assert result.exit_code == 0, result.stdout
-    assert (workspace / "derived" / "index" / "meta.v2.json").exists()
+    meta_path = workspace / "derived" / "index" / "meta.json"
+    assert meta_path.exists()
 
     spec = json.loads((workspace / "expected_retrieval.json").read_text(encoding="utf-8"))
     config = yaml.safe_load((workspace / "config" / "config.yaml").read_text(encoding="utf-8"))

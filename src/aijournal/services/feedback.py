@@ -128,7 +128,6 @@ def apply_chat_feedback(
         feedback_path,
         Artifact[FeedbackBatch](
             kind=ArtifactKind.FEEDBACK_BATCH,
-            schema="v2",
             meta=ArtifactMeta(created_at=timestamp, model=None),
             data=batch,
         ),

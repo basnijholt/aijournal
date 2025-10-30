@@ -68,7 +68,6 @@ Read these first to avoid surprises mid-run.
 - **Clean runs only**: if the repo has pending changes, either commit them or reset to a clean state before beginning.
 - **No data loss**: Do not remove artifacts outside the temp workspace. Archive/rename instead of deleting in the repo.
 - **Feedback loop**: When chat answers omit claim markers, feedback adjustments cannot apply. The chat prompt and telemetry now highlight this scenario—respond accordingly.
-- **Schema mode awareness**: `AIJOURNAL_SCHEMA_MODE` defaults to `read-legacy-write-new` only as a short-lived migration guard. Regenerate artifacts and then flip to `read-new-write-new`; the project intentionally avoids long-term legacy support.
 
 ---
 
@@ -170,7 +169,7 @@ Advanced/manual checks (useful for troubleshooting specific stages):
 17. `uv run aijournal ops profile apply --date YYYY-MM-DD --yes`
 18. `uv run aijournal ops pipeline characterize --date YYYY-MM-DD --progress`
 19. `uv run aijournal ops pipeline review --file derived/pending/profile_updates/<batch>.yaml --apply`
-20. `uv run aijournal ops index rebuild` (expect both `derived/index/meta.json` and `meta.v2.json` to update)
+20. `uv run aijournal ops index rebuild` (refreshes `derived/index/meta.json` with the strict artifact envelope)
 21. `uv run aijournal ops index search 'deep work sprint focus' --top 3 --tags focus`
 22. `uv run aijournal ops persona build`
 23. `uv run aijournal ops persona status`
