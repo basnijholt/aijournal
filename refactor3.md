@@ -824,20 +824,28 @@ Back-compat is a non-goal. The next agent should treat the items below as mandat
    - `ChunkManifest*` models were deleted; `write_chunk_manifests` now writes artifact envelopes and NumPy shards only. Tests gained coverage for the new structure (`tests/pipelines/test_index.py::test_write_chunk_manifests`).
    - Docs (`README.md`, `ARCHITECTURE.md`, `CHANGELOG.md`, `docs/archive/PLAN-v0.3.md`) and schema snapshots were refreshed to describe the new artifact format.
 
-3. **Promote chat citations to typed objects**
-   - Change `ChatResponse.citations` to `list[ChatCitation]` in `src/aijournal/api/chat.py` and update the LLM prompt examples to emit objects instead of bare codes.
-   - Adjust `run_ollama_agent` consumers (`src/aijournal/services/chat.py`, FastAPI streaming responses, CLI tests) to handle the structured list and to render claim markers from the new structure.
-   - Update schema snapshots, prompt fixtures under `prompts/examples/`, and any CLI tests that assert on `data["citations"]` (e.g., `tests/test_cli_chat.py`, `tests/test_chatd.py`).
+3. ~~**Promote chat citations to typed objects**~~ ✅ _Completed 2025-10-30_
+   - `ChatResponse.citations` now exposes `list[ChatCitationRef]`; chat orchestration resolves these refs into full `ChatCitation`s before rendering.
+   - CLI/FastAPI streaming paths emit structured citation objects (with `code` + `marker`), and transcript/summary recorders consume the shared domain model.
+   - Schema snapshots, model inventory, and regression suites (`tests/test_chatd.py`, `tests/test_cli_chat.py`) were refreshed to assert on the typed payload.
 
-4. **Align claim preview action vocabulary**
-   - Replace the current `ClaimPreviewEvent.action` literals (`created`, `merged`, `scope_split`, `noop`, etc.) with the planned enum (`upsert`, `update`, `delete`, `conflict`, `strength_delta`).
-   - Update consolidation logic (`src/aijournal/services/consolidator.py`), audit tools, and tests (`tests/test_cli_characterize.py`, `tests/test_cli_facts.py`, `tests/test_services/test_capture.py`) to produce/expect the new names.
-   - Ensure documentation (`refactor3.md`, `README.md`, any prompt text) describes the new vocabulary.
+4. ~~**Align claim preview action vocabulary**~~ ✅ _Completed 2025-10-30_
+   - `ClaimPreviewEvent.action` now uses the canonical enum (`upsert`, `update`, `delete`, `conflict`, `strength_delta`); consolidator outcomes were remapped accordingly.
+   - CLI previews/renderers and profile pipelines report the new actions, augmenting conflict events with spawned-claim context.
+   - Schema snapshots and tests (`tests/test_consolidator.py`, `tests/test_cli_characterize.py`, `tests/test_cli_facts.py`) were updated to reflect the vocabulary change.
 
 5. **Normalize timestamps as ISO strings**
    - Audit `IngestResult`, normalization utilities, and downstream consumers to ensure they emit ISO8601 strings rather than `datetime` objects. `normalize_created_at` already exists—ensure every ingest/CLI path uses it.
    - Update tests that currently assert against `datetime` instances (`tests/services/test_capture.py`, normalization tests) to expect strings.
    - Verify that schema snapshots and fake data use the same string representation so artifact diffs stay stable.
+
+6. **Remove double-meta payloads**
+   - Eliminate embedded `SummaryMeta` blocks from derived payloads (`DailySummary`, `MicroFactsFile`, persona artifacts). Persist metadata solely through `Artifact.meta` (with optional `notes`).
+   - Update pipelines, fixtures, and schema snapshots to match the single-envelope model; ensure docs stop referencing inner `meta` fields.
+
+7. **Audit mutable defaults in domain models**
+   - Replace any `[]`/`{}` default arguments across `aijournal.domain.*` and related strict models with `Field(default_factory=...)`.
+   - Extend lint/tests to cover accidental regressions (e.g., add a targeted check in `scripts/data_model_report.py` or a pytest guard).
 
 ---
 
