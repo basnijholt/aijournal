@@ -23,7 +23,13 @@
       ],
       "mitigations": [
         "Share the focus plan during the weekly sync."
-      ]
+      ],
+      "evidence": [
+        "entry:2025-02-01-focus-journal",
+        "microfact:focus-block"
+      ],
+      "com_b": "opportunity",
+      "if_then": "If it is 08:00 on a weekday, then start the planned focus block before any meetings."
     }
   ],
   "tradeoffs": [
@@ -41,6 +47,9 @@
       "goal.focus_hours_per_week"
     ]
   },
+  "recent_evidence": [
+    "microfact:focus-block"
+  ],
   "style": {
     "tone": "direct",
     "reading_level": "intermediate",

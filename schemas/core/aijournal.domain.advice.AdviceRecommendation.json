@@ -21,11 +21,50 @@
       },
       "title": "AdviceReference",
       "type": "object"
+    },
+    "ComBLever": {
+      "enum": [
+        "capability",
+        "opportunity",
+        "motivation"
+      ],
+      "title": "ComBLever",
+      "type": "string"
     }
   },
   "additionalProperties": false,
   "description": "Single recommendation within an advice card.",
   "properties": {
+    "com_b": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ComBLever"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "evidence": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Evidence",
+      "type": "array"
+    },
+    "if_then": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "If Then"
+    },
     "mitigations": {
       "items": {
         "type": "string"

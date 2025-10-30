@@ -122,6 +122,12 @@ def test_advise_generates_advice(
     assert "deep-work" in steps[0]
     assert "How to plan next week" in steps[1]
     assert any("morning routines" in step and "travel weeks" in step for step in steps)
+    recommendation = card.recommendations[0]
+    assert recommendation.evidence
+    assert recommendation.com_b is not None
+    assert recommendation.if_then
+    assert recommendation.if_then.lower().startswith("if")
+    assert card.recent_evidence
     assert meta.model
     assert meta.prompt_path
     assert meta.prompt_hash
