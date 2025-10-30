@@ -10,6 +10,8 @@ This guide explains how the main commands fit together, the order in which to ru
 - You can run `uv run pytest` successfully (this confirms the virtual environment is set up).
 - If you plan to run in live mode, ensure an Ollama server is available (see `README` for model choices). For local experiments you can keep using the fake LLM mode (`AIJOURNAL_FAKE_OLLAMA=1`).
 - Record your shared Ollama endpoint in `config/config.yaml` (`host: http://192.168.1.143:11434`). Command-line overrides still work the same way: per-command flags win, then environment variables (`AIJOURNAL_OLLAMA_HOST` / `OLLAMA_BASE_URL`), then the config file, and finally the local default.
+- Before starting the daily pipeline in live mode, export `AIJOURNAL_OLLAMA_HOST` to the remote Ollama address so CLI calls don’t fall back to localhost.
+- Schema migration defaults to `AIJOURNAL_SCHEMA_MODE=read-legacy-write-new`. Set `read-both-write-both` when you need both the legacy YAML and the new v2 artifact envelopes side-by-side, or `read-new-write-new` after your workspace is fully migrated.
 
 ---
 
@@ -79,7 +81,7 @@ That’s the entire daily workflow—no manual normalization or staged pipeline 
 `capture` already refreshes the index, persona core, and packs when inputs change. You can re-run
 individual stages manually via the `ops` namespace when debugging or scripting:
 
-- `uv run aijournal ops index rebuild` — rebuild Annoy/SQLite artifacts from scratch.  
+- `uv run aijournal ops index rebuild` — rebuild Annoy/SQLite artifacts from scratch and refresh both `derived/index/meta.json` and the v2 envelope at `meta.v2.json`.  
 - `uv run aijournal ops index search "deep work" --top 3` — smoke-test the index.  
 - `uv run aijournal ops persona build` — regenerate `derived/persona/persona_core.yaml`.  
 - `uv run aijournal export pack --level L4 --history-days 1` — assemble a context bundle (top-level everyday command).
@@ -147,6 +149,7 @@ The runtime is now split between small, testable modules:
 - `src/aijournal/commands/` handles orchestration for each Typer command—file system inputs/outputs, retries, and user messaging live here.
 - `src/aijournal/pipelines/` contains deterministic workflows that combine services and prompts (summaries, facts, persona, packs, characterize, advise). Pipelines never touch Typer directly, making them easy to unit test.
 - `src/aijournal/services/` keeps reusable integrations (Ollama client, retriever, chat API, feedback).
+- Strict schema definitions live in `src/aijournal/domain/` and every derived artifact is migrating to a versioned `Artifact[T]` envelope. Keep an eye on the `schemas/v2/` diff when touching models, and use `AIJOURNAL_SCHEMA_MODE` to control how aggressively your workspace adopts the new format.
 
 If you need to extend a command, start with the relevant `commands/*.py` module and only dip into pipelines/services when you need new orchestration steps. Keep CLI changes limited to wiring so the high-level flow in this guide stays stable.
 

@@ -68,6 +68,7 @@ Read these first to avoid surprises mid-run.
 - **Clean runs only**: if the repo has pending changes, either commit them or reset to a clean state before beginning.
 - **No data loss**: Do not remove artifacts outside the temp workspace. Archive/rename instead of deleting in the repo.
 - **Feedback loop**: When chat answers omit claim markers, feedback adjustments cannot apply. The chat prompt and telemetry now highlight this scenario—respond accordingly.
+- **Schema mode awareness**: `AIJOURNAL_SCHEMA_MODE` defaults to `read-legacy-write-new`, which emits both legacy YAML and v2 artifact envelopes. Switch to `read-both-write-both` if you want side-by-side files during validation, or `read-new-write-new` once the workspace is fully migrated.
 
 ---
 
@@ -169,7 +170,7 @@ Advanced/manual checks (useful for troubleshooting specific stages):
 17. `uv run aijournal ops profile apply --date YYYY-MM-DD --yes`
 18. `uv run aijournal ops pipeline characterize --date YYYY-MM-DD --progress`
 19. `uv run aijournal ops pipeline review --file derived/pending/profile_updates/<batch>.yaml --apply`
-20. `uv run aijournal ops index rebuild`
+20. `uv run aijournal ops index rebuild` (expect both `derived/index/meta.json` and `meta.v2.json` to update)
 21. `uv run aijournal ops index search 'deep work sprint focus' --top 3 --tags focus`
 22. `uv run aijournal ops persona build`
 23. `uv run aijournal ops persona status`
@@ -218,7 +219,7 @@ uv run -- bash -lc "cd $RUN_ROOT && aijournal ops persona build"
 uv run -- bash -lc "cd $RUN_ROOT && aijournal export pack --level L1 --format yaml"
 uv run -- bash -lc "cd $RUN_ROOT && aijournal export pack --level L4 --date YYYY-MM-DD --history-days 1 --format json"
 ```
-These commands guarantee the chat/advice surfaces reflect the latest claims/facets.
+The commands update `derived/persona/persona_core.yaml` and write pack outputs under `derived/packs/`, ensuring chat/advice surfaces reflect the latest claims/facets.
 
 ---
 

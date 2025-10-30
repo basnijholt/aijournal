@@ -1,0 +1,58 @@
+facts:
+- id: aijournal-characterize-working-using-llama-cpp
+  statement: aijournal characterize feature is now working using llama.cpp instead
+    of ollama
+  confidence: 0.6
+  evidence:
+    entry_id: 2025-10-29-finally-got-aijournal-characterize-working-using-llama-cpp-instead-of-ollama
+    spans:
+    - type: para
+      index: 0
+      start: null
+      end: null
+      text: null
+  first_seen: '2025-10-29'
+  last_seen: '2025-10-29'
+claim_proposals:
+- claim:
+    id: microfact.aijournal-characterize-working-using-llama-cpp
+    type: preference
+    subject: aijournal-characterize-working-using-llama-cpp
+    predicate: insight
+    value: aijournal characterize feature is now working using llama.cpp instead of
+      ollama
+    statement: aijournal characterize feature is now working using llama.cpp instead
+      of ollama
+    scope:
+      domain: journal
+      context: []
+      conditions: []
+    strength: 0.6
+    status: tentative
+    method: inferred
+    user_verified: false
+    review_after_days: 90
+    provenance:
+      sources:
+      - entry_id: 2025-10-29-finally-got-aijournal-characterize-working-using-llama-cpp-instead-of-ollama
+        spans:
+        - type: para
+          index: 0
+          start: null
+          end: null
+      first_seen: '2025-10-29'
+      last_updated: '2025-10-29'
+      observation_count: 1
+  normalized_ids:
+  - 2025-10-29-finally-got-aijournal-characterize-working-using-llama-cpp-instead-of-ollama
+  evidence_hashes:
+  - 30ef5e9b3eff719c41285ee7b1016d3267627a9b0180930cec9a65682b8a553e
+  manifest_hashes:
+  - 30ef5e9b3eff719c41285ee7b1016d3267627a9b0180930cec9a65682b8a553e
+  rationale: Derived from micro-fact aijournal-characterize-working-using-llama-cpp
+preview: null
+meta:
+  llm_model: gpt-oss:20b
+  prompt_path: prompts/extract_facts.md
+  prompt_hash: d6dd7b0431b00c26ef830fd9ee7da87cd3ba7bde29e0106f3ff7058613687da1
+  created_at: '2025-10-29T01:48:09Z'

@@ -1,0 +1,120 @@
+level: L1
+date: '2025-10-29'
+files:
+- role: persona_core
+  path: derived/persona/persona_core.yaml
+  tokens: 2002
+  content: "persona:\n  profile:\n    values_motivations:\n      core_values:\n  \
+    \    - value: Privacy-first, local control over data\n        why: Comfortable\
+    \ experimenting with sensitive personal archives only when\n          compute\
+    \ runs at home.\n        evidence:\n        - post/local-ai-journey/index.md\n\
+    \      - value: Open-source contribution as default\n        why: Publishes tooling\
+    \ (agent-cli, AIBrain, dotbins) so others can reuse the\n          stack.\n  \
+    \      evidence:\n        - post/advent-of-open-source/index.md\n      - value:\
+    \ Craftsmanship over shortcuts\n        why: Checks every AI-generated line, linting\
+    \ aggressively and refusing to\n          merge code that feels off.\n       \
+    \ evidence:\n        - post/agentic-coding/index.md\n      motivations:\n    \
+    \  - theme: Unlock more leverage per hour\n        detail: \"Agentic automations\
+    \ let him ship 10\\xD7 ideas without sacrificing\\\n          \\ taste.\"\n  \
+    \    - theme: Document and share reproducible workflows\n        detail: Blog\
+    \ posts capture full stack recipes (Nix, homelab, remote coding)\n          for\
+    \ future self and community.\n      community_alignment:\n        summary: Enjoys\
+    \ collaborating with open-source maintainers and sharing setups\n          that\
+    \ push local-first AI forward.\n        evidence:\n        - post/local-ai-journey/index.md\n\
+    \        - post/agentic-mobile-workflow/index.md\n      review_after_days: 150\n\
+    \      last_updated: '2025-10-26'\n    goals:\n      current_focus:\n      - value:\
+    \ Harden the aijournal persona-first pipeline\n        success_signals:\n    \
+    \    - Claim consolidation handles conflicting evidence automatically.\n     \
+    \   - Persona packs regenerate deterministically after profile edits.\n      \
+    \  timeline: 2025-11\n        evidence:\n        - PLAN.md\n      - value: Keep\
+    \ local AI stack production-ready\n        success_signals:\n        - Ollama\
+    \ + Whisper services have monitored uptime on the homelab tower.\n        - Remote\
+    \ workflows stay one-command reproducible from fresh machines.\n        timeline:\
+    \ Ongoing\n        evidence:\n        - post/agentic-mobile-workflow/index.md\n\
+    \      medium_term:\n      - value: Expand agent-cli and AIBrain into daily-life\
+    \ copilots\n        success_signals:\n        - Full personal data ingestion without\
+    \ overheating the 3090 rig.\n        - Answer natural language questions about\
+    \ calendar/email reliably.\n        timeline: '2026'\n        evidence:\n    \
+    \    - post/local-ai-journey/index.md\n      anti_goals:\n      - value: Avoid\
+    \ late-night firefighting as a lifestyle\n        reason: Protect health and family\
+    \ time; prefer planned deep work blocks.\n      last_updated: '2025-10-26'\n \
+    \   boundaries_ethics:\n      guardrails:\n      - Keep family data private; anonymize\
+    \ sensitive details before sharing.\n      - Refuse to deploy always-on surveillance\
+    \ or data collection without consent.\n      red_lines:\n      - No sharing private\
+    \ family data in exported packs.\n      - No health diagnostics beyond evidence-backed\
+    \ guidelines.\n      last_updated: '2025-10-26'\n    coaching_prefs:\n      tone:\
+    \ direct, warm\n      depth: concrete first, theory second\n      format:\n  \
+    \      cadence: Bundle recommendations into actionable checklists with citations.\n\
+    \        follow_ups: Ask up to two clarifying questions before giving advice.\n\
+    \      prompts:\n      - Highlight trade-offs when suggesting automation; note\
+    \ required maintenance.\n      - Surface when an idea may erode local-first or\
+    \ privacy values.\n      last_updated: '2025-10-26'\n    affect_energy:\n    \
+    \  energy_map:\n        morning: high\n        afternoon: medium\n        evening:\
+    \ low\n      flow_triggers:\n      - Long uninterrupted blocks with a freshly\
+    \ tuned terminal session.\n      - Hands-on tinkering with homelab hardware or\
+    \ Nix configurations.\n      stressors:\n      - Ambiguous deadlines without clear\
+    \ next actions.\n      - Vendor lock-in that blocks local experimentation.\n \
+    \     coping_strategies:\n      - Take walks and revisit task lists when context\
+    \ feels noisy.\n      - Default to deterministic templates (checklists, scripts)\
+    \ when decision fatigue\n        hits.\n      last_updated: '2025-10-26'\n   \
+    \ decision_style:\n      principles:\n      - Default to quality over speed; iterate\
+    \ quickly but never ship code he cannot\n        explain.\n      - Prefer deterministic,\
+    \ reproducible pipelines (Nix, uv, Typer) to manage complexity.\n      - Test\
+    \ drive ideas through small experiments before committing to architecture\n  \
+    \      shifts.\n      heuristics:\n      - Collect evidence (benchmarks, diffs,\
+    \ CI runs) before accepting AI-generated\n        changes.\n      - Use voice\
+    \ dictation for ideation, then switch to keyboard review for final\n        merges.\n\
+    \      implementation_intentions:\n      - if: Feeling anxious before a public\
+    \ share or talk\n        then: Run a dry-run walkthrough with transcripts to rehearse\
+    \ phrasing.\n        evidence:\n        - post/agentic-mobile-workflow/index.md\n\
+    \      last_updated: '2025-10-26'\n    traits:\n      identity:\n        summary:\
+    \ 'Local-first systems builder and open-source maintainer who repurposes\n   \
+    \       gaming-class hardware for voice-driven automation, agentic coding, and\
+    \ reproducible\n          home lab experiments.\n\n          '\n        highlights:\n\
+    \        - Self-hosts Ollama, FasterWhisper, and agent-cli services on a NixOS\
+    \ tower\n          that doubles as a homelab.\n        - Indexes personal data\
+    \ to build private AI workflows instead of relying on\n          cloud APIs.\n\
+    \        - Treats open-source releases as the default way to share tooling and\
+    \ workflows.\n        last_updated: '2025-10-26'\n        evidence:\n        -\
+    \ post/local-ai-journey/index.md\n        - post/agentic-coding/index.md\n   \
+    \   craftsmanship:\n        summary: 'Obsessive about code quality, reproducible\
+    \ environments, and deterministic\n          tooling; prefers shipping only what\
+    \ can be understood, linted, and rebuilt\n          from scratch.\n\n        \
+    \  '\n        big_five:\n          openness:\n            score: 0.78\n      \
+    \      method: self_report\n            user_verified: true\n          conscientiousness:\n\
+    \            score: 0.7\n            method: inferred\n          extraversion:\n\
+    \            score: 0.38\n            method: self_report\n          agreeableness:\n\
+    \            score: 0.6\n            method: inferred\n          neuroticism:\n\
+    \            score: 0.31\n            method: self_report\n        regulatory_focus:\n\
+    \          promotion: 0.72\n          prevention: 0.28\n        risk_tolerance:\n\
+    \          domain: career\n          level: medium-high\n        time_horizon:\n\
+    \          preferred: long\n          notes: Invests weeks in automation to create\
+    \ reusable leverage for future\n            projects.\n        last_updated: '2025-10-26'\n\
+    \        evidence:\n        - post/agentic-coding/index.md\n        - post/dotfiles/index.md\n\
+    \      workflows:\n        summary: 'Runs a voice-first, remote-access coding\
+    \ loop: WireGuard + Blink\n          + Mosh + Zellij on iPhone, dictating into\
+    \ home services that clean and pipe\n          text into agentic IDEs.\n\n   \
+    \       '\n        routines:\n        - Keep persistent Zellij sessions so ideas\
+    \ can be captured instantly from\n          mobile.\n        - Dictate commits\
+    \ during travel, then review diffs before merging.\n        - Back critical configs\
+    \ through dotfiles/dotbins for deterministic bootstraps.\n        last_updated:\
+    \ '2025-10-26'\n        evidence:\n        - post/agentic-mobile-workflow/index.md\n\
+    \        - post/terminal-ninja/index.md\n    social:\n      collaboration:\n \
+    \       summary: Thrives in async, tool-driven collaboration where diffs and PRs\
+    \ tell\n          the story.\n        preferences:\n        - Share context via\
+    \ detailed README/PLAN updates instead of ad-hoc chats.\n        - Review partners\
+    \ who challenge assumptions but respect local-first constraints.\n        evidence:\n\
+    \        - post/agentic-coding/index.md\n      communities:\n      - Open-source\
+    \ Python, Nix, and local-AI builders.\n      - Remote-first teams comfortable\
+    \ with voice + terminal workflows.\n      last_updated: '2025-10-26'\n  claims:\
+    \ []\nmeta:\n  generated_at: '2025-10-29T18:07:43Z'\n  token_budget: 1200\n  planned_tokens:\
+    \ 1795\n  char_per_token: 4.2\n  selection_strategy: strength*impact*decay\n \
+    \ trimmed: []\n  claim_pool: 0\n  claim_count: 0\n  max_claims: 24\n  min_claims:\
+    \ 8\n  budget_exceeded: true\n  sources:\n    profile: profile/self_profile.yaml\n\
+    \    claims: profile/claims.yaml\n  source_mtimes:\n    profile/claims.yaml: 1761702549.006278\n\
+    \    profile/self_profile.yaml: 1761702549.006627\n"
+meta:
+  total_tokens: 2002
+  max_tokens: 1200
+  trimmed: []
+  generated_at: '2025-10-29T18:08:01Z'
