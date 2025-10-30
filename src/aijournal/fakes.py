@@ -14,7 +14,7 @@ from aijournal.models import (
     ClaimAtom,
     ClaimProposal,
     DailySummary,
-    FacetProposal,
+    FacetChange,
     FactEvidence,
     MicroFact,
     NormalizedEntry,
@@ -222,7 +222,7 @@ def fake_characterize(
         status="tentative",
     )
 
-    facet = FacetProposal(
+    facet = FacetChange(
         path="values_motivations.recurring_theme",
         value={
             "label": theme,

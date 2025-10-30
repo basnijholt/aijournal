@@ -12,7 +12,7 @@ from typing import Any, NamedTuple
 import yaml
 from pydantic import BaseModel, Field
 
-from aijournal.api.capture import CaptureInput, CaptureRequest
+from aijournal.api.capture import CaptureInput
 from aijournal.commands.ingest import _fake_structured_entry, _load_config
 from aijournal.ingest_agent import IngestResult, build_ingest_agent, ingest_with_agent
 from aijournal.models import (
@@ -1470,17 +1470,3 @@ def normalize_entries(entries: list[EntryResult], root: Path) -> dict[str, Any]:
             changed_paths.append(relative_path(normalized_path, root))
         entry.normalized_path = relative_path(normalized_path, root)
     return {"normalized": normalized, "paths": changed_paths}
-
-
-__all__ = [
-    "CaptureStage",
-    "CAPTURE_STAGES",
-    "CAPTURE_MAX_STAGE",
-    "CaptureRequest",
-    "CaptureInput",
-    "EntryResult",
-    "CaptureResult",
-    "load_capture_result",
-    "normalize_entries",
-    "run_capture",
-]

@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from aijournal.commands import system
-from aijournal.common import Artifact, ArtifactKind, ArtifactMeta
+from aijournal.common.meta import Artifact, ArtifactKind, ArtifactMeta
 from aijournal.domain.index import IndexMeta
 from aijournal.io.artifacts import save_artifact
 

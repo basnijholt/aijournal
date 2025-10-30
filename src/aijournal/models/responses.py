@@ -20,8 +20,3 @@ class AdviceLLMResponse(AijournalModel):
     confidence: float | None = Field(default=None, ge=0.0, le=1.0)
     alignment: AdviceReference = Field(default_factory=AdviceReference)
     style: dict[str, object] = Field(default_factory=dict)
-
-
-__all__ = [
-    "AdviceLLMResponse",
-]
