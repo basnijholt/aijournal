@@ -316,6 +316,3 @@ def _format_path(segments: list[str]) -> str:
         else:
             parts.append(segment)
     return ".".join(parts)
-
-
-__all__ = ["run_audit_provenance", "AuditFileResult"]

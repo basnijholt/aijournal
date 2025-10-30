@@ -209,6 +209,3 @@ def _render_feedback_summary(
         )
     if feedback_path is not None:
         typer.echo(f"Queued feedback batch: {feedback_path}")
-
-
-__all__ = ["run_chat"]

@@ -31,6 +31,3 @@ def run_chatd(host: str, port: int) -> None:
     app_instance = build_chat_app(root, config)
     typer.echo(f"chatd starting on http://{host}:{port}")
     uvicorn.run(app_instance, host=host, port=port, log_level="info")
-
-
-__all__ = ["run_chatd"]

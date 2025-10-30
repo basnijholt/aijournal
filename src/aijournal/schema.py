@@ -70,6 +70,3 @@ def validate_schema(schema_name: str, payload: Any) -> None:
             errors.append(f"{location}: {err.get('msg', 'invalid value')}")
     if errors:
         raise SchemaValidationError(schema_name, errors)
-
-
-__all__ = ["SchemaValidationError", "validate_schema"]
