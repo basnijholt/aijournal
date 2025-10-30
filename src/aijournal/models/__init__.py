@@ -2,6 +2,32 @@
 
 from __future__ import annotations
 
+from aijournal.domain.changes import ClaimProposal, FacetChange, ProfileUpdateProposals
+from aijournal.domain.events import (
+    ClaimConflictPayload,
+    ClaimPreviewEvent,
+    ClaimSignaturePayload,
+    FeedbackAdjustmentEvent,
+    FeedbackBatch,
+)
+from aijournal.domain.facts import (
+    DailySummary,
+    FactEvidence,
+    FactEvidenceSpan,
+    MicroFact,
+    MicroFactsFile,
+    SummaryMeta,
+)
+from aijournal.domain.index import IndexMeta
+from aijournal.domain.journal import NormalizedEntity, NormalizedEntry
+from aijournal.domain.persona import (
+    InterviewQuestion,
+    InterviewSet,
+    PersonaCore,
+    PersonaCoreFile,
+    PersonaCoreMeta,
+)
+
 from .authoritative import (
     ClaimsFile,
     JournalEntry,
@@ -9,8 +35,6 @@ from .authoritative import (
     JsonScalar,
     JsonValue,
     ManifestEntry,
-    NormalizedEntity,
-    NormalizedEntry,
     SelfProfile,
 )
 from .base import AijournalModel
@@ -32,32 +56,12 @@ from .derived import (
     ChunkManifest,
     ChunkManifestChunk,
     ChunkManifestMeta,
-    ClaimConflictPayload,
-    ClaimPreviewEvent,
-    ClaimProposal,
-    ClaimSignaturePayload,
-    DailySummary,
-    FacetChange,
-    FactEvidence,
-    FactEvidenceSpan,
-    FeedbackAdjustmentEvent,
-    FeedbackBatch,
-    IndexMeta,
-    InterviewQuestion,
-    InterviewSet,
-    MicroFact,
-    MicroFactsFile,
-    PersonaCore,
-    PersonaCoreFile,
-    PersonaCoreMeta,
     ProfileSuggestions,
     ProfileSuggestionUpdate,
     ProfileSuggestionUpsert,
     ProfileUpdateBatch,
     ProfileUpdateInput,
     ProfileUpdatePreview,
-    ProfileUpdateProposals,
-    SummaryMeta,
 )
 from .responses import AdviceLLMResponse
 

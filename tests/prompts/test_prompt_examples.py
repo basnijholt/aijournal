@@ -9,13 +9,10 @@ from typing import Any
 
 import pytest
 
-from aijournal.models.derived import (
-    AdviceCard,
-    DailySummary,
-    InterviewSet,
-    MicroFactsFile,
-    ProfileUpdateProposals,
-)
+from aijournal.domain.changes import ProfileUpdateProposals
+from aijournal.domain.facts import DailySummary, MicroFactsFile
+from aijournal.domain.persona import InterviewSet
+from aijournal.models.derived import AdviceCard
 from aijournal.models.responses import AdviceLLMResponse
 
 REPO_ROOT = Path(__file__).resolve().parents[2]

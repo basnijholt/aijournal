@@ -4,7 +4,7 @@ import sqlite3
 from pathlib import Path
 
 from aijournal.domain.index import IndexMeta
-from aijournal.io import load_artifact_data
+from aijournal.io.artifacts import load_artifact_data
 from aijournal.io.yaml_io import write_yaml_model
 from aijournal.models import ManifestEntry, NormalizedEntry
 from aijournal.pipelines import index as index_pipeline

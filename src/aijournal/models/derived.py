@@ -6,23 +6,14 @@ from typing import Any, cast
 
 from pydantic import Field, field_validator
 
-from aijournal.domain.changes import ClaimProposal, FacetChange, ProfileUpdateProposals
+from aijournal.domain.changes import ProfileUpdateProposals
 from aijournal.domain.events import (
-    ClaimConflictPayload,
     ClaimPreviewEvent,
-    ClaimSignaturePayload,
-    FeedbackAdjustmentEvent,
-    FeedbackBatch,
 )
 from aijournal.domain.facts import (
-    DailySummary,
-    FactEvidence,
-    FactEvidenceSpan,
-    MicroFact,
     MicroFactsFile,
     SummaryMeta,
 )
-from aijournal.domain.index import IndexMeta
 from aijournal.domain.persona import (
     InterviewQuestion,
     InterviewSet,
@@ -285,39 +276,3 @@ class ProfileUpdateBatch(AijournalModel):
 
 
 MicroFactsFile.model_rebuild(_types_namespace={"ProfileUpdatePreview": ProfileUpdatePreview})
-
-
-__all__ = [
-    "SummaryMeta",
-    "DailySummary",
-    "FactEvidenceSpan",
-    "FactEvidence",
-    "MicroFact",
-    "MicroFactsFile",
-    "ChunkManifestMeta",
-    "ChunkManifestChunk",
-    "ChunkManifest",
-    "ProfileSuggestionUpsert",
-    "ProfileSuggestionUpdate",
-    "ProfileSuggestions",
-    "InterviewQuestion",
-    "InterviewSet",
-    "AdviceReference",
-    "AdviceRecommendation",
-    "AdviceCard",
-    "ClaimProposal",
-    "ClaimSignaturePayload",
-    "ClaimConflictPayload",
-    "ClaimPreviewEvent",
-    "FeedbackAdjustmentEvent",
-    "FeedbackBatch",
-    "FacetChange",
-    "ProfileUpdateProposals",
-    "ProfileUpdatePreview",
-    "ProfileUpdateInput",
-    "ProfileUpdateBatch",
-    "PersonaCoreMeta",
-    "PersonaCore",
-    "PersonaCoreFile",
-    "IndexMeta",
-]
