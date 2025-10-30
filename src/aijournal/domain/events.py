@@ -36,7 +36,7 @@ class ClaimPreviewEvent(StrictModel):
     """Outcome of attempting to merge a claim proposal into existing atoms."""
 
     kind: Literal["preview"] = "preview"
-    action: Literal["created", "merged", "conflict", "scope_split", "noop"]
+    action: Literal["upsert", "update", "delete", "conflict", "strength_delta"]
     claim_id: str
     delta_strength: float | None = None
     statement: str | None = None

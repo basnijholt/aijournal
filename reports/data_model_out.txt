@@ -221,7 +221,7 @@ Fields: kind: typing.Literal['feedback'], claim_id: str, old_strength: float, ne
 
 ### Group 36 (1 classes)
 
-Fields: kind: typing.Literal['preview'], action: typing.Literal['created', 'merged', 'conflict', 'scope_split', 'noop'], claim_id: str, delta_strength: float | None, statement: str | None, value: str | None, strength: float | None, signature: aijournal.domain.events.ClaimSignaturePayload | None, conflict: aijournal.domain.events.ClaimConflictPayload | None, related_claim_id: str | None, related_action: str | None, related_signature: aijournal.domain.events.ClaimSignaturePayload | None
+Fields: kind: typing.Literal['preview'], action: typing.Literal['upsert', 'update', 'delete', 'conflict', 'strength_delta'], claim_id: str, delta_strength: float | None, statement: str | None, value: str | None, strength: float | None, signature: aijournal.domain.events.ClaimSignaturePayload | None, conflict: aijournal.domain.events.ClaimConflictPayload | None, related_claim_id: str | None, related_action: str | None, related_signature: aijournal.domain.events.ClaimSignaturePayload | None
 
 - aijournal.domain.events.ClaimPreviewEvent (src/aijournal/domain/events.py)
 

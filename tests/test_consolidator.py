@@ -30,7 +30,7 @@ def test_claim_consolidator_merges_strength_and_observation_count() -> None:
     outcome = consolidator.upsert(claims, incoming_claim)
 
     assert outcome.changed is True
-    assert outcome.action == "merged"
+    assert outcome.action == "strength_delta"
     assert outcome.conflict is None
     updated = claims[0]
     w_prev = min(1.0, math.log1p(1))
@@ -63,11 +63,11 @@ def test_claim_consolidator_splits_scope_on_weekend_conflict() -> None:
 
     outcome = consolidator.upsert(claims, incoming_claim)
 
-    assert outcome.action == "scope_split"
+    assert outcome.action == "conflict"
     assert outcome.changed is True
     assert outcome.related_claim_id
     assert outcome.conflict is not None
-    assert outcome.related_action in {"created", "merged"}
+    assert outcome.related_action in {"upsert", "update", "strength_delta"}
     assert len(claims) == 2
 
     weekday_claim = claims[0]

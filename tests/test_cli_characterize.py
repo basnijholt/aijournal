@@ -135,7 +135,7 @@ def test_characterize_generates_pending_batch(
     assert any(item.get("entry_id") == ENTRY_ID for item in evidence)
     preview = data.get("preview", {})
     events = preview.get("claim_events") or []
-    assert events and events[0].get("action") == "created"
+    assert events and events[0].get("action") == "upsert"
     assert not (preview.get("interview_prompts") or [])
 
 

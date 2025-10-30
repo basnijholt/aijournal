@@ -504,7 +504,7 @@ def apply_claim_upsert(
                 events.append(
                     ClaimMergeOutcome(
                         changed=False,
-                        action="noop",
+                        action="update",
                         claim_id=existing.id,
                         delta_strength=0.0,
                     ),

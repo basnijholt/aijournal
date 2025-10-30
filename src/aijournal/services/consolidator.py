@@ -143,7 +143,7 @@ class ClaimConsolidator:
             claims.append(incoming)
             return ClaimMergeOutcome(
                 changed=True,
-                action="created",
+                action="upsert",
                 claim_id=incoming.id,
                 signature=signature,
             )
@@ -165,9 +165,20 @@ class ClaimConsolidator:
                     observations_changed,
                 ),
             )
+            structural_change = any(
+                (
+                    sources_delta,
+                    status_changed,
+                    method_changed,
+                    user_verified_changed,
+                ),
+            )
+            action = "strength_delta" if (delta != 0.0 and not structural_change) else "update"
+            if not changed:
+                action = "update"
             return ClaimMergeOutcome(
                 changed=changed,
-                action="merged" if changed else "noop",
+                action=action,
                 claim_id=existing.id,
                 delta_strength=delta,
                 signature=ClaimSignature.from_atom(existing),
@@ -295,7 +306,7 @@ class ClaimConsolidator:
         if not changed:
             return ClaimMergeOutcome(
                 changed=False,
-                action="noop",
+                action="update",
                 claim_id=existing.id,
                 delta_strength=0.0,
                 conflict=None,
@@ -378,7 +389,7 @@ class ClaimConsolidator:
             )
             return ClaimMergeOutcome(
                 changed=True,
-                action="scope_split",
+                action="conflict",
                 claim_id=existing.id,
                 delta_strength=scoped_outcome.delta_strength if scoped_outcome.changed else 0.0,
                 conflict=conflict,

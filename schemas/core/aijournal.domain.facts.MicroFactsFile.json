@@ -131,11 +131,11 @@
       "properties": {
         "action": {
           "enum": [
-            "created",
-            "merged",
+            "upsert",
+            "update",
+            "delete",
             "conflict",
-            "scope_split",
-            "noop"
+            "strength_delta"
           ],
           "title": "Action",
           "type": "string"
