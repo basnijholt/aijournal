@@ -61,25 +61,6 @@ class InterviewSet(StrictModel):
     meta: SummaryMeta | None = None
 
 
-def _rebuild_persona_models() -> None:
-    from aijournal.domain.facts import SummaryMeta
-    from aijournal.models.claim_atoms import ClaimAtom
-
-    PersonaCore.model_rebuild(_types_namespace={"ClaimAtom": ClaimAtom})
-    PersonaCoreFile.model_rebuild(
-        _types_namespace={
-            "PersonaCore": PersonaCore,
-            "PersonaCoreMeta": PersonaCoreMeta,
-        }
-    )
-    InterviewSet.model_rebuild(
-        _types_namespace={"InterviewQuestion": InterviewQuestion, "SummaryMeta": SummaryMeta}
-    )
-
-
-_rebuild_persona_models()
-
-
 __all__ = [
     "InterviewQuestion",
     "InterviewSet",

@@ -75,18 +75,21 @@ from aijournal.commands.summarize import (
     _structured_call_with_retry as _commands_structured_call_with_retry,
 )
 from aijournal.commands.system import run_status_summary, run_system_doctor
+from aijournal.domain.events import (
+    ClaimConflictPayload,
+    ClaimPreviewEvent,
+    ClaimSignaturePayload,
+)
 from aijournal.domain.evidence import redact_source_text
 from aijournal.domain.persona import InterviewQuestion, InterviewSet
 from aijournal.io.yaml_io import load_yaml_model, write_yaml_model
 from aijournal.models import (
     ClaimAtom,
-    ClaimConflictPayload,
-    ClaimPreviewEvent,
     ClaimProposal,
     ClaimsFile,
-    ClaimSignaturePayload,
     ClaimSource,
     FacetProposal,
+    FeedbackBatch,
     NormalizedEntry,
     ProfileUpdateBatch,
     ProfileUpdatePreview,
@@ -1394,9 +1397,13 @@ def _build_claim_preview(
                 f"Clarify claim {outcome.claim_id} [{scope_label}]: "
                 f"existing='{outcome.conflict.existing_value}' vs incoming='{outcome.conflict.incoming_value}'."
             )
+        action_literal = cast(
+            Literal["created", "merged", "conflict", "scope_split", "noop"],
+            outcome.action,
+        )
         events.append(
             ClaimPreviewEvent(
-                action=outcome.action,
+                action=action_literal,
                 claim_id=outcome.claim_id,
                 delta_strength=float(outcome.delta_strength or 0.0),
                 statement=incoming.statement,
@@ -1857,47 +1864,29 @@ def feedback_apply(
     for path in batch_paths:
         try:
             payload = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-        except yaml.YAMLError as exc:  # pragma: no cover - malformed YAML
+            batch = FeedbackBatch.model_validate(payload)
+        except Exception as exc:  # pragma: no cover - malformed YAML or schema errors
             typer.secho(
-                f"Skipping {path.name}: invalid YAML ({exc}).", fg=typer.colors.RED, err=True
-            )
-            continue
-
-        adjustments = payload.get("claim_adjustments") or []
-        if not isinstance(adjustments, list):
-            typer.secho(
-                f"Skipping {path.name}: claim_adjustments must be a list.",
+                f"Skipping {path.name}: {exc}",
                 fg=typer.colors.RED,
                 err=True,
             )
             continue
 
-        for item in adjustments:
-            claim_id = str(item.get("id") or "").strip()
-            if not claim_id:
-                continue
-            target_claim = claims_by_id.get(claim_id)
+        for event in batch.events:
+            target_claim = claims_by_id.get(event.claim_id)
             if target_claim is None:
                 typer.secho(
-                    f"{path.name} references unknown claim '{claim_id}' — skipping.",
+                    f"{path.name} references unknown claim '{event.claim_id}' — skipping.",
                     fg=typer.colors.YELLOW,
                     err=True,
                 )
                 continue
-            new_strength = item.get("new_strength")
-            try:
-                new_value = float(new_strength)
-            except (TypeError, ValueError):
-                typer.secho(
-                    f"Invalid strength '{new_strength}' for '{claim_id}' in {path.name}.",
-                    fg=typer.colors.RED,
-                    err=True,
-                )
-                continue
+
             old_value = float(target_claim.strength)
-            clamped_value = max(0.0, min(1.0, new_value))
+            clamped_value = max(0.0, min(1.0, float(event.new_strength)))
             target_claim.strength = clamped_value
-            total_adjustments.append((claim_id, old_value, clamped_value))
+            total_adjustments.append((event.claim_id, old_value, clamped_value))
 
         if archive:
             archive_path = _unique_archive_path(archive_dir / path.name)

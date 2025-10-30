@@ -130,6 +130,13 @@
       "description": "Outcome of attempting to merge a claim proposal into existing atoms.",
       "properties": {
         "action": {
+          "enum": [
+            "created",
+            "merged",
+            "conflict",
+            "scope_split",
+            "noop"
+          ],
           "title": "Action",
           "type": "string"
         },
@@ -149,9 +156,22 @@
           "default": null
         },
         "delta_strength": {
-          "default": 0.0,
-          "title": "Delta Strength",
-          "type": "number"
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Delta Strength"
+        },
+        "kind": {
+          "const": "preview",
+          "default": "preview",
+          "title": "Kind",
+          "type": "string"
         },
         "related_action": {
           "anyOf": [

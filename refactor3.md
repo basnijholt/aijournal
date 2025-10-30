@@ -589,17 +589,13 @@ class CaptureInput(CaptureRequest):
 
 ### Stage 5 – Claim Events & Feedback
 
-**5.1 Discriminated Union for Events**
-- Add `aijournal/domain/events.py` with `ClaimPreviewEvent`, `FeedbackAdjustmentEvent`, `ClaimChangeEvent`.
-- Update consolidation, review pipelines, and persistence to use union.
-- Tests: `uv run pytest`; add snapshot test verifying discriminator works for both variants.
-- Commit: `refactor3: unify claim change event models`.
+**5.1 Discriminated Union for Events — DONE**
+- Introduced `aijournal/domain/events.py` with strict `ClaimSignaturePayload`, `ClaimConflictPayload`, `ClaimPreviewEvent`, and `FeedbackAdjustmentEvent` (discriminated on `kind`), updating CLI/pipelines to instantiate the domain models directly.
+- `ProfileUpdatePreview` now stores the domain events, and schema snapshots were regenerated.
 
-**5.2 Feedback Batches Formalization**
-- Add `FeedbackBatch` model and migrate feedback files.
-- Ensure `aijournal ops feedback apply` still adjusts strengths correctly; add tests.
-- Tests: `uv run pytest`; run fake-mode CLI to ensure no regression.
-- Commit: `refactor3: convert feedback batches to strict schema`.
+**5.2 Feedback Batches Formalization — DONE**
+- Added the strict `FeedbackBatch` envelope and rewired chat feedback persistence/`ops feedback apply` to read/write the new schema.
+- CLI/chat tests and fixtures updated to validate the structured events; schema snapshots refreshed.
 
 ### Stage 6 – Retrieval, Chat, Advice
 

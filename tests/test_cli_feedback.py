@@ -22,21 +22,28 @@ def _write_claims(path: Path, *, claim_id: str, strength: float) -> None:
     path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
 
 
-def _write_feedback_batch(path: Path, *, claim_id: str, delta: float, new_strength: float) -> None:
+def _write_feedback_batch(
+    path: Path,
+    *,
+    claim_id: str,
+    old_strength: float,
+    new_strength: float,
+) -> None:
     payload = {
-        "kind": "chat_feedback",
+        "batch_id": "test-batch",
+        "created_at": "2025-10-27T17:30:48Z",
         "session_id": "session-1",
-        "timestamp": "2025-10-27T17:30:48Z",
         "question": "What progress did I make?",
-        "feedback": "down" if delta < 0 else "up",
-        "claim_adjustments": [
+        "feedback": "down" if new_strength < old_strength else "up",
+        "events": [
             {
-                "id": claim_id,
-                "delta": delta,
+                "kind": "feedback",
+                "claim_id": claim_id,
+                "old_strength": old_strength,
                 "new_strength": new_strength,
+                "delta": new_strength - old_strength,
             }
         ],
-        "claim_markers": [claim_id],
     }
     path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
 
@@ -51,7 +58,12 @@ def test_feedback_apply_updates_claims_and_archives(
     pending_dir = cli_workspace / "derived" / "pending" / "profile_updates"
     pending_dir.mkdir(parents=True, exist_ok=True)
     batch_path = pending_dir / "feedback_focus.yaml"
-    _write_feedback_batch(batch_path, claim_id="focus-claim", delta=-0.05, new_strength=0.45)
+    _write_feedback_batch(
+        batch_path,
+        claim_id="focus-claim",
+        old_strength=0.5,
+        new_strength=0.45,
+    )
 
     result = cli_runner.invoke(app, ["ops", "feedback", "apply"])
     assert result.exit_code == 0, result.stdout

@@ -5,12 +5,12 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Final
+from typing import Final, Literal
 
 import yaml
 
 from aijournal.io.yaml_io import load_yaml_model, write_yaml_model
-from aijournal.models import ClaimsFile
+from aijournal.models import ClaimsFile, FeedbackAdjustmentEvent, FeedbackBatch
 
 _CLAIM_PATTERN: Final[re.Pattern[str]] = re.compile(r"\[claim:([A-Za-z0-9_.:-]+)\]")
 
@@ -106,23 +106,28 @@ def apply_chat_feedback(
     timestamp_slug = timestamp.replace(":", "").replace("T", "-")
     feedback_path = pending_dir / f"feedback_{slug}_{timestamp_slug}.yaml"
 
-    payload = {
-        "kind": "chat_feedback",
-        "session_id": session_id,
-        "timestamp": timestamp,
-        "question": question,
-        "feedback": feedback,
-        "claim_adjustments": [
-            {
-                "id": adj.claim_id,
-                "delta": adj.delta,
-                "new_strength": adj.new_strength,
-            }
+    feedback_value: Literal["up", "down"] = "down" if delta < 0 else "up"
+
+    batch = FeedbackBatch(
+        batch_id=f"{slug}-{timestamp_slug}",
+        created_at=timestamp,
+        session_id=session_id,
+        question=question,
+        feedback=feedback_value,
+        events=[
+            FeedbackAdjustmentEvent(
+                claim_id=adj.claim_id,
+                old_strength=adj.old_strength,
+                new_strength=adj.new_strength,
+                delta=adj.delta,
+            )
             for adj in adjustments
         ],
-        "claim_markers": claim_ids,
-    }
-    feedback_path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
+    )
+    feedback_path.write_text(
+        yaml.safe_dump(batch.model_dump(mode="python"), sort_keys=False),
+        encoding="utf-8",
+    )
     return adjustments, feedback_path
 
 

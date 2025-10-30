@@ -224,3 +224,6 @@ def test_chat_feedback_adjusts_claim_strength(
     pending_dir = cli_workspace / "derived" / "pending" / "profile_updates"
     files = list(pending_dir.glob("feedback_*.yaml"))
     assert files, "Expected feedback file queued"
+    batch_payload = yaml.safe_load(files[0].read_text(encoding="utf-8"))
+    assert batch_payload["feedback"] == "up"
+    assert batch_payload["events"][0]["claim_id"] == "focus-claim"
