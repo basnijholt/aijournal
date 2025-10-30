@@ -13,7 +13,6 @@ from aijournal.domain.changes import ProfileUpdateProposals
 from aijournal.domain.facts import DailySummary, MicroFactsFile
 from aijournal.domain.persona import InterviewSet
 from aijournal.models.derived import AdviceCard
-from aijournal.models.responses import AdviceLLMResponse
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 EXAMPLES_DIR = REPO_ROOT / "prompts" / "examples"
@@ -33,7 +32,7 @@ def _load_example(name: str) -> dict[str, Any]:
         ("extract_facts.json", MicroFactsFile, MicroFactsFile, None),
         ("characterize.json", ProfileUpdateProposals, ProfileUpdateProposals, None),
         ("profile_suggest.json", ProfileUpdateProposals, ProfileUpdateProposals, None),
-        ("advise.json", AdviceLLMResponse, AdviceCard, None),
+        ("advise.json", AdviceCard, AdviceCard, None),
     ],
 )
 def test_prompt_examples_validate_against_models(

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from aijournal.domain.claims import ClaimAtom, Provenance, Scope
 from aijournal.models.derived import AdviceCard
-from aijournal.models.responses import AdviceLLMResponse
 from aijournal.pipelines import advise
 
 
@@ -30,7 +29,7 @@ def _claim(claim_id: str) -> ClaimAtom:
 
 
 def test_generate_advice_fake_mode() -> None:
-    def request_advice() -> AdviceLLMResponse:  # pragma: no cover - fake mode skips
+    def request_advice() -> AdviceCard:  # pragma: no cover - fake mode skips
         raise AssertionError("LLM request should not run in fake mode")
 
     card = advise.generate_advice(
@@ -49,7 +48,7 @@ def test_generate_advice_fake_mode() -> None:
 
 
 def test_generate_advice_llm_path() -> None:
-    response = AdviceLLMResponse(
+    response = AdviceCard(
         id="adv-1234",
         query="How should I focus?",
         assumptions=["Assumption"],
@@ -61,7 +60,7 @@ def test_generate_advice_llm_path() -> None:
 
     called: dict[str, bool] = {"invoked": False}
 
-    def request_advice() -> AdviceLLMResponse:
+    def request_advice() -> AdviceCard:
         called["invoked"] = True
         return response
 

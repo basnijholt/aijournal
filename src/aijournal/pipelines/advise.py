@@ -8,9 +8,8 @@ from typing import Any
 from aijournal.domain.claims import ClaimAtom
 from aijournal.fakes import fake_advise
 from aijournal.models.derived import AdviceCard
-from aijournal.models.responses import AdviceLLMResponse
 
-AdviceRequest = Callable[[], AdviceLLMResponse]
+AdviceRequest = Callable[[], AdviceCard]
 AdviceIdentifier = Callable[[str], str]
 
 
@@ -38,4 +37,4 @@ def generate_advice(
         )
 
     response = request_advice()
-    return AdviceCard.model_validate(response.model_dump(mode="python"))
+    return response.model_copy(deep=True)
