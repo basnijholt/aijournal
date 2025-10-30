@@ -14,10 +14,7 @@ question, respond with a JSON advice card matching this schema:
       },
       "steps": ["Concrete step"],
       "risks": ["Potential downside"],
-      "mitigations": ["How to reduce risk"],
-      "evidence": ["entry or microfact ids"],
-      "com_b": "capability|opportunity|motivation|null",
-      "if_then": "If trigger, then response."
+      "mitigations": ["How to reduce risk"]
     }
   ],
   "tradeoffs": ["Honest caveats"],
@@ -27,7 +24,6 @@ question, respond with a JSON advice card matching this schema:
     "facets": ["facet paths"],
     "claims": ["claim ids"]
   },
-  "recent_evidence": ["Recent evidence ids"],
   "style": {
     "tone": "direct|coaching|warm|concise|null",
     "reading_level": "basic|intermediate|advanced|null",
@@ -40,11 +36,9 @@ question, respond with a JSON advice card matching this schema:
 Guidelines:
 - Honor `coaching_prefs` tone/depth when crafting steps; map tone to one of the allowed values (`direct`, `coaching`, `warm`, `concise`).
 - Respect `boundaries_ethics.red_lines`; if the question violates them, steer away politely.
-- Tie every recommendation back to at least one facet or claim **and** cite at least one recent evidence ID (normalized entry, microfact, or ranking reference) in `evidence`.
+- Tie every recommendation back to at least one facet or claim.
 - Incorporate `RANKINGS_JSON` (top interview targets) and `PENDING_PROMPTS_JSON` when prioritising
   assumptions, risks, or next actions—surface follow-ups that close the biggest information gaps.
-- For each recommendation choose the COM-B lever that is most responsible for progress and encode one implementation intention (`if_then`).
-- Populate `recent_evidence` with the evidence IDs you leaned on across the entire advice card (dedupe values).
 - Keep steps specific and time-bound where possible.
 - Caps: ≤3 recommendations (each ≤5 steps); `risks`/`mitigations` ≤3 entries, list strings ≤160 characters.
 - Return **only** valid JSON.

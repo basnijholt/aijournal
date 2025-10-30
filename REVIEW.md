@@ -248,7 +248,7 @@ The L1→L4 memory hierarchy aligns with contemporary personality science when t
 - [x] Add skeleton injection + two-step repair loop + coercion logging to structured runners, exposing metrics in `LLMResult` and CI (implemented in `services/ollama.run_ollama_agent`, now returning attempt/repair/coercion metadata consumed by CLI pipelines).
 - [x] Build telemetry surfaces that aggregate validation/coercion counts and enforce thresholds in CI (`services/ollama.run_ollama_agent` now emits to `derived/logs/structured_metrics.jsonl`; thresholds enforced via `scripts/check_structured_metrics.py` and associated tests).
 - [x] Ship survey/EMA ingestion + reporting commands (`ops persona calibrate`, `ops persona metrics`) to track convergent/discriminant/test–retest/calibration stats and enforce kill criteria.
-- [x] Extend `AdviceCard` with COM-B / implementation-intention fields and ensure recommendations cite both claims and recent evidence (recommendations now include `evidence`, `com_b`, `if_then`; cards record `recent_evidence`, prompt/examples/tests updated).
+- [ ] Extend `AdviceCard` with COM-B / implementation-intention fields and ensure recommendations cite both claims and recent evidence.
 - [ ] (Optional) Implement trusted-other ingestion with separate evidence channels and document usage.
 
 ## 9. Additional Observations
