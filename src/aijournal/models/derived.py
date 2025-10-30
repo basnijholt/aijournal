@@ -33,6 +33,21 @@ from aijournal.domain.facts import (
 from aijournal.domain.facts import (
     SummaryMeta as DomainSummaryMeta,
 )
+from aijournal.domain.persona import (
+    InterviewQuestion as DomainInterviewQuestion,
+)
+from aijournal.domain.persona import (
+    InterviewSet as DomainInterviewSet,
+)
+from aijournal.domain.persona import (
+    PersonaCore as DomainPersonaCore,
+)
+from aijournal.domain.persona import (
+    PersonaCoreFile as DomainPersonaCoreFile,
+)
+from aijournal.domain.persona import (
+    PersonaCoreMeta as DomainPersonaCoreMeta,
+)
 
 from .base import AijournalModel
 from .claim_atoms import ClaimAtom, ClaimSource, ClaimSourceSpan, Provenance, Scope
@@ -45,6 +60,12 @@ MicroFact = DomainMicroFact
 ClaimProposal = DomainClaimProposal
 
 MicroFactsFile = DomainMicroFactsFile
+
+InterviewQuestion = DomainInterviewQuestion
+InterviewSet = DomainInterviewSet
+PersonaCoreMeta = DomainPersonaCoreMeta
+PersonaCore = DomainPersonaCore
+PersonaCoreFile = DomainPersonaCoreFile
 
 
 class ChunkManifestMeta(AijournalModel):
@@ -227,18 +248,6 @@ class ProfileSuggestions(AijournalModel):
     meta: SummaryMeta | None = None
 
 
-class InterviewQuestion(AijournalModel):
-    id: str
-    text: str
-    target_facet: str | None = None
-    priority: str | None = None
-
-
-class InterviewSet(AijournalModel):
-    questions: list[InterviewQuestion] = Field(default_factory=list)
-    meta: SummaryMeta | None = None
-
-
 class AdviceReference(AijournalModel):
     facets: list[str] = Field(default_factory=list)
     claims: list[str] = Field(default_factory=list)
@@ -336,32 +345,6 @@ class ProfileUpdateBatch(AijournalModel):
     proposals: ProfileUpdateProposals = Field(default_factory=ProfileUpdateProposals)
     meta: SummaryMeta = Field(default_factory=SummaryMeta)
     preview: ProfileUpdatePreview | None = None
-
-
-class PersonaCoreMeta(AijournalModel):
-    generated_at: str
-    token_budget: int
-    planned_tokens: int
-    char_per_token: float
-    selection_strategy: str | None = None
-    trimmed: list[dict[str, Any]] = Field(default_factory=list)
-    claim_pool: int | None = None
-    claim_count: int | None = None
-    max_claims: int | None = None
-    min_claims: int | None = None
-    budget_exceeded: bool = False
-    sources: dict[str, str] = Field(default_factory=dict)
-    source_mtimes: dict[str, float] = Field(default_factory=dict)
-
-
-class PersonaCore(AijournalModel):
-    profile: dict[str, Any] = Field(default_factory=dict)
-    claims: list[ClaimAtom] = Field(default_factory=list)
-
-
-class PersonaCoreFile(AijournalModel):
-    persona: PersonaCore = Field(default_factory=PersonaCore)
-    meta: PersonaCoreMeta
 
 
 class IndexMeta(AijournalModel):

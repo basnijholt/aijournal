@@ -575,21 +575,17 @@ class CaptureInput(CaptureRequest):
 
 ### Stage 4 – Persona & Interview Domainization
 
-**4.1 Persona Domain Module**
-- Add `aijournal/domain/persona.py` covering persona/interview StrictModels; export via `aijournal/domain/__init__.py`.
-- Tests: `uv run pytest`.
+**4.1 Persona Domain Module — DONE**
+- Introduced `aijournal/domain/persona.py` with strict `PersonaCore*` and `Interview*` models plus forward-ref rebuild helpers; exports wired through `aijournal/domain/__init__.py`.
 
-**4.2 Derived Aliases & Rebuild**
-- Alias legacy personas/interviews in `models/derived.py`, invoke `model_rebuild()` where required, and drop duplicate definitions.
-- Tests: `uv run pytest`; regenerate affected schema fixtures.
+**4.2 Derived Aliases & Rebuild — DONE**
+- `models/derived.py` now re-exports domain persona/interview models and drops duplicate definitions; schema snapshots refreshed for the new locations.
 
-**4.3 Capture & CLI Wiring**
-- Update capture Stage 7, CLI persona commands, interview flows, and chat loaders to import from the domain module.
-- Tests: `uv run pytest`; targeted CLI smoke runs (`persona build/status`, `ops profile interview`).
+**4.3 Capture & CLI Wiring — DONE**
+- CLI, persona commands, schema validators, and chat services import the domain persona models directly, ensuring a single source of truth.
 
-**4.4 Schema Blessing & Docs**
-- Regenerate persona/interview schemas via `scripts/check_schemas.py --bless`; refresh prompt examples and docs.
-- Tests: `uv run pytest`; `uv run pre-commit run --all-files`.
+**4.4 Schema Blessing & Docs — DONE**
+- Regenerated persona/interview schemas (`schemas/v2/aijournal.domain.persona.*`), updated prompts/examples, and documented the strict-schema flow.
 
 ### Stage 5 – Claim Events & Feedback
 

@@ -2,6 +2,7 @@
   "$defs": {
     "InterviewQuestion": {
       "additionalProperties": false,
+      "description": "Structured interview question proposed by the characterization pipeline.",
       "properties": {
         "id": {
           "title": "Id",
@@ -79,6 +80,7 @@
     }
   },
   "additionalProperties": false,
+  "description": "Collection of interview questions to review with the operator.",
   "properties": {
     "meta": {
       "anyOf": [

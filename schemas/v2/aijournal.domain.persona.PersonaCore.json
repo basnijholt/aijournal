@@ -255,6 +255,7 @@
     }
   },
   "additionalProperties": false,
+  "description": "Primary persona payload used by chat/advise pipelines.",
   "properties": {
     "claims": {
       "items": {

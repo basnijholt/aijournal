@@ -76,6 +76,7 @@ from aijournal.commands.summarize import (
 )
 from aijournal.commands.system import run_status_summary, run_system_doctor
 from aijournal.domain.evidence import redact_source_text
+from aijournal.domain.persona import InterviewQuestion, InterviewSet
 from aijournal.io.yaml_io import load_yaml_model, write_yaml_model
 from aijournal.models import (
     ClaimAtom,
@@ -86,8 +87,6 @@ from aijournal.models import (
     ClaimSignaturePayload,
     ClaimSource,
     FacetProposal,
-    InterviewQuestion,
-    InterviewSet,
     NormalizedEntry,
     ProfileUpdateBatch,
     ProfileUpdatePreview,
