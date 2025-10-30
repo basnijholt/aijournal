@@ -810,7 +810,38 @@ refactor3: <concise summary>
 
 ---
 
-## 15. Absolute Final Reminder
+## 15. Outstanding TODOs (Post-Cutover Cleanup)
+
+Back-compat is a non-goal. The next agent should treat the items below as mandatory follow-ups so the refactor vision actually lands. Each bullet spells out the concrete work, affected modules, and what tests/docs must change. Update the Decision Log once each is complete.
+
+1. **Retire `ProfileSuggestions` twins**
+   - Replace `ProfileSuggestions`, `ProfileSuggestionUpsert`, `ProfileSuggestionUpdate` with the strict domain flow built around `ProfileUpdateProposals` + `ClaimProposal`/`FacetChange`.
+   - Rewrite `src/aijournal/commands/profile.py`, `src/aijournal/pipelines/profile.py` (if any), and all CLI helpers/tests (`tests/test_cli_profile_*`, `tests/test_profile_suggestions_bridge.py`) to consume `ProfileUpdateProposals` directly and persist `Artifact[ProfileUpdateProposals]` instead of the bespoke container.
+   - Delete the legacy models from `src/aijournal/models/derived.py`, adjust fake data helpers, schema snapshots, docs, and examples accordingly.
+
+2. **Remove chunk manifest duplicates**
+   - Delete `ChunkManifest*` models in `src/aijournal/models/derived.py` and the writer in `src/aijournal/pipelines/index.py`.
+   - Persist daily chunk exports as `Artifact[list[Chunk]]` (JSON/YAML) plus `Artifact[IndexMeta]` only. Update pack/index tests (`tests/test_cli_pack.py`, `tests/test_retriever.py`) and fixtures to match.
+   - Purge stale manifest YAML/NumPy files from docs/examples if they still assume the legacy format.
+
+3. **Promote chat citations to typed objects**
+   - Change `ChatResponse.citations` to `list[ChatCitation]` in `src/aijournal/api/chat.py` and update the LLM prompt examples to emit objects instead of bare codes.
+   - Adjust `run_ollama_agent` consumers (`src/aijournal/services/chat.py`, FastAPI streaming responses, CLI tests) to handle the structured list and to render claim markers from the new structure.
+   - Update schema snapshots, prompt fixtures under `prompts/examples/`, and any CLI tests that assert on `data["citations"]` (e.g., `tests/test_cli_chat.py`, `tests/test_chatd.py`).
+
+4. **Align claim preview action vocabulary**
+   - Replace the current `ClaimPreviewEvent.action` literals (`created`, `merged`, `scope_split`, `noop`, etc.) with the planned enum (`upsert`, `update`, `delete`, `conflict`, `strength_delta`).
+   - Update consolidation logic (`src/aijournal/services/consolidator.py`), audit tools, and tests (`tests/test_cli_characterize.py`, `tests/test_cli_facts.py`, `tests/test_services/test_capture.py`) to produce/expect the new names.
+   - Ensure documentation (`refactor3.md`, `README.md`, any prompt text) describes the new vocabulary.
+
+5. **Normalize timestamps as ISO strings**
+   - Audit `IngestResult`, normalization utilities, and downstream consumers to ensure they emit ISO8601 strings rather than `datetime` objects. `normalize_created_at` already exists—ensure every ingest/CLI path uses it.
+   - Update tests that currently assert against `datetime` instances (`tests/services/test_capture.py`, normalization tests) to expect strings.
+   - Verify that schema snapshots and fake data use the same string representation so artifact diffs stay stable.
+
+---
+
+## 16. Absolute Final Reminder
 
 At every sub-step boundary:
 
