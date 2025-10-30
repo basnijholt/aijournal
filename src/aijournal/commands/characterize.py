@@ -46,7 +46,7 @@ from aijournal.models import (
 )
 from aijournal.pipelines import characterize as characterize_pipeline
 from aijournal.pipelines import facts as facts_pipeline
-from aijournal.services import LLMResponseError
+from aijournal.services.ollama import LLMResponseError
 from aijournal.utils import time as time_utils
 
 

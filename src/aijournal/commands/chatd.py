@@ -7,7 +7,7 @@ from pathlib import Path
 import typer
 
 from aijournal.commands.ingest import _load_config
-from aijournal.services import build_chat_app
+from aijournal.services.chat_api import build_chat_app
 
 
 def run_chatd(host: str, port: int) -> None:

@@ -37,7 +37,7 @@ from aijournal.models import (
     SummaryMeta,
 )
 from aijournal.pipelines import facts as facts_pipeline
-from aijournal.services import LLMResponseError
+from aijournal.services.ollama import LLMResponseError
 from aijournal.utils import time as time_utils
 
 

@@ -5,7 +5,7 @@ from copy import deepcopy
 
 import pytest
 
-from aijournal.services import ClaimConsolidator
+from aijournal.services.consolidator import ClaimConsolidator
 from tests.helpers import make_claim_atom
 
 

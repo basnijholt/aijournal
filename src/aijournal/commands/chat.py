@@ -15,9 +15,8 @@ from aijournal.commands.index import (
 )
 from aijournal.commands.ingest import _load_config
 from aijournal.io.chat_sessions import ChatSessionRecorder
-from aijournal.services import (
-    ChatService,
-    ChatTurn,
+from aijournal.services.chat import ChatService, ChatTurn
+from aijournal.services.feedback import (
     FeedbackAdjustment,
     apply_chat_feedback,
     extract_claim_markers,

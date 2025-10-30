@@ -24,7 +24,7 @@ from aijournal.ingest_agent import (
 from aijournal.models import ManifestEntry
 from aijournal.pipelines import normalization
 from aijournal.schema import SchemaValidationError, validate_schema
-from aijournal.services import build_ollama_config_from_mapping
+from aijournal.services.ollama import build_ollama_config_from_mapping
 from aijournal.utils import time as time_utils
 from aijournal.utils.paths import normalized_entry_path
 
