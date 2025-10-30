@@ -19,8 +19,8 @@ from aijournal.commands.ingest import (
 )
 from aijournal.commands.profile import (
     _build_claim_atom_from_entry,
-    _load_profile_components,
-    _profile_to_dict,
+    load_profile_components,
+    profile_to_dict,
 )
 from aijournal.commands.summarize import (
     _build_meta,
@@ -80,8 +80,8 @@ def run_characterize(
     timeout_value = _validate_timeout(timeout)
     manifest_entries = _load_manifest(_manifest_path(root))
     manifest_index = _manifest_by_id(manifest_entries)
-    profile_model, claim_models = _load_profile_components(root)
-    profile = _profile_to_dict(profile_model)
+    profile_model, claim_models = load_profile_components(root)
+    profile = profile_to_dict(profile_model)
     config = _load_config(root)
 
     entries = [entry for entry, _ in entries_with_paths]

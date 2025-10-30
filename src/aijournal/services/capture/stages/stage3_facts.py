@@ -16,7 +16,7 @@ def run_facts_stage_3(
     root: Path,
 ) -> FactsStage3Outputs:
     from aijournal.commands.facts import run_facts
-    from aijournal.commands.profile import _load_profile_components
+    from aijournal.commands.profile import load_profile_components
 
     from .. import DEFAULT_TIMEOUT_SECONDS, FactsStage3Outputs, OperationResult
     from ..utils import noop_preview, relative_path
@@ -24,7 +24,7 @@ def run_facts_stage_3(
     stage_start = perf_counter()
     facts_paths: list[str] = []
     facts_errors: list[str] = []
-    claim_models = _load_profile_components(root)[1]
+    claim_models = load_profile_components(root)[1]
     for date in changed_dates:
         try:
             _, facts_path = run_facts(

@@ -5,21 +5,19 @@ from __future__ import annotations
 import json
 import os
 from collections.abc import Callable
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, NamedTuple
 
-import yaml
 from pydantic import BaseModel, Field
 
 from aijournal.api.capture import CaptureInput
 from aijournal.commands.ingest import _load_config
-from aijournal.domain.journal import NormalizedEntry
-from aijournal.models.authoritative import JournalSection, ManifestEntry
+from aijournal.models.authoritative import ManifestEntry
 from aijournal.services.capture.results import OperationResult, StageResult
+from aijournal.services.capture.stages.stage0_persist import EntryResult
+from aijournal.services.capture.utils import normalize_markdown
 from aijournal.services.ollama import build_ollama_config_from_mapping
 from aijournal.utils import time as time_utils
-from aijournal.utils.paths import normalized_entry_path
 
 from .stages.stage0_persist import run_persist_stage_0
 from .stages.stage1_normalize import run_normalize_stage_1
@@ -34,7 +32,6 @@ from .utils import (
     digest_bytes,
     emit_operation_event,
     relative_path,
-    write_yaml_if_changed,
 )
 
 
@@ -288,215 +285,6 @@ def load_capture_result(root: Path, run_id: str) -> CaptureResult:
 
 
 DEFAULT_TIMEOUT_SECONDS = 120.0
-
-
-def _resolve_created_dt(preferred: object, fallback: datetime) -> datetime:
-    if preferred:
-        if isinstance(preferred, datetime):
-            parsed = preferred
-        elif (
-            hasattr(preferred, "year") and hasattr(preferred, "month") and hasattr(preferred, "day")
-        ):
-            parsed = datetime(preferred.year, preferred.month, preferred.day, tzinfo=UTC)
-        else:
-            text = str(preferred)
-            try:
-                parsed = datetime.fromisoformat(text)
-            except ValueError:
-                parsed = datetime.strptime(text, "%Y-%m-%d")
-        if parsed.tzinfo is None:
-            parsed = parsed.replace(tzinfo=UTC)
-        return parsed
-    return fallback
-
-
-def _coerce_frontmatter_tags(raw: object) -> list[str]:
-    if raw is None:
-        return []
-    if isinstance(raw, list):
-        return [str(item) for item in raw if isinstance(item, (str, int, float))]
-    if isinstance(raw, str):
-        return [raw]
-    return []
-
-
-def _extract_json_frontmatter_block(text: str) -> tuple[str, str]:
-    depth = 0
-    in_string = False
-    escape = False
-    start_index = None
-    for index, char in enumerate(text):
-        if start_index is None:
-            if char.isspace():
-                continue
-            if char != "{":
-                raise ValueError("JSON frontmatter must start with '{'")
-            start_index = index
-            depth = 1
-            continue
-
-        if in_string:
-            if escape:
-                escape = False
-                continue
-            if char == "\\":
-                escape = True
-                continue
-            if char == '"':
-                in_string = False
-            continue
-
-        if char == '"':
-            in_string = True
-            continue
-        if char == "{":
-            depth += 1
-            continue
-        if char == "}":
-            depth -= 1
-            if depth == 0 and start_index is not None:
-                end_index = index + 1
-                block = text[start_index:end_index]
-                remainder = text[end_index:]
-                return block, remainder
-    raise ValueError("Unterminated JSON frontmatter block")
-
-
-def _extract_json_frontmatter(text: str) -> tuple[dict[str, object], str]:
-    block, body = _extract_json_frontmatter_block(text)
-    try:
-        data = json.loads(block) or {}
-    except json.JSONDecodeError as exc:  # pragma: no cover - defensive
-        raise ValueError("Invalid JSON frontmatter") from exc
-    if not isinstance(data, dict):
-        data = {}
-    return data, body.lstrip("\n")
-
-
-def _normalize_markdown(
-    markdown_path: Path,
-    *,
-    root: Path,
-    source_hash: str,
-    source_type: str,
-) -> tuple[Path, bool]:
-    frontmatter, body = _split_frontmatter(markdown_path.read_text(encoding="utf-8"))
-
-    created_dt = _resolve_created_dt(frontmatter.get("created_at"), time_utils.now())
-    created_str = time_utils.format_timestamp(created_dt)
-    date_str = created_dt.strftime("%Y-%m-%d")
-
-    entry_id_raw = frontmatter.get("id") or frontmatter.get("slug")
-    if entry_id_raw is None:
-        entry_id_raw = markdown_path.stem
-    entry_id = str(entry_id_raw)
-
-    title_raw = frontmatter.get("title") or entry_id.replace("-", " ").title()
-    title = str(title_raw)
-
-    tags = _coerce_frontmatter_tags(frontmatter.get("tags"))
-    sections_raw = _scan_headings(body)
-    sections_models: list[JournalSection] = []
-    for section in sections_raw:
-        heading = str(section.get("heading", title))
-        level_raw = section.get("level", 1)
-        if isinstance(level_raw, (int, float, str)):
-            try:
-                level = int(level_raw)
-            except (TypeError, ValueError):
-                level = 1
-        else:
-            level = 1
-        sections_models.append(
-            JournalSection(
-                heading=heading,
-                level=level,
-                summary=None,
-            ),
-        )
-    summary_raw = frontmatter.get("summary")
-    summary_text = str(summary_raw) if summary_raw is not None else (body.strip() or None)
-    if not sections_models:
-        sections_models = [JournalSection(heading=title, level=1, summary=summary_text)]
-
-    normalized_entry = NormalizedEntry(
-        id=entry_id,
-        created_at=created_str,
-        source_path=relative_path(markdown_path, root),
-        title=title,
-        tags=tags,
-        sections=sections_models,
-        summary=summary_text,
-        source_hash=source_hash,
-        source_type=source_type,
-    )
-    normalized_path = normalized_entry_path(root, date_str, entry_id)
-    changed = write_yaml_if_changed(
-        normalized_path,
-        normalized_entry.model_dump(mode="python"),
-    )
-    return normalized_path, changed
-
-
-def _split_frontmatter(text: str) -> tuple[dict[str, object], str]:
-    stripped = text.lstrip()
-    if stripped.startswith("{"):
-        return _extract_json_frontmatter(stripped)
-
-    delimiter = None
-    if stripped.startswith("---"):
-        delimiter = "---"
-    elif stripped.startswith("+++"):
-        delimiter = "+++"
-    if delimiter is None:
-        msg = "Markdown entry missing YAML/TOML frontmatter delimiter"
-        raise ValueError(msg)
-
-    parts = stripped.split(delimiter, 2)
-    if len(parts) < 3:
-        msg = "Incomplete YAML/TOML frontmatter block"
-        raise ValueError(msg)
-
-    frontmatter_raw = parts[1].strip()
-    body = parts[2].lstrip("\n")
-    data = yaml.safe_load(frontmatter_raw) or {}
-    if not isinstance(data, dict):
-        data = {}
-    return data, body
-
-
-def _scan_headings(text: str) -> list[dict[str, object]]:
-    sections: list[dict[str, object]] = []
-    for line in text.splitlines():
-        stripped = line.strip()
-        if not stripped.startswith("#"):
-            continue
-        hashes, _, heading = stripped.partition(" ")
-        if not heading:
-            continue
-        level = len(hashes)
-        sections.append({"heading": heading.strip(), "level": level})
-    return sections
-
-
-class EntryResult(BaseModel):
-    """Outcome for a single journal entry processed during capture."""
-
-    markdown_path: str | None = Field(None, description="Authoritative Markdown path.")
-    normalized_path: str | None = Field(None, description="Normalized YAML emitted for the entry.")
-    date: str = Field(..., description="Date bucket for the entry (YYYY-MM-DD).")
-    slug: str = Field(..., description="Slug assigned to the entry.")
-    deduped: bool = Field(
-        False, description="True when the input was skipped due to identical hash."
-    )
-    changed: bool = Field(False, description="True when content or metadata changed on disk.")
-    warnings: list[str] = Field(default_factory=list, description="Non-fatal issues encountered.")
-    source_hash: str | None = Field(
-        None, description="Hash of the Markdown content used for dedupe/normalization."
-    )
-    source_type: str | None = Field(
-        None, description="Source type recorded for the entry (journal/notes/blog)."
-    )
 
 
 class CaptureResult(BaseModel):
@@ -1060,7 +848,7 @@ def normalize_entries(entries: list[EntryResult], root: Path) -> dict[str, Any]:
             continue
         source_hash = entry.source_hash or digest_bytes(markdown_path.read_bytes())
         source_type = entry.source_type or "journal"
-        normalized_path, changed = _normalize_markdown(
+        normalized_path, changed = normalize_markdown(
             markdown_path,
             root=root,
             source_hash=source_hash,

@@ -32,11 +32,11 @@ from aijournal.models.derived import (
 )
 from aijournal.services.capture import (
     CaptureInput,
-    EntryResult,
     normalize_entries,
     run_capture,
 )
 from aijournal.services.capture.stages.stage0_persist import (
+    EntryResult,
     _persist_file_entry,
     _persist_text_entry,
 )
@@ -289,7 +289,7 @@ def test_run_capture_records_telemetry(tmp_path: Path, monkeypatch: pytest.Monke
     )
     dummy_claim = object()
     monkeypatch.setattr(
-        "aijournal.commands.profile._load_profile_components",
+        "aijournal.commands.profile.load_profile_components",
         lambda root: (None, [dummy_claim]),
     )
     monkeypatch.setattr(
@@ -595,11 +595,11 @@ def test_run_capture_rebuild_always_forces_refresh(
     monkeypatch.setattr("aijournal.commands.persona.persona_state", fake_persona_state)
     monkeypatch.setattr("aijournal.commands.persona.run_persona_build", fake_run_persona_build)
     monkeypatch.setattr(
-        "aijournal.commands.profile._load_profile_components",
+        "aijournal.commands.profile.load_profile_components",
         lambda root: ({"name": "Test"}, [object()]),
     )
     monkeypatch.setattr(
-        "aijournal.commands.profile._profile_to_dict",
+        "aijournal.commands.profile.profile_to_dict",
         lambda model: model if isinstance(model, dict) else {},
     )
 
@@ -691,7 +691,7 @@ def test_run_capture_review_mode_skips_apply(
     )
 
     monkeypatch.setattr(
-        "aijournal.commands.profile._load_profile_components",
+        "aijournal.commands.profile.load_profile_components",
         lambda root: (None, []),
     )
     index_rebuild_calls: list[tuple[str | None, int | None]] = []

@@ -6,6 +6,7 @@ from time import perf_counter
 from typing import TYPE_CHECKING, Any
 
 import yaml
+from pydantic import BaseModel, Field
 
 from aijournal.api.capture import CaptureInput
 from aijournal.commands.ingest import _fake_structured_entry, _load_config
@@ -13,21 +14,18 @@ from aijournal.domain.journal import NormalizedEntry
 from aijournal.ingest_agent import IngestResult, build_ingest_agent, ingest_with_agent
 from aijournal.models.authoritative import ManifestEntry
 from aijournal.pipelines import normalization
-from aijournal.services.capture import (
-    EntryResult,
-    _coerce_frontmatter_tags,
-    _normalize_markdown,
-    _resolve_created_dt,
-    _scan_headings,
-    _split_frontmatter,
-)
 from aijournal.services.capture.utils import (
+    coerce_frontmatter_tags,
     digest_bytes,
     digest_text,
     ensure_manifest,
     ensure_unique_slug,
     journal_path,
+    normalize_markdown,
     relative_path,
+    resolve_created_dt,
+    scan_headings,
+    split_frontmatter,
     use_fake_llm,
     write_manifest,
     write_markdown_entry,
@@ -56,7 +54,7 @@ def _ingest_frontmatter(
     """Infer front matter and normalized entry using the ingest agent."""
 
     config = _load_config(root)
-    fallback_sections = _scan_headings(raw_text)
+    fallback_sections = scan_headings(raw_text)
     warnings: list[str] = []
 
     if use_fake_llm():
@@ -148,6 +146,26 @@ def _coalesce_tags(*tag_sets: Iterable[str]) -> list[str]:
     return ordered
 
 
+class EntryResult(BaseModel):
+    """Outcome for a single journal entry processed during capture."""
+
+    markdown_path: str | None = Field(None, description="Authoritative Markdown path.")
+    normalized_path: str | None = Field(None, description="Normalized YAML emitted for the entry.")
+    date: str = Field(..., description="Date bucket for the entry (YYYY-MM-DD).")
+    slug: str = Field(..., description="Slug assigned to the entry.")
+    deduped: bool = Field(
+        False, description="True when the input was skipped due to identical hash."
+    )
+    changed: bool = Field(False, description="True when content or metadata changed on disk.")
+    warnings: list[str] = Field(default_factory=list, description="Non-fatal issues encountered.")
+    source_hash: str | None = Field(
+        None, description="Hash of the Markdown content used for dedupe/normalization."
+    )
+    source_type: str | None = Field(
+        None, description="Source type recorded for the entry (journal/notes/blog)."
+    )
+
+
 def _persist_file_entry(
     inputs: CaptureInput,
     root: Path,
@@ -193,7 +211,7 @@ def _persist_file_entry(
     normalized_seed: NormalizedEntry | None = None
     ingest_warnings: list[str] = []
     try:
-        frontmatter_data, body = _split_frontmatter(text)
+        frontmatter_data, body = split_frontmatter(text)
         body = body.strip()
     except ValueError:
         frontmatter_data, body, normalized_seed, ingest_warnings = _ingest_frontmatter(
@@ -204,7 +222,7 @@ def _persist_file_entry(
             digest=digest,
         )
 
-    created_dt = _resolve_created_dt(
+    created_dt = resolve_created_dt(
         frontmatter_data.get("created_at") or inputs.date,
         time_utils.now(),
     )
@@ -226,11 +244,11 @@ def _persist_file_entry(
         entry_warnings.append(f'slug "{slug_source}" already exists; stored as "{slug}"')
 
     tags = _coalesce_tags(
-        _coerce_frontmatter_tags(frontmatter_data.get("tags")),
+        coerce_frontmatter_tags(frontmatter_data.get("tags")),
         inputs.tags,
     )
     projects = _coalesce_tags(
-        _coerce_frontmatter_tags(frontmatter_data.get("projects")),
+        coerce_frontmatter_tags(frontmatter_data.get("projects")),
         inputs.projects,
     )
 
@@ -288,7 +306,7 @@ def _persist_file_entry(
         normalized_payload = normalized_seed.model_dump(mode="python")
         normalized_changed = write_yaml_if_changed(normalized_path, normalized_payload)
     else:
-        normalized_path, normalized_changed = _normalize_markdown(
+        normalized_path, normalized_changed = normalize_markdown(
             markdown_path,
             root=root,
             source_hash=digest,
@@ -335,7 +353,7 @@ def _persist_text_entry(
     manifest_index = _manifest_index(manifest_entries)
 
     now_dt = time_utils.now()
-    created_dt = _resolve_created_dt(inputs.date, now_dt)
+    created_dt = resolve_created_dt(inputs.date, now_dt)
     date_str = created_dt.strftime("%Y-%m-%d")
 
     body_text = (inputs.text or "").strip()
@@ -393,7 +411,7 @@ def _persist_text_entry(
 
     write_markdown_entry(markdown_path, frontmatter, body_text)
 
-    normalized_path, normalized_changed = _normalize_markdown(
+    normalized_path, normalized_changed = normalize_markdown(
         markdown_path,
         root=root,
         source_hash=digest,
