@@ -41,11 +41,17 @@ class ChatCitation(StrictModel):
         )
 
 
+class ChatCitationRef(StrictModel):
+    """Reference emitted by the LLM; resolved against retrieved chunks."""
+
+    code: str = Field(min_length=1)
+
+
 class ChatResponse(StrictModel):
     """Structured response returned by the chat LLM."""
 
     answer: str = Field(..., max_length=4000)
-    citations: list[str] = Field(default_factory=list)
+    citations: list[ChatCitationRef] = Field(default_factory=list)
     clarifying_question: str | None = None
     telemetry: dict[str, Any] = Field(default_factory=dict)
     timestamp: str | None = None

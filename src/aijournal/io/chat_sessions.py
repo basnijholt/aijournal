@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+from aijournal.api.chat import ChatCitation
 from aijournal.common.meta import Artifact, ArtifactKind, ArtifactMeta
 from aijournal.domain.chat import ChatTelemetry, ChatTurn
 from aijournal.domain.chat_sessions import (
@@ -15,7 +16,6 @@ from aijournal.domain.chat_sessions import (
     ChatTranscriptTurn,
 )
 from aijournal.io.artifacts import load_artifact, save_artifact
-from aijournal.services.chat import ChatCitation
 
 
 def _citation_codes(citations: list[ChatCitation]) -> list[str]:

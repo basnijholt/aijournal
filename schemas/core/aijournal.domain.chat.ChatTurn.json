@@ -52,6 +52,22 @@
       "title": "ChatCitation",
       "type": "object"
     },
+    "ChatCitationRef": {
+      "additionalProperties": false,
+      "description": "Reference emitted by the LLM; resolved against retrieved chunks.",
+      "properties": {
+        "code": {
+          "minLength": 1,
+          "title": "Code",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code"
+      ],
+      "title": "ChatCitationRef",
+      "type": "object"
+    },
     "ChatResponse": {
       "additionalProperties": false,
       "description": "Structured response returned by the chat LLM.",
@@ -63,7 +79,7 @@
         },
         "citations": {
           "items": {
-            "type": "string"
+            "$ref": "#/$defs/ChatCitationRef"
           },
           "title": "Citations",
           "type": "array"

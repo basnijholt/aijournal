@@ -180,6 +180,8 @@ def test_chatd_streams_answer(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
     assert session_dir.exists()
     assert answer["event"] == "answer"
     assert answer["citations"], "Expected citations in streamed answer"
+    assert "code" in answer["citations"][0]
+    assert "marker" in answer["citations"][0]
 
 
 def test_chatd_no_save(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

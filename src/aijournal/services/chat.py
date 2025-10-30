@@ -12,7 +12,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from aijournal.api.chat import ChatCitation, ChatResponse
+from aijournal.api.chat import ChatCitation, ChatCitationRef, ChatResponse
 from aijournal.common.meta import LLMResult
 from aijournal.domain.chat import ChatTelemetry, ChatTurn
 from aijournal.domain.persona import PersonaCore, PersonaCoreFile
@@ -212,7 +212,11 @@ class ChatService:
                 f"{prefix} No indexed journal entries matched '{question}'. "
                 "Rebuild the index if you recently added notes."
             )
-            response = ChatResponse(answer=answer.strip(), citations=[], timestamp=None)
+            response = ChatResponse(
+                answer=answer.strip(),
+                citations=[],
+                timestamp=None,
+            )
             return answer.strip(), [], None, response
 
         top_chunk = chunks[0]
@@ -230,7 +234,7 @@ class ChatService:
             clarifying = self._generate_clarifying_question(intent, question)
         response = ChatResponse(
             answer=answer.strip(),
-            citations=[citation.code],
+            citations=[ChatCitationRef(code=citation.code)],
             clarifying_question=clarifying,
             timestamp=None,
         )
@@ -276,8 +280,8 @@ class ChatService:
 
         citations: list[ChatCitation] = []
         missing_codes: list[str] = []
-        for raw_code in response.citations:
-            code = raw_code.strip()
+        for citation_ref in response.citations:
+            code = citation_ref.code.strip()
             if not code:
                 continue
             citation = citations_map.get(code)
@@ -299,6 +303,9 @@ class ChatService:
             clarifying_candidate = response.clarifying_question.strip()
             clarifying = clarifying_candidate or None
 
+        response = response.model_copy(
+            update={"citations": [ChatCitationRef(code=c.code) for c in citations]}
+        )
         return answer, citations, clarifying, response
 
     def _render_prompt(
@@ -341,10 +348,10 @@ class ChatService:
             "Respond with JSON using the schema:\n"
             "{\n"
             '  "answer": string,\n'
-            '  "citations": list[string],\n'
+            '  "citations": list[{"code": string}],\n'
             '  "clarifying_question": string | null\n'
             "}\n"
-            "Each item in citations must match one of the provided chunk citations."
+            "Each citation code must match one of the provided chunk citations."
         )
         return "\n\n".join(
             [

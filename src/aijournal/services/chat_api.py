@@ -144,7 +144,13 @@ def build_chat_app(root: Path, config: dict[str, Any] | None = None) -> FastAPI:
                 "event": "answer",
                 "question": turn.question,
                 "answer": turn.answer,
-                "citations": [citation.code for citation in turn.citations],
+                "citations": [
+                    {
+                        **citation.model_dump(mode="json"),
+                        "marker": citation.marker,
+                    }
+                    for citation in turn.citations
+                ],
                 "clarifying_question": turn.clarifying_question,
                 "fake_mode": turn.fake_mode,
             }
