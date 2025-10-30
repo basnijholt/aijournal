@@ -203,6 +203,3 @@ def run_status_summary(root: Path) -> dict[str, Any]:
             "config_host": config_host,
         },
     }
-
-
-__all__ = ["run_system_doctor", "run_status_summary"]

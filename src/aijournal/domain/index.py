@@ -45,10 +45,3 @@ class IndexMeta(StrictModel):
     limit: int | None = None
     touched_dates: list[str] = Field(default_factory=list)
     updated_at: str | None = None
-
-
-__all__ = [
-    "Chunk",
-    "RetrievedChunk",
-    "IndexMeta",
-]
