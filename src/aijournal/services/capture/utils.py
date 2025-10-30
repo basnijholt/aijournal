@@ -16,6 +16,7 @@ from aijournal.commands.profile import (
     _load_profile_components,
     _profile_to_dict,
 )
+from aijournal.domain.changes import FacetChange
 from aijournal.domain.evidence import redact_source_text
 from aijournal.io.artifacts import load_artifact_data
 from aijournal.io.yaml_io import write_yaml_model
@@ -24,7 +25,6 @@ from aijournal.models import (
     ClaimProposal,
     ClaimsFile,
     ClaimSource,
-    FacetProposal,
     ManifestEntry,
     ProfileUpdateBatch,
     SelfProfile,
@@ -188,7 +188,7 @@ def apply_profile_update_batch(root: Path, batch_path: Path) -> bool:
     claim_proposals: list[ClaimProposal] = [
         proposal.model_copy(deep=True) for proposal in batch.proposals.claims
     ]
-    facet_proposals: list[FacetProposal] = [
+    facet_proposals: list[FacetChange] = [
         proposal.model_copy(deep=True) for proposal in batch.proposals.facets
     ]
 

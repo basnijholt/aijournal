@@ -2,13 +2,12 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from aijournal.domain.changes import ClaimAtomInput
+from aijournal.domain.changes import ClaimAtomInput, FacetChange
 from aijournal.models import (
     ClaimAtom,
     ClaimProposal,
     ClaimSource,
     ClaimSourceSpan,
-    FacetProposal,
     NormalizedEntry,
     ProfileUpdateProposals,
     Provenance,
@@ -206,7 +205,7 @@ def test_generate_characterization_normalizes_llm_payload(monkeypatch) -> None:
     def normalize_facets(raw_facets, **kwargs):
         captured["facets"] = raw_facets
         return [
-            FacetProposal(
+            FacetChange(
                 path="values_motivations.primary_focus",
                 value="Deep Work",
                 operation="set",
