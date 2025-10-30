@@ -4,7 +4,8 @@ from pathlib import Path
 
 import yaml
 
-from aijournal.common import Artifact, ArtifactKind, ArtifactMeta, StrictModel
+from aijournal.common.base import StrictModel
+from aijournal.common.meta import Artifact, ArtifactKind, ArtifactMeta
 from aijournal.io import load_artifact, load_artifact_data, save_artifact
 
 

@@ -9,7 +9,7 @@ import yaml
 from typer.testing import CliRunner
 
 from aijournal.cli import app
-from aijournal.common import Artifact, ArtifactKind, ArtifactMeta
+from aijournal.common.meta import Artifact, ArtifactKind, ArtifactMeta
 from aijournal.domain.events import FeedbackAdjustmentEvent, FeedbackBatch
 from aijournal.io.artifacts import save_artifact
 from tests.helpers import make_claim_atom

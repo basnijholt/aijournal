@@ -24,7 +24,7 @@ from aijournal.models import (
     ClaimProposal,
     ClaimsFile,
     ClaimSource,
-    FacetProposal,
+    FacetChange,
     ManifestEntry,
     ProfileUpdateBatch,
     SelfProfile,
@@ -188,7 +188,7 @@ def apply_profile_update_batch(root: Path, batch_path: Path) -> bool:
     claim_proposals: list[ClaimProposal] = [
         proposal.model_copy(deep=True) for proposal in batch.proposals.claims
     ]
-    facet_proposals: list[FacetProposal] = [
+    facet_proposals: list[FacetChange] = [
         proposal.model_copy(deep=True) for proposal in batch.proposals.facets
     ]
 

@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from aijournal.common import Artifact, ArtifactKind, ArtifactMeta, LLMResult, StrictModel
+from aijournal.common.base import StrictModel
+from aijournal.common.meta import Artifact, ArtifactKind, ArtifactMeta, LLMResult
 
 
 class _Payload(StrictModel):

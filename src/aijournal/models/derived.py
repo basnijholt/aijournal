@@ -6,91 +6,33 @@ from typing import Any, cast
 
 from pydantic import Field, field_validator
 
-from aijournal.domain.changes import (
-    ClaimProposal as DomainClaimProposal,
-)
-from aijournal.domain.changes import (
-    FacetChange as DomainFacetChange,
-)
-from aijournal.domain.changes import (
-    ProfileUpdateProposals as DomainProfileUpdateProposals,
-)
+from aijournal.domain.changes import ClaimProposal, FacetChange, ProfileUpdateProposals
 from aijournal.domain.events import (
-    ClaimConflictPayload as DomainClaimConflictPayload,
-)
-from aijournal.domain.events import (
-    ClaimPreviewEvent as DomainClaimPreviewEvent,
-)
-from aijournal.domain.events import (
-    ClaimSignaturePayload as DomainClaimSignaturePayload,
-)
-from aijournal.domain.events import (
-    FeedbackAdjustmentEvent as DomainFeedbackAdjustmentEvent,
-)
-from aijournal.domain.events import (
-    FeedbackBatch as DomainFeedbackBatch,
+    ClaimConflictPayload,
+    ClaimPreviewEvent,
+    ClaimSignaturePayload,
+    FeedbackAdjustmentEvent,
+    FeedbackBatch,
 )
 from aijournal.domain.facts import (
-    DailySummary as DomainDailySummary,
+    DailySummary,
+    FactEvidence,
+    FactEvidenceSpan,
+    MicroFact,
+    MicroFactsFile,
+    SummaryMeta,
 )
-from aijournal.domain.facts import (
-    FactEvidence as DomainFactEvidence,
-)
-from aijournal.domain.facts import (
-    FactEvidenceSpan as DomainFactEvidenceSpan,
-)
-from aijournal.domain.facts import (
-    MicroFact as DomainMicroFact,
-)
-from aijournal.domain.facts import (
-    MicroFactsFile as DomainMicroFactsFile,
-)
-from aijournal.domain.facts import (
-    SummaryMeta as DomainSummaryMeta,
-)
-from aijournal.domain.index import (
-    IndexMeta as DomainIndexMeta,
-)
+from aijournal.domain.index import IndexMeta
 from aijournal.domain.persona import (
-    InterviewQuestion as DomainInterviewQuestion,
-)
-from aijournal.domain.persona import (
-    InterviewSet as DomainInterviewSet,
-)
-from aijournal.domain.persona import (
-    PersonaCore as DomainPersonaCore,
-)
-from aijournal.domain.persona import (
-    PersonaCoreFile as DomainPersonaCoreFile,
-)
-from aijournal.domain.persona import (
-    PersonaCoreMeta as DomainPersonaCoreMeta,
+    InterviewQuestion,
+    InterviewSet,
+    PersonaCore,
+    PersonaCoreFile,
+    PersonaCoreMeta,
 )
 
 from .base import AijournalModel
 from .claim_atoms import ClaimAtom, ClaimSource, ClaimSourceSpan, Provenance, Scope
-
-SummaryMeta = DomainSummaryMeta
-DailySummary = DomainDailySummary
-FactEvidenceSpan = DomainFactEvidenceSpan
-FactEvidence = DomainFactEvidence
-MicroFact = DomainMicroFact
-ClaimProposal = DomainClaimProposal
-
-MicroFactsFile = DomainMicroFactsFile
-
-InterviewQuestion = DomainInterviewQuestion
-InterviewSet = DomainInterviewSet
-PersonaCoreMeta = DomainPersonaCoreMeta
-PersonaCore = DomainPersonaCore
-PersonaCoreFile = DomainPersonaCoreFile
-ClaimSignaturePayload = DomainClaimSignaturePayload
-ClaimConflictPayload = DomainClaimConflictPayload
-ClaimPreviewEvent = DomainClaimPreviewEvent
-FeedbackAdjustmentEvent = DomainFeedbackAdjustmentEvent
-FeedbackBatch = DomainFeedbackBatch
-IndexMeta = DomainIndexMeta
-
 
 PersonaCore.model_rebuild(_types_namespace={"ClaimAtom": ClaimAtom})
 PersonaCoreFile.model_rebuild(
@@ -313,12 +255,6 @@ class AdviceCard(AijournalModel):
     meta: SummaryMeta = Field(default_factory=SummaryMeta)
 
 
-FacetProposal = DomainFacetChange
-
-
-ProfileUpdateProposals = DomainProfileUpdateProposals
-
-
 class ProfileUpdatePreview(AijournalModel):
     """Preview metadata bundled with a profile update batch."""
 
@@ -375,11 +311,8 @@ __all__ = [
     "ClaimPreviewEvent",
     "FeedbackAdjustmentEvent",
     "FeedbackBatch",
-    "FacetProposal",
+    "FacetChange",
     "ProfileUpdateProposals",
-    "ClaimSignaturePayload",
-    "ClaimConflictPayload",
-    "ClaimPreviewEvent",
     "ProfileUpdatePreview",
     "ProfileUpdateInput",
     "ProfileUpdateBatch",

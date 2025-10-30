@@ -91,7 +91,7 @@ from aijournal.models import (
     ClaimProposal,
     ClaimsFile,
     ClaimSource,
-    FacetProposal,
+    FacetChange,
     FeedbackBatch,
     NormalizedEntry,
     ProfileUpdateBatch,
@@ -1046,7 +1046,7 @@ def review_updates(
     claim_proposals: list[ClaimProposal] = [
         proposal.model_copy(deep=True) for proposal in batch.proposals.claims
     ]
-    facet_proposals: list[FacetProposal] = [
+    facet_proposals: list[FacetChange] = [
         proposal.model_copy(deep=True) for proposal in batch.proposals.facets
     ]
 

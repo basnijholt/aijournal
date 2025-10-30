@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from aijournal.common import StrictModel
+from aijournal.common.base import StrictModel
 
 
 class AijournalModel(StrictModel):
