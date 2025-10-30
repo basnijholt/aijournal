@@ -33,10 +33,12 @@ from aijournal.models.derived import (
 from aijournal.services.capture import (
     CaptureInput,
     EntryResult,
-    _persist_file_entry,
-    _persist_text_entry,
     normalize_entries,
     run_capture,
+)
+from aijournal.services.capture.stages.stage0_persist import (
+    _persist_file_entry,
+    _persist_text_entry,
 )
 from aijournal.services.capture.utils import discover_markdown_files
 
