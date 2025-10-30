@@ -270,12 +270,3 @@ def _claim_atom_to_input(claim: ClaimAtom) -> ClaimAtomInput:
         user_verified=claim.user_verified,
         review_after_days=claim.review_after_days,
     )
-
-
-__all__ = [
-    "fake_advise",
-    "fake_characterize",
-    "fake_microfacts",
-    "fake_profile_suggestions",
-    "fake_summarize",
-]
