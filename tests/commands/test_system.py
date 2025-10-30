@@ -26,7 +26,11 @@ def test_run_system_doctor_happy_path(tmp_path: Path, monkeypatch: pytest.Monkey
     )
     monkeypatch.setattr(system, "_check_writable_paths", lambda root: (True, {}))
     monkeypatch.setattr(system, "_check_pending_updates", lambda root: {"count": 0, "samples": []})
-    monkeypatch.setattr(system, "_check_ollama", lambda host: (True, {"host": "fake://ollama"}))
+    monkeypatch.setattr(
+        system,
+        "_check_ollama",
+        lambda config, host: (True, {"host": "fake://ollama"}),
+    )
     monkeypatch.setattr(system, "persona_state", lambda root: ("fresh", []))
 
     result = system.run_system_doctor(tmp_path)

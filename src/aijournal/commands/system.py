@@ -4,15 +4,20 @@ from __future__ import annotations
 
 import os
 import sqlite3
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
 import httpx
 
-from aijournal.commands.ingest import _use_fake_llm
+from aijournal.commands.ingest import _load_config, _use_fake_llm
 from aijournal.commands.persona import persona_state
 from aijournal.models import IndexMeta
-from aijournal.services.ollama import resolve_ollama_host
+from aijournal.services.ollama import (
+    DEFAULT_OLLAMA_HOST,
+    build_ollama_config_from_mapping,
+    resolve_ollama_host,
+)
 
 
 def _check_sqlite_fts5() -> tuple[bool, str | None]:
@@ -89,11 +94,15 @@ def _check_pending_updates(root: Path) -> dict[str, Any]:
     }
 
 
-def _check_ollama(host_override: str | None = None) -> tuple[bool, dict[str, Any]]:
+def _check_ollama(
+    config: Mapping[str, Any],
+    host_override: str | None = None,
+) -> tuple[bool, dict[str, Any]]:
     if _use_fake_llm():
         return True, {"host": "fake://ollama"}
 
-    host = resolve_ollama_host(host_override)
+    ollama_config = build_ollama_config_from_mapping(config, host=host_override)
+    host = ollama_config.host or DEFAULT_OLLAMA_HOST
     try:
         response = httpx.get(f"{host}/api/tags", timeout=15.0)
         response.raise_for_status()
@@ -116,6 +125,7 @@ def _check_ollama(host_override: str | None = None) -> tuple[bool, dict[str, Any
 def run_system_doctor(root: Path) -> dict[str, Any]:
     """Run system diagnostics and return a structured payload."""
 
+    config = _load_config(root)
     checks: list[dict[str, Any]] = []
     overall_ok = True
 
@@ -135,7 +145,7 @@ def run_system_doctor(root: Path) -> dict[str, Any]:
     pending_info = _check_pending_updates(root)
     checks.append({"name": "pending_profile_updates", "ok": True, "details": pending_info})
 
-    ollama_ok, ollama_details = _check_ollama(os.getenv("AIJOURNAL_OLLAMA_HOST"))
+    ollama_ok, ollama_details = _check_ollama(config, os.getenv("AIJOURNAL_OLLAMA_HOST"))
     checks.append({"name": "ollama_reachable", "ok": ollama_ok, "details": ollama_details})
     overall_ok &= ollama_ok
 
@@ -160,6 +170,7 @@ def run_system_doctor(root: Path) -> dict[str, Any]:
 def run_status_summary(root: Path) -> dict[str, Any]:
     """Gather high-level workspace status information."""
 
+    config = _load_config(root)
     persona_status, persona_reasons = persona_state(root)
 
     index_dir = root / "derived" / "index"
@@ -180,13 +191,20 @@ def run_status_summary(root: Path) -> dict[str, Any]:
             index_info["meta_error"] = str(exc)
 
     pending_info = _check_pending_updates(root)
-    host = resolve_ollama_host(os.getenv("AIJOURNAL_OLLAMA_HOST"))
+    config_host = config.get("host") if isinstance(config, Mapping) else None
+    host = resolve_ollama_host(
+        os.getenv("AIJOURNAL_OLLAMA_HOST"),
+        config_host=str(config_host) if config_host else None,
+    )
 
     return {
         "persona": {"status": persona_status, "reasons": persona_reasons},
         "index": index_info,
         "pending_updates": pending_info,
-        "ollama": {"host": host},
+        "ollama": {
+            "host": host,
+            "config_host": config_host,
+        },
     }
 
 

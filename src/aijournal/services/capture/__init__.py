@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from collections.abc import Callable, Iterable, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
@@ -20,6 +21,7 @@ from aijournal.models import (
 )
 from aijournal.pipelines import normalization
 from aijournal.services.capture.results import OperationResult, StageResult
+from aijournal.services.ollama import build_ollama_config_from_mapping
 from aijournal.utils import time as time_utils
 from aijournal.utils.paths import normalized_entry_path
 
@@ -1009,6 +1011,11 @@ def run_capture(
         raise ValueError(msg)
 
     root = root or Path.cwd()
+    config_payload = _load_config(root)
+    ollama_config = build_ollama_config_from_mapping(config_payload)
+    config_host = config_payload.get("host") if isinstance(config_payload, dict) else None
+    env_host = os.getenv("AIJOURNAL_OLLAMA_HOST")
+    env_base_url = os.getenv("OLLAMA_BASE_URL")
     resolved_run_id = run_id or _generate_run_id()
     log_event, telemetry_path = _make_telemetry_logger(root, resolved_run_id, sink=event_sink)
     log_event(
@@ -1020,6 +1027,13 @@ def run_capture(
             "apply_profile": inputs.apply_profile,
             "rebuild": inputs.rebuild,
             "pack": inputs.pack,
+            "ollama": {
+                "model": ollama_config.model,
+                "host": ollama_config.host,
+                "config_host": config_host,
+                "env_host": env_host,
+                "env_base_url": env_base_url,
+            },
         }
     )
 

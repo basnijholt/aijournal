@@ -38,29 +38,44 @@ class OllamaConfig:
     timeout: float | None = None
 
 
-def resolve_ollama_host(host: str | None = None) -> str:
+def resolve_ollama_host(
+    host: str | None = None,
+    *,
+    config_host: str | None = None,
+) -> str:
     """Return the base Ollama host (without `/v1`) to contact."""
+
     if host:
         return host.rstrip("/")
+
     env_host = os.getenv("AIJOURNAL_OLLAMA_HOST")
     if env_host:
         return env_host.rstrip("/")
+
     env_base = os.getenv("OLLAMA_BASE_URL")
     if env_base:
         candidate = env_base.rstrip("/")
         if candidate.endswith("/v1"):
             candidate = candidate.removesuffix("/v1")
         return candidate
+
+    if config_host:
+        return str(config_host).rstrip("/")
+
     return DEFAULT_OLLAMA_HOST
 
 
-def resolve_ollama_base_url(host: str | None = None) -> str:
+def resolve_ollama_base_url(
+    host: str | None = None,
+    *,
+    config_host: str | None = None,
+) -> str:
     """Return the OpenAI-compatible base URL for the Ollama provider."""
     env_base = os.getenv("OLLAMA_BASE_URL")
     if not host and env_base:
         return env_base.rstrip("/")
 
-    base = resolve_ollama_host(host)
+    base = resolve_ollama_host(host, config_host=config_host)
     if base.endswith("/v1"):
         return base
     return f"{base}/v1"
@@ -82,10 +97,19 @@ def build_ollama_config_from_mapping(
     """Construct an OllamaConfig from a loose mapping of settings."""
 
     settings = config or {}
-    resolved_model = model or str(
-        settings.get("model") or os.getenv("AIJOURNAL_MODEL") or DEFAULT_MODEL_NAME
+    raw_config_model = settings.get("model")
+    raw_config_host = settings.get("host")
+
+    env_model = os.getenv("AIJOURNAL_MODEL")
+    resolved_model = (
+        model
+        or (env_model if env_model else None)
+        or (str(raw_config_model) if raw_config_model else None)
+        or DEFAULT_MODEL_NAME
     )
-    resolved_host = host or os.getenv("AIJOURNAL_OLLAMA_HOST")
+
+    config_host_value = str(raw_config_host) if raw_config_host else None
+    resolved_host = resolve_ollama_host(host, config_host=config_host_value)
     temperature = coerce_float(settings.get("temperature"))
     seed = coerce_int(settings.get("seed"))
     max_tokens = coerce_int(settings.get("max_tokens"))

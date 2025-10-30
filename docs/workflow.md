@@ -9,7 +9,7 @@ This guide explains how the main commands fit together, the order in which to ru
 - You’ve cloned the repository and installed [`uv`](https://docs.astral.sh/uv/).
 - You can run `uv run pytest` successfully (this confirms the virtual environment is set up).
 - If you plan to run in live mode, ensure an Ollama server is available (see `README` for model choices). For local experiments you can keep using the fake LLM mode (`AIJOURNAL_FAKE_OLLAMA=1`).
-- Before starting the daily pipeline in live mode, export `AIJOURNAL_OLLAMA_HOST` to the remote Ollama address so CLI calls don’t fall back to localhost.
+- Record your shared Ollama endpoint in `config/config.yaml` (`host: http://192.168.1.143:11434`). Command-line overrides still work the same way: per-command flags win, then environment variables (`AIJOURNAL_OLLAMA_HOST` / `OLLAMA_BASE_URL`), then the config file, and finally the local default.
 
 ---
 
