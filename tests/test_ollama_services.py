@@ -77,6 +77,16 @@ def test_run_ollama_agent_returns_payload(monkeypatch: pytest.MonkeyPatch, tmp_p
     assert result.coercions_applied == []
     assert agent.prompt == "prompt text"
 
+    metrics_path = tmp_path / "derived" / "logs" / "structured_metrics.jsonl"
+    metrics = [
+        json.loads(line)
+        for line in metrics_path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    assert metrics[-1]["attempts"] == 1
+    assert metrics[-1]["repair_attempts"] == 0
+    assert metrics[-1]["coercion_count"] == 0
+
 
 def test_run_ollama_agent_logs_on_invalid_payload(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
@@ -213,6 +223,14 @@ def test_run_ollama_agent_coerces_scalar_lists(
     assert result.coercions_applied
     assert result.coercions_applied[0]["rule"] == "wrap_scalar_in_list"
     assert "JSON_SKELETON" in (agent.prompt or "")
+
+    metrics_path = tmp_path / "derived" / "logs" / "structured_metrics.jsonl"
+    metrics = [
+        json.loads(line)
+        for line in metrics_path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    assert metrics[-1]["coercion_count"] == 1
 
 
 def test_build_config_coerces_numeric_settings(monkeypatch: pytest.MonkeyPatch) -> None:
