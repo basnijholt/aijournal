@@ -867,12 +867,18 @@ Any agent that cannot satisfy these conditions must halt and report back rather 
 ### 17.1 Retire `AdviceLLMResponse` (Strict Advice DTO Cutover)
 
 - **Problem:** The legacy response model `AdviceLLMResponse` still mediates between the LLM and downstream services (`src/aijournal/models/responses.py:11`, consumed by `commands/advise.py`, `pipelines/advise.py`, and unit tests). The refactor intent is for the LLM to emit the strict `AdviceCard` domain model directly.
-- **Scope of change:**
-  - Delete `AdviceLLMResponse` and any helper aliases from `src/aijournal/models/responses.py`.
-  - Update `src/aijournal/commands/advise.py` so the structured-output runner requests and validates `AdviceCard` (import from `aijournal.domain.advice`). Ensure retry/error logging remain intact.
-  - Adjust `src/aijournal/pipelines/advise.py` to type the `request_advice` callable as returning `AdviceCard` and drop conversions.
-  - Rewrite fixtures/tests (`tests/pipelines/test_advise.py`, `tests/prompts/test_prompt_examples.py`) to instantiate `AdviceCard` instead of the legacy wrapper.
-  - Remove the stale JSON schema snapshot `schemas/core/aijournal.models.responses.AdviceLLMResponse.json` and bless the updated `AdviceCard` schema by running `uv run python scripts/check_schemas.py --bless`.
+- **Scope of change (fine-grained):**
+  1. **Model deletion:** Remove `AdviceLLMResponse` from `src/aijournal/models/responses.py`; delete any import aliases and prune `__all__` exports.
+  2. **Command rewrite:** In `src/aijournal/commands/advise.py`:
+     - Update imports to pull `AdviceCard` and `LLMResult` from `aijournal.domain.advice` / `aijournal.common.meta`.
+     - Change `_advice_payload` to invoke `_invoke_structured_llm(..., response_model=AdviceCard)` and accept the returned `AdviceCard` directly.
+     - Ensure the retry message still enumerates required keys—rewrite it to match the domain field names exactly.
+     - Confirm `Artifact[AdviceCard]` serialization remains unchanged.
+  3. **Pipeline update:** In `src/aijournal/pipelines/advise.py`, change `AdviceRequest` type alias to `Callable[[], AdviceCard]`; the pipeline should no longer call `AdviceCard.model_validate(...)` because the LLM already returns a validated instance.
+  4. **Fake path alignment:** Verify `fake_advise` already emits `AdviceCard`. If it returns another structure, update it to comply.
+  5. **Tests/fixtures:** Update `tests/pipelines/test_advise.py`, `tests/prompts/test_prompt_examples.py`, and any fixture JSON/YAML that referenced `AdviceLLMResponse`. Adjust assertions to reflect the strict domain model (e.g., `advice_card.recommendations[0].why_this_fits_you.claims`).
+  6. **Schema pruning:** Delete `schemas/core/aijournal.models.responses.AdviceLLMResponse.json`. Regenerate schemas (`uv run python scripts/check_schemas.py --bless`) so the AdviceCard schema appears under `aijournal.domain.advice.*` only.
+  7. **Documentation:** Append a Decision Log entry and update `CHANGELOG.md` if it still references the legacy DTO.
 - **Acceptance criteria:**
   - `git grep "AdviceLLMResponse"` returns only historical references (e.g., changelog) or zero results.
   - `uv run pytest -q` passes.
@@ -882,11 +888,14 @@ Any agent that cannot satisfy these conditions must halt and report back rather 
 ### 17.2 Collapse Per-Feature Meta (`SummaryMeta`, `PersonaCoreMeta`)
 
 - **Problem:** Despite Stage 8’s goal, `SummaryMeta` (`src/aijournal/domain/facts.py:17`) and `PersonaCoreMeta` (`src/aijournal/domain/persona.py:13`) persist as separate payload structs used by multiple commands/tests. Artifact envelopes therefore carry duplicate metadata (payload meta + `ArtifactMeta`).
-- **Scope of change:**
-  - Remove both classes from their modules and any re-exports.
-  - Update command helpers that currently translate `SummaryMeta` / `PersonaCoreMeta` into `ArtifactMeta`. Instead, have pipelines construct `ArtifactMeta` directly and, when extra context is still useful (e.g., persona token budgets, prompt hashes), stash it under `ArtifactMeta.notes` (e.g., `notes={"persona": {...}}`).
-  - Touchpoints include `commands/summarize.py`, `commands/facts.py`, `commands/profile.py`, `commands/characterize.py`, `commands/persona.py`, plus their tests (`tests/services/test_capture.py`, `tests/test_cli_pack.py`, `tests/test_models_io.py`).
-  - Regenerate golden artifacts/examples (`derived/` fixtures, `docs/examples/*.yaml`) so they no longer embed payload meta.
+- **Scope of change (fine-grained):**
+  1. **Delete model classes:** Remove `SummaryMeta` and `PersonaCoreMeta` definitions from their domain modules. Update any `__all__` or re-export blocks.
+  2. **Artifact writers:** Replace calls such as `_artifact_meta_from_summary_meta(meta)` with direct instantiation of `ArtifactMeta(...)`. Record any auxiliary fields (e.g., `prompt_path`, `prompt_hash`, `token_budget`, `planned_tokens`, `char_per_token`, `generated_at`) inside `ArtifactMeta.notes` using namespaced keys (`{"summary": {...}}`, `{"persona": {...}}`).
+  3. **Artifact readers:** Wherever code previously expected `artifact.data.meta`, rewrite it to read from `artifact.meta.notes`. Add helper functions (e.g., `_persona_notes(artifact.meta) -> PersonaNotes`) if needed to keep callsites tidy.
+  4. **Serialization helpers:** Remove helper functions that manufactured `SummaryMeta` / `PersonaCoreMeta`. Introduce `build_summary_notes(...)` / `build_persona_notes(...)` returning dicts stored in `ArtifactMeta.notes` when helpful.
+  5. **Tests & fixtures:** Update integration tests and snapshots to assert on `artifact.meta.notes`. Notable files: `tests/services/test_capture.py` (fake artifacts), `tests/test_cli_pack.py`, `tests/test_models_io.py`, persona builder tests, pack golden files under `docs/examples/`.
+  6. **Schema snapshots:** Delete `schemas/core/aijournal.domain.facts.SummaryMeta.json` and `schemas/core/aijournal.domain.persona.PersonaCoreMeta.json`. Regenerate schemas and review diffs for `ArtifactMeta.notes` content.
+  7. **Docs:** Update `ARCHITECTURE.md` (artifact section) and `docs/refactor3_status.md` Decision Log to cite the single-meta invariant. If `README.md` or `docs/workflow.md` mention `SummaryMeta`, revise them.
 - **Acceptance criteria:**
   - `rg "SummaryMeta"` and `rg "PersonaCoreMeta"` only match changelog/history after removal.
   - Artifact YAML for summaries, microfacts, persona, and profile updates show meta fields exclusively inside the envelope’s `meta` block (no nested `meta` under `data`).
@@ -899,11 +908,17 @@ Any agent that cannot satisfy these conditions must halt and report back rather 
   - Consolidator events: `ClaimSignature`, `ClaimConflict`, `ClaimMergeOutcome` in `src/aijournal/services/consolidator.py`, bubbled up through CLI rendering and profile commands.
   - Feedback adjustments: same dataclasses exposed when applying profile updates.
   - Retrieval results: `RetrievalFilters`, `RetrievalMeta`, `RetrievalResult` in `src/aijournal/services/retriever.py` are returned to consumers.
-- **Plan:**
-  1. Introduce strict equivalents in the domain layer (`aijournal/domain/events.py` or a new `aijournal/domain/consolidator.py`) mirroring the dataclass fields.
-  2. Refactor consolidator methods to produce these `StrictModel` instances, ensuring `ClaimMergeOutcome.action` uses the canonical enum (`PreviewAction`). Update CLI code (`src/aijournal/cli.py:105` onwards) to consume the new models.
-  3. Replace `RetrievalMeta/Result` with strict models (e.g., `domain/index.py` additions or a new `aijournal/domain/retrieval.py`). Confirm FastAPI/chat telemetry serializes the structured payload without manual dict conversion.
-  4. Keep lightweight dataclasses for purely internal helper state if needed for performance, but enforce a clear rule in `refactor3.md`: nothing leaving the service layer uses dataclasses.
+- **Plan (fine-grained):**
+  1. **Consolidator domain module:** Add `aijournal/domain/consolidator.py` (or extend `domain/events.py`) with `ClaimSignature`, `ClaimConflict`, and `MergeOutcome` as `StrictModel` classes. Ensure `MergeOutcome.action` uses the canonical enum (`PreviewAction`).
+  2. **Service refactor:** Rewrite `ClaimConsolidator.upsert()` in `src/aijournal/services/consolidator.py` to build these strict models directly. Return `MergeOutcome` objects and embed conflicts inline (`MergeOutcome.conflict: ClaimConflict | None`).
+  3. **CLI/profile consumers:** Update `src/aijournal/cli.py` and `src/aijournal/commands/profile.py` to expect the new `MergeOutcome` model; delete dataclass imports. Adjust printing/rendering helpers to use the new attribute names.
+  4. **Feedback adjustments:** Ensure `feedback` flows (e.g., `ops feedback apply`) operate solely on `FeedbackAdjustmentEvent` from `domain/events.py`. Remove any lingering dataclasses and conversions.
+  5. **Retriever contract:** Introduce `aijournal/domain/retrieval.py` with `RetrievalFilters` (immutable), `RetrievalMeta`, and `RetrievalResult` as `StrictModel`s. Update `src/aijournal/services/retriever.py` to:
+     - Keep internal helper dataclasses (prefixed with `_`) if needed for performance.
+     - Return the new domain `RetrievalResult` to callers (`chunks` + `meta`).
+  6. **API consumers:** Verify chat CLI/API (`src/aijournal/services/chat.py`, `src/aijournal/services/chat_api.py`) and tests consume the strict retrieval models without additional casting.
+  7. **Tests:** Update consolidation tests (`tests/test_cli_characterize.py`, `tests/test_cli_profile_apply.py`, `tests/services/test_capture.py`) to assert on the new strict models. Add regression coverage that serializes `MergeOutcome`/`RetrievalResult` to JSON and back.
+  8. **Doc updates:** Document the “no dataclasses across IO boundaries” rule in `refactor3.md` (this section) and cross-link in `docs/refactor3_status.md`.
 - **Acceptance criteria:**
   - `reports/data_model_out.txt` lists the new strict models instead of the dataclasses; remove dataclass entries or mark them module-private.
   - CLI/profile/chat code no longer imports dataclasses from `services/consolidator` or `services/retriever`.
@@ -913,11 +928,13 @@ Any agent that cannot satisfy these conditions must halt and report back rather 
 ### 17.4 Introduce Enumerations for Claim & Event Types
 
 - **Problem:** Claim types/status/methods and preview actions are still declared as `Literal[...]` unions (`src/aijournal/domain/claims.py:15`, `src/aijournal/domain/events.py`). Literals work but provide poor error messages and anonymous enums in JSON schema.
-- **Scope of change:**
-  - Add `aijournal/domain/enums.py` defining `ClaimType`, `ClaimStatus`, `ClaimMethod`, and `PreviewAction` as `StrEnum` subclasses.
-  - Update all domain models to use these enums (`ClaimAtom`, `ClaimAtomInput`, `ClaimProposal`, consolidator events, CLI choice validation).
-  - Ensure serialization still produces the exact string values so prompts/examples remain compatible.
-  - Regenerate schema snapshots (expect enum entries to appear with `enum` + `description`).
+- **Scope of change (fine-grained):**
+  1. **Enum module:** Create `src/aijournal/domain/enums.py` exporting `ClaimType`, `ClaimStatus`, `ClaimMethod`, and `PreviewAction` (`StrEnum`). Include docstrings clarifying each value.
+  2. **Domain updates:** Replace `Literal[...]` annotations in `domain/claims.py`, `domain/changes.py`, `domain/events.py`, and any other modules that hard-code the strings.
+  3. **Service updates:** Update consolidator, profile commands, CLI helpers, and tests to compare against enum members (`ClaimType.HABIT`) instead of raw strings. When serializing (e.g., telemetry), use `.value` where necessary.
+  4. **Prompts/examples:** Review `prompts/*.md` to ensure enumerated values still match the strings; no changes expected, but call it out in this plan for verification.
+  5. **Schema regeneration:** Run the schema checker to confirm enums appear under the correct module names and that the exported JSON uses identical string values.
+  6. **Docs:** Update `ARCHITECTURE.md` (claims section) to mention enums explicitly and link to the module for reference.
 - **Acceptance criteria:**
   - `git grep "Literal['preference'"` returns zero matches outside of historical docs.
   - Updated prompts/examples validated via `tests/prompts/test_prompt_examples.py` prove the LLM response schema remains aligned.
@@ -929,5 +946,13 @@ Any agent that cannot satisfy these conditions must halt and report back rather 
 - Always run `uv run pytest -q` and `uv run python scripts/check_schemas.py --bless` (after verifying schema diffs) before committing. The reviewer does not value backwards compatibility, so delete legacy files rather than deprecating unless a temporary alias is absolutely required.
 - After each package, append a Decision Log row noting the date, package ID (17.1–17.4), summary, and impact.
 - When all packages complete, re-run the fake-mode rehearsal (`AIJOURNAL_FAKE_OLLAMA=1`) covering capture → summarize → facts → profile suggest/apply → characterize → persona → pack → chat to guarantee no runtime path still references removed models.
+- Suggested commit sequence (adjust if intermediate fixes are required):
+  1. `refactor3: replace AdviceLLMResponse with AdviceCard across advise pipeline`
+  2. `refactor3: remove SummaryMeta/PersonaCoreMeta and persist notes in ArtifactMeta`
+  3. `refactor3: promote consolidator/retrieval surfaces to strict domain models`
+  4. `refactor3: introduce StrEnum definitions for claim and preview types`
+  5. `refactor3: refresh schemas, fixtures, and decision log`
+
+  Each commit must leave `git status` clean and the test suite/schema checks green.
 
 > **Reminder:** These work packages are prerequisites for claiming Refactor3 is fully realized. Do not close the refactor until each bullet in this section is resolved, tested, documented, and committed.
