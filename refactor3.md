@@ -61,7 +61,7 @@ This runbook expands every part of the prior proposal into actionable, testable 
 | **Change Events** | `ClaimPreviewEvent` (Pydantic) vs. `FeedbackAdjustment` (dataclass). | Both describe claim changes but with different payload carriers. |
 | **Conflicts/Signatures** | `services.consolidator.ClaimConflict` (dataclass) vs. `models.derived.ClaimConflictPayload` (Pydantic). | Redundant representations. |
 | **Chat Responses** | `ChatLLMResponse`, `ChatTurn`, `ChatCitation`. | Mixed dataclass/Pydantic; inconsistent layering. |
-| **Chunks & Index Meta** | `ChunkManifestChunk` vs. `RetrievedChunk`; duplicate meta blocks. | Same entity at different lifecycle stages. |
+| **Chunks & Index Meta** | ~~`ChunkManifestChunk` vs. `RetrievedChunk`; duplicate meta blocks.~~ | Resolved via `ChunkBatch` + `ArtifactKind.INDEX_CHUNKS` (2025-10-30). |
 | **Capture DTOs** | `CaptureRequest` vs. `CaptureInput`. | Intentionally similar but extra fields on the latter; we retain both. |
 | **Meta Blocks** | Many derived artifacts repeat `(llm_model, prompt_path, prompt_hash, created_at)`. | Needs central `ArtifactMeta`. |
 | **Package Layout** | Domain/payload split via class names rather than module organization. | Reorganize into `aijournal.domain`, `aijournal.artifacts`, `aijournal.api`, etc. |
@@ -819,10 +819,10 @@ Back-compat is a non-goal. The next agent should treat the items below as mandat
    - Rewrite `src/aijournal/commands/profile.py`, `src/aijournal/pipelines/profile.py` (if any), and all CLI helpers/tests (`tests/test_cli_profile_*`, `tests/test_profile_suggestions_bridge.py`) to consume `ProfileUpdateProposals` directly and persist `Artifact[ProfileUpdateProposals]` instead of the bespoke container.
    - Delete the legacy models from `src/aijournal/models/derived.py`, adjust fake data helpers, schema snapshots, docs, and examples accordingly.
 
-2. **Remove chunk manifest duplicates**
-   - Delete `ChunkManifest*` models in `src/aijournal/models/derived.py` and the writer in `src/aijournal/pipelines/index.py`.
-   - Persist daily chunk exports as `Artifact[list[Chunk]]` (JSON/YAML) plus `Artifact[IndexMeta]` only. Update pack/index tests (`tests/test_cli_pack.py`, `tests/test_retriever.py`) and fixtures to match.
-   - Purge stale manifest YAML/NumPy files from docs/examples if they still assume the legacy format.
+2. ~~**Remove chunk manifest duplicates**~~ ✅ _Completed 2025-10-30_
+   - Daily chunk exports now persist as `ArtifactKind.INDEX_CHUNKS` envelopes containing `ChunkBatch` payloads (day + `Chunk` list) with embedder metadata in `ArtifactMeta.notes`.
+   - `ChunkManifest*` models were deleted; `write_chunk_manifests` now writes artifact envelopes and NumPy shards only. Tests gained coverage for the new structure (`tests/pipelines/test_index.py::test_write_chunk_manifests`).
+   - Docs (`README.md`, `ARCHITECTURE.md`, `CHANGELOG.md`, `docs/archive/PLAN-v0.3.md`) and schema snapshots were refreshed to describe the new artifact format.
 
 3. **Promote chat citations to typed objects**
    - Change `ChatResponse.citations` to `list[ChatCitation]` in `src/aijournal/api/chat.py` and update the LLM prompt examples to emit objects instead of bare codes.

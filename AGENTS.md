@@ -125,7 +125,7 @@ Structured commands expect the model to mine existing fields (`summary`, `sectio
   ```bash
   uv run -- bash -lc "cd $RUN_ROOT && aijournal ops profile suggest --date 2025-10-26"
   ```
-  Output lives at `derived/profile_suggestions/<date>.yaml`.
+  Output lives at `derived/profile_proposals/<date>.yaml`.
 
 ### Characterize
 - After prompts produce meaningful payloads, run `aijournal ops pipeline characterize --date … --progress` to produce batches in `derived/pending/profile_updates/`.
@@ -236,7 +236,7 @@ The commands update `derived/persona/persona_core.yaml` and write pack outputs u
 1. Read required docs (README, workflow, architecture, prompts, key services).
 2. `aijournal init` into `/tmp/aijournal_live_run_*`; capture at least five detailed entries with `aijournal capture --edit/--text` (or `--from`).
 3. Let capture drive normalization and derivations automatically; rerun specific stages with `--min/--max-stage` or `aijournal ops pipeline …` when inspecting issues.
-4. Verify downstream artifacts as needed (summaries, micro-facts, profile suggestions, characterize/review) via the `ops pipeline` commands.
+4. Verify downstream artifacts as needed (summaries, micro-facts, profile proposals, characterize/review) via the `ops pipeline` commands.
 5. Regenerate index/persona when troubleshooting (`aijournal ops index rebuild`, `aijournal ops persona build`) and confirm searches succeed.
 6. Export packs with `aijournal export pack --level …` once persona is fresh.
 7. Exercise chat (`chat`, `chat --feedback`, `serve chat` + POST), confirm claim markers, apply feedback (`ops feedback apply`).

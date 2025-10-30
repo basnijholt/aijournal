@@ -7,12 +7,19 @@ from typing import TYPE_CHECKING
 import yaml
 
 from aijournal.common.meta import Artifact, ArtifactKind, ArtifactMeta
+from aijournal.domain.changes import (
+    ClaimAtomInput,
+    ClaimProposal,
+    FacetChange,
+    ProfileUpdateProposals,
+)
 from aijournal.domain.claims import (
     ClaimAtom,
     ClaimSource,
     ClaimSourceSpan,
     Scope,
 )
+from aijournal.domain.evidence import SourceRef
 from aijournal.domain.facts import (
     DailySummary,
     FactEvidence,
@@ -36,9 +43,6 @@ from aijournal.models.derived import (
     AdviceCard,
     AdviceRecommendation,
     AdviceReference,
-    ProfileSuggestions,
-    ProfileSuggestionUpdate,
-    ProfileSuggestionUpsert,
 )
 from aijournal.schema import validate_schema
 
@@ -329,39 +333,52 @@ def test_journal_entry_serialization(tmp_path: Path) -> None:
     _assert_schema(path, "journal_entry")
 
 
-def test_profile_suggestions_schema(tmp_path: Path) -> None:
-    path = _fixture_path(tmp_path, "profile_suggestions")
+def test_profile_proposals_schema(tmp_path: Path) -> None:
+    path = _fixture_path(tmp_path, "profile_proposals")
     meta = SummaryMeta(
         llm_model="llama3.1:8b-instruct",
         prompt_path="prompts/profile_suggest.md",
         prompt_hash="meta",
         created_at="2025-10-25T12:15:00Z",
     )
-    suggestions = ProfileSuggestions(
-        upserts=[
-            ProfileSuggestionUpsert(
-                target="claims",
-                operation="upsert",
-                value={"id": "pref_focus", "statement": "Focus best before lunch"},
-                rationale="Repeated pattern",
-            ),
-        ],
-        updates=[
-            ProfileSuggestionUpdate(
-                target="values_motivations.schwartz_top5",
-                operation="set",
-                value=["Self-Direction", "Security"],
-                method="inferred",
-            ),
-        ],
+    claim_input = ClaimAtomInput(
+        type="preference",
+        subject="Focus",
+        predicate="insight",
+        value="Focus best before lunch",
+        statement="Focus best before lunch",
+        scope=Scope(),
+        strength=0.7,
+        status="tentative",
+        method="inferred",
+        user_verified=False,
+        review_after_days=120,
     )
-    artifact = Artifact[ProfileSuggestions](
-        kind=ArtifactKind.PROFILE_SUGGESTIONS,
+    claim_proposal = ClaimProposal(
+        claim=claim_input,
+        normalized_ids=["pref_focus"],
+        evidence=[SourceRef(entry_id="2025-10-25-entry", spans=[])],
+        rationale="Recurring pattern in planning entries.",
+    )
+    facet_change = FacetChange(
+        path="values_motivations.schwartz_top5",
+        operation="set",
+        value=["Self-Direction", "Security"],
+        method="inferred",
+        evidence=[SourceRef(entry_id="profile.snapshot", spans=[])],
+    )
+    proposals = ProfileUpdateProposals(
+        claims=[claim_proposal],
+        facets=[facet_change],
+        interview_prompts=["How often does afternoon fatigue show up?"],
+    )
+    artifact = Artifact[ProfileUpdateProposals](
+        kind=ArtifactKind.PROFILE_PROPOSALS,
         meta=ArtifactMeta(created_at=meta.created_at, model=meta.llm_model),
-        data=suggestions,
+        data=proposals,
     )
     save_artifact(path, artifact)
-    _assert_schema(path, "profile_suggestions")
+    _assert_schema(path, "profile_proposals")
 
 
 def test_self_profile_schema(tmp_path: Path) -> None:

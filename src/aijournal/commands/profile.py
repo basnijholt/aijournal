@@ -33,15 +33,10 @@ from aijournal.domain.claims import (
 from aijournal.domain.evidence import SourceRef, redact_source_text
 from aijournal.domain.facts import SummaryMeta
 from aijournal.domain.journal import NormalizedEntry
-from aijournal.fakes import fake_profile_suggestions
+from aijournal.fakes import fake_profile_proposals
 from aijournal.io.artifacts import load_artifact_data, save_artifact
 from aijournal.io.yaml_io import load_yaml_model, write_yaml_model
 from aijournal.models.authoritative import ClaimsFile, SelfProfile
-from aijournal.models.derived import (
-    ProfileSuggestions,
-    ProfileSuggestionUpdate,
-    ProfileSuggestionUpsert,
-)
 from aijournal.pipelines import normalization
 from aijournal.services.consolidator import ClaimConsolidator, ClaimMergeOutcome
 from aijournal.services.ollama import LLMResponseError
@@ -88,7 +83,7 @@ def run_profile_suggest(
 
     config = _load_config(root)
     try:
-        suggestions_model = _profile_suggestions_payload(
+        proposals = _profile_proposals_payload(
             entries,
             profile,
             claims,
@@ -101,12 +96,12 @@ def run_profile_suggest(
         typer.secho(f"Profile suggestions failed: {exc}", fg=typer.colors.RED, err=True)
         raise typer.Exit(1)
 
-    path = _derived_profile_suggestions_path(root, date)
+    path = _derived_profile_proposals_path(root, date)
     summary_meta = _build_meta("prompts/profile_suggest.md", config=config)
-    artifact = Artifact[ProfileSuggestions](
-        kind=ArtifactKind.PROFILE_SUGGESTIONS,
+    artifact = Artifact[ProfileUpdateProposals](
+        kind=ArtifactKind.PROFILE_PROPOSALS,
         meta=_artifact_meta_from_summary_meta(summary_meta),
-        data=suggestions_model,
+        data=proposals,
     )
     save_artifact(path, artifact)
     return path
@@ -122,7 +117,7 @@ def run_profile_apply(
     del auto_confirm  # Reserved for future interactive prompts.
 
     root = Path.cwd()
-    resolved_path = suggestions_path or (root / "derived" / "profile_suggestions" / f"{date}.yaml")
+    resolved_path = suggestions_path or (root / "derived" / "profile_proposals" / f"{date}.yaml")
     if not resolved_path.exists():
         typer.secho(
             f"Suggestions file not found: {resolved_path}",
@@ -131,23 +126,21 @@ def run_profile_apply(
         )
         raise typer.Exit(1)
 
-    suggestions_model = load_artifact_data(resolved_path, ProfileSuggestions)
+    proposals = load_artifact_data(resolved_path, ProfileUpdateProposals)
     profile_model, claim_models = load_profile_components(root)
     profile = profile_to_dict(profile_model)
     claims = [claim.model_copy(deep=True) for claim in claim_models]
     timestamp = time_utils.format_timestamp(time_utils.now())
     changed = False
 
-    for upsert in suggestions_model.upserts:
-        if upsert.target == "claims":
-            if apply_claim_upsert(claims, upsert.value, timestamp):
-                changed = True
+    events: list[ClaimMergeOutcome] = []
 
-    for update in suggestions_model.updates:
-        target = update.target
-        if not target:
-            continue
-        if apply_profile_update(profile, target, update.value, timestamp):
+    for claim_proposal in proposals.claims:
+        if _apply_claim_proposal(claims, claim_proposal, timestamp, events):
+            changed = True
+
+    for facet_change in proposals.facets:
+        if _apply_facet_change(profile, facet_change, timestamp):
             changed = True
 
     if not changed:
@@ -183,11 +176,11 @@ def run_profile_status(*, root: Path | None = None) -> None:
     _print_rankings(rankings)
 
 
-def _derived_profile_suggestions_path(root: Path, day: str) -> Path:
-    return root / "derived" / "profile_suggestions" / f"{day}.yaml"
+def _derived_profile_proposals_path(root: Path, day: str) -> Path:
+    return root / "derived" / "profile_proposals" / f"{day}.yaml"
 
 
-def _profile_suggestions_payload(
+def _profile_proposals_payload(
     entries: Sequence[NormalizedEntry],
     profile: dict[str, Any],
     claims: Sequence[ClaimAtom],
@@ -196,9 +189,9 @@ def _profile_suggestions_payload(
     *,
     timeout: float | None = None,
     retries: int = DEFAULT_PROFILE_RETRIES,
-) -> ProfileSuggestions:
+) -> ProfileUpdateProposals:
     if _use_fake_llm():
-        suggestions = fake_profile_suggestions(
+        proposals = fake_profile_proposals(
             entries,
             profile,
             claims,
@@ -228,10 +221,8 @@ def _profile_suggestions_payload(
                 ),
             ),
         )
-        timestamp = time_utils.format_timestamp(time_utils.now())
-        suggestions = _proposals_to_profile(proposals, timestamp=timestamp)
 
-    return suggestions
+    return _sanitize_proposals(proposals)
 
 
 def _artifact_meta_from_summary_meta(meta: SummaryMeta | None) -> ArtifactMeta:
@@ -249,39 +240,55 @@ def _artifact_meta_from_summary_meta(meta: SummaryMeta | None) -> ArtifactMeta:
     )
 
 
-def _proposals_to_profile(
-    proposals: ProfileUpdateProposals,
-    *,
-    timestamp: str,
-) -> ProfileSuggestions:
-    upserts: list[ProfileSuggestionUpsert] = []
-    updates: list[ProfileSuggestionUpdate] = []
-
-    for proposal in proposals.claims:
-        upsert = _claim_proposal_to_upsert(proposal, timestamp)
-        if upsert is not None:
-            upserts.append(upsert)
-
-    for change in proposals.facets:
-        update = _facet_change_to_update(change)
-        if update is not None:
-            updates.append(update)
-
-    return ProfileSuggestions(upserts=upserts, updates=updates)
+def _sanitize_proposals(proposals: ProfileUpdateProposals) -> ProfileUpdateProposals:
+    sanitized_claims = [
+        proposal.model_copy(
+            update={"evidence": [redact_source_text(ref) for ref in proposal.evidence]}
+        )
+        for proposal in proposals.claims
+    ]
+    sanitized_facets = [
+        change.model_copy(update={"evidence": [redact_source_text(ref) for ref in change.evidence]})
+        for change in proposals.facets
+    ]
+    return proposals.model_copy(update={"claims": sanitized_claims, "facets": sanitized_facets})
 
 
-def _claim_proposal_to_upsert(
+def _apply_claim_proposal(
+    claims: list[ClaimAtom],
     proposal: ClaimProposal,
     timestamp: str,
-) -> ProfileSuggestionUpsert | None:
+    events: list[ClaimMergeOutcome] | None = None,
+) -> bool:
+    claim_atom = _claim_proposal_to_atom(proposal, timestamp)
+    if claim_atom is None:
+        return False
+    return apply_claim_upsert(claims, claim_atom, timestamp, events)
+
+
+def _apply_facet_change(profile: dict[str, Any], change: FacetChange, timestamp: str) -> bool:
+    path = (change.path or "").strip()
+    if not path:
+        return False
+    operation = (change.operation or "set").strip().lower()
+    if operation == "remove":
+        return _remove_profile_path(profile, path, timestamp)
+    return apply_profile_update(profile, path, change.value, timestamp)
+
+
+def _claim_proposal_to_atom(proposal: ClaimProposal, timestamp: str) -> ClaimAtom | None:
     claim_input = proposal.claim
     statement = claim_input.statement.strip()
     if not statement:
         typer.secho("Skipping claim proposal without statement.", fg=typer.colors.YELLOW, err=True)
         return None
 
-    slug = time_utils.slugify_title(statement) or "claim"
-    claim_id = f"proposal-{slug}"[:96]
+    canonical_id = next((cid for cid in proposal.normalized_ids if cid), None)
+    if canonical_id:
+        claim_id = canonical_id[:96]
+    else:
+        slug = time_utils.slugify_title(statement) or "claim"
+        claim_id = f"proposal-{slug}"[:96]
 
     evidence_sources = _source_refs_to_claim_sources(
         proposal.evidence,
@@ -312,7 +319,7 @@ def _claim_proposal_to_upsert(
     }
 
     try:
-        claim_atom = normalization.normalize_claim_atom(
+        return normalization.normalize_claim_atom(
             raw_claim,
             timestamp=timestamp,
             default_sources=evidence_sources,
@@ -325,31 +332,27 @@ def _claim_proposal_to_upsert(
         )
         return None
 
-    return ProfileSuggestionUpsert(
-        target="claims",
-        operation="upsert",
-        value=claim_atom,
-        rationale=proposal.rationale,
-    )
 
-
-def _facet_change_to_update(change: FacetChange) -> ProfileSuggestionUpdate | None:
-    path = change.path.strip()
-    if not path:
-        return None
-
-    evidence = [ref.entry_id for ref in change.evidence if ref.entry_id]
-    operation = str(change.operation).strip().lower() or "set"
-
-    return ProfileSuggestionUpdate(
-        target=path,
-        operation=operation,
-        value=change.value,
-        method=change.method,
-        user_verified=change.user_verified,
-        evidence=evidence or None,
-        rationale=change.rationale,
-    )
+def _remove_profile_path(profile: dict[str, Any], target: str, timestamp: str) -> bool:
+    parts = target.split(".")
+    if not parts:
+        return False
+    current = profile
+    parents: list[dict[str, Any]] = []
+    for part in parts[:-1]:
+        node = current.get(part)
+        if not isinstance(node, dict):
+            return False
+        parents.append(node)
+        current = node
+    key = parts[-1]
+    if key not in current:
+        return False
+    del current[key]
+    current["last_updated"] = timestamp
+    for parent in parents:
+        parent.setdefault("last_updated", timestamp)
+    return True
 
 
 def _source_refs_to_claim_sources(

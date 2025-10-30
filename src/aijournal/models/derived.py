@@ -2,22 +2,15 @@
 
 from __future__ import annotations
 
-from typing import Any, cast
-
-from pydantic import Field, field_validator
+from pydantic import Field
 
 from aijournal.domain.advice import AdviceCard as _AdviceCard
 from aijournal.domain.advice import AdviceRecommendation as _AdviceRecommendation
 from aijournal.domain.advice import AdviceReference as _AdviceReference
 from aijournal.domain.changes import ProfileUpdateProposals
-from aijournal.domain.claims import ClaimAtom, ClaimSource, ClaimSourceSpan, Provenance, Scope
-from aijournal.domain.events import (
-    ClaimPreviewEvent,
-)
-from aijournal.domain.facts import (
-    MicroFactsFile,
-    SummaryMeta,
-)
+from aijournal.domain.claims import ClaimAtom
+from aijournal.domain.events import ClaimPreviewEvent
+from aijournal.domain.facts import MicroFactsFile, SummaryMeta
 from aijournal.domain.persona import (
     InterviewQuestion,
     InterviewSet,
@@ -41,185 +34,6 @@ InterviewSet.model_rebuild(
         "SummaryMeta": SummaryMeta,
     }
 )
-
-
-class ChunkManifestMeta(AijournalModel):
-    embedding_model: str
-    vector_dimension: int
-    generated_at: str
-
-
-class ChunkManifestChunk(AijournalModel):
-    chunk_id: str
-    normalized_id: str
-    chunk_index: int
-    chunk_text: str
-    tags: list[str] = Field(default_factory=list)
-    source_type: str | None = None
-    source_path: str
-    tokens: int = 0
-    source_hash: str | None = None
-    manifest_hash: str | None = None
-
-
-class ChunkManifest(AijournalModel):
-    day: str
-    chunks: list[ChunkManifestChunk] = Field(default_factory=list)
-    meta: ChunkManifestMeta
-
-
-class ProfileSuggestionUpsert(AijournalModel):
-    target: str
-    operation: str
-    value: ClaimAtom
-    rationale: str | None = None
-
-    @field_validator("value", mode="before")
-    @classmethod
-    def _coerce_value(cls, value: Any) -> ClaimAtom:
-        if isinstance(value, ClaimAtom):
-            return value
-        if not isinstance(value, dict):
-            raise TypeError("Profile suggestion value must be a ClaimAtom or mapping.")
-
-        data = cast(dict[str, Any], value)
-
-        statement = str(data.get("statement") or "").strip()
-        if not statement:
-            raise ValueError("Claim statement is required")
-
-        claim_id = str(data.get("id") or "suggested-claim")
-        claim_type = str(data.get("type") or "preference").strip().lower() or "preference"
-        allowed_types = {
-            "preference",
-            "value",
-            "goal",
-            "boundary",
-            "trait",
-            "habit",
-            "aversion",
-            "skill",
-        }
-        if claim_type not in allowed_types:
-            claim_type = "preference"
-
-        predicate = str(data.get("predicate") or "statement")
-        subject = str(data.get("subject") or claim_id or statement)
-
-        normalized_value = data.get("value")
-        if normalized_value is None or not str(normalized_value).strip():
-            normalized_value = statement
-
-        strength_raw = data.get("strength", data.get("confidence"))
-        try:
-            strength = float(strength_raw) if strength_raw is not None else 0.6
-        except (TypeError, ValueError):
-            strength = 0.6
-        strength = max(0.0, min(1.0, strength))
-
-        status = str(data.get("status") or "tentative").strip().lower()
-        if status not in {"accepted", "tentative", "rejected"}:
-            status = "tentative"
-
-        method = str(data.get("method") or "inferred").strip().lower()
-        if method not in {"self_report", "inferred", "behavioral"}:
-            method = "inferred"
-
-        review_after_raw = data.get("review_after_days")
-        try:
-            review_after_days = int(review_after_raw) if review_after_raw is not None else 120
-        except (TypeError, ValueError):
-            review_after_days = 120
-
-        scope_raw = data.get("scope")
-        scope_data = cast(dict[str, Any], scope_raw) if isinstance(scope_raw, dict) else {}
-        scope = Scope.model_validate(scope_data) if scope_data else Scope()
-
-        provenance_raw = data.get("provenance")
-        provenance_data = (
-            cast(dict[str, Any], provenance_raw) if isinstance(provenance_raw, dict) else {}
-        )
-        sources_raw = provenance_data.get("sources")
-        sources: list[ClaimSource] = []
-        if isinstance(sources_raw, list):
-            for source in sources_raw:
-                if not isinstance(source, dict):
-                    continue
-                source_dict = cast(dict[str, Any], source)
-                entry_id = source_dict.get("entry_id")
-                if not entry_id:
-                    continue
-                spans_raw = source_dict.get("spans")
-                spans: list[ClaimSourceSpan] = []
-                if isinstance(spans_raw, list):
-                    for span in spans_raw:
-                        if not isinstance(span, dict):
-                            continue
-                        span_dict = cast(dict[str, Any], span)
-                        spans.append(
-                            ClaimSourceSpan(
-                                type=str(span_dict.get("type") or "excerpt"),
-                                index=span_dict.get("index"),
-                                start=span_dict.get("start"),
-                                end=span_dict.get("end"),
-                            ),
-                        )
-                sources.append(ClaimSource(entry_id=str(entry_id), spans=spans))
-
-        observation_count_raw = provenance_data.get("observation_count")
-        try:
-            observation_count = (
-                int(observation_count_raw) if observation_count_raw is not None else 1
-            )
-        except (TypeError, ValueError):
-            observation_count = 1
-        if observation_count <= 0:
-            observation_count = max(1, len(sources) or 1)
-
-        first_seen_raw = provenance_data.get("first_seen")
-        first_seen = str(first_seen_raw) if first_seen_raw is not None else None
-        last_updated_raw = provenance_data.get("last_updated")
-        last_updated = (
-            str(last_updated_raw) if last_updated_raw is not None else "1970-01-01T00:00:00Z"
-        )
-
-        provenance = Provenance(
-            sources=sources,
-            first_seen=first_seen,
-            last_updated=last_updated,
-            observation_count=observation_count,
-        )
-
-        return ClaimAtom(
-            id=claim_id[:96],
-            type=claim_type,  # type: ignore[arg-type]
-            subject=subject,
-            predicate=predicate,
-            value=str(normalized_value),
-            statement=statement,
-            scope=scope,
-            strength=strength,
-            status=status,  # type: ignore[arg-type]
-            method=method,  # type: ignore[arg-type]
-            user_verified=bool(data.get("user_verified", False)),
-            review_after_days=review_after_days,
-            provenance=provenance,
-        )
-
-
-class ProfileSuggestionUpdate(AijournalModel):
-    target: str
-    operation: str
-    value: Any
-    method: str | None = None
-    user_verified: bool | None = None
-    evidence: list[str] | None = None
-    rationale: str | None = None
-
-
-class ProfileSuggestions(AijournalModel):
-    upserts: list[ProfileSuggestionUpsert] = Field(default_factory=list)
-    updates: list[ProfileSuggestionUpdate] = Field(default_factory=list)
 
 
 AdviceReference = _AdviceReference

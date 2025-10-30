@@ -45,3 +45,10 @@ class IndexMeta(StrictModel):
     limit: int | None = None
     touched_dates: list[str] = Field(default_factory=list)
     updated_at: str | None = None
+
+
+class ChunkBatch(StrictModel):
+    """Exported chunk set for a given journal day."""
+
+    day: str
+    chunks: list[Chunk] = Field(default_factory=list)

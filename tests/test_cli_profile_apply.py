@@ -10,9 +10,16 @@ from typer.testing import CliRunner
 
 from aijournal.cli import app
 from aijournal.common.meta import Artifact, ArtifactKind, ArtifactMeta
+from aijournal.domain.changes import (
+    ClaimAtomInput,
+    ClaimProposal,
+    FacetChange,
+    ProfileUpdateProposals,
+)
+from aijournal.domain.claims import ClaimAtom
+from aijournal.domain.evidence import SourceRef
 from aijournal.domain.facts import SummaryMeta
 from aijournal.io.artifacts import save_artifact
-from aijournal.models.derived import ProfileSuggestions, ProfileSuggestionUpsert
 from tests.helpers import make_claim_atom
 
 if TYPE_CHECKING:
@@ -67,35 +74,51 @@ def _seed_suggestions(workspace: Path) -> Path:
         prompt_hash="seed",
         created_at=f"{DATE}T10:00:00Z",
     )
-    suggestions = ProfileSuggestions(
-        upserts=[
-            ProfileSuggestionUpsert(
-                target="claims",
-                operation="upsert",
-                value=make_claim_atom(
-                    "pref_evening",
-                    "Prefers evening walks",
-                    strength=0.6,
-                    status="tentative",
-                    method="inferred",
-                    last_updated=f"{DATE}T10:00:00Z",
-                ),
-            )
-        ],
-        updates=[
-            {
-                "target": "values_motivations.schwartz_top5",
-                "operation": "update",
-                "value": ["Universalism", "Benevolence"],
-            },
-        ],
+    proposed_claim = ClaimAtom.model_validate(
+        make_claim_atom(
+            "pref_evening",
+            "Prefers evening walks",
+            strength=0.6,
+            status="tentative",
+            method="inferred",
+            last_updated=f"{DATE}T10:00:00Z",
+        )
     )
-    artifact = Artifact[ProfileSuggestions](
-        kind=ArtifactKind.PROFILE_SUGGESTIONS,
+    claim_input = ClaimAtomInput(
+        type=proposed_claim.type,
+        subject=proposed_claim.subject,
+        predicate=proposed_claim.predicate,
+        value=proposed_claim.value,
+        statement=proposed_claim.statement,
+        scope=proposed_claim.scope,
+        strength=proposed_claim.strength,
+        status=proposed_claim.status,
+        method=proposed_claim.method,
+        user_verified=proposed_claim.user_verified,
+        review_after_days=proposed_claim.review_after_days,
+    )
+    claim_proposal = ClaimProposal(
+        claim=claim_input,
+        normalized_ids=[proposed_claim.id],
+        evidence=[SourceRef(entry_id="2025-02-03_pref_evening", spans=[])],
+        rationale="Detected new evening preference",
+    )
+    facet_change = FacetChange(
+        path="values_motivations.schwartz_top5",
+        operation="set",
+        value=["Universalism", "Benevolence"],
+        evidence=[SourceRef(entry_id="profile.snapshot", spans=[])],
+    )
+    proposals = ProfileUpdateProposals(
+        claims=[claim_proposal],
+        facets=[facet_change],
+    )
+    artifact = Artifact[ProfileUpdateProposals](
+        kind=ArtifactKind.PROFILE_PROPOSALS,
         meta=ArtifactMeta(created_at=summary_meta.created_at, model=summary_meta.llm_model),
-        data=suggestions,
+        data=proposals,
     )
-    path = workspace / "derived" / "profile_suggestions" / f"{DATE}.yaml"
+    path = workspace / "derived" / "profile_proposals" / f"{DATE}.yaml"
     save_artifact(path, artifact)
     return path
 
