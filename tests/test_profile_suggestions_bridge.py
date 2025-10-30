@@ -2,36 +2,55 @@
 
 from __future__ import annotations
 
-from aijournal.commands.profile import _simple_suggestions_to_profile
-from aijournal.models import (
-    ProfileSuggestionUpdate,
-    SimpleProfileSuggestionsResponse,
-    SimpleSuggestion,
+from aijournal.commands.profile import _proposals_to_profile
+from aijournal.domain.changes import (
+    ClaimAtomInput,
+    ClaimProposal,
+    FacetChange,
+    ProfileUpdateProposals,
 )
+from aijournal.domain.evidence import SourceRef
+from aijournal.models import ProfileSuggestions, ProfileSuggestionUpdate
+from aijournal.utils import time as time_utils
 
 
-def test_simple_suggestions_to_profile_converts_claim_and_facet() -> None:
-    response = SimpleProfileSuggestionsResponse(
-        suggestions=[
-            SimpleSuggestion(
-                kind="claim",
-                statement="Evening walks help you decompress.",
-                evidence=["2024-12-04"],
-                status="accepted",
-                confidence=0.8,
+def test_proposals_to_profile_converts_claim_and_facet() -> None:
+    proposals = ProfileUpdateProposals(
+        claims=[
+            ClaimProposal(
+                claim=ClaimAtomInput(
+                    type="preference",
+                    subject="self",
+                    predicate="insight",
+                    value="Evening walks help you decompress.",
+                    statement="Evening walks help you decompress.",
+                    scope={},
+                    strength=0.8,
+                    status="accepted",
+                    method="inferred",
+                    user_verified=False,
+                    review_after_days=90,
+                ),
+                normalized_ids=["2024-12-04"],
+                evidence=[SourceRef(entry_id="2024-12-04", spans=[])],
                 rationale="Grounded in the 2024-12-04 journal entry.",
-            ),
-            SimpleSuggestion(
-                kind="facet",
-                facet_path="coaching_prefs.check_ins.cadence",
+            )
+        ],
+        facets=[
+            FacetChange(
+                path="coaching_prefs.check_ins.cadence",
+                operation="set",
                 value="weekly",
-                evidence=["2024-12-05"],
+                evidence=[SourceRef(entry_id="2024-12-05", spans=[])],
                 rationale="Mentioned during the weekly review.",
-            ),
+            )
         ],
     )
 
-    profile_suggestions = _simple_suggestions_to_profile(response, timestamp="2025-01-01T00:00:00Z")
+    timestamp = time_utils.format_timestamp(time_utils.now())
+    profile_suggestions = _proposals_to_profile(proposals, timestamp=timestamp)
+
+    assert isinstance(profile_suggestions, ProfileSuggestions)
 
     assert profile_suggestions.upserts, "expected claim suggestion"
     claim_upsert = profile_suggestions.upserts[0]
@@ -50,14 +69,28 @@ def test_simple_suggestions_to_profile_converts_claim_and_facet() -> None:
     assert facet_update.evidence == ["2024-12-05"]
 
 
-def test_simple_suggestions_skip_incomplete_entries() -> None:
-    response = SimpleProfileSuggestionsResponse(
-        suggestions=[
-            SimpleSuggestion(kind="claim"),  # missing statement
-            SimpleSuggestion(kind="facet", facet_path="", value=None),
+def test_proposals_to_profile_skips_incomplete_claims() -> None:
+    proposals = ProfileUpdateProposals(
+        claims=[
+            ClaimProposal(
+                claim=ClaimAtomInput(
+                    type="preference",
+                    subject="self",
+                    predicate="insight",
+                    value="",
+                    statement="",
+                    scope={},
+                    strength=0.5,
+                    status="tentative",
+                    method="inferred",
+                    user_verified=False,
+                    review_after_days=30,
+                ),
+            )
         ],
+        facets=[],
     )
 
-    profile_suggestions = _simple_suggestions_to_profile(response, timestamp="2025-01-01T00:00:00Z")
+    profile_suggestions = _proposals_to_profile(proposals, timestamp="2025-01-01T00:00:00Z")
     assert not profile_suggestions.upserts
     assert not profile_suggestions.updates

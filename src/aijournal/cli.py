@@ -75,6 +75,7 @@ from aijournal.commands.summarize import (
     _structured_call_with_retry as _commands_structured_call_with_retry,
 )
 from aijournal.commands.system import run_status_summary, run_system_doctor
+from aijournal.domain.evidence import redact_source_text
 from aijournal.io.yaml_io import load_yaml_model, write_yaml_model
 from aijournal.models import (
     ClaimAtom,
@@ -83,6 +84,7 @@ from aijournal.models import (
     ClaimProposal,
     ClaimsFile,
     ClaimSignaturePayload,
+    ClaimSource,
     FacetProposal,
     InterviewQuestion,
     InterviewSet,
@@ -1004,7 +1006,12 @@ def review_updates(
     )
 
     for claim_proposal in claim_proposals:
-        typer.echo(f"- claim {claim_proposal.claim.id}: {claim_proposal.claim.statement}")
+        label = (
+            claim_proposal.normalized_ids[0]
+            if claim_proposal.normalized_ids
+            else claim_proposal.claim.statement[:48]
+        )
+        typer.echo(f"- claim {label}: {claim_proposal.claim.statement}")
 
     for facet_proposal in facet_proposals:
         if facet_proposal.path:
@@ -1027,7 +1034,8 @@ def review_updates(
     merge_events: list[ClaimMergeOutcome] = []
 
     for claim_proposal in claim_proposals:
-        if _apply_claim_upsert(claims_data, claim_proposal.claim, timestamp, events=merge_events):
+        incoming_atom = _claim_proposal_to_atom(claim_proposal, timestamp=timestamp)
+        if _apply_claim_upsert(claims_data, incoming_atom, timestamp, events=merge_events):
             applied += 1
 
     for facet_proposal in facet_proposals:
@@ -1311,7 +1319,7 @@ def _preview_claim_consolidation(
     events: list[ClaimMergeOutcome] = []
     for proposal in claim_proposals:
         if isinstance(proposal, ClaimProposal):
-            incoming = proposal.claim.model_copy(deep=True)
+            incoming = _claim_proposal_to_atom(proposal, timestamp=timestamp)
         elif isinstance(proposal, dict):
             raw_claim = proposal.get("claim") if isinstance(proposal, dict) else None
             if raw_claim is None:
@@ -1326,6 +1334,28 @@ def _preview_claim_consolidation(
         if outcome.action != "noop":
             events.append(outcome)
     _emit_claim_merge_events(events, "Preview (claim consolidation):")
+
+
+def _claim_proposal_to_atom(proposal: ClaimProposal, *, timestamp: str) -> ClaimAtom:
+    claim_payload = proposal.claim.model_dump(mode="python")
+    evidence_sources = [
+        ClaimSource.model_validate(
+            redact_source_text(source).model_dump(mode="python"),
+        )
+        for source in proposal.evidence
+    ]
+    claim_payload["provenance"] = {
+        "sources": [source.model_dump(mode="python") for source in evidence_sources],
+        "first_seen": timestamp.split("T", 1)[0],
+        "last_updated": timestamp,
+        "observation_count": max(1, len(evidence_sources) or 1),
+    }
+
+    return normalization.normalize_claim_atom(
+        claim_payload,
+        timestamp=timestamp,
+        default_sources=evidence_sources,
+    )
 
 
 def _build_claim_preview(
@@ -1343,7 +1373,7 @@ def _build_claim_preview(
     prompts: list[str] = []
 
     for proposal in claim_proposals:
-        incoming = proposal.claim.model_copy(deep=True)
+        incoming = _claim_proposal_to_atom(proposal, timestamp=timestamp)
         outcome = consolidator.upsert(working_claims, incoming)
         if outcome.action == "noop":
             continue

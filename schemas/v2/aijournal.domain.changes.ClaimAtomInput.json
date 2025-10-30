@@ -1,0 +1,120 @@
+{
+  "$defs": {
+    "Scope": {
+      "additionalProperties": false,
+      "description": "Contextual qualifiers for a claim atom.",
+      "properties": {
+        "conditions": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Conditions",
+          "type": "array"
+        },
+        "context": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Context",
+          "type": "array"
+        },
+        "domain": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Domain"
+        }
+      },
+      "title": "Scope",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Normalized claim payload without identifiers or provenance.",
+  "properties": {
+    "method": {
+      "enum": [
+        "self_report",
+        "inferred",
+        "behavioral"
+      ],
+      "title": "Method",
+      "type": "string"
+    },
+    "predicate": {
+      "title": "Predicate",
+      "type": "string"
+    },
+    "review_after_days": {
+      "title": "Review After Days",
+      "type": "integer"
+    },
+    "scope": {
+      "$ref": "#/$defs/Scope"
+    },
+    "statement": {
+      "title": "Statement",
+      "type": "string"
+    },
+    "status": {
+      "enum": [
+        "accepted",
+        "tentative",
+        "rejected"
+      ],
+      "title": "Status",
+      "type": "string"
+    },
+    "strength": {
+      "title": "Strength",
+      "type": "number"
+    },
+    "subject": {
+      "title": "Subject",
+      "type": "string"
+    },
+    "type": {
+      "enum": [
+        "preference",
+        "value",
+        "goal",
+        "boundary",
+        "trait",
+        "habit",
+        "aversion",
+        "skill"
+      ],
+      "title": "Type",
+      "type": "string"
+    },
+    "user_verified": {
+      "title": "User Verified",
+      "type": "boolean"
+    },
+    "value": {
+      "title": "Value",
+      "type": "string"
+    }
+  },
+  "required": [
+    "type",
+    "subject",
+    "predicate",
+    "value",
+    "statement",
+    "scope",
+    "strength",
+    "status",
+    "method",
+    "user_verified",
+    "review_after_days"
+  ],
+  "title": "ClaimAtomInput",
+  "type": "object"
+}

@@ -13,6 +13,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from aijournal.common.meta import LLMResult
 from aijournal.io.yaml_io import load_yaml_model
 from aijournal.models import PersonaCore, PersonaCoreFile
 from aijournal.services.ollama import (
@@ -311,11 +312,12 @@ class ChatService:
             intent=intent,
             allow_follow_up=allow_follow_up,
         )
-        payload: ChatLLMResponse = run_ollama_agent(
+        result: LLMResult[ChatLLMResponse] = run_ollama_agent(
             self._build_ollama_config(),
             prompt,
             output_type=ChatLLMResponse,
         )
+        payload = result.payload
 
         answer = payload.answer.strip()
         if not answer:

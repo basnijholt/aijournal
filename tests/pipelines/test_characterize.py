@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
+from aijournal.domain.changes import ClaimAtomInput
 from aijournal.models import (
-    CharacterizeResponse,
     ClaimAtom,
     ClaimProposal,
     ClaimSource,
@@ -52,10 +52,9 @@ def _claim(entry_id: str) -> ClaimAtom:
     )
 
 
-def _context(entry_id: str) -> tuple[list[str], list[str], list[str], list[ClaimSource]]:
+def _context(entry_id: str) -> tuple[list[str], list[str], list[ClaimSource]]:
     return (
         [entry_id],
-        ["hash-1"],
         ["manifest-1"],
         [
             ClaimSource(
@@ -66,21 +65,38 @@ def _context(entry_id: str) -> tuple[list[str], list[str], list[str], list[Claim
     )
 
 
+def _claim_input(entry_id: str) -> ClaimAtomInput:
+    base = _claim(entry_id)
+    return ClaimAtomInput(
+        type=base.type,
+        subject=base.subject,
+        predicate=base.predicate,
+        value=base.value,
+        statement=base.statement,
+        scope=base.scope.model_copy(deep=True),
+        strength=base.strength,
+        status=base.status,
+        method=base.method,
+        user_verified=base.user_verified,
+        review_after_days=base.review_after_days,
+    )
+
+
 def test_generate_characterization_fake_mode(monkeypatch) -> None:
     entry = _normalized_entry("entry-1")
     profile = {"traits": {"strengths": ["Focus"]}}
     claims = [_claim("entry-1")]
     context = _context("entry-1")
 
-    def request_factory() -> CharacterizeResponse:  # pragma: no cover - fake path skips
+    def request_factory() -> ProfileUpdateProposals:  # pragma: no cover - fake path skips
         raise AssertionError("Structured request should not run in fake mode")
 
     def structured_call(  # pragma: no cover - fake path skips
-        func: Callable[[], CharacterizeResponse],
+        func: Callable[[], ProfileUpdateProposals],
         *,
         retries: int,
         label: str,
-    ) -> CharacterizeResponse:
+    ) -> ProfileUpdateProposals:
         raise AssertionError("structured_call invoked in fake mode")
 
     captured: dict[str, object] = {}
@@ -89,9 +105,9 @@ def test_generate_characterization_fake_mode(monkeypatch) -> None:
         captured["raw_claims"] = raw_claims
         return [
             ClaimProposal(
-                claim=_claim("entry-1"),
+                claim=_claim_input("entry-1"),
                 normalized_ids=[],
-                evidence_hashes=[],
+                evidence=[],
                 manifest_hashes=[],
             )
         ]
@@ -127,22 +143,31 @@ def test_generate_characterization_normalizes_llm_payload(monkeypatch) -> None:
     claims: list[ClaimAtom] = []
     context = _context("entry-1")
 
-    response = CharacterizeResponse(
+    response = ProfileUpdateProposals(
         claims=[
             {
                 "claim": {
-                    "id": "claim-1",
-                    "statement": "Focus improved",
+                    "type": "preference",
+                    "subject": "Focus routines",
+                    "predicate": "affinity",
                     "value": "Focus improved",
+                    "statement": "Focus improved",
+                    "scope": {"domain": None, "context": [], "conditions": []},
+                    "strength": 0.6,
+                    "status": "tentative",
+                    "method": "inferred",
+                    "user_verified": False,
+                    "review_after_days": 120,
                 },
                 "normalized_ids": ["entry-1"],
-                "evidence_hashes": ["hash-1"],
                 "manifest_hashes": ["manifest-1"],
+                "rationale": "Recent entry reinforces the pattern.",
             }
         ],
         facets=[
             {
                 "path": "values_motivations.primary_focus",
+                "operation": "set",
                 "value": "Deep Work",
                 "confidence": 0.7,
             }
@@ -150,17 +175,17 @@ def test_generate_characterization_normalizes_llm_payload(monkeypatch) -> None:
         interview_prompts=["What helped you focus this week?"],
     )
 
-    def request_factory() -> CharacterizeResponse:
+    def request_factory() -> ProfileUpdateProposals:
         return response
 
     call_args: dict[str, object] = {}
 
     def structured_call(
-        func: Callable[[], CharacterizeResponse],
+        func: Callable[[], ProfileUpdateProposals],
         *,
         retries: int,
         label: str,
-    ) -> CharacterizeResponse:
+    ) -> ProfileUpdateProposals:
         call_args["retries"] = retries
         call_args["label"] = label
         return func()
@@ -171,7 +196,10 @@ def test_generate_characterization_normalizes_llm_payload(monkeypatch) -> None:
         captured["claims"] = raw_claims
         return [
             ClaimProposal(
-                claim=_claim("entry-1"), normalized_ids=[], evidence_hashes=[], manifest_hashes=[]
+                claim=_claim_input("entry-1"),
+                normalized_ids=[],
+                evidence=[ClaimSource(entry_id="entry-1", spans=[])],
+                manifest_hashes=[],
             )
         ]
 

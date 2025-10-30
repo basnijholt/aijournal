@@ -9,7 +9,8 @@ import yaml
 from typer.testing import CliRunner
 
 from aijournal.cli import app
-from aijournal.models import DailySummaryResponse, JournalSection, NormalizedEntry
+from aijournal.common.meta import LLMResult
+from aijournal.models import DailySummary, JournalSection, NormalizedEntry
 from aijournal.services import LLMResponseError, OllamaConfig
 
 if TYPE_CHECKING:
@@ -133,18 +134,18 @@ def test_summarize_structured_success(monkeypatch: pytest.MonkeyPatch) -> None:
         summary=None,
     )
 
-    fake_response = DailySummaryResponse(
+    fake_response = DailySummary(
         day=DATE,
         bullets=["bullet"],
         highlights=["highlight"],
         todo_candidates=["todo"],
     )
 
-    def fake_retry(func, *, retries: int, label: str) -> DailySummaryResponse:
+    def fake_retry(func, *, retries: int, label: str) -> DailySummary:
         assert "summarize" in label
         return func()
 
-    def fake_invoke(*_args, **_kwargs) -> DailySummaryResponse:
+    def fake_invoke(*_args, **_kwargs) -> DailySummary:
         return fake_response
 
     monkeypatch.setattr(cli, "_use_fake_llm", lambda: False)
@@ -172,7 +173,7 @@ def test_summarize_structured_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
         summary=None,
     )
 
-    def fake_retry(func, *, retries: int, label: str) -> DailySummaryResponse:
+    def fake_retry(func, *, retries: int, label: str) -> DailySummary:
         raise LLMResponseError("bad schema")
 
     monkeypatch.setattr(cli, "_use_fake_llm", lambda: False)
@@ -199,20 +200,30 @@ def test_invoke_structured_llm_uses_shared_builder(monkeypatch: pytest.MonkeyPat
         prompt: str,
         *,
         system_prompt: str,
-        output_type: type[DailySummaryResponse],
+        output_type: type[DailySummary],
         max_attempts: int,
         retry_message: str | None,
-    ) -> DailySummaryResponse:
+        prompt_path: str | None = None,
+        prompt_hash: str | None = None,
+        log_label: str | None = None,
+    ) -> LLMResult[DailySummary]:
         assert config.model == "builder-model"
         assert "summarize" in system_prompt.lower()
         assert "entries" in prompt
         assert max_attempts == 2
         assert retry_message is not None
-        return output_type(
+        payload = output_type(
             day=DATE,
             bullets=["bullet"],
             highlights=["highlight"],
             todo_candidates=["todo"],
+        )
+        return LLMResult(
+            model=config.model,
+            prompt_path=prompt_path or "prompts/summarize_day.md",
+            prompt_hash=prompt_hash,
+            created_at=DATE + "T00:00:00Z",
+            payload=payload,
         )
 
     monkeypatch.setattr(cli, "build_ollama_config_from_mapping", fake_builder)
@@ -221,12 +232,12 @@ def test_invoke_structured_llm_uses_shared_builder(monkeypatch: pytest.MonkeyPat
     response = cli._invoke_structured_llm(
         "prompts/summarize_day.md",
         {"date": DATE, "entries_json": "[]"},
-        response_model=DailySummaryResponse,
+        response_model=DailySummary,
         agent_name="unit-test",
         config={"temperature": "0.3"},
         timeout=45.0,
     )
 
-    assert isinstance(response, DailySummaryResponse)
+    assert isinstance(response, DailySummary)
     assert captured["config"] == {"temperature": "0.3"}
     assert captured["timeout"] == 45.0

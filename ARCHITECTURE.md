@@ -180,8 +180,8 @@ Derived schemas (see `src/aijournal/models/derived.py`):
 
 ## 6. Prompts and Structured Output
 
-- `prompts/summarize_day.md` – Bullets, highlights, TODOs. Output validated by `DailySummaryResponse`.
-- `prompts/extract_facts.md` – Emits atomic statements with evidence and temporal bounds. Validated by `ExtractedFactsResponse`.
+- `prompts/summarize_day.md` – Bullets, highlights, TODOs. Output validated by `DailySummary`.
+- `prompts/extract_facts.md` – Emits atomic statements with evidence and temporal bounds. Validated by `MicroFactsFile`.
 - `prompts/profile_suggest.md` – Proposes claim/facet upserts with rationale, method, and review cadence.
 - `prompts/characterize.md` – Produces consolidated claim/facet updates tied to manifest hashes plus interview prompts.
 - `prompts/interview.md` – Generates targeted follow-up questions using staleness and scope gaps.

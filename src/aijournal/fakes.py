@@ -5,6 +5,8 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable, Sequence
 from typing import Any
 
+from aijournal.domain.changes import ClaimAtomInput
+from aijournal.domain.evidence import SourceRef
 from aijournal.models import (
     AdviceCard,
     AdviceRecommendation,
@@ -234,16 +236,39 @@ def fake_characterize(
         user_verified=False,
     )
 
+    claim_input = _claim_atom_to_input(claim)
+    evidence = [
+        SourceRef.model_validate(source.model_dump(mode="python"))
+        for source in claim.provenance.sources
+    ]
+
     claim_proposal = ClaimProposal(
-        claim=claim,
+        claim=claim_input,
         normalized_ids=[],
-        evidence_hashes=[],
+        evidence=evidence,
         manifest_hashes=[],
+        rationale=None,
     )
 
     return ProfileUpdateProposals(
         claims=[claim_proposal],
         facets=[facet],
+    )
+
+
+def _claim_atom_to_input(claim: ClaimAtom) -> ClaimAtomInput:
+    return ClaimAtomInput(
+        type=claim.type,
+        subject=claim.subject,
+        predicate=claim.predicate,
+        value=claim.value,
+        statement=claim.statement,
+        scope=claim.scope.model_copy(deep=True),
+        strength=claim.strength,
+        status=claim.status,
+        method=claim.method,
+        user_verified=claim.user_verified,
+        review_after_days=claim.review_after_days,
     )
 
 

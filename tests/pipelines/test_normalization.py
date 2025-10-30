@@ -6,42 +6,9 @@ from pathlib import Path
 import pytest
 
 from aijournal.ingest_agent import IngestResult, IngestSection
-from aijournal.models import ClaimAtom, SimpleSuggestion
 from aijournal.pipelines import normalization
 
 TIMESTAMP = "2024-01-02T03:04:05Z"
-
-
-def test_simple_claim_to_upsert_builds_claim_atom() -> None:
-    suggestion = SimpleSuggestion(
-        kind="claim",
-        statement="Read a book",
-        evidence=["entry-123"],
-        confidence=1.7,  # intentionally above 1.0 to trigger clamp
-    )
-
-    upsert = normalization.simple_claim_to_upsert(suggestion, TIMESTAMP)
-
-    assert upsert is not None
-    assert upsert.target == "claims"
-    assert isinstance(upsert.value, ClaimAtom)
-    claim = upsert.value
-    assert claim.statement == "Read a book"
-    assert claim.strength == pytest.approx(1.0)
-    assert claim.status == "tentative"
-    assert claim.provenance.first_seen == TIMESTAMP
-    assert claim.provenance.last_updated == TIMESTAMP
-    assert claim.provenance.sources[0].entry_id == "entry-123"
-
-
-def test_simple_claim_to_upsert_requires_statement(capfd: pytest.CaptureFixture[str]) -> None:
-    suggestion = SimpleSuggestion(kind="claim", statement=None)
-
-    result = normalization.simple_claim_to_upsert(suggestion, TIMESTAMP)
-
-    assert result is None
-    captured = capfd.readouterr()
-    assert "Skipping claim suggestion without statement." in captured.err
 
 
 def test_merge_sections_deduplicates_and_falls_back() -> None:

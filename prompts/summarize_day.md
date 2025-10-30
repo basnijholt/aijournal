@@ -18,6 +18,9 @@ Rules:
 - `todo_candidates` should be concrete next steps implied by the entries.
 - Return **only** valid JSON.
 
+If you cannot produce a valid payload matching this schema, respond with `{"error":"schema_validation_failed"}` as the entire output.
+See `prompts/examples/summarize.json` for a minimal valid response.
+
 DATE: $date
 
 ENTRIES_JSON:

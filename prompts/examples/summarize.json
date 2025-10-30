@@ -1,0 +1,13 @@
+{
+  "day": "2025-10-26",
+  "bullets": [
+    "Confirmed strict schema prompts with JSON fixtures.",
+    "Documented fallback instructions for summarize output."
+  ],
+  "highlights": [
+    "LLM outputs now align with DailySummary schema."
+  ],
+  "todo_candidates": [
+    "Verify persona regeneration after strict schema rollout."
+  ]
+}

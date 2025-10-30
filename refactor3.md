@@ -557,121 +557,128 @@ class CaptureInput(CaptureRequest):
 
 ### Stage 3 – Strict Proposals, Facts, Summaries & Prompt Fixtures
 
-**3.1 Remove Sketch/Payload Models**
-- Delete `ClaimSketch`, `ClaimProposalPayload`, `FacetProposalPayload`, `ProfileSuggestionsResponse`, `SimpleProfileSuggestionsResponse`.
-- Add `aijournal/domain/changes.py` with `ClaimAtomInput`, `ClaimProposal`, `FacetChange`, `ProfileUpdateProposals`.
-- Update pipelines (`commands/profile.py`, `pipelines/characterize.py`, etc.) to use strict models directly.
+**3.1 Remove Sketch/Payload Models — DONE**
+- Domain claim/facet changes now flow through `aijournal/domain/changes.py`; pipelines emit `ProfileUpdateProposals` and convert to `ClaimAtom` without legacy shims.
+- 197-test green run after enforcement; governance hooks verify pre-commit + schema hygiene.
+
+**3.2 Strict Facts & Summaries — DONE**
+- `aijournal/domain/facts.py` backs facts & summaries end-to-end; CLI and pipelines persist unified envelopes.
+- Schema snapshots and fixtures refreshed; `uv run pytest` (197 tests) green.
+
+**3.3 Prompt Updates & Structured Output Fixtures — DONE**
+- Prompts embed JSON exemplars under `prompts/examples/`; unit tests guard structured output drift.
+- Redaction + logging pathways confirmed; pre-commit clean.
+
+**3.4 Structured-Output Runner Enhancements — DONE**
+- `run_ollama_agent` returns `LLMResult[T]`, handles retries, and logs invalid payloads to governed paths.
+- Chat/profile pipelines consume strict responses; CI hook + schema checker green.
+
+### Stage 4 – Persona & Interview Domainization
+
+**4.1 Persona Domain Module**
+- Add `aijournal/domain/persona.py` covering persona/interview StrictModels; export via `aijournal/domain/__init__.py`.
 - Tests: `uv run pytest`.
-- Commit: `refactor3: enforce strict claim and facet proposals`.
 
-**3.2 Strict Facts & Summaries**
-- Remove `ExtractedFactPayload`, `ExtractedFactsResponse`, `DailySummaryResponse`.
-- Add `aijournal/domain/facts.py` with `MicroFact`, `MicroFactsFile`, `DailySummary`.
-- Update facts/summaries pipelines and CLI commands.
-- Tests: `uv run pytest`.
-- Commit: `refactor3: tighten facts and summaries schemas`.
+**4.2 Derived Aliases & Rebuild**
+- Alias legacy personas/interviews in `models/derived.py`, invoke `model_rebuild()` where required, and drop duplicate definitions.
+- Tests: `uv run pytest`; regenerate affected schema fixtures.
 
-**3.3 Prompt Updates & Structured Output Fixtures**
-- Update prompts with strict JSON examples and failure guidance.
-- Add example payloads under `prompts/examples/<pipeline>.json`.
-- Add unit tests validating each example against its schema (no LLM call).
-- Tests: `uv run pytest` (include new tests).
-- Commit: `refactor3: align prompts with strict schema outputs`.
+**4.3 Capture & CLI Wiring**
+- Update capture Stage 7, CLI persona commands, interview flows, and chat loaders to import from the domain module.
+- Tests: `uv run pytest`; targeted CLI smoke runs (`persona build/status`, `ops profile interview`).
 
-**3.4 Structured-Output Runner Enhancements**
-- Extend `run_ollama_agent` to accept `response_model`, `max_retries`, `on_error_save_to` and to return `LLMResult[T]`.
-- Log invalid payloads to `derived/logs/structured_failures/<command>/<timestamp>.json`.
-- Tests: `uv run pytest`; add unit test simulating invalid payload, asserting log file created.
-- Commit: `refactor3: harden structured-output runner`.
+**4.4 Schema Blessing & Docs**
+- Regenerate persona/interview schemas via `scripts/check_schemas.py --bless`; refresh prompt examples and docs.
+- Tests: `uv run pytest`; `uv run pre-commit run --all-files`.
 
-### Stage 4 – Claim Events & Feedback
+### Stage 5 – Claim Events & Feedback
 
-**4.1 Discriminated Union for Events**
+**5.1 Discriminated Union for Events**
 - Add `aijournal/domain/events.py` with `ClaimPreviewEvent`, `FeedbackAdjustmentEvent`, `ClaimChangeEvent`.
 - Update consolidation, review pipelines, and persistence to use union.
 - Tests: `uv run pytest`; add snapshot test verifying discriminator works for both variants.
 - Commit: `refactor3: unify claim change event models`.
 
-**4.2 Feedback Batches Formalization**
+**5.2 Feedback Batches Formalization**
 - Add `FeedbackBatch` model and migrate feedback files.
 - Ensure `aijournal ops feedback apply` still adjusts strengths correctly; add tests.
 - Tests: `uv run pytest`; run fake-mode CLI to ensure no regression.
 - Commit: `refactor3: convert feedback batches to strict schema`.
 
-### Stage 5 – Retrieval, Chat, Advice
+### Stage 6 – Retrieval, Chat, Advice
 
-**5.1 Chunk & Index Unification + Retriever Parity**
+**6.1 Chunk & Index Unification + Retriever Parity**
 - Create `aijournal/domain/index.py` with `Chunk`, `RetrievedChunk`, `IndexMeta`.
 - Update indexing pipeline, retriever service, and tests.
 - Add mini-workspace fixture (`tests/fixtures/miniwk/`) and parity test to assert search results match pre-refactor IDs within tolerance.
 - Tests: `uv run pytest`; run `AIJOURNAL_FAKE_OLLAMA=1 uv run aijournal ops index rebuild` if fixtures exist.
 - Commit: `refactor3: unify chunk and index schema`.
 
-**5.2 Chat & Advice DTOs**
+**6.2 Chat & Advice DTOs**
 - Replace `ChatLLMResponse`/`ChatTurn` with strict `ChatResponse`/`ChatCitation`.
 - Collapse advice twins into `AdviceRecommendation`.
 - Update CLI, services, tests, transcripts.
 - Tests: `uv run pytest`; optional chat CLI smoke tests in fake mode.
 - Commit: `refactor3: streamline chat and advice responses`.
 
-### Stage 6 – Capture Separation Reinforced
+### Stage 7 – Capture Separation Reinforced
 
-**6.1 DTO Relocation & Validation**
+**7.1 DTO Relocation & Validation**
 - Define `CaptureRequest`/`CaptureInput` in `aijournal/api/capture.py`.
 - Ensure CLI exposes only `CaptureRequest` fields.
 - Add unit test verifying CLI schema lacks stage fields.
 - Tests: `uv run pytest`.
 - Commit: `refactor3: formalize capture request/input split`.
 
-### Stage 6.5 – Dual-Write Rehearsal (Safety Valve)
+### Stage 7.5 – Dual-Write Rehearsal (Safety Valve)
 
-**6.5.1 Temporary Dual-Write**
+**7.5.1 Temporary Dual-Write**
 - Implement `AIJOURNAL_SCHEMA_MODE` handling with support for `read-both-write-both`.
 - For one commit, write both legacy and v2 artifacts while reading v2 first.
 - Tests: `uv run pytest`; run smoke command ensuring both files produced.
 - Commit: `refactor3: enable dual-write schema rehearsal`.
 
-### Stage 7 – Artifact Adoption, Compatibility & Provenance Scanner
+### Stage 8 – Artifact Adoption, Compatibility & Provenance Scanner
 
-**7.1 Wrap Derived Artifacts in Artifact[T]**
+**8.1 Wrap Derived Artifacts in Artifact[T]**
 - Convert persisted YAML/JSON (summaries, microfacts, persona core, profile updates, feedback batches, index meta/chunks, packs, chat transcripts) to `Artifact[T]` envelopes.
 - Use deterministic serialization helper for JSON/YAML dumps.
 - Tests: `uv run pytest`; add test ensuring each artifact has `schema: "v2"`, `kind in ArtifactKind`, and stable formatting.
 - Commit: `refactor3: adopt artifact envelopes for derived data`.
 
-**7.2 Compatibility Layer with Warnings**
+**8.2 Compatibility Layer with Warnings**
 - Add `aijournal/compat/refactor3.py` mapping legacy class names to new ones, emitting `DeprecationWarning` with `stacklevel=2`.
 - Update codebase to import new modules; external callers rely on compat if needed.
 - Tests: `uv run pytest`; add test asserting warning raised once.
 - Commit: `refactor3: add legacy compatibility aliases`.
 
-**7.3 Provenance Audit Command**
+**8.3 Provenance Audit Command**
 - Implement `aijournal ops audit provenance [--fix]` scanning `profile/claims.yaml` and derived artifacts for spans containing text.
 - `--fix` mode applies `redact_source_text`; default mode reports offenders and exits non-zero.
 - Tests: `uv run pytest`; add CLI test with deliberate offender.
 - Commit: `refactor3: add provenance audit tooling`.
 
-**7.4 Import Codemod**
+**8.4 Import Codemod**
 - Add `scripts/codemods/refactor3_imports.py` using LibCST to rewrite known old→new imports (supports `--dry-run`).
 - Provide test rewriting a dummy file and asserting expected diff.
 - Tests: `uv run pytest`.
 - Commit: `refactor3: provide codemod for schema v2 imports`.
 
-### Stage 8 – Documentation & Examples
+### Stage 9 – Documentation & Examples
 
-**8.1 Documentation Updates**
+**9.1 Documentation Updates**
 - Update `README.md`, `ARCHITECTURE.md`, `docs/workflow.md`, `agents.md` to describe strict schemas, artifact envelopes, privacy enforcement, event unions, governance hooks, and temporary `AIJOURNAL_SCHEMA_MODE`.
 - Tests: `uv run pytest`; `pre-commit run --all-files` (Markdown lint).
 - Commit: `refactor3: document strict schema architecture`.
 
-**8.2 Example Artifact Regeneration**
+**9.2 Example Artifact Regeneration**
 - Regenerate sample packs, persona core, index manifests, microfacts, feedback, and chat examples reflecting new format (fake mode allowed).
 - Tests: `uv run pytest`.
 - Commit: `refactor3: refresh examples for schema v2`.
 
-### Stage 9 – Validation & Release Prep
+### Stage 10 – Validation & Release Prep
 
-**9.1 End-to-End Rehearsal**
+**10.1 End-to-End Rehearsal**
 - Fake mode acceptable:
   - `export AIJOURNAL_FAKE_OLLAMA=1`
   - `uv run aijournal init --path /tmp/aijournal_refactor3`
@@ -680,13 +687,13 @@ class CaptureInput(CaptureRequest):
 - Tests: `uv run pytest`; optionally `pre-commit run --all-files`.
 - Commit: `refactor3: verify end-to-end workflow under schema v2`.
 
-**9.2 Completion Log & Changelog**
+**10.2 Completion Log & Changelog**
 - Update `docs/refactor3_status.md` summarizing executed steps, test commands, decision log entries.
 - Update `CHANGELOG.md` with schema v2 introduction, migration notes, codemod instructions, provenance audit command, and schema-mode flag usage.
 - Tests: `uv run pytest`.
 - Commit: `refactor3: finalize strict schema release notes`.
 
-**9.3 Release Checklist (Optional)**
+**10.3 Release Checklist (Optional)**
 - Draft instructions for tagging, packaging, communication (no tag push).
 - Tests: `uv run pytest` to confirm no drift.
 - Commit (if files added): `refactor3: prepare release checklist`.
@@ -727,12 +734,12 @@ class CaptureInput(CaptureRequest):
 | 1.x | `pre-commit run --all-files` (where noted) | Formatting/linting compliance. |
 | 2.2 | Unit test verifying provenance text removal + audit scanner. |
 | 3.x | `AIJOURNAL_FAKE_OLLAMA=1` pipeline smoke tests (recommended). |
-| 4.2 | CLI feedback apply in fake mode to ensure event union works. |
-| 5.1 | `aijournal ops index rebuild` in fake mode + parity assertion. |
-| 6.5 | Dual-write rehearsal verification. |
-| 7.1 | Golden file diff review (ensure only envelope + deterministic formatting changes). |
-| 7.4 | Codemod unit test. |
-| 9.1 | Full workflow rehearsal in temp workspace. |
+| 5.2 | CLI feedback apply in fake mode to ensure event union works. |
+| 6.1 | `aijournal ops index rebuild` in fake mode + parity assertion. |
+| 7.5 | Dual-write rehearsal verification. |
+| 8.1 | Golden file diff review (ensure only envelope + deterministic formatting changes). |
+| 8.4 | Codemod unit test. |
+| 10.1 | Full workflow rehearsal in temp workspace. |
 
 Add property tests for provenance redaction and event JSON round-trips during relevant stages.
 

@@ -29,6 +29,9 @@ Guidelines:
 - Reuse the entry's `created_at` date for `first_seen`/`last_seen` when only one mention exists.
 - Do not include analysis or prose outside JSON.
 
+If you cannot produce a valid payload matching this schema, respond with `{"error":"schema_validation_failed"}` as the full response.
+See `prompts/examples/extract_facts.json` for a concrete example.
+
 DATE: $date
 
 ENTRIES_JSON:

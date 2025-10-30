@@ -13,8 +13,9 @@ import typer
 from pydantic import BaseModel
 
 from aijournal.commands.ingest import _load_config, _use_fake_llm
+from aijournal.common.meta import LLMResult
 from aijournal.io.yaml_io import load_yaml_model, write_yaml_model
-from aijournal.models import DailySummary, DailySummaryResponse, NormalizedEntry, SummaryMeta
+from aijournal.models import DailySummary, NormalizedEntry, SummaryMeta
 from aijournal.pipelines import summarize as summarize_pipeline
 from aijournal.services import LLMResponseError, build_ollama_config_from_mapping, run_ollama_agent
 from aijournal.utils import time as time_utils
@@ -65,6 +66,7 @@ def _invoke_structured_llm(
     retry_message: str | None = None,
 ) -> BaseModel:
     prompt = _render_prompt(prompt_path, variables)
+    prompt_hash = _hash_prompt(prompt_path)
     try:
         ollama_config = build_ollama_config_from_mapping(
             config,
@@ -73,14 +75,18 @@ def _invoke_structured_llm(
         effective_retry_message = retry_message or (
             "Return JSON that matches the expected schema with no extra keys or text."
         )
-        return run_ollama_agent(
+        result: LLMResult[BaseModel] = run_ollama_agent(
             ollama_config,
             prompt,
             system_prompt=_STRUCTURED_SYSTEM_PROMPT,
             output_type=response_model,
             max_attempts=max_attempts,
             retry_message=effective_retry_message,
+            prompt_path=prompt_path,
+            prompt_hash=prompt_hash,
+            log_label=agent_name,
         )
+        return cast(BaseModel, result.payload)
     except Exception as exc:  # pragma: no cover - runtime dependent
         msg = f"Structured output generation failed for {prompt_path}: {exc}"
         raise LLMResponseError(msg) from exc
@@ -196,16 +202,16 @@ def _summarize_day_payload(
     structured = structured_call or _structured_call_with_retry
     fake_mode = _use_fake_llm() if use_fake_llm is None else use_fake_llm
 
-    def request_summary() -> DailySummaryResponse:
+    def request_summary() -> DailySummary:
         return cast(
-            DailySummaryResponse,
+            DailySummary,
             invoke(
                 "prompts/summarize_day.md",
                 {
                     "date": date,
                     "entries_json": _json_block(_entries_to_payload(entries)),
                 },
-                response_model=DailySummaryResponse,
+                response_model=DailySummary,
                 agent_name="aijournal-summarize",
                 config=config,
                 timeout=timeout,

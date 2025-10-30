@@ -199,8 +199,8 @@ Calls `prompts/summarize_day.md` through Ollama and writes `derived/summaries/<D
 `AIJOURNAL_FAKE_OLLAMA=1` for deterministic fixtures.
 
 `summarize` (and the other LLM-backed commands) now streams responses through
-Pydantic AI's structured output validation. The CLI requests a `DailySummaryResponse`
-Pydantic model from the model and retries schema failures up to `--retries`
+Pydantic AI's structured output validation. The CLI requests a `DailySummary`
+Pydantic model from the LLM and retries schema failures up to `--retries`
 times (default 1). Use `--progress` to print each normalized entry before the request is
 sent. If the model keeps returning invalid JSON after the configured retries, the
 command aborts with an actionable error so you can inspect the upstream output.
@@ -223,7 +223,7 @@ back to tentative downgrades, and queued follow-up prompts surface in the CLI so
 you can jump straight into `aijournal ops profile interview`.
 
 Pass `--progress` to watch the entry-by-entry feed and `--retries` to control how many schema failures trigger a
-retry. Responses are validated against the `ExtractedFactsResponse` schema; if
+retry. Responses are validated against the `MicroFactsFile` schema; if
 validation still fails after the configured retries, the command stops with an
 error instead of silently emitting heuristics.
 

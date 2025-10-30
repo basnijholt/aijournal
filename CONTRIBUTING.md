@@ -25,7 +25,7 @@ Thanks for your interest in improving `aijournal`! This guide describes how to s
    uvx pre-commit install
    ```
 
-5. **Recommended:** enable the bundled git hooks (includes a schema check and full test run before `git push`).
+5. **Recommended:** enable the bundled git hooks (runs the schema check and full test suite before each `git push`).
    ```bash
    git config core.hooksPath .githooks
    ```
@@ -43,11 +43,23 @@ Thanks for your interest in improving `aijournal`! This guide describes how to s
 - **Static analysis:** `uv run mypy src`
 - **Linting / formatting:** `uv run ruff check src tests` and `uv run ruff format src tests`
 
-Please run the test suite and at least the Ruff formatter before submitting a PR. CI enforces the same checks. When data-model structures change, regenerate schemas via:
+Please run the test suite and at least the Ruff formatter before submitting a PR. CI enforces the same checks.
+
+### Schema management
+
+When data-model structures change, regenerate schemas and verify the clean run:
+
 ```bash
-uv run python scripts/check_schemas.py --bless
-uv run python scripts/check_schemas.py  # should report no changes
+uv run python scripts/check_schemas.py --bless && uv run python scripts/check_schemas.py
 ```
+
+Setting the environment variable is equivalent to passing `--bless`:
+
+```bash
+SCHEMAS_BLESS=1 uv run python scripts/check_schemas.py
+```
+
+The pre-push hook and CI workflows run the non-bless check automatically; remember to commit updated schema files alongside code changes.
 
 ## 4. Fake vs. Live Mode
 

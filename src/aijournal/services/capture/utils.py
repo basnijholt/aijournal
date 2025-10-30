@@ -16,16 +16,19 @@ from aijournal.commands.profile import (
     _load_profile_components,
     _profile_to_dict,
 )
+from aijournal.domain.evidence import redact_source_text
 from aijournal.io.yaml_io import load_yaml_model, write_yaml_model
 from aijournal.models import (
     ClaimAtom,
     ClaimProposal,
     ClaimsFile,
+    ClaimSource,
     FacetProposal,
     ManifestEntry,
     ProfileUpdateBatch,
     SelfProfile,
 )
+from aijournal.pipelines import normalization
 from aijournal.services.capture.results import OperationResult
 from aijournal.utils import time as time_utils
 
@@ -195,7 +198,8 @@ def apply_profile_update_batch(root: Path, batch_path: Path) -> bool:
 
     applied = False
     for claim_proposal in claim_proposals:
-        if _apply_claim_upsert(claims_data, claim_proposal.claim, timestamp):
+        incoming_atom = _proposal_claim_to_atom(claim_proposal, timestamp=timestamp)
+        if _apply_claim_upsert(claims_data, incoming_atom, timestamp):
             applied = True
 
     for facet_proposal in facet_proposals:
@@ -212,6 +216,27 @@ def apply_profile_update_batch(root: Path, batch_path: Path) -> bool:
     write_yaml_model(root / "profile" / "self_profile.yaml", updated_profile)
     write_yaml_model(root / "profile" / "claims.yaml", ClaimsFile(claims=updated_claims))
     return True
+
+
+def _proposal_claim_to_atom(proposal: ClaimProposal, timestamp: str) -> ClaimAtom:
+    claim_payload = proposal.claim.model_dump(mode="python")
+    evidence_sources = [
+        ClaimSource.model_validate(
+            redact_source_text(source).model_dump(mode="python"),
+        )
+        for source in proposal.evidence
+    ]
+    claim_payload["provenance"] = {
+        "sources": [source.model_dump(mode="python") for source in evidence_sources],
+        "first_seen": timestamp.split("T", 1)[0],
+        "last_updated": timestamp,
+        "observation_count": max(1, len(evidence_sources) or 1),
+    }
+    return normalization.normalize_claim_atom(
+        claim_payload,
+        timestamp=timestamp,
+        default_sources=evidence_sources,
+    )
 
 
 def ensure_unique_slug(root: Path, date_str: str, base_slug: str) -> str:
