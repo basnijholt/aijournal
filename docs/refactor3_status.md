@@ -9,6 +9,7 @@
 | 2025-10-29 | Stage 5 | Domainized claim preview/feedback events and introduced strict feedback batches. | Consolidation previews and chat feedback now emit discriminated events (`preview`/`feedback`); CI consumes the new schemas end to end. |
 | 2025-10-29 | Stage 8.1a | Wrapped daily summaries and micro-facts in `Artifact[T]` envelopes; updated CLI/tests/docs. | Derived context now carries deterministic envelopes; doc examples refreshed. |
 | 2025-10-29 | Stage 8.1b | Persona core, profile suggestions, pending update batches, and feedback files now emit artifact envelopes. | All persona/profile derived artifacts share the strict structure; CLI and capture tests consume the envelopes. |
+| 2025-10-29 | Stage 8.1c | Packs and chat transcripts now persist as `Artifact[T]` envelopes; CLI/tests/docs refreshed. | Pack exports gain `kind/meta` headers and chat transcripts write deterministic JSON artifacts in `derived/chat_sessions/`. |
 
 ## Stage 8 Execution Plan (Artifact Adoption)
 

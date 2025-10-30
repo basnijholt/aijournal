@@ -35,6 +35,7 @@ class ArtifactKind(StrEnum):
     INDEX_META = "index.meta"
     INDEX_CHUNKS = "index.chunks"
     PACK_L1 = "pack.L1"
+    PACK_L2 = "pack.L2"
     PACK_L3 = "pack.L3"
     PACK_L4 = "pack.L4"
     CHAT_TRANSCRIPT = "chat.transcript"

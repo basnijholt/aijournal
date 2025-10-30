@@ -12,6 +12,7 @@
         "index.meta",
         "index.chunks",
         "pack.L1",
+        "pack.L2",
         "pack.L3",
         "pack.L4",
         "chat.transcript"

@@ -1,0 +1,30 @@
+{
+  "additionalProperties": false,
+  "description": "Single file included in an export pack.",
+  "properties": {
+    "content": {
+      "title": "Content",
+      "type": "string"
+    },
+    "path": {
+      "title": "Path",
+      "type": "string"
+    },
+    "role": {
+      "title": "Role",
+      "type": "string"
+    },
+    "tokens": {
+      "title": "Tokens",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "role",
+    "path",
+    "tokens",
+    "content"
+  ],
+  "title": "PackEntry",
+  "type": "object"
+}

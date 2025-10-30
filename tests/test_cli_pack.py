@@ -201,8 +201,9 @@ def test_pack_l1_uses_persona_core(
         ["export", "pack", "--level", "L1", "--format", "yaml"],
     )
     assert result.exit_code == 0, result.output
-    payload = yaml.safe_load(result.stdout)
-    files = payload.get("files", [])
+    artifact = yaml.safe_load(result.stdout)
+    assert artifact["kind"] == "pack.L1"
+    files = artifact["data"].get("files", [])
     assert len(files) == 1
     assert files[0]["path"] == str(persona_path.relative_to(cli_workspace))
 
@@ -221,8 +222,9 @@ def test_pack_l2_includes_daily_artifacts(
         ["export", "pack", "--level", "L2", "--date", DATE],
     )
     assert result.exit_code == 0
-    payload = yaml.safe_load(result.stdout)
-    paths = {entry["path"] for entry in payload.get("files", [])}
+    artifact = yaml.safe_load(result.stdout)
+    assert artifact["kind"] == "pack.L2"
+    paths = {entry["path"] for entry in artifact["data"].get("files", [])}
     assert "derived/persona/persona_core.yaml" in paths
     assert f"data/normalized/{DATE}/{entry_slug}.yaml" in paths
     assert f"derived/summaries/{DATE}.yaml" in paths
@@ -356,12 +358,13 @@ def test_pack_deterministic_order(
         ["export", "pack", "--level", "L2", "--date", DATE],
     )
     assert second.exit_code == 0
-    payload_first = yaml.safe_load(first.stdout)
-    payload_second = yaml.safe_load(second.stdout)
-    assert payload_first["level"] == payload_second["level"]
-    assert {entry["path"] for entry in payload_first.get("files", [])} == {
-        entry["path"] for entry in payload_second.get("files", [])
-    }
+    artifact_first = yaml.safe_load(first.stdout)
+    artifact_second = yaml.safe_load(second.stdout)
+    assert artifact_first["kind"] == artifact_second["kind"]
+    files_first = artifact_first["data"].get("files", [])
+    files_second = artifact_second["data"].get("files", [])
+    assert artifact_first["data"]["level"] == artifact_second["data"]["level"]
+    assert {entry["path"] for entry in files_first} == {entry["path"] for entry in files_second}
 
 
 def test_pack_json_format(
@@ -377,7 +380,8 @@ def test_pack_json_format(
     )
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
-    assert payload["level"] == "L1"
+    assert payload["kind"] == "pack.L1"
+    assert payload["data"]["level"] == "L1"
 
 
 def test_pack_l3_includes_advice_and_profile_suggestions(
@@ -395,8 +399,9 @@ def test_pack_l3_includes_advice_and_profile_suggestions(
         ["export", "pack", "--level", "L3", "--date", DATE],
     )
     assert result.exit_code == 0
-    payload = yaml.safe_load(result.stdout)
-    files = [entry["path"] for entry in payload.get("files", [])]
+    artifact = yaml.safe_load(result.stdout)
+    assert artifact["kind"] == "pack.L3"
+    files = [entry["path"] for entry in artifact["data"].get("files", [])]
     assert str(advice_path.relative_to(cli_workspace)) in files
     assert str(suggestions_path.relative_to(cli_workspace)) in files
 
@@ -427,8 +432,9 @@ def test_pack_l4_history_days_includes_prior_context(
         ],
     )
     assert result.exit_code == 0
-    payload = yaml.safe_load(result.stdout)
-    paths = {entry["path"] for entry in payload.get("files", [])}
+    artifact = yaml.safe_load(result.stdout)
+    assert artifact["kind"] == "pack.L4"
+    paths = {entry["path"] for entry in artifact["data"].get("files", [])}
     assert f"data/normalized/{PRIOR_DATE}/{prior_entry}.yaml" in paths
     assert f"derived/summaries/{PRIOR_DATE}.yaml" in paths
     assert f"derived/microfacts/{PRIOR_DATE}.yaml" in paths
@@ -451,8 +457,8 @@ def test_pack_respects_token_estimator_config(
         ["export", "pack", "--level", "L2", "--date", DATE],
     )
     assert result.exit_code == 0
-    payload = yaml.safe_load(result.stdout)
-    files = payload.get("files", [])
+    artifact = yaml.safe_load(result.stdout)
+    files = artifact["data"].get("files", [])
     normalized_path = f"data/normalized/{DATE}/{ENTRY_ID}.yaml"
 
     normalized_entry = next(entry for entry in files if entry["path"] == normalized_path)
@@ -495,8 +501,8 @@ def test_pack_l4_trimming_prioritizes_raw_journal_entries(
         ],
     )
     assert result.exit_code == 0
-    payload = yaml.safe_load(result.stdout)
-    trimmed = payload.get("meta", {}).get("trimmed", [])
+    artifact = yaml.safe_load(result.stdout)
+    trimmed = artifact["data"].get("meta", {}).get("trimmed", [])
     assert trimmed, "expected trimming metadata"
     first_trimmed = trimmed[0]
     assert first_trimmed["role"] == "journal_raw"
@@ -526,8 +532,8 @@ def test_pack_l4_handles_missing_optional_artifacts(
         ],
     )
     assert result.exit_code == 0
-    payload = yaml.safe_load(result.stdout)
-    paths = [entry["path"] for entry in payload.get("files", [])]
+    artifact = yaml.safe_load(result.stdout)
+    paths = [entry["path"] for entry in artifact["data"].get("files", [])]
     assert all("profile_suggestions" not in path for path in paths)
 
 
@@ -558,8 +564,8 @@ def test_pack_l4_supports_json_output(
     )
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
-    assert payload["level"] == "L4"
-    json_paths = [entry["path"] for entry in payload.get("files", [])]
+    assert payload["kind"] == "pack.L4"
+    json_paths = [entry["path"] for entry in payload["data"].get("files", [])]
     expected_normalized = f"data/normalized/{DATE}/{normalized_entry}.yaml"
     assert expected_normalized in json_paths
 

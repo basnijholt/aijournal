@@ -655,7 +655,7 @@ Health check:
   5. Generate responses that must cite claims/journal entries (`[claim:pref.deep_work.window]`, `[entry:2025-10-25_x9t3#p0]`), include `why this fits you`, and ask at most one clarifying question if `coaching_prefs.probing` allows.
   6. Extract micro-facts from user messages, run them through `ClaimConsolidator`, and queue updates under `derived/pending/profile_updates/…` (or micro-facts) with explicit provenance.
   7. Capture feedback (thumbs up/down) to tweak cited claim strengths (+0.03/−0.05 within 0..1).
-- Outputs live under `derived/chat_sessions/<session_id>/{transcript.jsonl, summary.yaml, learnings.yaml}` with deterministic ordering + metadata.
+- Outputs live under `derived/chat_sessions/<session_id>/{transcript.json, summary.yaml, learnings.yaml}` with deterministic ordering + metadata.
 
 ---
 
