@@ -80,8 +80,8 @@ Run `aijournal init` inside a fresh directory to materialize `data/`, `derived/`
 ### Strict schemas, artifacts, and migration safety valves
 
 - Every derived output is migrating to versioned `Artifact[T]` envelopes (`kind`, `schema: "v2"`, `meta`, `data`). Deterministic helpers in `aijournal/io/artifacts.py` keep the JSON/YAML on disk stable.
-- During the transition the project writes both legacy and v2 payloads where appropriate (for example, `derived/index/meta.json` plus `meta.v2.json`). New readers prefer the v2 envelope first and fall back to the legacy payload only when `AIJOURNAL_SCHEMA_MODE` allows it.
-- `AIJOURNAL_SCHEMA_MODE` accepts `read-legacy-write-new`, `read-both-write-both`, or `read-new-write-new`. The default keeps legacy readers alive while emitting v2 artifacts; set `read-both-write-both` when you need parallel outputs, and `read-new-write-new` once your workspace is fully migrated.
+- During the short migration window the project emits both the legacy and v2 payloads for a handful of artifacts (for example, `derived/index/meta.json` alongside `meta.v2.json`). Treat this as a temporary aid—new tooling should consume the v2 envelope directly and plan to run in the strict `read-new-write-new` mode.
+- `AIJOURNAL_SCHEMA_MODE` exists only as a safety valve while completing refactor3. Keep it on the default (`read-legacy-write-new`) just long enough to regenerate artifacts, then switch to `read-new-write-new` and delete the legacy files. Long-term compatibility with the legacy layout is not supported.
 - Source spans now strip raw text before writing claims or feedback to disk. `aijournal/domain/evidence.py` enforces this at the schema layer and `aijournal ops audit provenance --fix` (Stage 8) will redact any lingering text during migration.
 - Governance hooks (`scripts/check_schemas.py`, JSON schema snapshots under `schemas/v2/`, and mandatory pre-commit checks) ensure every schema change is intentional and reviewable.
 - Reference outputs under `docs/examples/` showcase the new persona core, index meta v2 envelope, microfacts, packs, feedback batches, and chat transcripts generated in fake mode.
