@@ -7,12 +7,13 @@ import json
 import re
 from collections.abc import AsyncIterator, Iterable
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
+from aijournal.api.capture import CaptureInput, CaptureRequest
 from aijournal.services.chat import ChatService
 from aijournal.services.feedback import FeedbackAdjustment, apply_chat_feedback
 from aijournal.services.retriever import RetrievalFilters
@@ -36,28 +37,6 @@ class ChatRequest(BaseModel):
     session_id: str | None = Field(default=None, pattern=r"^[A-Za-z0-9_.\-]+$")
     save: bool = True
     feedback: str | None = None
-
-
-class CaptureRequest(BaseModel):
-    """Request payload for capture streaming API."""
-
-    source: Literal["stdin", "editor", "file", "dir"]
-    text: str | None = None
-    paths: list[str] = Field(default_factory=list)
-    source_type: Literal["journal", "notes", "blog"] = "journal"
-    date: str | None = None
-    title: str | None = None
-    slug: str | None = None
-    tags: list[str] = Field(default_factory=list)
-    projects: list[str] = Field(default_factory=list)
-    mood: str | None = None
-    apply_profile: Literal["auto", "review"] = "auto"
-    rebuild: Literal["auto", "always", "skip"] = "auto"
-    pack: Literal["L1", "L3", "L4"] | None = None
-    retries: int = Field(1, ge=0)
-    progress: bool = True
-    dry_run: bool = False
-    snapshot: bool = True
 
 
 def _json_line(payload: dict[str, Any]) -> bytes:
@@ -189,9 +168,13 @@ def build_chat_app(root: Path, config: dict[str, Any] | None = None) -> FastAPI:
 
     @app.post("/capture")
     async def capture_endpoint(payload: CaptureRequest) -> StreamingResponse:
-        from aijournal.services.capture import CaptureInput, run_capture
+        from aijournal.services.capture import CAPTURE_MAX_STAGE, run_capture
 
-        capture_input = CaptureInput.model_validate(payload.model_dump(mode="python"))
+        capture_input = CaptureInput.from_request(
+            payload,
+            min_stage=0,
+            max_stage=CAPTURE_MAX_STAGE,
+        )
         loop = asyncio.get_running_loop()
         queue: asyncio.Queue[bytes | None] = asyncio.Queue()
 

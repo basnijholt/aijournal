@@ -21,6 +21,7 @@ import yaml
 from pydantic import ValidationError
 from typer.models import CommandInfo
 
+from aijournal.api.capture import CaptureRequest
 from aijournal.commands import summarize as summarize_commands
 from aijournal.commands.advise import (
     _collect_pending_interview_prompts,
@@ -347,7 +348,7 @@ def capture(
         resolved_paths = []
         source_mode = "stdin"
 
-    capture_input = CaptureInput(
+    capture_request = CaptureRequest(
         source=source_mode,
         text=effective_text,
         paths=resolved_paths,
@@ -365,6 +366,10 @@ def capture(
         progress=progress,
         dry_run=dry_run,
         snapshot=snapshot,
+    )
+
+    capture_input = CaptureInput.from_request(
+        capture_request,
         min_stage=min_stage,
         max_stage=max_stage,
     )

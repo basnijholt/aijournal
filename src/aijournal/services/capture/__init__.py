@@ -7,11 +7,12 @@ import os
 from collections.abc import Callable, Iterable, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Literal, NamedTuple
+from typing import Any, NamedTuple
 
 import yaml
 from pydantic import BaseModel, Field
 
+from aijournal.api.capture import CaptureInput, CaptureRequest
 from aijournal.commands.ingest import _fake_structured_entry, _load_config
 from aijournal.ingest_agent import IngestResult, build_ingest_agent, ingest_with_agent
 from aijournal.models import (
@@ -877,58 +878,6 @@ def _persist_file_entry(
     )
 
 
-class CaptureInput(BaseModel):
-    """User-provided options for a capture run."""
-
-    source: Literal["stdin", "editor", "file", "dir"] = Field(
-        ...,
-        description="Primary source for captured content.",
-    )
-    text: str | None = Field(None, description="Raw text provided on the CLI.")
-    paths: list[str] = Field(default_factory=list, description="Paths to capture from.")
-    source_type: Literal["journal", "notes", "blog"] = Field(
-        "journal",
-        description="Semantic classification of the captured material.",
-    )
-    date: str | None = Field(None, description="Override created_at date (YYYY-MM-DD).")
-    title: str | None = Field(None, description="Override title for captured entries.")
-    slug: str | None = Field(None, description="Explicit slug to use when persisting.")
-    tags: list[str] = Field(default_factory=list, description="Tags to merge into front matter.")
-    projects: list[str] = Field(
-        default_factory=list,
-        description="Projects to merge into front matter.",
-    )
-    mood: str | None = Field(None, description="Mood value to record in front matter.")
-    apply_profile: Literal["auto", "review"] = Field(
-        "auto",
-        description="How profile updates should be applied after derivations.",
-    )
-    rebuild: Literal["auto", "always", "skip"] = Field(
-        "auto",
-        description="How index/persona rebuilds should be triggered.",
-    )
-    pack: Literal["L1", "L3", "L4"] | None = Field(
-        None,
-        description="Optional pack level to emit when persona changes.",
-    )
-    retries: int = Field(1, ge=0, description="LLM structured-output retries per stage.")
-    progress: bool = Field(True, description="Whether to display progress indicators.")
-    dry_run: bool = Field(False, description="Skip writes and report planned actions only.")
-    snapshot: bool = Field(True, description="Store raw snapshots for file imports.")
-    min_stage: int = Field(
-        0,
-        ge=0,
-        le=CAPTURE_MAX_STAGE,
-        description="Lowest capture stage to execute (see stage table).",
-    )
-    max_stage: int = Field(
-        CAPTURE_MAX_STAGE,
-        ge=0,
-        le=CAPTURE_MAX_STAGE,
-        description="Highest capture stage to execute (see stage table).",
-    )
-
-
 class EntryResult(BaseModel):
     """Outcome for a single journal entry processed during capture."""
 
@@ -1527,6 +1476,7 @@ __all__ = [
     "CaptureStage",
     "CAPTURE_STAGES",
     "CAPTURE_MAX_STAGE",
+    "CaptureRequest",
     "CaptureInput",
     "EntryResult",
     "CaptureResult",
