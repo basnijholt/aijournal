@@ -51,7 +51,12 @@ from aijournal.commands.ingest import (
 from aijournal.commands.init import run_init
 from aijournal.commands.new import run_new
 from aijournal.commands.pack import run_pack
-from aijournal.commands.persona import persona_state, run_persona_build
+from aijournal.commands.persona import (
+    persona_state,
+    run_persona_build,
+    run_persona_calibrate,
+    run_persona_metrics,
+)
 from aijournal.commands.profile import (
     InterviewTarget,
     _compute_rankings,
@@ -1191,6 +1196,41 @@ def persona_build(
     )
     status = "Wrote" if changed else "Persona core already up to date"
     typer.echo(f"{status}: {path}")
+
+
+@persona_app.command("calibrate")
+def persona_calibrate(
+    surveys: Path | None = typer.Option(
+        None,
+        "--surveys",
+        help="Path to survey responses (JSON or YAML).",
+        exists=True,
+        readable=True,
+        resolve_path=True,
+    ),
+    ema: Path | None = typer.Option(
+        None,
+        "--ema",
+        help="Path to EMA observations (JSON or YAML).",
+        exists=True,
+        readable=True,
+        resolve_path=True,
+    ),
+) -> None:
+    """Ingest survey/EMA data for persona calibration."""
+    if surveys is None and ema is None:
+        typer.secho("Provide --surveys and/or --ema inputs.", fg=typer.colors.RED, err=True)
+        raise typer.Exit(1)
+
+    path = run_persona_calibrate(surveys_path=surveys, ema_path=ema)
+    typer.echo(str(path))
+
+
+@persona_app.command("metrics")
+def persona_metrics() -> None:
+    """Generate persona calibration metrics."""
+    path = run_persona_metrics()
+    typer.echo(str(path))
 
 
 @persona_app.command("status")

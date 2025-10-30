@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import yaml
@@ -13,7 +14,7 @@ from aijournal.io.yaml_io import dump_yaml
 from tests.helpers import make_claim_atom
 
 if TYPE_CHECKING:
-    from pathlib import Path
+    pass
 
 
 def _seed_claims(workspace: Path) -> None:
@@ -158,6 +159,70 @@ def test_persona_build_respects_min_claims(
     notes = artifact.get("meta", {}).get("notes", {}) or {}
     assert notes.get("claim_count") == "2"
     assert json.loads(notes.get("budget_exceeded", "false")) is True
+
+
+def test_persona_calibrate_creates_artifact(
+    cli_workspace: Path,
+    cli_runner: CliRunner,
+) -> None:
+    surveys_path = cli_workspace / "surveys.json"
+    surveys_payload = {
+        "surveys": [
+            {
+                "date": "2025-10-01",
+                "instrument": "bfi_short",
+                "scales": {"focus": 0.7, "reflection": 0.6},
+            }
+        ]
+    }
+    surveys_path.write_text(json.dumps(surveys_payload), encoding="utf-8")
+
+    result = cli_runner.invoke(
+        app,
+        ["ops", "persona", "calibrate", "--surveys", str(surveys_path)],
+    )
+    assert result.exit_code == 0, result.stdout
+
+    calibration_dir = cli_workspace / "derived" / "persona" / "calibration"
+    files = list(calibration_dir.glob("*.yaml"))
+    assert files, "calibration artifact should be created"
+
+
+def test_persona_metrics_generates_report(
+    cli_workspace: Path,
+    cli_runner: CliRunner,
+) -> None:
+    # Seed claims and persona build (metrics alignments need claims)
+    _seed_claims(cli_workspace)
+    build_result = cli_runner.invoke(app, ["ops", "persona", "build"])
+    assert build_result.exit_code == 0, build_result.stdout
+
+    surveys_path = cli_workspace / "surveys.json"
+    surveys_payload = {
+        "surveys": [
+            {
+                "date": "2025-10-01",
+                "instrument": "bfi_short",
+                "scales": {"focus": 0.8, "reflection": 0.5},
+            }
+        ]
+    }
+    surveys_path.write_text(json.dumps(surveys_payload), encoding="utf-8")
+
+    calibrate_result = cli_runner.invoke(
+        app,
+        ["ops", "persona", "calibrate", "--surveys", str(surveys_path)],
+    )
+    assert calibrate_result.exit_code == 0, calibrate_result.stdout
+
+    metrics_result = cli_runner.invoke(app, ["ops", "persona", "metrics"])
+    assert metrics_result.exit_code == 0, metrics_result.stdout
+
+    metrics_path = Path(metrics_result.stdout.strip())
+    assert metrics_path.exists(), "metrics artifact path should exist"
+    artifact = yaml.safe_load(metrics_path.read_text(encoding="utf-8"))
+    data = artifact.get("data", {})
+    assert data.get("survey_summary"), "survey summary should be populated"
 
 
 def test_persona_status_reports_fresh(

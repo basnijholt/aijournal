@@ -1,0 +1,25 @@
+{
+  "additionalProperties": false,
+  "description": "Ecological momentary assessment datapoint.",
+  "properties": {
+    "label": {
+      "title": "Label",
+      "type": "string"
+    },
+    "timestamp": {
+      "title": "Timestamp",
+      "type": "string"
+    },
+    "value": {
+      "title": "Value",
+      "type": "number"
+    }
+  },
+  "required": [
+    "timestamp",
+    "label",
+    "value"
+  ],
+  "title": "EMAObservation",
+  "type": "object"
+}

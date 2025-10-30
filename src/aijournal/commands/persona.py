@@ -9,12 +9,19 @@ from pathlib import Path
 from typing import Any
 
 import typer
+import yaml
 
+from aijournal.commands.profile import load_profile_components
 from aijournal.common.meta import Artifact, ArtifactKind, ArtifactMeta
 from aijournal.domain.claims import ClaimAtom
 from aijournal.domain.persona import PersonaCore
 from aijournal.io.artifacts import load_artifact, save_artifact
 from aijournal.pipelines import persona as persona_pipeline
+from aijournal.services.persona.calibration import (
+    compute_persona_metrics,
+    ingest_calibration,
+    load_calibration_records,
+)
 from aijournal.utils import time as time_utils
 from aijournal.utils.coercion import coerce_float
 
@@ -293,3 +300,52 @@ def run_persona_build(
         changed = True
     save_artifact(persona_path, artifact)
     return persona_path, changed
+
+
+def _load_structured_payload(path: Path | None) -> Any | None:
+    if path is None:
+        return None
+    text = path.read_text(encoding="utf-8")
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        return yaml.safe_load(text)
+
+
+def run_persona_calibrate(
+    *,
+    surveys_path: Path | None,
+    ema_path: Path | None,
+    root: Path | None = None,
+) -> Path:
+    root = root or Path.cwd()
+    survey_payload = _load_structured_payload(surveys_path)
+    ema_payload = _load_structured_payload(ema_path)
+    try:
+        return ingest_calibration(
+            root=root,
+            survey_payload=survey_payload,
+            ema_payload=ema_payload,
+        )
+    except ValueError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        raise typer.Exit(1) from exc
+
+
+def run_persona_metrics(*, root: Path | None = None) -> Path:
+    root = root or Path.cwd()
+    records = load_calibration_records(root)
+    if not records:
+        typer.secho(
+            "No calibration records found. Run `aijournal ops persona calibrate` first.",
+            fg=typer.colors.RED,
+            err=True,
+        )
+        raise typer.Exit(1)
+
+    _, claim_models = load_profile_components(root)
+    return compute_persona_metrics(
+        root=root,
+        records=records,
+        claims=claim_models,
+    )
