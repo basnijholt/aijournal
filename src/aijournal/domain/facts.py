@@ -14,13 +14,6 @@ if TYPE_CHECKING:  # pragma: no cover
     from aijournal.models.derived import ProfileUpdatePreview
 
 
-class SummaryMeta(StrictModel):
-    llm_model: str = "unknown"
-    prompt_path: str = ""
-    prompt_hash: str | None = None
-    created_at: str = ""
-
-
 class DailySummary(StrictModel):
     """Derived day summary (PLAN §4.1)."""
 

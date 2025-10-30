@@ -27,10 +27,9 @@ from aijournal.domain.facts import (
     FactEvidenceSpan,
     MicroFact,
     MicroFactsFile,
-    SummaryMeta,
 )
 from aijournal.domain.journal import NormalizedEntry
-from aijournal.domain.persona import InterviewQuestion, InterviewSet, PersonaCore, PersonaCoreMeta
+from aijournal.domain.persona import InterviewQuestion, InterviewSet, PersonaCore
 from aijournal.io.artifacts import load_artifact, save_artifact
 from aijournal.io.yaml_io import load_yaml_model, write_yaml_model
 from aijournal.models.authoritative import ClaimsFile, JournalEntry, JournalSection, SelfProfile
@@ -59,11 +58,11 @@ def _assert_schema(path: Path, schema: str) -> None:
 
 def test_daily_summary_roundtrip(tmp_path: Path) -> None:
     path = _fixture_path(tmp_path, "summary")
-    meta = SummaryMeta(
-        llm_model="llama3.1:8b-instruct",
+    meta = ArtifactMeta(
+        created_at="2025-10-25T12:00:00Z",
+        model="llama3.1:8b-instruct",
         prompt_path="prompts/summarize_day.md",
         prompt_hash="abc123",
-        created_at="2025-10-25T12:00:00Z",
     )
     summary = DailySummary(
         day="2025-10-25",
@@ -73,12 +72,7 @@ def test_daily_summary_roundtrip(tmp_path: Path) -> None:
     )
     artifact = Artifact[DailySummary](
         kind=ArtifactKind.SUMMARY_DAILY,
-        meta=ArtifactMeta(
-            created_at=meta.created_at,
-            model=meta.llm_model,
-            prompt_path=meta.prompt_path,
-            prompt_hash=meta.prompt_hash,
-        ),
+        meta=meta,
         data=summary,
     )
     save_artifact(path, artifact)
@@ -209,34 +203,24 @@ def test_persona_core_roundtrip(tmp_path: Path) -> None:
         profile={"values_motivations": {"drivers": ["Mastery"]}},
         claims=[claim],
     )
-    meta = PersonaCoreMeta(
-        generated_at="2025-10-25T12:00:00Z",
-        token_budget=1200,
-        planned_tokens=420,
-        char_per_token=4.2,
-        selection_strategy="strength*impact*decay",
-        claim_pool=1,
-        claim_count=1,
-    )
     notes = {
-        "token_budget": str(meta.token_budget),
-        "planned_tokens": str(meta.planned_tokens),
-        "selection_strategy": meta.selection_strategy or "",
-        "trimmed": json.dumps(meta.trimmed, sort_keys=True, separators=(",", ":")),
-        "claim_pool": str(meta.claim_pool or 0),
-        "claim_count": str(meta.claim_count or 0),
-        "max_claims": str(meta.max_claims or 0),
-        "min_claims": str(meta.min_claims or 0),
-        "budget_exceeded": json.dumps(bool(meta.budget_exceeded)),
-        "source_mtimes": json.dumps(meta.source_mtimes, sort_keys=True, separators=(",", ":")),
+        "token_budget": "1200",
+        "planned_tokens": "420",
+        "selection_strategy": "strength*impact*decay",
+        "claim_pool": "1",
+        "claim_count": "1",
+        "max_claims": "0",
+        "min_claims": "0",
+        "budget_exceeded": json.dumps(False),
+        "source_mtimes": json.dumps({}, sort_keys=True, separators=(",", ":")),
     }
     notes = {key: value for key, value in notes.items() if value not in {"", "{}", "[]"}}
     artifact = Artifact[PersonaCore](
         kind=ArtifactKind.PERSONA_CORE,
         meta=ArtifactMeta(
-            created_at=meta.generated_at,
+            created_at="2025-10-25T12:00:00Z",
             model=None,
-            char_per_token=meta.char_per_token,
+            char_per_token=4.2,
             notes=notes or None,
             sources={"profile": "profile/self_profile.yaml"},
         ),
@@ -251,11 +235,11 @@ def test_persona_core_roundtrip(tmp_path: Path) -> None:
 
 def test_microfacts_file_roundtrip(tmp_path: Path) -> None:
     path = _fixture_path(tmp_path, "microfacts")
-    meta = SummaryMeta(
-        llm_model="llama3.1:8b-instruct",
+    meta = ArtifactMeta(
+        created_at="2025-10-25T12:05:00Z",
+        model="llama3.1:8b-instruct",
         prompt_path="prompts/extract_facts.md",
         prompt_hash="def",
-        created_at="2025-10-25T12:05:00Z",
     )
     facts = MicroFactsFile(
         facts=[
@@ -274,12 +258,7 @@ def test_microfacts_file_roundtrip(tmp_path: Path) -> None:
     )
     artifact = Artifact[MicroFactsFile](
         kind=ArtifactKind.MICROFACTS_DAILY,
-        meta=ArtifactMeta(
-            created_at=meta.created_at,
-            model=meta.llm_model,
-            prompt_path=meta.prompt_path,
-            prompt_hash=meta.prompt_hash,
-        ),
+        meta=meta,
         data=facts,
     )
     save_artifact(path, artifact)
@@ -338,11 +317,11 @@ def test_journal_entry_serialization(tmp_path: Path) -> None:
 
 def test_profile_proposals_schema(tmp_path: Path) -> None:
     path = _fixture_path(tmp_path, "profile_proposals")
-    meta = SummaryMeta(
-        llm_model="llama3.1:8b-instruct",
+    meta = ArtifactMeta(
+        created_at="2025-10-25T12:15:00Z",
+        model="llama3.1:8b-instruct",
         prompt_path="prompts/profile_suggest.md",
         prompt_hash="meta",
-        created_at="2025-10-25T12:15:00Z",
     )
     claim_input = ClaimAtomInput(
         type="preference",
@@ -377,7 +356,7 @@ def test_profile_proposals_schema(tmp_path: Path) -> None:
     )
     artifact = Artifact[ProfileUpdateProposals](
         kind=ArtifactKind.PROFILE_PROPOSALS,
-        meta=ArtifactMeta(created_at=meta.created_at, model=meta.llm_model),
+        meta=meta,
         data=proposals,
     )
     save_artifact(path, artifact)

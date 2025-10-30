@@ -10,24 +10,6 @@ from aijournal.common.base import StrictModel
 from aijournal.domain.claims import ClaimAtom
 
 
-class PersonaCoreMeta(StrictModel):
-    """Metadata captured alongside the persona core artifact."""
-
-    generated_at: str
-    token_budget: int
-    planned_tokens: int
-    char_per_token: float
-    selection_strategy: str | None = None
-    trimmed: list[dict[str, Any]] = Field(default_factory=list)
-    claim_pool: int | None = None
-    claim_count: int | None = None
-    max_claims: int | None = None
-    min_claims: int | None = None
-    budget_exceeded: bool = False
-    sources: dict[str, str] = Field(default_factory=dict)
-    source_mtimes: dict[str, float] = Field(default_factory=dict)
-
-
 class PersonaCore(StrictModel):
     """Primary persona payload used by chat/advise pipelines."""
 

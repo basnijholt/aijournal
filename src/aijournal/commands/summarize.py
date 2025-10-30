@@ -14,7 +14,7 @@ from pydantic import BaseModel
 
 from aijournal.commands.ingest import _load_config, _use_fake_llm
 from aijournal.common.meta import Artifact, ArtifactKind, ArtifactMeta, LLMResult
-from aijournal.domain.facts import DailySummary, SummaryMeta
+from aijournal.domain.facts import DailySummary
 from aijournal.domain.journal import NormalizedEntry
 from aijournal.io.artifacts import save_artifact
 from aijournal.io.yaml_io import load_yaml_model
@@ -174,7 +174,7 @@ def _build_meta(
     *,
     model: str | None = None,
     config: dict[str, Any] | None = None,
-) -> SummaryMeta:
+) -> ArtifactMeta:
     resolved_model: str
     if model:
         resolved_model = model
@@ -185,21 +185,12 @@ def _build_meta(
             if _use_fake_llm()
             else build_ollama_config_from_mapping(config_payload).model
         )
-    return SummaryMeta(
-        llm_model=resolved_model,
-        prompt_path=prompt_path,
-        prompt_hash=_hash_prompt(prompt_path),
-        created_at=time_utils.format_timestamp(time_utils.now()),
-    )
-
-
-def _artifact_meta_from_summary(meta: SummaryMeta) -> ArtifactMeta:
-    created_at = meta.created_at or time_utils.format_timestamp(time_utils.now())
+    created_at = time_utils.format_timestamp(time_utils.now())
     return ArtifactMeta(
         created_at=created_at,
-        model=meta.llm_model,
-        prompt_path=meta.prompt_path,
-        prompt_hash=meta.prompt_hash,
+        model=resolved_model,
+        prompt_path=prompt_path,
+        prompt_hash=_hash_prompt(prompt_path),
     )
 
 
@@ -280,11 +271,11 @@ def run_summarize(
         typer.secho(f"Summarize failed: {exc}", fg=typer.colors.RED, err=True)
         raise typer.Exit(1)
 
-    summary_meta = _build_meta("prompts/summarize_day.md", config=config)
+    artifact_meta = _build_meta("prompts/summarize_day.md", config=config)
     summary_path = _derived_summary_path(root, date)
     artifact = Artifact[DailySummary](
         kind=ArtifactKind.SUMMARY_DAILY,
-        meta=_artifact_meta_from_summary(summary_meta),
+        meta=artifact_meta,
         data=summary_data,
     )
     save_artifact(summary_path, artifact)

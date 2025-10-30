@@ -30,13 +30,12 @@ from aijournal.commands.summarize import (
     _log_entry_progress,
     _structured_call_with_retry,
 )
-from aijournal.common.meta import Artifact, ArtifactKind, ArtifactMeta
+from aijournal.common.meta import Artifact, ArtifactKind
 from aijournal.domain.changes import (
     ClaimProposal,
     ProfileUpdateProposals,
 )
 from aijournal.domain.claims import ClaimAtom
-from aijournal.domain.facts import SummaryMeta
 from aijournal.domain.journal import NormalizedEntry
 from aijournal.io.artifacts import save_artifact
 from aijournal.io.yaml_io import load_yaml_model
@@ -146,7 +145,7 @@ def run_characterize(
             ),
         )
 
-    meta_model = _build_meta("prompts/characterize.md", config=config)
+    artifact_meta = _build_meta("prompts/characterize.md", config=config)
     batch_model = ProfileUpdateBatch(
         batch_id=batch_id,
         created_at=timestamp,
@@ -160,7 +159,7 @@ def run_characterize(
     batch_path = _pending_updates_path(root, batch_id)
     artifact = Artifact[ProfileUpdateBatch](
         kind=ArtifactKind.PROFILE_UPDATES,
-        meta=_artifact_meta_from_summary_meta(meta_model),
+        meta=artifact_meta,
         data=batch_model,
     )
     save_artifact(batch_path, artifact)
@@ -271,14 +270,4 @@ def _normalize_claim_proposals(
         manifest_hashes=manifest_hashes,
         default_sources=default_sources,
         timestamp=timestamp,
-    )
-
-
-def _artifact_meta_from_summary_meta(meta: SummaryMeta) -> ArtifactMeta:
-    created_at = meta.created_at or time_utils.format_timestamp(time_utils.now())
-    return ArtifactMeta(
-        created_at=created_at,
-        model=meta.llm_model,
-        prompt_path=meta.prompt_path,
-        prompt_hash=meta.prompt_hash,
     )

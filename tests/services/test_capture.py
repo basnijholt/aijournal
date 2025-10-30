@@ -25,7 +25,6 @@ from aijournal.domain.facts import (
     FactEvidenceSpan,
     MicroFact,
     MicroFactsFile,
-    SummaryMeta,
 )
 from aijournal.io.artifacts import save_artifact
 from aijournal.models.authoritative import ManifestEntry
@@ -89,11 +88,11 @@ def test_run_capture_records_telemetry(tmp_path: Path, monkeypatch: pytest.Monke
         return path
 
     def _write_summary_artifact(path: Path, day: str) -> Path:
-        meta = SummaryMeta(
-            llm_model="fake-ollama",
+        meta = ArtifactMeta(
+            created_at=f"{day}T09:00:00Z",
+            model="fake-ollama",
             prompt_path="prompts/summarize_day.md",
             prompt_hash="fake",
-            created_at=f"{day}T09:00:00Z",
         )
         summary = DailySummary(
             day=day,
@@ -103,23 +102,18 @@ def test_run_capture_records_telemetry(tmp_path: Path, monkeypatch: pytest.Monke
         )
         artifact = Artifact[DailySummary](
             kind=ArtifactKind.SUMMARY_DAILY,
-            meta=ArtifactMeta(
-                created_at=meta.created_at,
-                model=meta.llm_model,
-                prompt_path=meta.prompt_path,
-                prompt_hash=meta.prompt_hash,
-            ),
+            meta=meta,
             data=summary,
         )
         save_artifact(path, artifact)
         return path
 
     def _write_microfacts_artifact(path: Path, day: str) -> Path:
-        meta = SummaryMeta(
-            llm_model="fake-ollama",
+        meta = ArtifactMeta(
+            created_at=f"{day}T09:05:00Z",
+            model="fake-ollama",
             prompt_path="prompts/extract_facts.md",
             prompt_hash="fake",
-            created_at=f"{day}T09:05:00Z",
         )
         facts = MicroFactsFile(
             facts=[
@@ -138,23 +132,18 @@ def test_run_capture_records_telemetry(tmp_path: Path, monkeypatch: pytest.Monke
         )
         artifact = Artifact[MicroFactsFile](
             kind=ArtifactKind.MICROFACTS_DAILY,
-            meta=ArtifactMeta(
-                created_at=meta.created_at,
-                model=meta.llm_model,
-                prompt_path=meta.prompt_path,
-                prompt_hash=meta.prompt_hash,
-            ),
+            meta=meta,
             data=facts,
         )
         save_artifact(path, artifact)
         return path
 
     def _write_profile_proposals_artifact(path: Path, day: str) -> Path:
-        meta = SummaryMeta(
-            llm_model="fake-ollama",
+        meta = ArtifactMeta(
+            created_at=f"{day}T09:10:00Z",
+            model="fake-ollama",
             prompt_path="prompts/profile_suggest.md",
             prompt_hash="fake",
-            created_at=f"{day}T09:10:00Z",
         )
         claim_model = ClaimAtom.model_validate(
             make_claim_atom(
@@ -189,18 +178,18 @@ def test_run_capture_records_telemetry(tmp_path: Path, monkeypatch: pytest.Monke
         )
         artifact = Artifact[ProfileUpdateProposals](
             kind=ArtifactKind.PROFILE_PROPOSALS,
-            meta=ArtifactMeta(created_at=meta.created_at, model=meta.llm_model),
+            meta=meta,
             data=proposals,
         )
         save_artifact(path, artifact)
         return path
 
     def _write_profile_update_batch_artifact(path: Path, day: str) -> Path:
-        meta = SummaryMeta(
-            llm_model="fake-ollama",
+        meta = ArtifactMeta(
+            created_at=f"{day}T09:20:00Z",
+            model="fake-ollama",
             prompt_path="prompts/characterize.md",
             prompt_hash="fake",
-            created_at=f"{day}T09:20:00Z",
         )
         batch = ProfileUpdateBatch(
             batch_id=f"batch-{day}",
@@ -218,7 +207,7 @@ def test_run_capture_records_telemetry(tmp_path: Path, monkeypatch: pytest.Monke
         )
         artifact = Artifact[ProfileUpdateBatch](
             kind=ArtifactKind.PROFILE_UPDATES,
-            meta=ArtifactMeta(created_at=meta.created_at, model=meta.llm_model),
+            meta=meta,
             data=batch,
         )
         save_artifact(path, artifact)

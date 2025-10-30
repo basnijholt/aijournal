@@ -19,7 +19,6 @@ from aijournal.commands.profile import (
     profile_to_dict,
 )
 from aijournal.commands.summarize import (
-    _artifact_meta_from_summary,
     _build_meta,
     _invoke_structured_llm,
     _json_block,
@@ -70,8 +69,7 @@ def run_advise(question: str) -> Path:
     )
     day = time_utils.created_date(time_utils.format_timestamp(time_utils.now()))
     advice_path = _derived_advice_path(root, day, question)
-    summary_meta = _build_meta("prompts/advise.md", model=model_name)
-    artifact_meta = _artifact_meta_from_summary(summary_meta)
+    artifact_meta = _build_meta("prompts/advise.md", model=model_name)
     save_artifact(
         advice_path,
         Artifact[AdviceCard](

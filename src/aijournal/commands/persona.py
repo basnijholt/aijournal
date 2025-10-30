@@ -12,7 +12,7 @@ import typer
 
 from aijournal.common.meta import Artifact, ArtifactKind, ArtifactMeta
 from aijournal.domain.claims import ClaimAtom
-from aijournal.domain.persona import PersonaCore, PersonaCoreMeta
+from aijournal.domain.persona import PersonaCore
 from aijournal.io.artifacts import load_artifact, save_artifact
 from aijournal.pipelines import persona as persona_pipeline
 from aijournal.utils import time as time_utils
@@ -49,30 +49,54 @@ def _persona_source_mtimes(root: Path) -> dict[str, float]:
     return state
 
 
-def _persona_artifact_meta(meta: PersonaCoreMeta) -> ArtifactMeta:
-    created_at = meta.generated_at or time_utils.format_timestamp(time_utils.now())
+def _persona_artifact_meta(
+    *,
+    generated_at: str,
+    token_budget: int,
+    planned_tokens: int,
+    char_per_token: float,
+    selection_strategy: str,
+    trimmed_ids: Sequence[str],
+    claim_pool: int,
+    claim_count: int,
+    max_claims: int,
+    min_claims: int,
+    budget_exceeded: bool,
+    sources: dict[str, str],
+    source_mtimes: dict[str, float],
+) -> ArtifactMeta:
+    trimmed_payload = (
+        json.dumps(
+            [{"type": "claim", "id": claim_id} for claim_id in trimmed_ids],
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        if trimmed_ids
+        else ""
+    )
     notes: dict[str, str] = {
-        "token_budget": str(meta.token_budget),
-        "planned_tokens": str(meta.planned_tokens),
-        "selection_strategy": meta.selection_strategy or "",
-        "trimmed": json.dumps(meta.trimmed, sort_keys=True, separators=(",", ":")),
-        "claim_pool": str(meta.claim_pool or 0),
-        "claim_count": str(meta.claim_count or 0),
-        "max_claims": str(meta.max_claims or 0),
-        "min_claims": str(meta.min_claims or 0),
-        "budget_exceeded": json.dumps(bool(meta.budget_exceeded)),
-        "source_mtimes": json.dumps(meta.source_mtimes, sort_keys=True, separators=(",", ":")),
+        "token_budget": str(token_budget),
+        "planned_tokens": str(planned_tokens),
+        "selection_strategy": selection_strategy,
+        "trimmed": trimmed_payload,
+        "claim_pool": str(claim_pool),
+        "claim_count": str(claim_count),
+        "max_claims": str(max_claims),
+        "min_claims": str(min_claims),
+        "budget_exceeded": json.dumps(bool(budget_exceeded)),
+        "source_mtimes": json.dumps(source_mtimes, sort_keys=True, separators=(",", ":")),
     }
-    # Drop empty strings to keep notes compact
+    # Drop empty placeholders to keep notes compact.
     notes = {key: value for key, value in notes.items() if value not in {"", "{}", "[]"}}
+    source_map = {**sources} if sources else {}
     return ArtifactMeta(
-        created_at=created_at,
+        created_at=generated_at or time_utils.format_timestamp(time_utils.now()),
         model=None,
         prompt_path=None,
         prompt_hash=None,
-        char_per_token=meta.char_per_token,
+        char_per_token=char_per_token,
         notes=notes or None,
-        sources={**meta.sources} or None,
+        sources=source_map or None,
     )
 
 
@@ -233,24 +257,6 @@ def run_persona_build(
         sources["claims"] = _relative_to_root(claims_path, root)
     source_mtimes = _persona_source_mtimes(root)
 
-    meta_model = PersonaCoreMeta(
-        generated_at=generated_at,
-        token_budget=token_budget,
-        planned_tokens=selection.planned_tokens,
-        char_per_token=char_per_token,
-        selection_strategy="strength*impact*decay",
-        trimmed=[{"type": "claim", "id": cid} for cid in selection.trimmed_ids]
-        if selection.trimmed_ids
-        else [],
-        claim_pool=len(ranked_claims),
-        claim_count=len(persona_claim_models),
-        max_claims=max_claims,
-        min_claims=min_claims,
-        budget_exceeded=selection.budget_exceeded,
-        sources=sources,
-        source_mtimes=source_mtimes,
-    )
-
     persona_path = root / "derived" / "persona" / "persona_core.yaml"
     existing_artifact = None
     if persona_path.exists():
@@ -259,7 +265,21 @@ def run_persona_build(
         except Exception:
             existing_artifact = None
 
-    artifact_meta = _persona_artifact_meta(meta_model)
+    artifact_meta = _persona_artifact_meta(
+        generated_at=generated_at,
+        token_budget=token_budget,
+        planned_tokens=selection.planned_tokens,
+        char_per_token=char_per_token,
+        selection_strategy="strength*impact*decay",
+        trimmed_ids=selection.trimmed_ids,
+        claim_pool=len(ranked_claims),
+        claim_count=len(persona_claim_models),
+        max_claims=max_claims,
+        min_claims=min_claims,
+        budget_exceeded=selection.budget_exceeded,
+        sources=sources,
+        source_mtimes=source_mtimes,
+    )
     artifact = Artifact[PersonaCore](
         kind=ArtifactKind.PERSONA_CORE,
         meta=artifact_meta,
