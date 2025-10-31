@@ -12,6 +12,7 @@ class PathsConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
+    workspace_root: str | None = None  # When set, all paths nest under this subdirectory
     data: str = "data"
     profile: str = "profile"
     derived: str = "derived"
