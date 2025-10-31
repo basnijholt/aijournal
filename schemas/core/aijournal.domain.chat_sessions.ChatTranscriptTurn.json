@@ -1,0 +1,107 @@
+{
+  "$defs": {
+    "ChatTelemetry": {
+      "additionalProperties": false,
+      "description": "Telemetry captured during a chat turn.",
+      "properties": {
+        "chunk_count": {
+          "title": "Chunk Count",
+          "type": "integer"
+        },
+        "model": {
+          "title": "Model",
+          "type": "string"
+        },
+        "retrieval_ms": {
+          "title": "Retrieval Ms",
+          "type": "number"
+        },
+        "retriever_source": {
+          "title": "Retriever Source",
+          "type": "string"
+        }
+      },
+      "required": [
+        "retrieval_ms",
+        "chunk_count",
+        "retriever_source",
+        "model"
+      ],
+      "title": "ChatTelemetry",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Captured question/answer pair within a chat transcript.",
+  "properties": {
+    "answer": {
+      "title": "Answer",
+      "type": "string"
+    },
+    "citations": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Citations",
+      "type": "array"
+    },
+    "clarifying_question": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Clarifying Question"
+    },
+    "fake_mode": {
+      "title": "Fake Mode",
+      "type": "boolean"
+    },
+    "feedback": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Feedback"
+    },
+    "intent": {
+      "title": "Intent",
+      "type": "string"
+    },
+    "question": {
+      "title": "Question",
+      "type": "string"
+    },
+    "telemetry": {
+      "$ref": "#/$defs/ChatTelemetry"
+    },
+    "timestamp": {
+      "title": "Timestamp",
+      "type": "string"
+    },
+    "turn_index": {
+      "title": "Turn Index",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "turn_index",
+    "timestamp",
+    "question",
+    "answer",
+    "intent",
+    "telemetry",
+    "fake_mode"
+  ],
+  "title": "ChatTranscriptTurn",
+  "type": "object"
+}

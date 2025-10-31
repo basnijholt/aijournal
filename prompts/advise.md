@@ -3,7 +3,6 @@ question, respond with a JSON advice card matching this schema:
 
 ```
 {
-  "id": "adv_YYYY-MM-DD_xxxx",
   "query": "original question",
   "assumptions": ["Evidence references"],
   "recommendations": [
@@ -26,20 +25,25 @@ question, respond with a JSON advice card matching this schema:
     "claims": ["claim ids"]
   },
   "style": {
-    "tone": "e.g. direct, warm",
-    "depth": "e.g. concrete first"
+    "tone": "direct|coaching|warm|concise|null",
+    "reading_level": "basic|intermediate|advanced|null",
+    "include_risks": true|false|null,
+    "coaching_prompts": true|false|null
   }
 }
 ```
 
 Guidelines:
-- Honor `coaching_prefs` tone/depth when crafting steps.
+- Honor `coaching_prefs` tone/depth when crafting steps; map tone to one of the allowed values (`direct`, `coaching`, `warm`, `concise`).
 - Respect `boundaries_ethics.red_lines`; if the question violates them, steer away politely.
 - Tie every recommendation back to at least one facet or claim.
 - Incorporate `RANKINGS_JSON` (top interview targets) and `PENDING_PROMPTS_JSON` when prioritising
   assumptions, risks, or next actions—surface follow-ups that close the biggest information gaps.
 - Keep steps specific and time-bound where possible.
+- Caps: ≤3 recommendations (each ≤5 steps); `risks`/`mitigations` ≤3 entries, list strings ≤160 characters.
 - Return **only** valid JSON.
+
+If you cannot produce a valid payload matching this schema, respond with a minimal valid object that includes the keys above and empty arrays for optional lists. See `prompts/examples/advise.json` for a compliant example.
 
 DATE: $date
 QUESTION: $question

@@ -63,7 +63,7 @@ aijournal/
   derived/
     summaries/
     microfacts/
-    profile_suggestions/
+    profile_proposals/
     pending/profile_updates/
     persona/
     index/
@@ -75,13 +75,22 @@ aijournal/
 
 ### 2.2 Core Components
 
-- **CLI (`src/aijournal/cli.py`)** – Thin Typer glue that wires user-facing commands to the orchestration layer. It exposes everyday verbs (`init`, `capture`, `chat`, `advise`, `status`, `serve chat`, `export pack`) while advanced utilities are namespaced under `ops.*`.
-- **Commands (`src/aijournal/commands/`)** – Feature-specific runners that orchestrate file I/O, pipelines, and error handling for each CLI surface (capture, ops.pipeline, ops.profile, ops.index, ops.persona, ops.feedback, ops.system, ops.dev, etc.).
+- **CLI (`src/aijournal/cli.py`)** – Thin Typer glue that wires user-facing commands to the orchestration layer. It exposes everyday verbs (`init`, `capture`, `chat`, `advise`, `status`, `serve chat`, `export pack`) while advanced utilities are namespaced under `ops.*`. Global flags `--trace` and `--verbose-json` mirror structured trace events to stdout for debugging.
+- **Commands (`src/aijournal/commands/`)** – Feature-specific runners that orchestrate file I/O, pipelines, and error handling for each CLI surface (capture, ops.pipeline, ops.profile, ops.index, ops.persona, ops.feedback, ops.system, ops.dev, etc.). Complex commands now follow a standard three-phase skeleton (`prepare_inputs`, `invoke_pipeline`, `persist_output`) driven by `run_command_pipeline`.
+- **Common context (`src/aijournal/common/context.py`, `common/logging.py`, `common/command_runner.py`)** – Provides `RunContext` objects that resolve config, fake/live flags, and a shared `StructuredLogger` writing NDJSON entries to `derived/logs/run_trace.jsonl`. Additional sinks enable pretty or JSON traces when `--trace`/`--verbose-json` is used, and `aijournal ops logs tail --last N` pretty-prints recent trace events for debugging live runs.
 - **Pipelines (`src/aijournal/pipelines/`)** – Deterministic workflows that combine services, prompts, and validation for a single use case (summaries, facts, characterization, packs, advice). Pipelines avoid Typer and file-system concerns so they remain testable.
 - **Models (`src/aijournal/models/`)** – Pydantic schemas that validate every authoritative and derived artifact before it hits disk.
 - **Services (`src/aijournal/services/`)** – Ollama client, retrieval/indexing, characterization, consolidation, chat orchestrator, advisor, capture orchestrator, and feedback handlers.
 - **Utilities (`src/aijournal/utils/` & `src/aijournal/io/`)** – Path mappers, YAML helpers, slug and ID generators, time utilities, filesystem safety rails.
 - **Prompts (`prompts/`)** – Markdown templates hashed into derived metadata to keep runs reproducible.
+
+### 2.3 Domain Layer and Schema Governance
+
+- The strict domain layer (`src/aijournal/domain/`) houses reusable `StrictModel` classes for journal entries, evidence spans, micro-facts, persona data, claim events, and index metadata. They act as the single source of truth for both CLI validation and serialized artifacts.
+- Public DTOs live under `src/aijournal/api/` (for example `chat.py`, `capture.py`) so Typer commands and FastAPI endpoints expose only the fields operators should control. Internal services extend these DTOs with additional context (stage bounds, telemetry) without leaking knobs to end users.
+- Derived outputs persist exclusively as `Artifact[T]` envelopes (`kind`, `meta`, `data`). Deterministic helpers in `aijournal/io/artifacts.py` keep JSON/YAML dumps stable for review.
+- There is no compatibility flag or legacy reader—the artifact envelopes are the only supported format moving forward.
+- JSON schema snapshots live under `schemas/core/`, and `scripts/check_schemas.py` blocks commits when a schema drift is detected without blessing.
 
 ## 3. Core Concepts
 
@@ -111,6 +120,7 @@ aijournal/
 - Each facet or claim records `method`, `user_verified`, `review_after_days`, and evidence references. `staleness = min(2.0, days_since_last_updated / review_after_days)` drives interview prioritization.
 - Default impact weights: values/goals (1.5), decision_style (1.3), affect_energy (1.2), traits (1.0), social (0.9). Claim types (value, goal, boundary, trait, preference, habit, skill) inherit these weights for ranking.
 - Freshness and impact control interview prompts and claim ordering in persona packs, advising the system where to probe next.
+- Provenance spans never persist raw text—`aijournal/domain/evidence.py` strips `span.text` before saving claims or feedback, and the audit tooling redacts any lingering text when running migrations.
 
 ## 4. Data Flow Pipelines
 
@@ -127,7 +137,7 @@ Refer to `docs/workflow.md` for the operational command order. This section expl
 Once normalized entries exist for a date, `aijournal capture` drives the derivation stack automatically. Advanced operators can run the same steps manually via:
 1. `aijournal ops pipeline summarize --date <date>` – writes `derived/summaries/<date>.yaml` with bullets, highlights, and TODO candidates.
 2. `aijournal ops pipeline extract-facts --date <date>` – produces `derived/microfacts/<date>.yaml`, claim proposals, and consolidation previews.
-3. `aijournal ops profile suggest --date <date>` – generates `derived/profile_suggestions/<date>.yaml` with claim/facet upserts.
+3. `aijournal ops profile suggest --date <date>` – generates `derived/profile_proposals/<date>.yaml` with claim/facet proposals.
 4. `aijournal ops profile apply --date <date> --yes` – merges accepted suggestions into `profile/claims.yaml` and `profile/self_profile.yaml` (capture runs this automatically when `--apply-profile=auto`).
 
 All outputs include `meta.{llm_model, prompt_path, prompt_hash, created_at}` and are validated against Pydantic models. Each capture run logs NDJSON telemetry (`derived/logs/capture/<run_id>.jsonl`) with per-stage durations, counters, and warnings.
@@ -143,7 +153,7 @@ All outputs include `meta.{llm_model, prompt_path, prompt_hash, created_at}` and
 - `aijournal ops index rebuild` transforms normalized entries into deterministic chunks (700–1200 characters, sentence-aware, including section headings) and stores:
   - SQLite FTS5 database (`derived/index/index.db`) with chunk metadata.
   - Annoy index (`derived/index/annoy.index`) keyed by SQLite row IDs.
-  - Chunk manifests (`derived/index/chunks/YYYY-MM-DD.yaml`) and optional vector shards for inspection.
+  - Chunk artifacts (`ArtifactKind.INDEX_CHUNKS`) in `derived/index/chunks/YYYY-MM-DD.yaml`, wrapping `ChunkBatch` payloads plus optional `.npy` vector shards for inspection.
 - Incremental refreshes call `aijournal ops index update` with the dates touched during the last capture run (fallback `--since` window) so rebuilds stay fast.
 - Chat and advisor mode share the same orchestrator:
   1. Load the persona core and rank claims by effective strength (bounded by `chat.max_claims`).
@@ -174,14 +184,14 @@ Authoritative schemas (see `src/aijournal/models/authoritative.py`):
 - `ClaimAtom` / `ClaimsFile` – Typed claims with scope, strength, provenance, `review_after_days`, and timestamps.
 
 Derived schemas (see `src/aijournal/models/derived.py`):
-- `DailySummary`, `MicroFactsFile`, `ProfileSuggestions`, `ProfileUpdateBatch`.
-- `PersonaCoreFile`, `AdviceCard`, `InterviewSet`, `ChatTranscript`, `ChatTelemetry`, `IndexMeta`.
+- `DailySummary`, `MicroFactsFile`, `ProfileUpdateProposals`, `ProfileUpdateBatch`.
+- `PersonaCore`, `AdviceCard`, `InterviewSet`, `ChatTranscript`, `ChatTelemetry`, `IndexMeta`.
 - Every derived YAML includes a deterministic `meta` block with the Ollama model, prompt path, prompt hash, creation time, and (where applicable) manifest hashes.
 
 ## 6. Prompts and Structured Output
 
-- `prompts/summarize_day.md` – Bullets, highlights, TODOs. Output validated by `DailySummaryResponse`.
-- `prompts/extract_facts.md` – Emits atomic statements with evidence and temporal bounds. Validated by `ExtractedFactsResponse`.
+- `prompts/summarize_day.md` – Bullets, highlights, TODOs. Output validated by `DailySummary`.
+- `prompts/extract_facts.md` – Emits atomic statements with evidence and temporal bounds. Validated by `MicroFactsFile`.
 - `prompts/profile_suggest.md` – Proposes claim/facet upserts with rationale, method, and review cadence.
 - `prompts/characterize.md` – Produces consolidated claim/facet updates tied to manifest hashes plus interview prompts.
 - `prompts/interview.md` – Generates targeted follow-up questions using staleness and scope gaps.

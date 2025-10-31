@@ -1,0 +1,179 @@
+{
+  "$defs": {
+    "ClaimSignaturePayload": {
+      "additionalProperties": false,
+      "description": "Serialized signature describing the target slot for a claim.",
+      "properties": {
+        "claim_type": {
+          "title": "Claim Type",
+          "type": "string"
+        },
+        "conditions": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Conditions",
+          "type": "array"
+        },
+        "context": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Context",
+          "type": "array"
+        },
+        "domain": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Domain"
+        },
+        "predicate": {
+          "title": "Predicate",
+          "type": "string"
+        },
+        "subject": {
+          "title": "Subject",
+          "type": "string"
+        }
+      },
+      "required": [
+        "claim_type",
+        "subject",
+        "predicate"
+      ],
+      "title": "ClaimSignaturePayload",
+      "type": "object"
+    },
+    "SourceRef": {
+      "additionalProperties": false,
+      "description": "Reference to a normalized entry and the supporting spans.",
+      "properties": {
+        "entry_id": {
+          "title": "Entry Id",
+          "type": "string"
+        },
+        "spans": {
+          "items": {
+            "$ref": "#/$defs/Span"
+          },
+          "title": "Spans",
+          "type": "array"
+        }
+      },
+      "required": [
+        "entry_id"
+      ],
+      "title": "SourceRef",
+      "type": "object"
+    },
+    "Span": {
+      "additionalProperties": false,
+      "description": "Detailed pointer back into a source document.",
+      "properties": {
+        "end": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "End"
+        },
+        "index": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Index"
+        },
+        "start": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Start"
+        },
+        "text": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Text"
+        },
+        "type": {
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "title": "Span",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Structured conflict emitted during consolidation previews.",
+  "properties": {
+    "claim_id": {
+      "title": "Claim Id",
+      "type": "string"
+    },
+    "existing_value": {
+      "title": "Existing Value",
+      "type": "string"
+    },
+    "incoming_sources": {
+      "items": {
+        "$ref": "#/$defs/SourceRef"
+      },
+      "title": "Incoming Sources",
+      "type": "array"
+    },
+    "incoming_value": {
+      "title": "Incoming Value",
+      "type": "string"
+    },
+    "signature": {
+      "$ref": "#/$defs/ClaimSignaturePayload"
+    },
+    "statement": {
+      "title": "Statement",
+      "type": "string"
+    }
+  },
+  "required": [
+    "claim_id",
+    "signature",
+    "statement",
+    "existing_value",
+    "incoming_value"
+  ],
+  "title": "ClaimConflictPayload",
+  "type": "object"
+}

@@ -26,7 +26,7 @@ AUTHORITATIVE_DIRS = {
 DERIVED_DIRS = {
     "derived/summaries",
     "derived/microfacts",
-    "derived/profile_suggestions",
+    "derived/profile_proposals",
     "derived/interviews",
     "derived/advice",
     "derived/index",

@@ -5,15 +5,12 @@ from datetime import UTC, datetime
 
 import pytest
 
-from aijournal.models import (
-    ClaimProposal,
-    ClaimSource,
-    ExtractedFactPayload,
-    ExtractedFactsResponse,
-    FactEvidence,
-    ManifestEntry,
-    NormalizedEntry,
-)
+from aijournal.domain.changes import ClaimAtomInput, ClaimProposal
+from aijournal.domain.claims import ClaimSource, Scope
+from aijournal.domain.evidence import SourceRef
+from aijournal.domain.facts import MicroFact, MicroFactsFile
+from aijournal.domain.journal import NormalizedEntry
+from aijournal.models.authoritative import ManifestEntry
 from aijournal.pipelines import facts as facts_pipeline
 
 
@@ -31,13 +28,8 @@ def _normalized_entry(entry_id: str) -> NormalizedEntry:
 
 def _characterization_context(
     entry_id: str,
-) -> tuple[list[str], list[str], list[str], list[ClaimSource]]:
-    return (
-        [entry_id],
-        ["hash-1"],
-        ["manifest-1"],
-        [ClaimSource(entry_id=entry_id, spans=[])],
-    )
+) -> tuple[list[str], list[str], list[ClaimSource]]:
+    return ([entry_id], ["manifest-1"], [ClaimSource(entry_id=entry_id, spans=[])])
 
 
 def test_generate_microfacts_uses_fake_pipeline(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -47,15 +39,15 @@ def test_generate_microfacts_uses_fake_pipeline(monkeypatch: pytest.MonkeyPatch)
     called: dict[str, bool] = {"structured": False}
 
     def structured_call(  # pragma: no cover - fake mode should skip
-        func: Callable[[], ExtractedFactsResponse],
+        func: Callable[[], MicroFactsFile],
         *,
         retries: int,
         label: str,
-    ) -> ExtractedFactsResponse:
+    ) -> MicroFactsFile:
         called["structured"] = True
         return func()
 
-    def request_factory() -> ExtractedFactsResponse:  # pragma: no cover - fake mode should skip
+    def request_factory() -> MicroFactsFile:  # pragma: no cover - fake mode should skip
         raise AssertionError("request_factory should not run in fake mode")
 
     result = facts_pipeline.generate_microfacts(
@@ -86,41 +78,53 @@ def test_generate_microfacts_merges_llm_and_derived(monkeypatch: pytest.MonkeyPa
         id="entry-1",
     )
 
-    response = ExtractedFactsResponse(
+    response = MicroFactsFile(
         facts=[
-            ExtractedFactPayload(
+            MicroFact(
                 id="fact-1",
                 statement="Completed focus block",
                 confidence=0.9,
-                evidence=FactEvidence(entry_id="entry-1"),
+                evidence=SourceRef(entry_id="entry-1", spans=[]),
                 first_seen="2024-01-02",
                 last_seen="2024-01-02",
             )
         ],
         claim_proposals=[
-            {
-                "claim": {
-                    "id": "microfact.fact-1",
-                    "statement": "Completed focus block",
-                    "value": "Completed focus block",
-                }
-            }
+            ClaimProposal(
+                claim=ClaimAtomInput(
+                    type="preference",
+                    subject="fact-1",
+                    predicate="insight",
+                    value="Completed focus block",
+                    statement="Completed focus block",
+                    scope=Scope(),
+                    strength=0.8,
+                    status="tentative",
+                    method="inferred",
+                    user_verified=False,
+                    review_after_days=90,
+                ),
+                normalized_ids=["entry-1"],
+                manifest_hashes=["manifest-1"],
+                evidence=[SourceRef(entry_id="entry-1", spans=[])],
+                rationale=None,
+            )
         ],
     )
 
     call_args: dict[str, object] = {}
 
     def structured_call(
-        func: Callable[[], ExtractedFactsResponse],
+        func: Callable[[], MicroFactsFile],
         *,
         retries: int,
         label: str,
-    ) -> ExtractedFactsResponse:
+    ) -> MicroFactsFile:
         call_args["retries"] = retries
         call_args["label"] = label
         return func()
 
-    def request_factory() -> ExtractedFactsResponse:
+    def request_factory() -> MicroFactsFile:
         return response
 
     fixed_now = datetime(2024, 1, 2, 10, 0, tzinfo=UTC)
@@ -143,6 +147,8 @@ def test_generate_microfacts_merges_llm_and_derived(monkeypatch: pytest.MonkeyPa
     assert len(result.claim_proposals) == 1
     proposal = result.claim_proposals[0]
     assert isinstance(proposal, ClaimProposal)
-    assert proposal.claim.id == "microfact.fact-1"
+    assert isinstance(proposal.claim, ClaimAtomInput)
+    assert proposal.claim.statement == "Completed focus block"
     assert proposal.normalized_ids == ["entry-1"]
-    assert proposal.evidence_hashes == ["hash-1"]
+    assert proposal.manifest_hashes == ["manifest-1"]
+    assert proposal.evidence == [SourceRef(entry_id="entry-1", spans=[])]

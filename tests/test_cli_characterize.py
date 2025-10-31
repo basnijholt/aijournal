@@ -8,7 +8,8 @@ import yaml
 from typer.testing import CliRunner
 
 from aijournal.cli import app
-from aijournal.models import CharacterizeResponse
+from aijournal.domain.changes import ProfileUpdateProposals
+from aijournal.io.yaml_io import dump_yaml
 
 DATE = "2025-02-03"
 ENTRY_ID = "2025-02-03-focus-notes"
@@ -17,7 +18,7 @@ SOURCE_HASH = "abc123hash"
 
 def _write_yaml(path: Path, payload: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
+    path.write_text(dump_yaml(payload, sort_keys=False), encoding="utf-8")
 
 
 def _seed_normalized(tmp_path: Path) -> None:
@@ -116,19 +117,26 @@ def test_characterize_generates_pending_batch(
     _seed_profile(cli_workspace)
 
     batch_path, _ = _run_characterize(cli_workspace, cli_runner)
-    data = yaml.safe_load(batch_path.read_text(encoding="utf-8"))
+    artifact = yaml.safe_load(batch_path.read_text(encoding="utf-8"))
+    assert artifact.get("kind") == "profile.updates"
+    outer_meta = artifact.get("meta", {})
+    assert outer_meta.get("created_at")
+    assert outer_meta.get("prompt_path") == "prompts/characterize.md"
+    assert outer_meta.get("model") == "fake-ollama"
+    data = artifact.get("data", {})
 
     assert data.get("inputs")
-    assert data.get("meta", {}).get("prompt_path") == "prompts/characterize.md"
-    assert data.get("meta", {}).get("llm_model") == "fake-ollama"
+    assert "meta" not in data
     proposals = data.get("proposals", {})
     claims = proposals.get("claims")
     assert claims, "Expected at least one claim proposal"
     first_claim = claims[0]
-    assert SOURCE_HASH in (first_claim.get("evidence_hashes") or [])
+    assert SOURCE_HASH in (first_claim.get("manifest_hashes") or [])
+    evidence = first_claim.get("evidence") or []
+    assert any(item.get("entry_id") == ENTRY_ID for item in evidence)
     preview = data.get("preview", {})
     events = preview.get("claim_events") or []
-    assert events and events[0].get("action") == "created"
+    assert events and events[0].get("action") == "upsert"
     assert not (preview.get("interview_prompts") or [])
 
 
@@ -166,7 +174,8 @@ def test_characterize_preview_flags_conflict(
     _seed_conflicting_claim(cli_workspace)
 
     batch_path, _ = _run_characterize(cli_workspace, cli_runner)
-    data = yaml.safe_load(batch_path.read_text(encoding="utf-8"))
+    artifact = yaml.safe_load(batch_path.read_text(encoding="utf-8"))
+    data = artifact.get("data", {})
     preview = data.get("preview", {})
     events = preview.get("claim_events") or []
     actions = {event.get("action") for event in events}
@@ -200,7 +209,6 @@ def test_characterize_live_mode_structured(
     monkeypatch.setenv("AIJOURNAL_FAKE_OLLAMA", "0")
 
     claim_payload = {
-        "id": "focus-claim",
         "type": "preference",
         "subject": "Focus routines",
         "predicate": "affinity",
@@ -212,23 +220,17 @@ def test_characterize_live_mode_structured(
         "method": "inferred",
         "user_verified": False,
         "review_after_days": 120,
-        "provenance": {
-            "sources": [{"entry_id": ENTRY_ID, "spans": []}],
-            "first_seen": DATE,
-            "last_updated": f"{DATE}T00:00:00Z",
-            "observation_count": 1,
-        },
     }
 
-    def _fake_structured(*_args, **_kwargs) -> CharacterizeResponse:
-        return CharacterizeResponse.model_validate(
+    def _fake_structured(*_args, **_kwargs) -> ProfileUpdateProposals:
+        return ProfileUpdateProposals.model_validate(
             {
                 "claims": [
                     {
                         "claim": claim_payload,
                         "normalized_ids": [ENTRY_ID],
-                        "evidence_hashes": [SOURCE_HASH],
                         "manifest_hashes": [SOURCE_HASH],
+                        "evidence": [{"entry_id": ENTRY_ID, "spans": []}],
                         "rationale": "Recent entry reinforces the pattern.",
                     }
                 ],
@@ -259,11 +261,14 @@ def test_characterize_live_mode_structured(
         cli_runner,
         env_override={"AIJOURNAL_FAKE_OLLAMA": "0"},
     )
-    data = yaml.safe_load(batch_path.read_text(encoding="utf-8"))
+    artifact = yaml.safe_load(batch_path.read_text(encoding="utf-8"))
+    data = artifact.get("data", {})
     assert captured.get("raw_claims"), "Expected structured claims to flow into normalization"
-    claim_ids = [item["claim"]["id"] for item in data["proposals"]["claims"]]
-    assert "focus-claim" in claim_ids
-    statements = [item["claim"]["statement"] for item in data["proposals"]["claims"]]
+    claims = data["proposals"]["claims"]
+    assert all("id" not in item.get("claim", {}) for item in claims)
+    statements = [item["claim"]["statement"] for item in claims]
+    normalized_ids = [item.get("normalized_ids") for item in claims]
+    assert any(ENTRY_ID in (ids or []) for ids in normalized_ids)
     assert any("Focus routines hold" in stmt for stmt in statements)
     prompts = data.get("preview", {}).get("interview_prompts") or []
     assert "travel" in prompts[0]

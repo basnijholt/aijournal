@@ -7,15 +7,18 @@ import os
 import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
-from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 from pathlib import Path
 from threading import RLock
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from annoy import AnnoyIndex
+from pydantic import ConfigDict, Field
 
-from aijournal.models import IndexMeta
+from aijournal.common.app_config import AppConfig
+from aijournal.common.base import StrictModel
+from aijournal.domain.index import IndexMeta, RetrievedChunk
+from aijournal.io.artifacts import load_artifact
 
 from .embedding import EmbeddingBackend
 
@@ -23,40 +26,31 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
 
-@dataclass(frozen=True)
-class RetrievalFilters:
+class RetrievalFilters(StrictModel):
     """Optional filters applied during retrieval."""
 
-    tags: frozenset[str] = field(default_factory=frozenset)
-    source_types: frozenset[str] = field(default_factory=frozenset)
+    model_config = ConfigDict(frozen=True)
+
+    tags: frozenset[str] = Field(default_factory=frozenset)
+    source_types: frozenset[str] = Field(default_factory=frozenset)
     date_from: str | None = None
     date_to: str | None = None
 
 
-@dataclass(frozen=True)
-class RetrievedChunk:
-    chunk_id: str
-    normalized_id: str
-    chunk_index: int
-    text: str
-    date: str
-    tags: list[str]
-    source_type: str | None
-    source_path: str
-    tokens: int
-    score: float
+class RetrievalMeta(StrictModel):
+    """Metadata describing a retrieval invocation."""
 
+    model_config = ConfigDict(frozen=True)
 
-@dataclass(frozen=True)
-class RetrievalMeta:
     mode: str
     source: str
     k: int
     fake_mode: bool
 
 
-@dataclass(frozen=True)
-class RetrievalResult:
+class RetrievalResult(StrictModel):
+    """Chunks plus metadata returned from a search."""
+
     chunks: list[RetrievedChunk]
     meta: RetrievalMeta
 
@@ -67,10 +61,10 @@ class Retriever:
     def __init__(
         self,
         root: Path,
-        config: dict[str, Any] | None = None,
+        config: AppConfig | None = None,
     ) -> None:
         self.root = Path(root)
-        self.config: dict[str, Any] = dict(config or {})
+        self.config: AppConfig = config or AppConfig()
         self.index_dir = self.root / "derived" / "index"
         self.db_path = self.index_dir / "index.db"
         self.annoy_path = self.index_dir / "annoy.index"
@@ -82,9 +76,7 @@ class Retriever:
         self._embedder_instance: EmbeddingBackend | None = None
         self._fake_mode = os.getenv("AIJOURNAL_FAKE_OLLAMA") == "1"
 
-        index_cfg_raw = self.config.get("index")
-        index_cfg = index_cfg_raw if isinstance(index_cfg_raw, dict) else {}
-        self.search_k_factor = float(index_cfg.get("search_k_factor") or 3.0)
+        self.search_k_factor = self.config.index.search_k_factor
 
     def search(
         self,
@@ -176,11 +168,16 @@ class Retriever:
     def _load_meta(self) -> IndexMeta:
         if not self.meta_path.exists():
             return IndexMeta()
+
         try:
-            data = json.loads(self.meta_path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
-            return IndexMeta()
-        return IndexMeta.model_validate(data or {})
+            artifact = load_artifact(self.meta_path, IndexMeta)
+        except Exception as exc:  # pragma: no cover - invalid artifact on disk
+            msg = (
+                f"Index metadata at {self.meta_path} is incompatible with the strict schema. "
+                "Delete the file and run `aijournal ops index rebuild`."
+            )
+            raise RuntimeError(msg) from exc
+        return artifact.data
 
     def _can_use_annoy(self) -> bool:
         return self.db_path.exists() and self.annoy_path.exists()
@@ -208,9 +205,7 @@ class Retriever:
     def _get_embedder(self) -> EmbeddingBackend:
         if self._embedder_instance is None:
             model = str(
-                self._meta.embedding_model
-                or self.config.get("embedding_model")
-                or "embeddinggemma",
+                self._meta.embedding_model or self.config.embedding_model or "embeddinggemma",
             )
             host = os.getenv("AIJOURNAL_OLLAMA_HOST")
             dimension = self._meta.vector_dimension
@@ -272,6 +267,9 @@ class Retriever:
 
     def _row_to_chunk(self, row: sqlite3.Row, score: float) -> RetrievedChunk:
         tags = json.loads(row["tags"] or "[]")
+        keys = set(row.keys())
+        source_hash = row["source_hash"] if "source_hash" in keys else None
+        manifest_hash = row["manifest_hash"] if "manifest_hash" in keys else None
         return RetrievedChunk(
             chunk_id=row["chunk_id"],
             normalized_id=row["normalized_id"],
@@ -282,6 +280,8 @@ class Retriever:
             source_type=row["source_type"],
             source_path=row["source_path"],
             tokens=row["tokens"],
+            source_hash=source_hash,
+            manifest_hash=manifest_hash,
             score=score,
         )
 
@@ -292,11 +292,3 @@ class AnnoyMap(dict[int, str]):
     def __init__(self, mapping: dict[int, str]) -> None:
         super().__init__(mapping)
         self.inverse = {chunk_id: idx for idx, chunk_id in mapping.items()}
-
-
-__all__ = [
-    "RetrievalFilters",
-    "RetrievalResult",
-    "RetrievedChunk",
-    "Retriever",
-]

@@ -1,0 +1,169 @@
+{
+  "additionalProperties": false,
+  "description": "User-facing capture options supplied by CLI or HTTP.",
+  "properties": {
+    "apply_profile": {
+      "default": "auto",
+      "enum": [
+        "auto",
+        "review"
+      ],
+      "title": "Apply Profile",
+      "type": "string"
+    },
+    "date": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Date"
+    },
+    "dry_run": {
+      "default": false,
+      "title": "Dry Run",
+      "type": "boolean"
+    },
+    "mood": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Mood"
+    },
+    "pack": {
+      "anyOf": [
+        {
+          "enum": [
+            "L1",
+            "L3",
+            "L4"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Pack"
+    },
+    "paths": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Paths",
+      "type": "array"
+    },
+    "progress": {
+      "default": true,
+      "title": "Progress",
+      "type": "boolean"
+    },
+    "projects": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Projects",
+      "type": "array"
+    },
+    "rebuild": {
+      "default": "auto",
+      "enum": [
+        "auto",
+        "always",
+        "skip"
+      ],
+      "title": "Rebuild",
+      "type": "string"
+    },
+    "retries": {
+      "default": 1,
+      "minimum": 0,
+      "title": "Retries",
+      "type": "integer"
+    },
+    "slug": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Slug"
+    },
+    "snapshot": {
+      "default": true,
+      "title": "Snapshot",
+      "type": "boolean"
+    },
+    "source": {
+      "enum": [
+        "stdin",
+        "editor",
+        "file",
+        "dir"
+      ],
+      "title": "Source",
+      "type": "string"
+    },
+    "source_type": {
+      "default": "journal",
+      "enum": [
+        "journal",
+        "notes",
+        "blog"
+      ],
+      "title": "Source Type",
+      "type": "string"
+    },
+    "tags": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Tags",
+      "type": "array"
+    },
+    "text": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Text"
+    },
+    "title": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Title"
+    }
+  },
+  "required": [
+    "source"
+  ],
+  "title": "CaptureRequest",
+  "type": "object"
+}

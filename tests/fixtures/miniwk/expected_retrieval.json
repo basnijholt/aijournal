@@ -1,0 +1,7 @@
+{
+  "query": "focus blocks",
+  "top": 5,
+  "expected_chunk_ids": [
+    "2025-02-04-reflection#c0"
+  ]
+}

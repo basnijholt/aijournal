@@ -1,0 +1,33 @@
+{
+  "kind": "pack.L4",
+  "meta": {
+    "created_at": "2025-10-29T18:15:00Z",
+    "notes": {
+      "level": "L4",
+      "date": "2025-10-29"
+    }
+  },
+  "data": {
+    "level": "L4",
+    "date": "2025-10-29",
+    "files": [
+      {
+        "role": "persona_core",
+        "path": "derived/persona/persona_core.yaml",
+        "tokens": 880,
+        "content": "persona:\n  profile:\n    goals:\n      current_focus:\n      - value: Harden the aijournal persona-first pipeline\n        success_signals:\n        - Claim consolidation handles conflicting evidence automatically.\n        timeline: 2025-11\n    coaching_prefs:\n      tone: direct, warm"
+      },
+      {
+        "role": "summaries",
+        "path": "derived/summaries/2025-10-29.yaml",
+        "tokens": 160,
+        "content": "day: 2025-10-29\nbullets:\n- Wrapped up Stage 8 pack migration."}
+    ],
+    "meta": {
+      "total_tokens": 1040,
+      "max_tokens": 3200,
+      "trimmed": [],
+      "generated_at": "2025-10-29T18:15:00Z"
+    }
+  }
+}

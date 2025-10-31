@@ -5,6 +5,19 @@ Markdown, bullet lists, or advice outside that object. The very first character 
 reply must be `{` and the very last character must be `}`. If you have nothing to add,
 return `{\"claims\": [], \"facets\": [], \"interview_prompts\": []}`.
 
+If you cannot produce a valid payload, respond with `{"claims": [], "facets": [], "interview_prompts": []}` rather than emitting prose.
+See `prompts/examples/characterize.json` for a minimal compliant example.
+
+### Output schema baseline
+- Each `claims[i].claim` must follow the `ClaimAtomInput` shape (fields: `type`
+  ∈ {preference, value, goal, boundary, trait, habit, aversion, skill},
+  `status` ∈ {accepted, tentative, rejected}, `method` ∈ {self_report, inferred,
+  behavioral}). Do not emit `id` or `provenance`; the backend fills them in.
+- Evidence spans must specify `{"type": "para", "index": <int>}`; omit spans only
+  when they cannot be identified.
+- Facet change operations should be `set` or `remove`; keep `value` as a string (or
+  list of strings) when setting new data.
+
 ## Persona Mission
 - Capture durable behavioural patterns, motivations, and boundaries that the coach can
   rely on in future conversations.
@@ -42,45 +55,49 @@ _Valid output_
   "claims": [
     {
       "claim": {
-        "id": "onboarding-playbook-20250212",
         "type": "habit",
         "subject": "team onboarding",
         "predicate": "maintains",
-        "value": "Keeps a living onboarding playbook and circulates feedback requests after each cohort.",
+        "value": "Maintains a living onboarding playbook and circulates feedback after each cohort.",
         "statement": "Maintains a living onboarding playbook and circulates feedback after each cohort.",
         "scope": {"domain": null, "context": ["ops"], "conditions": []},
         "strength": 0.68,
         "status": "tentative",
         "method": "behavioral",
         "user_verified": false,
-        "review_after_days": 120,
-        "provenance": {
-          "sources": [
-            {"entry_id": "2025-02-12-onboarding-playbook", "spans": []}
-          ],
-          "first_seen": "2025-02-12",
-          "last_updated": "2025-02-12T19:45:00Z",
-          "observation_count": 1
-        }
+        "review_after_days": 120
       },
       "normalized_ids": ["2025-02-12-onboarding-playbook"],
-      "evidence_hashes": ["ab12"],
+      "evidence": [
+        {
+          "entry_id": "2025-02-12-onboarding-playbook",
+          "spans": [
+            {"type": "para", "index": 0}
+          ]
+        }
+      ],
       "manifest_hashes": ["ab12"],
-      "rationale": "Fresh behavior showing ownership of onboarding." 
+      "rationale": "Fresh behavior showing ownership of onboarding."
     }
   ],
   "facets": [
     {
       "path": "planning.routines.weekly_review",
       "operation": "set",
-      "value": {"description": "Reviews onboarding checklist every Friday."},
+      "value": "Reviews the onboarding checklist every Friday.",
       "method": "inferred",
       "confidence": 0.58,
       "review_after_days": 90,
       "user_verified": false,
-      "normalized_ids": ["2025-02-12-onboarding-playbook"],
-      "evidence_hashes": ["ab12"],
-      "rationale": "Journal notes a recurring Friday review." 
+      "evidence": [
+        {
+          "entry_id": "2025-02-12-onboarding-playbook",
+          "spans": [
+            {"type": "para", "index": 1}
+          ]
+        }
+      ],
+      "rationale": "Journal mentions a weekly checklist review."
     }
   ],
   "interview_prompts": [
@@ -100,7 +117,7 @@ _Valid output_
 | Journal evidence | Derive candidate insights from summaries, sections, and timestamps. | Treat these as the authoritative source. |
 | Existing claims | Check for overlaps; strengthen, merge, or contextualize instead of duplicating. | Only upsert when the journal introduces something genuinely new. |
 | Self profile facets | Align proposed updates with existing structures (values, habits, planning, etc.). | Use the same dotted paths to keep the profile deterministic. |
-| Manifest metadata | Preserve provenance (`normalized_ids`, `evidence_hashes`, `manifest_hashes`). | Do not invent spans—omit when unavailable. |
+| Manifest metadata | Preserve provenance (`normalized_ids`, `manifest_hashes`). | Do not invent spans—omit when unavailable. |
 
 ## Output Expectations
 - `claims`: Proposed claim upserts or adjustments. Keep `rationale` ≤ 25 words and ensure
@@ -110,13 +127,14 @@ _Valid output_
     `statement`, `scope`, `strength`, `status`, `method`, `user_verified`,
     `review_after_days`, and `provenance` (with sources referencing the normalized
     entries).
-  - `normalized_ids`, `evidence_hashes`, `manifest_hashes`: non-empty lists referencing
-    the supporting entries.
+  - `normalized_ids`, `manifest_hashes`: non-empty lists referencing the
+    supporting entries (omit `manifest_hashes` when unavailable).
   - `rationale`: concise justification (≤ 25 words).
 - `facets`: Self profile updates that tighten or extend existing facets. Only introduce a
   new facet when you can articulate why it matters now.
-  Each item must include `path`, `operation`, `value`, `method`, `confidence`,
-    `review_after_days`, `user_verified`, `normalized_ids`, `evidence_hashes`, and
+  Each item must include `path`, `operation` (`set` or `remove`), `value` (string or
+    list of strings for `set`), `method`, `confidence`, `review_after_days`,
+    `user_verified`, supporting `evidence` (spans with `type: "para"`), and
     `rationale` when relevant.
 - `interview_prompts`: Short (≤ 20 words) follow-ups for operators when more context is required.
 - Never provide refactor plans, coaching tips, or implementation advice—the JSON object

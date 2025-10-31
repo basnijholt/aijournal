@@ -22,8 +22,8 @@ def run_persona_stage_7(
         run_persona_build,
     )
     from aijournal.commands.profile import (
-        _load_profile_components,
-        _profile_to_dict,
+        load_profile_components,
+        profile_to_dict,
     )
 
     from .. import OperationResult, PersonaStage7Outputs
@@ -44,8 +44,8 @@ def run_persona_stage_7(
         should_build = (
             force_rebuild or persona_stale_before or artifacts_changed.get("profile", 0) > 0
         )
-        profile_model, claim_models = _load_profile_components(root)
-        profile_payload = _profile_to_dict(profile_model)
+        profile_model, claim_models = load_profile_components(root)
+        profile_payload = profile_to_dict(profile_model)
         if should_build and (profile_payload or claim_models):
             config = _load_config(root)
             _, persona_changed = run_persona_build(

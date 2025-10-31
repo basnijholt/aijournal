@@ -5,14 +5,11 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from typing import Any
 
+from aijournal.domain.claims import ClaimAtom
 from aijournal.fakes import fake_advise
-from aijournal.models import (
-    AdviceCard,
-    AdviceLLMResponse,
-    ClaimAtom,
-)
+from aijournal.models.derived import AdviceCard
 
-AdviceRequest = Callable[[], AdviceLLMResponse]
+AdviceRequest = Callable[[], AdviceCard]
 AdviceIdentifier = Callable[[str], str]
 
 
@@ -40,7 +37,7 @@ def generate_advice(
         )
 
     response = request_advice()
-    return AdviceCard.model_validate(response.model_dump(mode="python"))
-
-
-__all__ = ["generate_advice"]
+    advice = response.model_copy(deep=True)
+    if not advice.id:
+        advice.id = advice_identifier(question)
+    return advice

@@ -1,0 +1,20 @@
+{
+  "facts": [
+    {
+      "id": "focus-morning-block",
+      "statement": "Morning focus blocks improve deep-work output.",
+      "confidence": 0.82,
+      "evidence": {
+        "entry_id": "2025-10-25-focus-log",
+        "spans": [
+          {
+            "type": "para",
+            "index": 0
+          }
+        ]
+      },
+      "first_seen": "2025-10-25",
+      "last_seen": "2025-10-25"
+    }
+  ]
+}

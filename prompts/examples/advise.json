@@ -1,0 +1,50 @@
+{
+  "query": "How can I lock in my morning focus routine?",
+  "assumptions": [
+    "You can reserve time before noon without conflicts."
+  ],
+  "recommendations": [
+    {
+      "title": "Book consistent focus blocks",
+      "why_this_fits_you": {
+        "facets": [
+          "habits.focus_block.length_minutes"
+        ],
+        "claims": [
+          "goal.focus_hours_per_week"
+        ]
+      },
+      "steps": [
+        "Reserve two 45-minute focus sessions before noon.",
+        "Protect the blocks in your calendar and announce them to teammates."
+      ],
+      "risks": [
+        "Teammates may schedule over the reserved time."
+      ],
+      "mitigations": [
+        "Share the focus plan during the weekly sync."
+      ]
+    }
+  ],
+  "tradeoffs": [
+    "Less flexibility for early collaboration."
+  ],
+  "next_actions": [
+    "Send a note to the team about your focus blocks today."
+  ],
+  "confidence": 0.72,
+  "alignment": {
+    "facets": [
+      "values_motivations.recurring_theme"
+    ],
+    "claims": [
+      "goal.focus_hours_per_week"
+    ]
+  },
+  "style": {
+    "tone": "direct",
+    "reading_level": "intermediate",
+    "include_risks": true,
+    "coaching_prompts": false
+  }
+}

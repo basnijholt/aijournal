@@ -1,0 +1,127 @@
+{
+  "$defs": {
+    "SourceRef": {
+      "additionalProperties": false,
+      "description": "Reference to a normalized entry and the supporting spans.",
+      "properties": {
+        "entry_id": {
+          "title": "Entry Id",
+          "type": "string"
+        },
+        "spans": {
+          "items": {
+            "$ref": "#/$defs/Span"
+          },
+          "title": "Spans",
+          "type": "array"
+        }
+      },
+      "required": [
+        "entry_id"
+      ],
+      "title": "SourceRef",
+      "type": "object"
+    },
+    "Span": {
+      "additionalProperties": false,
+      "description": "Detailed pointer back into a source document.",
+      "properties": {
+        "end": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "End"
+        },
+        "index": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Index"
+        },
+        "start": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Start"
+        },
+        "text": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Text"
+        },
+        "type": {
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "title": "Span",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Provenance metadata recorded for a claim atom.",
+  "properties": {
+    "first_seen": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "First Seen"
+    },
+    "last_updated": {
+      "title": "Last Updated",
+      "type": "string"
+    },
+    "observation_count": {
+      "default": 1,
+      "minimum": 1,
+      "title": "Observation Count",
+      "type": "integer"
+    },
+    "sources": {
+      "items": {
+        "$ref": "#/$defs/SourceRef"
+      },
+      "title": "Sources",
+      "type": "array"
+    }
+  },
+  "required": [
+    "last_updated"
+  ],
+  "title": "Provenance",
+  "type": "object"
+}

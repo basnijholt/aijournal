@@ -125,7 +125,7 @@ Structured commands expect the model to mine existing fields (`summary`, `sectio
   ```bash
   uv run -- bash -lc "cd $RUN_ROOT && aijournal ops profile suggest --date 2025-10-26"
   ```
-  Output lives at `derived/profile_suggestions/<date>.yaml`.
+  Output lives at `derived/profile_proposals/<date>.yaml`.
 
 ### Characterize
 - After prompts produce meaningful payloads, run `aijournal ops pipeline characterize --date … --progress` to produce batches in `derived/pending/profile_updates/`.
@@ -169,10 +169,11 @@ Advanced/manual checks (useful for troubleshooting specific stages):
 17. `uv run aijournal ops profile apply --date YYYY-MM-DD --yes`
 18. `uv run aijournal ops pipeline characterize --date YYYY-MM-DD --progress`
 19. `uv run aijournal ops pipeline review --file derived/pending/profile_updates/<batch>.yaml --apply`
-20. `uv run aijournal ops index rebuild`
+20. `uv run aijournal ops index rebuild` (refreshes `derived/index/meta.json` with the strict artifact envelope)
 21. `uv run aijournal ops index search 'deep work sprint focus' --top 3 --tags focus`
 22. `uv run aijournal ops persona build`
 23. `uv run aijournal ops persona status`
+24. `uv run aijournal ops audit provenance --fix` (scan for lingering `span.text` and redact if needed)
 
 Maintain a run log capturing score, command, summary, artifacts, troubleshooting notes (e.g., `run_log.md` in the temp directory). This ensures reproducibility and provides evidence of the 350/350 score.
 
@@ -218,7 +219,7 @@ uv run -- bash -lc "cd $RUN_ROOT && aijournal ops persona build"
 uv run -- bash -lc "cd $RUN_ROOT && aijournal export pack --level L1 --format yaml"
 uv run -- bash -lc "cd $RUN_ROOT && aijournal export pack --level L4 --date YYYY-MM-DD --history-days 1 --format json"
 ```
-These commands guarantee the chat/advice surfaces reflect the latest claims/facets.
+The commands update `derived/persona/persona_core.yaml` and write pack outputs under `derived/packs/`, ensuring chat/advice surfaces reflect the latest claims/facets.
 
 ---
 
@@ -235,7 +236,7 @@ These commands guarantee the chat/advice surfaces reflect the latest claims/face
 1. Read required docs (README, workflow, architecture, prompts, key services).
 2. `aijournal init` into `/tmp/aijournal_live_run_*`; capture at least five detailed entries with `aijournal capture --edit/--text` (or `--from`).
 3. Let capture drive normalization and derivations automatically; rerun specific stages with `--min/--max-stage` or `aijournal ops pipeline …` when inspecting issues.
-4. Verify downstream artifacts as needed (summaries, micro-facts, profile suggestions, characterize/review) via the `ops pipeline` commands.
+4. Verify downstream artifacts as needed (summaries, micro-facts, profile proposals, characterize/review) via the `ops pipeline` commands.
 5. Regenerate index/persona when troubleshooting (`aijournal ops index rebuild`, `aijournal ops persona build`) and confirm searches succeed.
 6. Export packs with `aijournal export pack --level …` once persona is fresh.
 7. Exercise chat (`chat`, `chat --feedback`, `serve chat` + POST), confirm claim markers, apply feedback (`ops feedback apply`).

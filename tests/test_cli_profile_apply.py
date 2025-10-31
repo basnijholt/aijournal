@@ -9,6 +9,17 @@ import yaml
 from typer.testing import CliRunner
 
 from aijournal.cli import app
+from aijournal.common.meta import Artifact, ArtifactKind, ArtifactMeta
+from aijournal.domain.changes import (
+    ClaimAtomInput,
+    ClaimProposal,
+    FacetChange,
+    ProfileUpdateProposals,
+)
+from aijournal.domain.claims import ClaimAtom
+from aijournal.domain.evidence import SourceRef
+from aijournal.io.artifacts import save_artifact
+from aijournal.io.yaml_io import dump_yaml
 from tests.helpers import make_claim_atom
 
 if TYPE_CHECKING:
@@ -30,7 +41,7 @@ def skip_if_missing() -> None:
 
 def _write_yaml(path: Path, payload: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
+    path.write_text(dump_yaml(payload, sort_keys=False), encoding="utf-8")
 
 
 def _seed_authoritative(workspace: Path) -> None:
@@ -57,35 +68,57 @@ def _seed_authoritative(workspace: Path) -> None:
 
 
 def _seed_suggestions(workspace: Path) -> Path:
-    suggestions = {
-        "upserts": [
-            {
-                "target": "claims",
-                "operation": "upsert",
-                "value": make_claim_atom(
-                    "pref_evening",
-                    "Prefers evening walks",
-                    strength=0.6,
-                    status="tentative",
-                    method="inferred",
-                    last_updated=f"{DATE}T10:00:00Z",
-                ),
-            },
-        ],
-        "updates": [
-            {
-                "target": "values_motivations.schwartz_top5",
-                "operation": "update",
-                "value": ["Universalism", "Benevolence"],
-            },
-        ],
-        "meta": {
-            "llm_model": "fake",
-            "prompt_path": "prompts/profile_suggest.md",
-        },
-    }
-    path = workspace / "derived" / "profile_suggestions" / f"{DATE}.yaml"
-    _write_yaml(path, suggestions)
+    proposed_claim = ClaimAtom.model_validate(
+        make_claim_atom(
+            "pref_evening",
+            "Prefers evening walks",
+            strength=0.6,
+            status="tentative",
+            method="inferred",
+            last_updated=f"{DATE}T10:00:00Z",
+        )
+    )
+    claim_input = ClaimAtomInput(
+        type=proposed_claim.type,
+        subject=proposed_claim.subject,
+        predicate=proposed_claim.predicate,
+        value=proposed_claim.value,
+        statement=proposed_claim.statement,
+        scope=proposed_claim.scope,
+        strength=proposed_claim.strength,
+        status=proposed_claim.status,
+        method=proposed_claim.method,
+        user_verified=proposed_claim.user_verified,
+        review_after_days=proposed_claim.review_after_days,
+    )
+    claim_proposal = ClaimProposal(
+        claim=claim_input,
+        normalized_ids=[proposed_claim.id],
+        evidence=[SourceRef(entry_id="2025-02-03_pref_evening", spans=[])],
+        rationale="Detected new evening preference",
+    )
+    facet_change = FacetChange(
+        path="values_motivations.schwartz_top5",
+        operation="set",
+        value=["Universalism", "Benevolence"],
+        evidence=[SourceRef(entry_id="profile.snapshot", spans=[])],
+    )
+    proposals = ProfileUpdateProposals(
+        claims=[claim_proposal],
+        facets=[facet_change],
+    )
+    artifact = Artifact[ProfileUpdateProposals](
+        kind=ArtifactKind.PROFILE_PROPOSALS,
+        meta=ArtifactMeta(
+            created_at=f"{DATE}T10:00:00Z",
+            model="fake-ollama",
+            prompt_path="prompts/profile_suggest.md",
+            prompt_hash="seed",
+        ),
+        data=proposals,
+    )
+    path = workspace / "derived" / "profile_proposals" / f"{DATE}.yaml"
+    save_artifact(path, artifact)
     return path
 
 

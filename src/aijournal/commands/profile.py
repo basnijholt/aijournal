@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, Literal, cast
 
 import typer
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
 from aijournal.commands.ingest import _load_config, _load_yaml, _use_fake_llm
 from aijournal.commands.summarize import (
@@ -21,27 +21,94 @@ from aijournal.commands.summarize import (
     _log_entry_progress,
     _validate_timeout,
 )
-from aijournal.fakes import fake_profile_suggestions
-from aijournal.io.yaml_io import load_yaml_model, write_yaml_model
-from aijournal.models import (
+from aijournal.common.app_config import AppConfig
+from aijournal.common.command_runner import run_command_pipeline
+from aijournal.common.context import RunContext, create_run_context
+from aijournal.common.meta import Artifact, ArtifactKind
+from aijournal.domain.changes import ClaimProposal, FacetChange, ProfileUpdateProposals
+from aijournal.domain.claims import (
     ClaimAtom,
-    ClaimsFile,
     ClaimSource,
-    NormalizedEntry,
-    ProfileSuggestions,
-    ProfileSuggestionUpdate,
-    ProfileSuggestionUpsert,
+    ClaimSourceSpan,
     Provenance,
     Scope,
-    SelfProfile,
-    SimpleProfileSuggestionsResponse,
-    SimpleSuggestion,
 )
+from aijournal.domain.evidence import SourceRef, redact_source_text
+from aijournal.domain.journal import NormalizedEntry
+from aijournal.fakes import fake_profile_proposals
+from aijournal.io.artifacts import load_artifact_data, save_artifact
+from aijournal.io.yaml_io import load_yaml_model, write_yaml_model
+from aijournal.models.authoritative import ClaimsFile, SelfProfile
 from aijournal.pipelines import normalization
-from aijournal.services import ClaimConsolidator, ClaimMergeOutcome, LLMResponseError
+from aijournal.services.consolidator import ClaimConsolidator, ClaimMergeOutcome
+from aijournal.services.ollama import LLMResponseError
 from aijournal.utils import time as time_utils
 
 DEFAULT_PROFILE_RETRIES = 1
+
+
+class ProfileSuggestOptions(BaseModel):
+    date: str
+    timeout: float
+    retries: int
+    progress: bool
+
+
+@dataclass(slots=True)
+class ProfileSuggestPrepared:
+    date: str
+    timeout: float
+    retries: int
+    progress: bool
+    entries: list[NormalizedEntry]
+    profile: dict[str, Any]
+    claims: list[ClaimAtom]
+    config: AppConfig
+
+
+@dataclass(slots=True)
+class ProfileSuggestResult:
+    artifact: Artifact[ProfileUpdateProposals]
+    path: Path
+
+
+class ProfileApplyOptions(BaseModel):
+    date: str
+    suggestions_path: Path | None = None
+    auto_confirm: bool = False
+
+
+@dataclass(slots=True)
+class ProfileApplyPrepared:
+    root: Path
+    proposals: ProfileUpdateProposals
+    profile: dict[str, Any]
+    claims: list[ClaimAtom]
+    timestamp: str
+
+
+@dataclass(slots=True)
+class ProfileApplyResult:
+    message: str
+    changed: bool
+
+
+class ProfileStatusOptions(BaseModel):
+    pass
+
+
+@dataclass(slots=True)
+class ProfileStatusPrepared:
+    profile: dict[str, Any]
+    claim_models: Sequence[ClaimAtom]
+    weights: dict[str, Any]
+
+
+@dataclass(slots=True)
+class ProfileStatusResult:
+    persona_status: str
+    rankings: list[InterviewTarget]
+    reasons: list[str]
 
 
 @dataclass(frozen=True)
@@ -64,40 +131,26 @@ def run_profile_suggest(
     progress: bool,
 ) -> Path:
     """Generate profile suggestions for a specific date."""
+
     root = Path.cwd()
-    entries = _load_normalized_entries(root, date)
-    if not entries:
-        typer.secho(f"No normalized entries for {date}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(1)
-
-    timeout_value = _validate_timeout(timeout)
-    _log_entry_progress(f"Generating profile suggestions for {date}", entries, progress)
-
-    profile_model, claim_models = _load_profile_components(root)
-    profile = _profile_to_dict(profile_model)
-    claims = [claim.model_copy(deep=True) for claim in claim_models]
-    if not profile and not claims:
-        typer.secho("No profile data", fg=typer.colors.RED, err=True)
-        raise typer.Exit(1)
-
     config = _load_config(root)
-    try:
-        suggestions_model = _profile_suggestions_payload(
-            entries,
-            profile,
-            claims,
-            date,
-            config,
-            timeout=timeout_value,
-            retries=retries,
-        )
-    except LLMResponseError as exc:  # pragma: no cover - runtime dependent
-        typer.secho(f"Profile suggestions failed: {exc}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(1)
+    ctx = create_run_context(
+        command="profile.suggest",
+        root=root,
+        config=config,
+        use_fake_llm=_use_fake_llm(),
+        trace=False,
+        verbose_json=False,
+    )
 
-    path = _derived_profile_suggestions_path(root, date)
-    write_yaml_model(path, suggestions_model)
-    return path
+    options = ProfileSuggestOptions(
+        date=date,
+        timeout=timeout,
+        retries=retries,
+        progress=progress,
+    )
+
+    return run_profile_suggest_command(ctx, options)
 
 
 def run_profile_apply(
@@ -107,94 +160,266 @@ def run_profile_apply(
     auto_confirm: bool,
 ) -> str:
     """Apply previously generated profile suggestions."""
-    del auto_confirm  # Reserved for future interactive prompts.
 
     root = Path.cwd()
-    resolved_path = suggestions_path or (root / "derived" / "profile_suggestions" / f"{date}.yaml")
-    if not resolved_path.exists():
-        typer.secho(
-            f"Suggestions file not found: {resolved_path}",
-            fg=typer.colors.RED,
-            err=True,
-        )
-        raise typer.Exit(1)
+    config = _load_config(root)
+    ctx = create_run_context(
+        command="profile.apply",
+        root=root,
+        config=config,
+        use_fake_llm=_use_fake_llm(),
+        trace=False,
+        verbose_json=False,
+    )
 
-    suggestions_model = load_yaml_model(resolved_path, ProfileSuggestions)
-    profile_model, claim_models = _load_profile_components(root)
-    profile = _profile_to_dict(profile_model)
-    claims = [claim.model_copy(deep=True) for claim in claim_models]
-    timestamp = time_utils.format_timestamp(time_utils.now())
-    changed = False
+    options = ProfileApplyOptions(
+        date=date,
+        suggestions_path=suggestions_path,
+        auto_confirm=auto_confirm,
+    )
 
-    for upsert in suggestions_model.upserts:
-        if upsert.target == "claims":
-            if _apply_claim_upsert(claims, upsert.value, timestamp):
-                changed = True
-
-    for update in suggestions_model.updates:
-        target = update.target
-        if not target:
-            continue
-        if _apply_profile_update(profile, target, update.value, timestamp):
-            changed = True
-
-    if not changed:
-        typer.echo("No changes to apply")
-        raise typer.Exit(0)
-
-    updated_profile = SelfProfile.model_validate(profile)
-    updated_claims = [claim.model_copy(deep=True) for claim in claims]
-    write_yaml_model(root / "profile" / "self_profile.yaml", updated_profile)
-    write_yaml_model(root / "profile" / "claims.yaml", ClaimsFile(claims=updated_claims))
-    return "Applied 1 suggestions file"
+    return run_profile_apply_command(ctx, options)
 
 
 def run_profile_status(*, root: Path | None = None) -> None:
     """Show ranked facets/claims requiring review."""
     resolved_root = root or Path.cwd()
-    profile_model, claim_models = _load_profile_components(resolved_root)
-    profile = _profile_to_dict(profile_model)
-
     config_path = resolved_root / "config" / "config.yaml"
     config = _load_yaml(config_path) if config_path.exists() else {}
-    weights = config.get("impact_weights", {})
+    ctx = create_run_context(
+        command="profile.status",
+        root=resolved_root,
+        config=config,
+        use_fake_llm=_use_fake_llm(),
+        trace=False,
+        verbose_json=False,
+    )
 
-    if not profile and not claim_models:
-        typer.echo("No profile data")
-        raise typer.Exit(0)
-
-    rankings = _compute_rankings(profile, claim_models, weights, time_utils.now())
-    if not rankings:
-        typer.echo("No profile data")
-        raise typer.Exit(0)
-
-    _print_rankings(rankings)
+    run_profile_status_command(ctx, ProfileStatusOptions())
 
 
-def _derived_profile_suggestions_path(root: Path, day: str) -> Path:
-    return root / "derived" / "profile_suggestions" / f"{day}.yaml"
+def _derived_profile_proposals_path(root: Path, day: str) -> Path:
+    return root / "derived" / "profile_proposals" / f"{day}.yaml"
 
 
-def _profile_suggestions_payload(
+def run_profile_suggest_command(
+    ctx: RunContext,
+    options: ProfileSuggestOptions,
+) -> Path:
+    def _prepare(_: RunContext, opts: ProfileSuggestOptions) -> ProfileSuggestPrepared:
+        entries = _load_normalized_entries(ctx.root, opts.date)
+        if not entries:
+            typer.secho(f"No normalized entries for {opts.date}", fg=typer.colors.RED, err=True)
+            raise typer.Exit(1)
+
+        timeout_value = _validate_timeout(opts.timeout)
+        profile_model, claim_models = load_profile_components(ctx.root)
+        profile = profile_to_dict(profile_model)
+        claims = [claim.model_copy(deep=True) for claim in claim_models]
+        if not profile and not claims:
+            typer.secho("No profile data", fg=typer.colors.RED, err=True)
+            raise typer.Exit(1)
+
+        _log_entry_progress(
+            f"Generating profile suggestions for {opts.date}", entries, opts.progress
+        )
+
+        ctx.emit(
+            event="prepare_summary",
+            entries=len(entries),
+            claims=len(claims),
+        )
+        return ProfileSuggestPrepared(
+            date=opts.date,
+            timeout=timeout_value,
+            retries=opts.retries,
+            progress=opts.progress,
+            entries=list(entries),
+            profile=profile,
+            claims=claims,
+            config=ctx.config,
+        )
+
+    def _invoke(_: RunContext, prepared: ProfileSuggestPrepared) -> ProfileSuggestResult:
+        try:
+            proposals = _profile_proposals_payload(
+                prepared.entries,
+                prepared.profile,
+                prepared.claims,
+                prepared.date,
+                prepared.config,
+                timeout=prepared.timeout,
+                retries=prepared.retries,
+            )
+        except LLMResponseError as exc:
+            typer.secho(f"Profile suggestions failed: {exc}", fg=typer.colors.RED, err=True)
+            raise typer.Exit(1) from exc
+
+        path = _derived_profile_proposals_path(ctx.root, prepared.date)
+        artifact_meta = _build_meta("prompts/profile_suggest.md", config=prepared.config)
+        artifact = Artifact[ProfileUpdateProposals](
+            kind=ArtifactKind.PROFILE_PROPOSALS,
+            meta=artifact_meta,
+            data=proposals,
+        )
+
+        ctx.emit(
+            event="pipeline_complete",
+            claims=len(proposals.claims),
+            facets=len(proposals.facets),
+        )
+        return ProfileSuggestResult(artifact=artifact, path=path)
+
+    def _persist(_: RunContext, result: ProfileSuggestResult) -> Path:
+        save_artifact(result.path, result.artifact)
+        return result.path
+
+    return run_command_pipeline(
+        ctx,
+        options,
+        prepare_inputs=_prepare,
+        invoke_pipeline=_invoke,
+        persist_output=_persist,
+    )
+
+
+def run_profile_apply_command(
+    ctx: RunContext,
+    options: ProfileApplyOptions,
+) -> str:
+    def _prepare(_: RunContext, opts: ProfileApplyOptions) -> ProfileApplyPrepared:
+        resolved_path = opts.suggestions_path or (
+            ctx.root / "derived" / "profile_proposals" / f"{opts.date}.yaml"
+        )
+        if not resolved_path.exists():
+            typer.secho(
+                f"Suggestions file not found: {resolved_path}",
+                fg=typer.colors.RED,
+                err=True,
+            )
+            raise typer.Exit(1)
+
+        proposals = load_artifact_data(resolved_path, ProfileUpdateProposals)
+        profile_model, claim_models = load_profile_components(ctx.root)
+        profile = profile_to_dict(profile_model)
+        claims = [claim.model_copy(deep=True) for claim in claim_models]
+        timestamp = time_utils.format_timestamp(time_utils.now())
+        ctx.emit(
+            event="prepare_summary",
+            claims=len(claims),
+            facet_changes=len(proposals.facets),
+        )
+        return ProfileApplyPrepared(
+            root=ctx.root,
+            proposals=proposals,
+            profile=profile,
+            claims=claims,
+            timestamp=timestamp,
+        )
+
+    def _invoke(_: RunContext, prepared: ProfileApplyPrepared) -> ProfileApplyResult:
+        changed = False
+        events: list[ClaimMergeOutcome] = []
+
+        for claim_proposal in prepared.proposals.claims:
+            if _apply_claim_proposal(prepared.claims, claim_proposal, prepared.timestamp, events):
+                changed = True
+
+        for facet_change in prepared.proposals.facets:
+            if _apply_facet_change(prepared.profile, facet_change, prepared.timestamp):
+                changed = True
+
+        if not changed:
+            typer.echo("No changes to apply")
+            raise typer.Exit(0)
+
+        updated_profile = SelfProfile.model_validate(prepared.profile)
+        updated_claims = [claim.model_copy(deep=True) for claim in prepared.claims]
+        write_yaml_model(prepared.root / "profile" / "self_profile.yaml", updated_profile)
+        write_yaml_model(
+            prepared.root / "profile" / "claims.yaml", ClaimsFile(claims=updated_claims)
+        )
+        return ProfileApplyResult(message="Applied 1 suggestions file", changed=True)
+
+    def _persist(_: RunContext, result: ProfileApplyResult) -> str:
+        return result.message
+
+    return run_command_pipeline(
+        ctx,
+        options,
+        prepare_inputs=_prepare,
+        invoke_pipeline=_invoke,
+        persist_output=_persist,
+    )
+
+
+def run_profile_status_command(ctx: RunContext, options: ProfileStatusOptions) -> None:
+    def _prepare(_: RunContext, __: ProfileStatusOptions) -> ProfileStatusPrepared:
+        profile_model, claim_models = load_profile_components(ctx.root)
+        profile = profile_to_dict(profile_model)
+
+        config = _load_config(ctx.root)
+        weights = config.impact_weights.model_dump(mode="python")
+
+        return ProfileStatusPrepared(
+            profile=profile,
+            claim_models=tuple(claim_models),
+            weights=weights,
+        )
+
+    def _invoke(_: RunContext, prepared: ProfileStatusPrepared) -> ProfileStatusResult:
+        if not prepared.profile and not prepared.claim_models:
+            typer.echo("No profile data")
+            raise typer.Exit(0)
+
+        rankings = _compute_rankings(
+            prepared.profile,
+            prepared.claim_models,
+            prepared.weights,
+            time_utils.now(),
+        )
+        if not rankings:
+            typer.echo("No profile data")
+            raise typer.Exit(0)
+
+        return ProfileStatusResult(
+            persona_status="available",
+            rankings=rankings,
+            reasons=[],
+        )
+
+    def _persist(_: RunContext, result: ProfileStatusResult) -> None:
+        _print_rankings(result.rankings)
+
+    run_command_pipeline(
+        ctx,
+        options,
+        prepare_inputs=_prepare,
+        invoke_pipeline=_invoke,
+        persist_output=_persist,
+    )
+
+
+def _profile_proposals_payload(
     entries: Sequence[NormalizedEntry],
     profile: dict[str, Any],
     claims: Sequence[ClaimAtom],
     date: str,
-    config: dict[str, Any],
+    config: AppConfig,
     *,
     timeout: float | None = None,
     retries: int = DEFAULT_PROFILE_RETRIES,
-) -> ProfileSuggestions:
+) -> ProfileUpdateProposals:
     if _use_fake_llm():
-        suggestions = fake_profile_suggestions(
+        proposals = fake_profile_proposals(
             entries,
             profile,
             claims,
             build_claim=_build_claim_atom_from_entry,
         )
     else:
-        simple_response = cast(
-            SimpleProfileSuggestionsResponse,
+        proposals = cast(
+            ProfileUpdateProposals,
             _invoke_structured_llm(
                 "prompts/profile_suggest.md",
                 {
@@ -205,79 +430,168 @@ def _profile_suggestions_payload(
                         {"claims": [claim.model_dump(mode="python") for claim in claims]}
                     ),
                 },
-                response_model=SimpleProfileSuggestionsResponse,
+                response_model=ProfileUpdateProposals,
                 agent_name="aijournal-profile-suggest",
                 config=config,
                 timeout=timeout,
                 max_attempts=max(1, retries + 1),
                 retry_message=(
-                    "Return JSON with keys `suggestions` only. Each suggestion must match the "
-                    "documented schema and avoid extra fields."
+                    "Return JSON with keys `claims` and `facets`; include `interview_prompts` "
+                    "when follow-up questions are warranted."
                 ),
             ),
         )
-        timestamp = time_utils.format_timestamp(time_utils.now())
-        suggestions = _simple_suggestions_to_profile(simple_response, timestamp=timestamp)
 
-    suggestions.meta = _build_meta("prompts/profile_suggest.md", config=config)
-    return suggestions
+    return _sanitize_proposals(proposals)
 
 
-def _simple_suggestions_to_profile(
-    simple: SimpleProfileSuggestionsResponse,
-    *,
+def _sanitize_proposals(proposals: ProfileUpdateProposals) -> ProfileUpdateProposals:
+    sanitized_claims = [
+        proposal.model_copy(
+            update={"evidence": [redact_source_text(ref) for ref in proposal.evidence]}
+        )
+        for proposal in proposals.claims
+    ]
+    sanitized_facets = [
+        change.model_copy(update={"evidence": [redact_source_text(ref) for ref in change.evidence]})
+        for change in proposals.facets
+    ]
+    return proposals.model_copy(update={"claims": sanitized_claims, "facets": sanitized_facets})
+
+
+def _apply_claim_proposal(
+    claims: list[ClaimAtom],
+    proposal: ClaimProposal,
     timestamp: str,
-) -> ProfileSuggestions:
-    upserts: list[ProfileSuggestionUpsert] = []
-    updates: list[ProfileSuggestionUpdate] = []
-
-    for suggestion in simple.suggestions:
-        kind = (suggestion.kind or "").strip().lower()
-        if kind == "claim":
-            upsert = _simple_claim_to_upsert(suggestion, timestamp)
-            if upsert is not None:
-                upserts.append(upsert)
-        elif kind == "facet":
-            update = _simple_facet_to_update(suggestion)
-            if update is not None:
-                updates.append(update)
-        else:
-            typer.secho(
-                f"Ignoring unknown suggestion kind: {suggestion.kind}",
-                fg=typer.colors.YELLOW,
-                err=True,
-            )
-
-    return ProfileSuggestions(upserts=upserts, updates=updates)
+    events: list[ClaimMergeOutcome] | None = None,
+) -> bool:
+    claim_atom = _claim_proposal_to_atom(proposal, timestamp)
+    if claim_atom is None:
+        return False
+    return apply_claim_upsert(claims, claim_atom, timestamp, events)
 
 
-def _simple_claim_to_upsert(
-    suggestion: SimpleSuggestion,
-    timestamp: str,
-) -> ProfileSuggestionUpsert | None:
-    return normalization.simple_claim_to_upsert(suggestion, timestamp)
+def _apply_facet_change(profile: dict[str, Any], change: FacetChange, timestamp: str) -> bool:
+    path = (change.path or "").strip()
+    if not path:
+        return False
+    operation = (change.operation or "set").strip().lower()
+    if operation == "remove":
+        return _remove_profile_path(profile, path, timestamp)
+    return apply_profile_update(profile, path, change.value, timestamp)
 
 
-def _simple_facet_to_update(suggestion: SimpleSuggestion) -> ProfileSuggestionUpdate | None:
-    path = (suggestion.facet_path or "").strip()
-    if not path or suggestion.value is None:
+def _claim_proposal_to_atom(proposal: ClaimProposal, timestamp: str) -> ClaimAtom | None:
+    claim_input = proposal.claim
+    statement = claim_input.statement.strip()
+    if not statement:
+        typer.secho("Skipping claim proposal without statement.", fg=typer.colors.YELLOW, err=True)
+        return None
+
+    canonical_id = next((cid for cid in proposal.normalized_ids if cid), None)
+    if canonical_id:
+        claim_id = canonical_id[:96]
+    else:
+        slug = time_utils.slugify_title(statement) or "claim"
+        claim_id = f"proposal-{slug}"[:96]
+
+    evidence_sources = _source_refs_to_claim_sources(
+        proposal.evidence,
+        proposal.normalized_ids,
+    )
+    if not evidence_sources:
+        evidence_sources = [ClaimSource(entry_id=claim_id, spans=[])]
+
+    raw_claim = {
+        "id": claim_id,
+        "type": claim_input.type,
+        "subject": claim_input.subject,
+        "predicate": claim_input.predicate,
+        "value": claim_input.value,
+        "statement": claim_input.statement,
+        "scope": claim_input.scope.model_dump(mode="python"),
+        "strength": claim_input.strength,
+        "status": claim_input.status,
+        "method": claim_input.method,
+        "user_verified": claim_input.user_verified,
+        "review_after_days": claim_input.review_after_days,
+        "provenance": {
+            "sources": [source.model_dump(mode="python") for source in evidence_sources],
+            "first_seen": time_utils.created_date(timestamp),
+            "last_updated": timestamp,
+            "observation_count": max(1, len(evidence_sources)),
+        },
+    }
+
+    try:
+        return normalization.normalize_claim_atom(
+            raw_claim,
+            timestamp=timestamp,
+            default_sources=evidence_sources,
+        )
+    except ValidationError:
         typer.secho(
-            "Skipping facet suggestion without facet_path or value.",
+            "Skipping claim proposal that could not be normalized.",
             fg=typer.colors.YELLOW,
             err=True,
         )
         return None
 
-    evidence = [str(entry).strip() for entry in suggestion.evidence if entry]
-    return ProfileSuggestionUpdate(
-        target=path,
-        operation="set",
-        value=suggestion.value,
-        method="inferred",
-        user_verified=False,
-        evidence=evidence,
-        rationale=suggestion.rationale,
-    )
+
+def _remove_profile_path(profile: dict[str, Any], target: str, timestamp: str) -> bool:
+    parts = target.split(".")
+    if not parts:
+        return False
+    current = profile
+    parents: list[dict[str, Any]] = []
+    for part in parts[:-1]:
+        node = current.get(part)
+        if not isinstance(node, dict):
+            return False
+        parents.append(node)
+        current = node
+    key = parts[-1]
+    if key not in current:
+        return False
+    del current[key]
+    current["last_updated"] = timestamp
+    for parent in parents:
+        parent.setdefault("last_updated", timestamp)
+    return True
+
+
+def _source_refs_to_claim_sources(
+    evidence: Sequence[SourceRef],
+    fallback_ids: Sequence[str],
+) -> list[ClaimSource]:
+    sources: list[ClaimSource] = []
+    seen: set[str] = set()
+
+    for ref in evidence:
+        sanitized_ref = redact_source_text(ref)
+        entry_id = (sanitized_ref.entry_id or "").strip()
+        if not entry_id or entry_id in seen:
+            continue
+        spans = [
+            ClaimSourceSpan(
+                type=span.type,
+                index=span.index,
+                start=span.start,
+                end=span.end,
+            )
+            for span in sanitized_ref.spans or []
+        ]
+        sources.append(ClaimSource(entry_id=entry_id, spans=spans))
+        seen.add(entry_id)
+
+    for fallback in fallback_ids:
+        entry_id = (fallback or "").strip()
+        if not entry_id or entry_id in seen:
+            continue
+        sources.append(ClaimSource(entry_id=entry_id, spans=[]))
+        seen.add(entry_id)
+
+    return sources
 
 
 def _build_claim_atom_from_entry(
@@ -290,6 +604,12 @@ def _build_claim_atom_from_entry(
 ) -> ClaimAtom:
     timestamp = time_utils.format_timestamp(time_utils.now())
     default_sources = [ClaimSource(entry_id=entry.id or claim_id, spans=[])]
+    sanitized_sources = [
+        ClaimSource.model_validate(
+            redact_source_text(source).model_dump(mode="python"),
+        )
+        for source in default_sources
+    ]
     raw = {
         "id": claim_id,
         "type": "preference",
@@ -308,18 +628,18 @@ def _build_claim_atom_from_entry(
         "user_verified": False,
         "review_after_days": 120,
         "provenance": {
-            "sources": [source.model_dump(mode="python") for source in default_sources],
+            "sources": [source.model_dump(mode="python") for source in sanitized_sources],
             "first_seen": entry.created_at or timestamp,
         },
     }
     return normalization.normalize_claim_atom(
         raw,
         timestamp=timestamp,
-        default_sources=default_sources,
+        default_sources=sanitized_sources,
     )
 
 
-def _load_profile_components(root: Path) -> tuple[SelfProfile | None, list[ClaimAtom]]:
+def load_profile_components(root: Path) -> tuple[SelfProfile | None, list[ClaimAtom]]:
     profile_path = root / "profile" / "self_profile.yaml"
     claims_path = root / "profile" / "claims.yaml"
 
@@ -336,7 +656,7 @@ def _load_profile_components(root: Path) -> tuple[SelfProfile | None, list[Claim
     return profile, claim_models
 
 
-def _profile_to_dict(profile: SelfProfile | None) -> dict[str, Any]:
+def profile_to_dict(profile: SelfProfile | None) -> dict[str, Any]:
     return profile.model_dump(mode="python") if profile else {}
 
 
@@ -358,7 +678,7 @@ def _claims_to_models(claims: Iterable[Any]) -> list[ClaimAtom]:
     return normalized
 
 
-def _apply_profile_update(profile: dict[str, Any], target: str, value: Any, timestamp: str) -> bool:
+def apply_profile_update(profile: dict[str, Any], target: str, value: Any, timestamp: str) -> bool:
     parts = target.split(".")
     current = profile
     for part in parts[:-1]:
@@ -372,7 +692,7 @@ def _apply_profile_update(profile: dict[str, Any], target: str, value: Any, time
     return True
 
 
-def _apply_claim_upsert(
+def apply_claim_upsert(
     claims: list[ClaimAtom],
     value: ClaimAtom | dict[str, Any],
     timestamp: str,
@@ -389,7 +709,7 @@ def _apply_claim_upsert(
                 events.append(
                     ClaimMergeOutcome(
                         changed=False,
-                        action="noop",
+                        action="update",
                         claim_id=existing.id,
                         delta_strength=0.0,
                     ),
@@ -410,6 +730,11 @@ def _sanitize_provenance_for_compare(provenance: Provenance) -> dict[str, Any]:
     sanitized = provenance.model_dump(mode="python")
     sanitized.pop("last_updated", None)
     sanitized.pop("observation_count", None)
+    if "sources" in sanitized and isinstance(sanitized["sources"], list):
+        sanitized["sources"] = [
+            redact_source_text(SourceRef.model_validate(source)).model_dump(mode="python")
+            for source in sanitized["sources"]
+        ]
     return sanitized
 
 
@@ -613,18 +938,3 @@ def _print_rankings(ranked: Sequence[InterviewTarget]) -> None:
         typer.echo(f"{idx}. {label} (score {target.score:.2f})")
         for reason in target.reasons:
             typer.echo(f"   - {reason}")
-
-
-__all__ = [
-    "InterviewTarget",
-    "run_profile_suggest",
-    "run_profile_apply",
-    "run_profile_status",
-    "_build_claim_atom_from_entry",
-    "_apply_claim_upsert",
-    "_apply_profile_update",
-    "_claim_last_updated",
-    "_compute_rankings",
-    "_load_profile_components",
-    "_profile_to_dict",
-]

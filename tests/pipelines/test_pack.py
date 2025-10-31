@@ -57,4 +57,4 @@ def test_build_pack_payload_includes_metadata() -> None:
     bundle = pack.build_pack_payload(entries, "L1", "2024-01-02", trimmed, 10, 100)
     assert bundle.meta.total_tokens == 10
     assert bundle.meta.generated_at <= time_utils.format_timestamp(time_utils.now())
-    assert bundle.to_dict()["level"] == "L1"
+    assert bundle.level == "L1"

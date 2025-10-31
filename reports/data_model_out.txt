@@ -1,0 +1,860 @@
+# Data Structure Inventory
+
+Discovered 91 Pydantic models and 57 dataclasses across 87 modules.
+
+## Pydantic Models
+
+91 total · 84 unique field signatures
+
+### Group 1 (5 classes)
+
+Fields: <no fields>
+
+- aijournal.commands.profile.ProfileStatusOptions (src/aijournal/commands/profile.py)
+- aijournal.commands.system.SystemDoctorOptions (src/aijournal/commands/system.py)
+- aijournal.commands.system.SystemStatusOptions (src/aijournal/commands/system.py)
+- aijournal.common.base.StrictModel (src/aijournal/common/base.py)
+- aijournal.models.base.AijournalModel (src/aijournal/models/base.py)
+
+### Group 2 (3 classes)
+
+Fields: date: str, timeout: float, retries: int, progress: bool
+
+- aijournal.commands.characterize.CharacterizeOptions (src/aijournal/commands/characterize.py)
+- aijournal.commands.profile.ProfileSuggestOptions (src/aijournal/commands/profile.py)
+- aijournal.commands.summarize.DailySummaryOptions (src/aijournal/commands/summarize.py)
+
+### Group 3 (2 classes)
+
+Fields: claims: list[aijournal.domain.claims.ClaimAtom]
+
+- aijournal.domain.claims.ClaimAtomsFile (src/aijournal/domain/claims.py)
+- aijournal.models.authoritative.ClaimsFile (src/aijournal/models/authoritative.py)
+
+### Group 4 (1 classes)
+
+Fields: answer: str, citations: list[aijournal.api.chat.ChatCitationRef], clarifying_question: str | None, telemetry: dict[str, typing.Any], timestamp: str | None
+
+- aijournal.api.chat.ChatResponse (src/aijournal/api/chat.py)
+
+### Group 5 (1 classes)
+
+Fields: batch_id: str, created_at: str, date: str, inputs: list[aijournal.models.derived.ProfileUpdateInput], proposals: ProfileUpdateProposals, preview: aijournal.models.derived.ProfileUpdatePreview | None
+
+- aijournal.models.derived.ProfileUpdateBatch (src/aijournal/models/derived.py)
+
+### Group 6 (1 classes)
+
+Fields: batch_id: str, created_at: str, session_id: str, question: str, feedback: FeedbackDirection, events: list[aijournal.domain.events.FeedbackAdjustmentEvent]
+
+- aijournal.domain.events.FeedbackBatch (src/aijournal/domain/events.py)
+
+### Group 7 (1 classes)
+
+Fields: changed: bool, action: str, claim_id: str, delta_strength: float, conflict: aijournal.services.consolidator.ClaimConflict | None, related_claim_id: str | None, related_action: str | None, signature: aijournal.services.consolidator.ClaimSignature | None, related_signature: aijournal.services.consolidator.ClaimSignature | None
+
+- aijournal.services.consolidator.ClaimMergeOutcome (src/aijournal/services/consolidator.py)
+
+### Group 8 (1 classes)
+
+Fields: chunk_id: str, code: str, normalized_id: str, chunk_index: int, source_path: str, date: str, tags: list[str], score: float
+
+- aijournal.api.chat.ChatCitation (src/aijournal/api/chat.py)
+
+### Group 9 (1 classes)
+
+Fields: chunk_id: str, normalized_id: str, chunk_index: int, text: str, date: str, tags: list[str], source_type: str | None, source_path: str, tokens: int, source_hash: str | None, manifest_hash: str | None
+
+- aijournal.domain.index.Chunk (src/aijournal/domain/index.py)
+
+### Group 10 (1 classes)
+
+Fields: chunk_id: str, normalized_id: str, chunk_index: int, text: str, date: str, tags: list[str], source_type: str | None, source_path: str, tokens: int, source_hash: str | None, manifest_hash: str | None, score: float
+
+- aijournal.domain.index.RetrievedChunk (src/aijournal/domain/index.py)
+
+### Group 11 (1 classes)
+
+Fields: chunks: list[aijournal.domain.index.RetrievedChunk], meta: RetrievalMeta
+
+- aijournal.services.retriever.RetrievalResult (src/aijournal/services/retriever.py)
+
+### Group 12 (1 classes)
+
+Fields: claim: ClaimAtomInput, normalized_ids: list[str], evidence: list[aijournal.domain.evidence.SourceRef], manifest_hashes: list[str], rationale: str | None
+
+- aijournal.domain.changes.ClaimProposal (src/aijournal/domain/changes.py)
+
+### Group 13 (1 classes)
+
+Fields: claim_events: list[aijournal.domain.events.ClaimPreviewEvent], interview_prompts: list[str]
+
+- aijournal.models.derived.ProfileUpdatePreview (src/aijournal/models/derived.py)
+
+### Group 14 (1 classes)
+
+Fields: claim_id: str, signature: ClaimSignature, statement: str, existing_value: str, incoming_value: str, incoming_sources: list[aijournal.domain.evidence.SourceRef]
+
+- aijournal.services.consolidator.ClaimConflict (src/aijournal/services/consolidator.py)
+
+### Group 15 (1 classes)
+
+Fields: claim_id: str, signature: ClaimSignaturePayload, statement: str, existing_value: str, incoming_value: str, incoming_sources: list[aijournal.domain.evidence.SourceRef]
+
+- aijournal.domain.events.ClaimConflictPayload (src/aijournal/domain/events.py)
+
+### Group 16 (1 classes)
+
+Fields: claim_type: str, subject: str, predicate: str, domain: str | None, context: list[str], conditions: list[str]
+
+- aijournal.domain.events.ClaimSignaturePayload (src/aijournal/domain/events.py)
+
+### Group 17 (1 classes)
+
+Fields: claim_type: str, subject: str, predicate: str, scope: tuple[str | None, tuple[str, ...], tuple[str, ...]]
+
+- aijournal.services.consolidator.ClaimSignature (src/aijournal/services/consolidator.py)
+
+### Group 18 (1 classes)
+
+Fields: claims: list[aijournal.domain.changes.ClaimProposal], facets: list[aijournal.domain.changes.FacetChange], interview_prompts: list[str]
+
+- aijournal.domain.changes.ProfileUpdateProposals (src/aijournal/domain/changes.py)
+
+### Group 19 (1 classes)
+
+Fields: code: str
+
+- aijournal.api.chat.ChatCitationRef (src/aijournal/api/chat.py)
+
+### Group 20 (1 classes)
+
+Fields: created_at: str, model: str | None, prompt_path: str | None, prompt_hash: str | None, char_per_token: float | None, sources: dict[str, str] | None, notes: dict[str, str] | None
+
+- aijournal.common.meta.ArtifactMeta (src/aijournal/common/meta.py)
+
+### Group 21 (1 classes)
+
+Fields: date: str, suggestions_path: pathlib.Path | None, auto_confirm: bool
+
+- aijournal.commands.profile.ProfileApplyOptions (src/aijournal/commands/profile.py)
+
+### Group 22 (1 classes)
+
+Fields: date: str, timeout: float, retries: int, progress: bool, claim_models: collections.abc.Sequence[aijournal.domain.claims.ClaimAtom] | None, preview_builder: collections.abc.Callable[[collections.abc.Sequence[aijournal.domain.changes.ClaimProposal], collections.abc.Sequence[aijournal.domain.claims.ClaimAtom], str], aijournal.models.derived.ProfileUpdatePreview | None] | None
+
+- aijournal.commands.facts.FactsOptions (src/aijournal/commands/facts.py)
+
+### Group 23 (1 classes)
+
+Fields: day: str, bullets: list[str], highlights: list[str], todo_candidates: list[str]
+
+- aijournal.domain.facts.DailySummary (src/aijournal/domain/facts.py)
+
+### Group 24 (1 classes)
+
+Fields: day: str, chunks: list[aijournal.domain.index.Chunk]
+
+- aijournal.domain.index.ChunkBatch (src/aijournal/domain/index.py)
+
+### Group 25 (1 classes)
+
+Fields: domain: str | None, context: list[str], conditions: list[str]
+
+- aijournal.domain.claims.Scope (src/aijournal/domain/claims.py)
+
+### Group 26 (1 classes)
+
+Fields: embedding_model: str | None, vector_dimension: int | None, chunk_count: int | None, entry_count: int | None, mode: str | None, fake_mode: bool | None, annoy_trees: int | None, search_k_factor: float | None, char_per_token: float | None, since: str | None, limit: int | None, touched_dates: list[str], updated_at: str | None
+
+- aijournal.domain.index.IndexMeta (src/aijournal/domain/index.py)
+
+### Group 27 (1 classes)
+
+Fields: entry_id: str, spans: list[aijournal.domain.evidence.Span]
+
+- aijournal.domain.evidence.SourceRef (src/aijournal/domain/evidence.py)
+
+### Group 28 (1 classes)
+
+Fields: entry_id: str | None, created_at: str, title: str, tags: list[str], sections: list[aijournal.domain.journal.Section], summary: str | None
+
+- aijournal.ingest_agent.IngestResult (src/aijournal/ingest_agent.py)
+
+### Group 29 (1 classes)
+
+Fields: facets: list[str], claims: list[str]
+
+- aijournal.domain.advice.AdviceReference (src/aijournal/domain/advice.py)
+
+### Group 30 (1 classes)
+
+Fields: facts: list[aijournal.domain.facts.MicroFact], claim_proposals: list[aijournal.domain.changes.ClaimProposal], preview: aijournal.models.derived.ProfileUpdatePreview | None
+
+- aijournal.domain.facts.MicroFactsFile (src/aijournal/domain/facts.py)
+
+### Group 31 (1 classes)
+
+Fields: fix: bool
+
+- aijournal.commands.audit.AuditOptions (src/aijournal/commands/audit.py)
+
+### Group 32 (1 classes)
+
+Fields: hash: str, path: str, normalized: str, source_type: str | None, ingested_at: str, created_at: str, id: str, tags: list[str], model: str | None, canonical_journal_path: str | None, snapshot_path: str | None, aliases: list[str]
+
+- aijournal.models.authoritative.ManifestEntry (src/aijournal/models/authoritative.py)
+
+### Group 33 (1 classes)
+
+Fields: heading: str, level: int, summary: str | None, para_index: int | None
+
+- aijournal.domain.journal.Section (src/aijournal/domain/journal.py)
+
+### Group 34 (1 classes)
+
+Fields: host: str, port: int
+
+- aijournal.commands.chatd.ChatdOptions (src/aijournal/commands/chatd.py)
+
+### Group 35 (1 classes)
+
+Fields: id: str, created_at: str, source_path: str, title: str, tags: list[str], sections: list[aijournal.domain.journal.Section], entities: list[aijournal.domain.journal.NormalizedEntity], summary: str | None, source_hash: str | None, source_type: str | None
+
+- aijournal.domain.journal.NormalizedEntry (src/aijournal/domain/journal.py)
+
+### Group 36 (1 classes)
+
+Fields: id: str, created_at: str, title: str, tags: list[str], mood: str | None, projects: list[str], summary: str | None
+
+- aijournal.models.authoritative.JournalEntry (src/aijournal/models/authoritative.py)
+
+### Group 37 (1 classes)
+
+Fields: id: str, normalized_path: str, source_hash: str | None, manifest_hash: str | None, tags: list[str]
+
+- aijournal.models.derived.ProfileUpdateInput (src/aijournal/models/derived.py)
+
+### Group 38 (1 classes)
+
+Fields: id: str, statement: str, confidence: float, evidence: SourceRef, first_seen: str | None, last_seen: str | None
+
+- aijournal.domain.facts.MicroFact (src/aijournal/domain/facts.py)
+
+### Group 39 (1 classes)
+
+Fields: id: str, text: str, target_facet: str | None, priority: str | None
+
+- aijournal.domain.persona.InterviewQuestion (src/aijournal/domain/persona.py)
+
+### Group 40 (1 classes)
+
+Fields: id: str, type: ClaimType, subject: str, predicate: str, value: str, statement: str, scope: Scope, strength: float, status: ClaimStatus, method: ClaimMethod, user_verified: bool, review_after_days: int, provenance: Provenance
+
+- aijournal.domain.claims.ClaimAtom (src/aijournal/domain/claims.py)
+
+### Group 41 (1 classes)
+
+Fields: id: str | None, query: str, assumptions: list[str], recommendations: list[aijournal.domain.advice.AdviceRecommendation], tradeoffs: list[str], next_actions: list[str], confidence: float | None, alignment: AdviceReference, style: dict[str, object]
+
+- aijournal.domain.advice.AdviceCard (src/aijournal/domain/advice.py)
+
+### Group 42 (1 classes)
+
+Fields: kind: ArtifactKind, meta: ArtifactMeta, data: ~T
+
+- aijournal.common.meta.Artifact (src/aijournal/common/meta.py)
+
+### Group 43 (1 classes)
+
+Fields: kind: str, action: ClaimEventAction, claim_id: str, delta_strength: float | None, statement: str | None, value: str | None, strength: float | None, signature: aijournal.domain.events.ClaimSignaturePayload | None, conflict: aijournal.domain.events.ClaimConflictPayload | None, related_claim_id: str | None, related_action: str | None, related_signature: aijournal.domain.events.ClaimSignaturePayload | None
+
+- aijournal.domain.events.ClaimPreviewEvent (src/aijournal/domain/events.py)
+
+### Group 44 (1 classes)
+
+Fields: kind: str, claim_id: str, old_strength: float, new_strength: float, delta: float
+
+- aijournal.domain.events.FeedbackAdjustmentEvent (src/aijournal/domain/events.py)
+
+### Group 45 (1 classes)
+
+Fields: level: str, date: str, files: list[aijournal.domain.packs.PackEntry], meta: PackMeta
+
+- aijournal.domain.packs.PackBundle (src/aijournal/domain/packs.py)
+
+### Group 46 (1 classes)
+
+Fields: level: str, date: str | None, output: pathlib.Path | None, max_tokens: int | None, fmt: str, history_days: int, dry_run: bool
+
+- aijournal.commands.pack.PackOptions (src/aijournal/commands/pack.py)
+
+### Group 47 (1 classes)
+
+Fields: markdown_path: str | None, normalized_path: str | None, date: str, slug: str, deduped: bool, changed: bool, warnings: list[str], source_hash: str | None, source_type: str | None
+
+- aijournal.services.capture.stages.stage0_persist.EntryResult (src/aijournal/services/capture/stages/stage0_persist.py)
+
+### Group 48 (1 classes)
+
+Fields: mode: str, source: str, k: int, fake_mode: bool
+
+- aijournal.services.retriever.RetrievalMeta (src/aijournal/services/retriever.py)
+
+### Group 49 (1 classes)
+
+Fields: model: str, prompt_path: str, prompt_hash: str | None, created_at: str, payload: ~T, attempts: int, repair_attempts: int, coercions_applied: list[dict[str, str]]
+
+- aijournal.common.meta.LLMResult (src/aijournal/common/meta.py)
+
+### Group 50 (1 classes)
+
+Fields: ok: bool, changed: bool, message: str, artifacts: list[str], warnings: list[str], details: dict[str, typing.Any]
+
+- aijournal.services.capture.results.OperationResult (src/aijournal/services/capture/results.py)
+
+### Group 51 (1 classes)
+
+Fields: path: Path
+
+- aijournal.commands.init.InitOptions (src/aijournal/commands/init.py)
+
+### Group 52 (1 classes)
+
+Fields: path: str, operation: FacetOperation, value: typing.Any | None, method: str | None, confidence: float | None, review_after_days: int | None, user_verified: bool | None, evidence: list[aijournal.domain.evidence.SourceRef], rationale: str | None
+
+- aijournal.domain.changes.FacetChange (src/aijournal/domain/changes.py)
+
+### Group 53 (1 classes)
+
+Fields: profile: dict[str, typing.Any], claims: list[aijournal.domain.claims.ClaimAtom]
+
+- aijournal.domain.persona.PersonaCore (src/aijournal/domain/persona.py)
+
+### Group 54 (1 classes)
+
+Fields: profile: dict[str, typing.Any], claims: list[aijournal.domain.claims.ClaimAtom], token_budget_override: int | None, max_claims_override: int | None, min_claims_override: int | None
+
+- aijournal.commands.persona.PersonaBuildOptions (src/aijournal/commands/persona.py)
+
+### Group 55 (1 classes)
+
+Fields: query: str, top: int, tags: str | None, source: str | None, date_from: str | None, date_to: str | None
+
+- aijournal.commands.index.IndexSearchOptions (src/aijournal/commands/index.py)
+
+### Group 56 (1 classes)
+
+Fields: question: str
+
+- aijournal.commands.advise.AdviceOptions (src/aijournal/commands/advise.py)
+
+### Group 57 (1 classes)
+
+Fields: question: str, answer: str, response: ChatResponse, persona: PersonaCore, citations: list[aijournal.api.chat.ChatCitation], retrieved_chunks: list[aijournal.domain.index.RetrievedChunk], fake_mode: bool, intent: str, clarifying_question: str | None, telemetry: ChatTelemetry, timestamp: str
+
+- aijournal.domain.chat.ChatTurn (src/aijournal/domain/chat.py)
+
+### Group 58 (1 classes)
+
+Fields: question: str, top: int, tags: str | None, source: str | None, date_from: str | None, date_to: str | None, session: str | None, save: bool, feedback: str | None
+
+- aijournal.commands.chat.ChatOptions (src/aijournal/commands/chat.py)
+
+### Group 59 (1 classes)
+
+Fields: question: str, top: int | None, tags: list[str] | None, source: list[str] | None, date_from: str | None, date_to: str | None, session_id: str | None, save: bool, feedback: typing.Optional[typing.Literal['up', 'down']]
+
+- aijournal.api.chat.ChatRequest (src/aijournal/api/chat.py)
+
+### Group 60 (1 classes)
+
+Fields: questions: list[aijournal.domain.persona.InterviewQuestion]
+
+- aijournal.domain.persona.InterviewSet (src/aijournal/domain/persona.py)
+
+### Group 61 (1 classes)
+
+Fields: retrieval_ms: float, chunk_count: int, retriever_source: str, model: str
+
+- aijournal.domain.chat.ChatTelemetry (src/aijournal/domain/chat.py)
+
+### Group 62 (1 classes)
+
+Fields: role: str, path: str
+
+- aijournal.domain.packs.TrimmedFile (src/aijournal/domain/packs.py)
+
+### Group 63 (1 classes)
+
+Fields: role: str, path: str, tokens: int, content: str
+
+- aijournal.domain.packs.PackEntry (src/aijournal/domain/packs.py)
+
+### Group 64 (1 classes)
+
+Fields: run_id: str, entries: list[aijournal.services.capture.stages.stage0_persist.EntryResult], artifacts_changed: dict[str, int], persona_stale_before: bool, persona_stale_after: bool, index_rebuilt: bool, warnings: list[str], errors: list[str], durations_ms: dict[str, float], review_candidates: list[str], telemetry_path: str | None, min_stage: int, max_stage: int, stages_completed: list[int], stages_skipped: list[int], stage_results: list[aijournal.services.capture.results.StageResult]
+
+- aijournal.services.capture.CaptureResult (src/aijournal/services/capture/__init__.py)
+
+### Group 65 (1 classes)
+
+Fields: session_id: str, created_at: str, updated_at: str, learnings: list[aijournal.domain.chat_sessions.ChatLearningEntry]
+
+- aijournal.domain.chat_sessions.ChatSessionLearnings (src/aijournal/domain/chat_sessions.py)
+
+### Group 66 (1 classes)
+
+Fields: session_id: str, created_at: str, updated_at: str, turn_count: int, intent_counts: dict[str, int], last_question: str | None, last_answer_preview: str | None, last_citations: list[str], last_clarifying_question: str | None, last_retrieval_ms: float | None, last_feedback: str | None
+
+- aijournal.domain.chat_sessions.ChatSessionSummary (src/aijournal/domain/chat_sessions.py)
+
+### Group 67 (1 classes)
+
+Fields: session_id: str, created_at: str, updated_at: str, turns: list[aijournal.domain.chat_sessions.ChatTranscriptTurn]
+
+- aijournal.domain.chat_sessions.ChatTranscript (src/aijournal/domain/chat_sessions.py)
+
+### Group 68 (1 classes)
+
+Fields: since: str | None, days: int, limit: int | None
+
+- aijournal.commands.index.IndexTailOptions (src/aijournal/commands/index.py)
+
+### Group 69 (1 classes)
+
+Fields: since: str | None, limit: int | None
+
+- aijournal.commands.index.IndexRebuildOptions (src/aijournal/commands/index.py)
+
+### Group 70 (1 classes)
+
+Fields: source: typing.Literal['stdin', 'editor', 'file', 'dir'], text: str | None, paths: list[str], source_type: typing.Literal['journal', 'notes', 'blog'], date: str | None, title: str | None, slug: str | None, tags: list[str], projects: list[str], mood: str | None, apply_profile: typing.Literal['auto', 'review'], rebuild: typing.Literal['auto', 'always', 'skip'], pack: typing.Optional[typing.Literal['L1', 'L3', 'L4']], retries: int, progress: bool, dry_run: bool, snapshot: bool
+
+- aijournal.api.capture.CaptureRequest (src/aijournal/api/capture.py)
+
+### Group 71 (1 classes)
+
+Fields: source: typing.Literal['stdin', 'editor', 'file', 'dir'], text: str | None, paths: list[str], source_type: typing.Literal['journal', 'notes', 'blog'], date: str | None, title: str | None, slug: str | None, tags: list[str], projects: list[str], mood: str | None, apply_profile: typing.Literal['auto', 'review'], rebuild: typing.Literal['auto', 'always', 'skip'], pack: typing.Optional[typing.Literal['L1', 'L3', 'L4']], retries: int, progress: bool, dry_run: bool, snapshot: bool, min_stage: int, max_stage: int
+
+- aijournal.api.capture.CaptureInput (src/aijournal/api/capture.py)
+
+### Group 72 (1 classes)
+
+Fields: sources: list[aijournal.domain.evidence.SourceRef], first_seen: str | None, last_updated: str, observation_count: int
+
+- aijournal.domain.claims.Provenance (src/aijournal/domain/claims.py)
+
+### Group 73 (1 classes)
+
+Fields: sources: list[pathlib.Path], source_type: str, limit: int | None, snapshot: bool
+
+- aijournal.commands.ingest.IngestOptions (src/aijournal/commands/ingest.py)
+
+### Group 74 (1 classes)
+
+Fields: stage: str, result: OperationResult, duration_ms: float
+
+- aijournal.services.capture.results.StageResult (src/aijournal/services/capture/results.py)
+
+### Group 75 (1 classes)
+
+Fields: tags: frozenset[str], source_types: frozenset[str], date_from: str | None, date_to: str | None
+
+- aijournal.services.retriever.RetrievalFilters (src/aijournal/services/retriever.py)
+
+### Group 76 (1 classes)
+
+Fields: title: str, why_this_fits_you: AdviceReference, steps: list[str], risks: list[str], mitigations: list[str]
+
+- aijournal.domain.advice.AdviceRecommendation (src/aijournal/domain/advice.py)
+
+### Group 77 (1 classes)
+
+Fields: title: str | None, tags: list[str] | None, fake: int, seed: int | None
+
+- aijournal.commands.new.NewOptions (src/aijournal/commands/new.py)
+
+### Group 78 (1 classes)
+
+Fields: total_tokens: int, max_tokens: int, trimmed: list[aijournal.domain.packs.TrimmedFile], generated_at: str
+
+- aijournal.domain.packs.PackMeta (src/aijournal/domain/packs.py)
+
+### Group 79 (1 classes)
+
+Fields: traits: dict[str, typing.Any], values_motivations: dict[str, typing.Any], goals: dict[str, typing.Any], decision_style: dict[str, typing.Any], affect_energy: dict[str, typing.Any], planning: dict[str, typing.Any], dashboard: dict[str, typing.Any], habits: dict[str, typing.Any], social: dict[str, typing.Any], boundaries_ethics: dict[str, typing.Any], coaching_prefs: dict[str, typing.Any]
+
+- aijournal.models.authoritative.SelfProfile (src/aijournal/models/authoritative.py)
+
+### Group 80 (1 classes)
+
+Fields: turn_index: int, question: str, intent: str, citations: list[str], clarifying_question: str | None, telemetry: ChatTelemetry, feedback: str | None
+
+- aijournal.domain.chat_sessions.ChatLearningEntry (src/aijournal/domain/chat_sessions.py)
+
+### Group 81 (1 classes)
+
+Fields: turn_index: int, timestamp: str, question: str, answer: str, intent: str, citations: list[str], clarifying_question: str | None, telemetry: ChatTelemetry, feedback: str | None, fake_mode: bool
+
+- aijournal.domain.chat_sessions.ChatTranscriptTurn (src/aijournal/domain/chat_sessions.py)
+
+### Group 82 (1 classes)
+
+Fields: type: ClaimType, subject: str, predicate: str, value: str, statement: str, scope: Scope, strength: float, status: ClaimStatus, method: ClaimMethod, user_verified: bool, review_after_days: int
+
+- aijournal.domain.changes.ClaimAtomInput (src/aijournal/domain/changes.py)
+
+### Group 83 (1 classes)
+
+Fields: type: str, index: int | None, start: int | None, end: int | None, text: str | None
+
+- aijournal.domain.evidence.Span (src/aijournal/domain/evidence.py)
+
+### Group 84 (1 classes)
+
+Fields: type: str, value: str, extra: dict[str, typing.Any]
+
+- aijournal.domain.journal.NormalizedEntity (src/aijournal/domain/journal.py)
+
+## Dataclasses
+
+57 total · 56 unique field signatures
+
+### Group 1 (2 classes)
+
+Fields: <no fields>
+
+- aijournal.commands.system.SystemDoctorPrepared (src/aijournal/commands/system.py)
+- aijournal.commands.system.SystemStatusPrepared (src/aijournal/commands/system.py)
+
+### Group 2 (1 classes)
+
+Fields: artifact: 'Artifact[PersonaCore]', path: 'Path', changed: 'bool'
+
+- aijournal.commands.persona.PersonaResult (src/aijournal/commands/persona.py)
+
+### Group 3 (1 classes)
+
+Fields: artifact: 'Artifact[ProfileUpdateBatch]', batch_path: 'Path'
+
+- aijournal.commands.characterize.CharacterizeResult (src/aijournal/commands/characterize.py)
+
+### Group 4 (1 classes)
+
+Fields: artifact: 'Artifact[ProfileUpdateProposals]', path: 'Path'
+
+- aijournal.commands.profile.ProfileSuggestResult (src/aijournal/commands/profile.py)
+
+### Group 5 (1 classes)
+
+Fields: base: 'Path'
+
+- aijournal.commands.init.InitPrepared (src/aijournal/commands/init.py)
+
+### Group 6 (1 classes)
+
+Fields: base: 'Path', created_dirs: 'int', created_files: 'int', total_dirs: 'int', total_files: 'int'
+
+- aijournal.commands.init.InitResult (src/aijournal/commands/init.py)
+
+### Group 7 (1 classes)
+
+Fields: bundle: 'PackBundle', trimmed: 'list[pack_pipeline.TrimmedFile]', entries: 'list[pack_pipeline.PackEntry]', total_tokens: 'int', budget: 'int', fmt_value: 'str', output: 'Path | None', dry_run: 'bool'
+
+- aijournal.commands.pack.PackResult (src/aijournal/commands/pack.py)
+
+### Group 8 (1 classes)
+
+Fields: card: 'AdviceCard', question: 'str', day: 'str', model_name: 'str'
+
+- aijournal.commands.advise.AdviceResult (src/aijournal/commands/advise.py)
+
+### Group 9 (1 classes)
+
+Fields: chunk_id: 'str', normalized_id: 'str', normalized_path: 'str', chunk_index: 'int', chunk_text: 'str', date: 'str', tags: 'list[str]', source_type: 'str | None', source_path: 'str', tokens: 'int', source_hash: 'str | None', manifest_hash: 'str | None', embedding: 'list[float] | None'
+
+- aijournal.pipelines.index.ChunkRecord (src/aijournal/pipelines/index.py)
+
+### Group 10 (1 classes)
+
+Fields: claim_id: 'str', old_strength: 'float', new_strength: 'float', delta: 'float'
+
+- aijournal.services.feedback.FeedbackAdjustment (src/aijournal/services/feedback.py)
+
+### Group 11 (1 classes)
+
+Fields: claims: 'list[ClaimAtom]', trimmed_ids: 'list[str]', planned_tokens: 'int', budget_exceeded: 'bool'
+
+- aijournal.pipelines.persona.PersonaClaimSelection (src/aijournal/pipelines/persona.py)
+
+### Group 12 (1 classes)
+
+Fields: command: 'str', root: 'Path', config: 'Mapping[str, Any]', use_fake_llm: 'bool', logger: 'StructuredLogger', trace_enabled: 'bool', verbose_json: 'bool'
+
+- aijournal.common.context.RunContext (src/aijournal/common/context.py)
+
+### Group 13 (1 classes)
+
+Fields: date: 'str', entries: 'list[NormalizedEntry]', timeout: 'float', retries: 'int'
+
+- aijournal.commands.summarize.DailySummaryPrepared (src/aijournal/commands/summarize.py)
+
+### Group 14 (1 classes)
+
+Fields: date: 'str', entries: 'list[NormalizedEntry]', timeout: 'float', retries: 'int', manifest_index: 'dict[str, ManifestEntry]', claim_models: 'list[ClaimAtom]', preview_builder: 'Callable[[Sequence[ClaimProposal], Sequence[ClaimAtom], str], ProfileUpdatePreview | None]'
+
+- aijournal.commands.facts.FactsPrepared (src/aijournal/commands/facts.py)
+
+### Group 15 (1 classes)
+
+Fields: date: 'str', timeout: 'float', retries: 'int', progress: 'bool', entries: 'list[NormalizedEntry]', profile: 'dict[str, Any]', claims: 'list[ClaimAtom]', config: 'dict[str, Any]'
+
+- aijournal.commands.profile.ProfileSuggestPrepared (src/aijournal/commands/profile.py)
+
+### Group 16 (1 classes)
+
+Fields: date: 'str', timeout: 'float', retries: 'int', progress: 'bool', entries_with_paths: 'list[tuple[NormalizedEntry, Path]]', manifest_index: 'dict[str, ManifestEntry]', profile: 'dict[str, Any]', claim_models: 'Sequence[ClaimAtom]', config: 'dict[str, Any]'
+
+- aijournal.commands.characterize.CharacterizePrepared (src/aijournal/commands/characterize.py)
+
+### Group 17 (1 classes)
+
+Fields: day: 'str', path: 'Path', normalized_path: 'str', normalized_id: 'str', entry: 'NormalizedEntry', source_hash: 'str | None', manifest: 'ManifestEntry | None'
+
+- aijournal.pipelines.index.IndexTask (src/aijournal/pipelines/index.py)
+
+### Group 18 (1 classes)
+
+Fields: diagnostics: 'dict[str, Any]'
+
+- aijournal.commands.system.SystemDoctorResult (src/aijournal/commands/system.py)
+
+### Group 19 (1 classes)
+
+Fields: files: 'list[Path]', config: 'dict[str, Any]', manifest_path: 'Path', manifest_entries: 'list[ManifestEntry]', known_hashes: 'dict[str, ManifestEntry]', source_type: 'str', snapshot: 'bool'
+
+- aijournal.commands.ingest.IngestPrepared (src/aijournal/commands/ingest.py)
+
+### Group 20 (1 classes)
+
+Fields: fix: 'bool'
+
+- aijournal.commands.audit.AuditPrepared (src/aijournal/commands/audit.py)
+
+### Group 21 (1 classes)
+
+Fields: host: 'str', port: 'int'
+
+- aijournal.commands.chatd.ChatdPrepared (src/aijournal/commands/chatd.py)
+
+### Group 22 (1 classes)
+
+Fields: host: 'str', port: 'int', uvicorn: 'Any', app_instance: 'Any'
+
+- aijournal.commands.chatd.ChatdResult (src/aijournal/commands/chatd.py)
+
+### Group 23 (1 classes)
+
+Fields: ingested: 'int', skipped: 'int', errors: 'int', manifest_entries: 'list[ManifestEntry]', logs: 'list[IngestLogEntry]', manifest_path: 'Path'
+
+- aijournal.commands.ingest.IngestPipelineResult (src/aijournal/commands/ingest.py)
+
+### Group 24 (1 classes)
+
+Fields: level: 'str', message: 'str'
+
+- aijournal.commands.ingest.IngestLogEntry (src/aijournal/commands/ingest.py)
+
+### Group 25 (1 classes)
+
+Fields: message: 'str', changed: 'bool'
+
+- aijournal.commands.profile.ProfileApplyResult (src/aijournal/commands/profile.py)
+
+### Group 26 (1 classes)
+
+Fields: message: 'str', chunks: 'int', entries: 'int', touched_dates: 'list[str]'
+
+- aijournal.commands.index.IndexRebuildResult (src/aijournal/commands/index.py)
+
+### Group 27 (1 classes)
+
+Fields: message: 'str', chunks: 'int', entries: 'int', touched_dates: 'list[str]', up_to_date: 'bool'
+
+- aijournal.commands.index.IndexTailResult (src/aijournal/commands/index.py)
+
+### Group 28 (1 classes)
+
+Fields: message: 'str', entry_path: 'Path | None'
+
+- aijournal.commands.new.NewResult (src/aijournal/commands/new.py)
+
+### Group 29 (1 classes)
+
+Fields: microfacts: 'MicroFactsFile', preview: 'ProfileUpdatePreview | None', date: 'str'
+
+- aijournal.commands.facts.FactsResult (src/aijournal/commands/facts.py)
+
+### Group 30 (1 classes)
+
+Fields: mode: 'str', base: 'Path', tags: 'list[str] | None', fake_count: 'int', seed: 'int | None', title: 'str | None', entry_path: 'Path | None', frontmatter: 'dict[str, Any] | None'
+
+- aijournal.commands.new.NewPrepared (src/aijournal/commands/new.py)
+
+### Group 31 (1 classes)
+
+Fields: model: 'str', host: 'str | None', fake_mode: 'bool', dimension: 'int | None', _base_host: 'str'
+
+- aijournal.services.embedding.EmbeddingBackend (src/aijournal/services/embedding.py)
+
+### Group 32 (1 classes)
+
+Fields: model: 'str', host: 'str | None', temperature: 'float | None', seed: 'int | None', max_tokens: 'int | None', timeout: 'float | None'
+
+- aijournal.services.ollama.OllamaConfig (src/aijournal/services/ollama.py)
+
+### Group 33 (1 classes)
+
+Fields: normalized_level: 'str', resolved_date: 'str', fmt_value: 'str', history_days: 'int', budget: 'int', output: 'Path | None', dry_run: 'bool', char_per_token: 'float'
+
+- aijournal.commands.pack.PackPrepared (src/aijournal/commands/pack.py)
+
+### Group 34 (1 classes)
+
+Fields: normalized_path: 'str', normalized_id: 'str', date: 'str', source_hash: 'str | None', manifest_hash: 'str | None', chunk_count: 'int', updated_at: 'str'
+
+- aijournal.pipelines.index.SourceRecord (src/aijournal/pipelines/index.py)
+
+### Group 35 (1 classes)
+
+Fields: path: 'Path', base: 'Mapping[str, Any]', sinks: 'Sequence[StructuredLogSink]', enabled: 'bool'
+
+- aijournal.common.logging.StructuredLogger (src/aijournal/common/logging.py)
+
+### Group 36 (1 classes)
+
+Fields: path: 'Path', issues: 'list[IssueDetail]'
+
+- aijournal.commands.audit.AuditFileResult (src/aijournal/commands/audit.py)
+
+### Group 37 (1 classes)
+
+Fields: path: 'str', entry_id: 'str | None', span_indices: 'tuple[int, ...]'
+
+- aijournal.commands.audit.IssueDetail (src/aijournal/commands/audit.py)
+
+### Group 38 (1 classes)
+
+Fields: path: 'str', score: 'float', kind: "Literal['facet', 'claim', 'pending']", reasons: 'tuple[str, ...]', claim_id: 'str | None', missing_context: 'tuple[str, ...]'
+
+- aijournal.commands.profile.InterviewTarget (src/aijournal/commands/profile.py)
+
+### Group 39 (1 classes)
+
+Fields: persona: 'PersonaCore', selection: 'PersonaClaimSelection', ranked_claims: 'list[ClaimAtom]', profile_slice: 'dict[str, Any]'
+
+- aijournal.pipelines.persona.PersonaBuildResult (src/aijournal/pipelines/persona.py)
+
+### Group 40 (1 classes)
+
+Fields: persona_status: 'str', rankings: 'list[InterviewTarget]', reasons: 'list[str]'
+
+- aijournal.commands.profile.ProfileStatusResult (src/aijournal/commands/profile.py)
+
+### Group 41 (1 classes)
+
+Fields: preview: 'ProfileUpdatePreview | None', path: 'Path'
+
+- aijournal.commands.facts.FactsOutput (src/aijournal/commands/facts.py)
+
+### Group 42 (1 classes)
+
+Fields: profile: 'dict[str, Any]', claim_models: 'Sequence[ClaimAtom]', weights: 'dict[str, Any]'
+
+- aijournal.commands.profile.ProfileStatusPrepared (src/aijournal/commands/profile.py)
+
+### Group 43 (1 classes)
+
+Fields: profile: 'dict[str, Any]', claims: 'list[ClaimAtom]', token_budget: 'int', max_claims: 'int', min_claims: 'int', char_per_token: 'float', impact_weights: 'dict[str, Any]', now: 'datetime'
+
+- aijournal.commands.persona.PersonaPrepared (src/aijournal/commands/persona.py)
+
+### Group 44 (1 classes)
+
+Fields: query: 'str', top: 'int', filters: 'RetrievalFilters'
+
+- aijournal.commands.index.IndexSearchPrepared (src/aijournal/commands/index.py)
+
+### Group 45 (1 classes)
+
+Fields: question: 'str', profile: 'dict[str, Any]', claims: 'list[ClaimAtom]', rankings: 'list[InterviewTarget]', pending_prompts: 'list[str]'
+
+- aijournal.commands.advise.AdvicePrepared (src/aijournal/commands/advise.py)
+
+### Group 46 (1 classes)
+
+Fields: question: 'str', top: 'int', filters: 'RetrievalFilters', session_input: 'str | None', save: 'bool', feedback: 'str | None'
+
+- aijournal.commands.chat.ChatPrepared (src/aijournal/commands/chat.py)
+
+### Group 47 (1 classes)
+
+Fields: result: 'RetrievalResult'
+
+- aijournal.commands.index.IndexSearchResult (src/aijournal/commands/index.py)
+
+### Group 48 (1 classes)
+
+Fields: results: 'list[AuditFileResult]', fix: 'bool'
+
+- aijournal.commands.audit.AuditResult (src/aijournal/commands/audit.py)
+
+### Group 49 (1 classes)
+
+Fields: root: 'Path', proposals: 'ProfileUpdateProposals', profile: 'dict[str, Any]', claims: 'list[ClaimAtom]', timestamp: 'str'
+
+- aijournal.commands.profile.ProfileApplyPrepared (src/aijournal/commands/profile.py)
+
+### Group 50 (1 classes)
+
+Fields: root: 'Path', session_id: 'str'
+
+- aijournal.io.chat_sessions.ChatSessionRecorder (src/aijournal/io/chat_sessions.py)
+
+### Group 51 (1 classes)
+
+Fields: summary: 'DailySummary', date: 'str', model_name: 'str'
+
+- aijournal.commands.summarize.DailySummaryResult (src/aijournal/commands/summarize.py)
+
+### Group 52 (1 classes)
+
+Fields: summary: 'dict[str, Any]'
+
+- aijournal.commands.system.SystemStatusResult (src/aijournal/commands/system.py)
+
+### Group 53 (1 classes)
+
+Fields: tasks: 'list[index_pipeline.IndexTask]', config: 'dict[str, Any]', since_filter: 'str | None', limit: 'int | None', days: 'int'
+
+- aijournal.commands.index.IndexTailPrepared (src/aijournal/commands/index.py)
+
+### Group 54 (1 classes)
+
+Fields: tasks: 'list[index_pipeline.IndexTask]', config: 'dict[str, Any]', since_filter: 'str | None', limit: 'int | None', entries_considered: 'int'
+
+- aijournal.commands.index.IndexRebuildPrepared (src/aijournal/commands/index.py)
+
+### Group 55 (1 classes)
+
+Fields: trace: 'bool', verbose_json: 'bool'
+
+- aijournal.cli.CLISettings (src/aijournal/cli.py)
+
+### Group 56 (1 classes)
+
+Fields: turn: 'ChatTurn', prepared: 'ChatPrepared'
+
+- aijournal.commands.chat.ChatResult (src/aijournal/commands/chat.py)
+

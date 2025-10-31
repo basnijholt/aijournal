@@ -10,6 +10,17 @@ import yaml
 from typer.testing import CliRunner
 
 from aijournal.cli import app
+from aijournal.common.meta import Artifact, ArtifactKind, ArtifactMeta
+from aijournal.domain.changes import ClaimAtomInput, ClaimProposal, ProfileUpdateProposals
+from aijournal.domain.claims import ClaimAtom
+from aijournal.domain.evidence import SourceRef
+from aijournal.io.artifacts import save_artifact
+from aijournal.io.yaml_io import dump_yaml
+from aijournal.models.derived import (
+    AdviceCard,
+    AdviceRecommendation,
+    AdviceReference,
+)
 from tests.helpers import make_claim_atom
 
 if TYPE_CHECKING:
@@ -49,7 +60,7 @@ traits:
     }
     _write(
         tmp_path / "profile" / "claims.yaml",
-        yaml.safe_dump(claims_payload, sort_keys=False),
+        dump_yaml(claims_payload, sort_keys=False),
     )
 
 
@@ -85,50 +96,88 @@ def _seed_daily_artifacts(
 def _seed_advice(tmp_path: Path, day: str = DATE, question: str = ADVICE_QUESTION) -> Path:
     slug = "-".join(part for part in question.lower().split())
     advice_path = tmp_path / "derived" / "advice" / day / f"{slug}.yaml"
-    payload = {
-        "question": question,
-        "recommendations": [
-            {
-                "title": "Protect maker time",
-                "actions": [
-                    "Hold a 90-minute deep-work block",
-                    "Push non-urgent syncs to the afternoon",
-                ],
-                "respecting": ["No sharing private family data"],
-            },
+    recommendation = AdviceRecommendation(
+        title="Protect maker time",
+        why_this_fits_you=AdviceReference(claims=["pref_focus"], facets=["values.self_direction"]),
+        steps=[
+            "Hold a 90-minute deep-work block",
+            "Push non-urgent syncs to the afternoon",
         ],
-        "alignment": {"claims": ["pref_focus"], "values": ["Self-Direction"]},
-        "meta": {
-            "llm_model": "fake-ollama",
-            "prompt_path": "prompts/advise.md",
-            "created_at": f"{day}T10:00:00Z",
-        },
-    }
-    _write(advice_path, yaml.safe_dump(payload, sort_keys=False))
+        risks=["Stakeholder updates slip"],
+        mitigations=["Send async recap before logging off"],
+    )
+    advice_card = AdviceCard(
+        id="adv-test",
+        query=question,
+        assumptions=["You already block mornings for deep work"],
+        recommendations=[recommendation],
+        tradeoffs=["Team visibility may dip"],
+        next_actions=["Schedule two focus blocks for next week"],
+        confidence=0.6,
+        alignment=AdviceReference(claims=["pref_focus"], facets=["values.self_direction"]),
+        style={"tone": "direct"},
+    )
+    summary_meta = ArtifactMeta(
+        created_at=f"{day}T10:00:00Z",
+        model="fake-ollama",
+        prompt_path="prompts/advise.md",
+        prompt_hash="seed",
+    )
+    artifact = Artifact[AdviceCard](
+        kind=ArtifactKind.ADVICE_CARD,
+        meta=summary_meta,
+        data=advice_card,
+    )
+    save_artifact(advice_path, artifact)
     return advice_path
 
 
-def _seed_profile_suggestions(tmp_path: Path, day: str = DATE) -> Path:
-    suggestions_path = tmp_path / "derived" / "profile_suggestions" / f"{day}.yaml"
-    payload = {
-        "day": day,
-        "upserts": [
-            {
-                "target": "claims",
-                "operation": "upsert",
-                "value": make_claim_atom(
-                    "pref_afternoon_break",
-                    "Energy dips shortly after 15:00",
-                    strength=0.68,
-                    status="tentative",
-                    last_updated=f"{day}T11:00:00Z",
-                ),
-            },
-        ],
-        "updates": [],
-    }
-    _write(suggestions_path, yaml.safe_dump(payload, sort_keys=False))
-    return suggestions_path
+def _seed_profile_proposals(tmp_path: Path, day: str = DATE) -> Path:
+    proposals_path = tmp_path / "derived" / "profile_proposals" / f"{day}.yaml"
+    meta = ArtifactMeta(
+        created_at=f"{day}T10:00:00Z",
+        model="fake-ollama",
+        prompt_path="prompts/profile_suggest.md",
+        prompt_hash="seed",
+    )
+    claim_model = ClaimAtom.model_validate(
+        make_claim_atom(
+            "pref_afternoon_break",
+            "Energy dips shortly after 15:00",
+            strength=0.68,
+            status="tentative",
+            last_updated=f"{day}T11:00:00Z",
+        )
+    )
+    claim_input = ClaimAtomInput(
+        type=claim_model.type,
+        subject=claim_model.subject,
+        predicate=claim_model.predicate,
+        value=claim_model.value,
+        statement=claim_model.statement,
+        scope=claim_model.scope,
+        strength=claim_model.strength,
+        status=claim_model.status,
+        method=claim_model.method,
+        user_verified=claim_model.user_verified,
+        review_after_days=claim_model.review_after_days,
+    )
+    claim_proposal = ClaimProposal(
+        claim=claim_input,
+        normalized_ids=[claim_model.id],
+        evidence=[SourceRef(entry_id=f"{day}-entry", spans=[])],
+    )
+    payload = ProfileUpdateProposals(
+        claims=[claim_proposal],
+        facets=[],
+    )
+    artifact = Artifact[ProfileUpdateProposals](
+        kind=ArtifactKind.PROFILE_PROPOSALS,
+        meta=meta,
+        data=payload,
+    )
+    save_artifact(proposals_path, artifact)
+    return proposals_path
 
 
 def _seed_config(tmp_path: Path, *, char_per_token: float | None = None) -> Path:
@@ -140,7 +189,7 @@ def _seed_config(tmp_path: Path, *, char_per_token: float | None = None) -> Path
     if char_per_token is not None:
         payload["token_estimator"] = {"char_per_token": char_per_token}
     config_path = tmp_path / "config" / "config.yaml"
-    _write(config_path, yaml.safe_dump(payload, sort_keys=False))
+    _write(config_path, dump_yaml(payload, sort_keys=False))
     return config_path
 
 
@@ -187,8 +236,9 @@ def test_pack_l1_uses_persona_core(
         ["export", "pack", "--level", "L1", "--format", "yaml"],
     )
     assert result.exit_code == 0, result.output
-    payload = yaml.safe_load(result.stdout)
-    files = payload.get("files", [])
+    artifact = yaml.safe_load(result.stdout)
+    assert artifact["kind"] == "pack.L1"
+    files = artifact["data"].get("files", [])
     assert len(files) == 1
     assert files[0]["path"] == str(persona_path.relative_to(cli_workspace))
 
@@ -207,8 +257,9 @@ def test_pack_l2_includes_daily_artifacts(
         ["export", "pack", "--level", "L2", "--date", DATE],
     )
     assert result.exit_code == 0
-    payload = yaml.safe_load(result.stdout)
-    paths = {entry["path"] for entry in payload.get("files", [])}
+    artifact = yaml.safe_load(result.stdout)
+    assert artifact["kind"] == "pack.L2"
+    paths = {entry["path"] for entry in artifact["data"].get("files", [])}
     assert "derived/persona/persona_core.yaml" in paths
     assert f"data/normalized/{DATE}/{entry_slug}.yaml" in paths
     assert f"derived/summaries/{DATE}.yaml" in paths
@@ -342,12 +393,13 @@ def test_pack_deterministic_order(
         ["export", "pack", "--level", "L2", "--date", DATE],
     )
     assert second.exit_code == 0
-    payload_first = yaml.safe_load(first.stdout)
-    payload_second = yaml.safe_load(second.stdout)
-    assert payload_first["level"] == payload_second["level"]
-    assert {entry["path"] for entry in payload_first.get("files", [])} == {
-        entry["path"] for entry in payload_second.get("files", [])
-    }
+    artifact_first = yaml.safe_load(first.stdout)
+    artifact_second = yaml.safe_load(second.stdout)
+    assert artifact_first["kind"] == artifact_second["kind"]
+    files_first = artifact_first["data"].get("files", [])
+    files_second = artifact_second["data"].get("files", [])
+    assert artifact_first["data"]["level"] == artifact_second["data"]["level"]
+    assert {entry["path"] for entry in files_first} == {entry["path"] for entry in files_second}
 
 
 def test_pack_json_format(
@@ -363,10 +415,11 @@ def test_pack_json_format(
     )
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
-    assert payload["level"] == "L1"
+    assert payload["kind"] == "pack.L1"
+    assert payload["data"]["level"] == "L1"
 
 
-def test_pack_l3_includes_advice_and_profile_suggestions(
+def test_pack_l3_includes_advice_and_profile_proposals(
     cli_workspace: Path,
     cli_runner: CliRunner,
 ) -> None:
@@ -374,15 +427,16 @@ def test_pack_l3_includes_advice_and_profile_suggestions(
     _ensure_persona_core(cli_workspace, cli_runner)
     _seed_daily_artifacts(cli_workspace)
     advice_path = _seed_advice(cli_workspace)
-    suggestions_path = _seed_profile_suggestions(cli_workspace)
+    suggestions_path = _seed_profile_proposals(cli_workspace)
 
     result = cli_runner.invoke(
         app,
         ["export", "pack", "--level", "L3", "--date", DATE],
     )
     assert result.exit_code == 0
-    payload = yaml.safe_load(result.stdout)
-    files = [entry["path"] for entry in payload.get("files", [])]
+    artifact = yaml.safe_load(result.stdout)
+    assert artifact["kind"] == "pack.L3"
+    files = [entry["path"] for entry in artifact["data"].get("files", [])]
     assert str(advice_path.relative_to(cli_workspace)) in files
     assert str(suggestions_path.relative_to(cli_workspace)) in files
 
@@ -413,8 +467,9 @@ def test_pack_l4_history_days_includes_prior_context(
         ],
     )
     assert result.exit_code == 0
-    payload = yaml.safe_load(result.stdout)
-    paths = {entry["path"] for entry in payload.get("files", [])}
+    artifact = yaml.safe_load(result.stdout)
+    assert artifact["kind"] == "pack.L4"
+    paths = {entry["path"] for entry in artifact["data"].get("files", [])}
     assert f"data/normalized/{PRIOR_DATE}/{prior_entry}.yaml" in paths
     assert f"derived/summaries/{PRIOR_DATE}.yaml" in paths
     assert f"derived/microfacts/{PRIOR_DATE}.yaml" in paths
@@ -437,8 +492,8 @@ def test_pack_respects_token_estimator_config(
         ["export", "pack", "--level", "L2", "--date", DATE],
     )
     assert result.exit_code == 0
-    payload = yaml.safe_load(result.stdout)
-    files = payload.get("files", [])
+    artifact = yaml.safe_load(result.stdout)
+    files = artifact["data"].get("files", [])
     normalized_path = f"data/normalized/{DATE}/{ENTRY_ID}.yaml"
 
     normalized_entry = next(entry for entry in files if entry["path"] == normalized_path)
@@ -481,8 +536,8 @@ def test_pack_l4_trimming_prioritizes_raw_journal_entries(
         ],
     )
     assert result.exit_code == 0
-    payload = yaml.safe_load(result.stdout)
-    trimmed = payload.get("meta", {}).get("trimmed", [])
+    artifact = yaml.safe_load(result.stdout)
+    trimmed = artifact["data"].get("meta", {}).get("trimmed", [])
     assert trimmed, "expected trimming metadata"
     first_trimmed = trimmed[0]
     assert first_trimmed["role"] == "journal_raw"
@@ -512,9 +567,9 @@ def test_pack_l4_handles_missing_optional_artifacts(
         ],
     )
     assert result.exit_code == 0
-    payload = yaml.safe_load(result.stdout)
-    paths = [entry["path"] for entry in payload.get("files", [])]
-    assert all("profile_suggestions" not in path for path in paths)
+    artifact = yaml.safe_load(result.stdout)
+    paths = [entry["path"] for entry in artifact["data"].get("files", [])]
+    assert all("profile_proposals" not in path for path in paths)
 
 
 def test_pack_l4_supports_json_output(
@@ -544,8 +599,8 @@ def test_pack_l4_supports_json_output(
     )
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
-    assert payload["level"] == "L4"
-    json_paths = [entry["path"] for entry in payload.get("files", [])]
+    assert payload["kind"] == "pack.L4"
+    json_paths = [entry["path"] for entry in payload["data"].get("files", [])]
     expected_normalized = f"data/normalized/{DATE}/{normalized_entry}.yaml"
     assert expected_normalized in json_paths
 
@@ -559,7 +614,7 @@ def test_pack_l4_dry_run_lists_expected_files(
     _seed_daily_artifacts(cli_workspace)
     _seed_daily_artifacts(cli_workspace, day=PRIOR_DATE, entry_id=PRIOR_ENTRY_ID)
     _seed_advice(cli_workspace)
-    _seed_profile_suggestions(cli_workspace)
+    _seed_profile_proposals(cli_workspace)
     _seed_config(cli_workspace)
     _seed_prompt(cli_workspace)
     _seed_journal_entry(cli_workspace, DATE, "focus-journal")
@@ -582,4 +637,4 @@ def test_pack_l4_dry_run_lists_expected_files(
     assert "Planned files:" in result.output
     assert "profile/self_profile.yaml" in result.output
     assert "derived/advice" in result.output
-    assert "derived/profile_suggestions" in result.output
+    assert "derived/profile_proposals" in result.output

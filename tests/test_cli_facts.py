@@ -8,6 +8,7 @@ import yaml
 from typer.testing import CliRunner
 
 from aijournal.cli import app
+from aijournal.io.yaml_io import dump_yaml
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -20,7 +21,7 @@ def _write_normalized(workspace: Path) -> Path:
     normalized = workspace / "data" / "normalized" / DATE / f"{ENTRY_ID}.yaml"
     normalized.parent.mkdir(parents=True, exist_ok=True)
     normalized.write_text(
-        yaml.safe_dump(
+        dump_yaml(
             {
                 "id": ENTRY_ID,
                 "created_at": "2025-02-03T14:05:00Z",
@@ -59,7 +60,14 @@ def test_facts_generates_microfacts(
     facts_path = cli_workspace / "derived" / "microfacts" / f"{DATE}.yaml"
     assert facts_path.exists()
 
-    data = _read_yaml(facts_path)
+    artifact = _read_yaml(facts_path)
+    assert artifact.get("kind") == "microfacts.daily"
+    meta = artifact.get("meta", {})
+    assert meta.get("model") == "fake-ollama"
+    assert meta.get("prompt_path") == "prompts/extract_facts.md"
+    assert meta.get("prompt_hash")
+    assert meta.get("created_at")
+    data = artifact.get("data", {})
     facts = data.get("facts", [])
     assert isinstance(facts, list) and facts
     first_fact = facts[0]
@@ -67,22 +75,21 @@ def test_facts_generates_microfacts(
     statement = first_fact.get("statement", "")
     assert "sync notes" in statement.lower()
     assert "section" in statement.lower()
-    meta = data.get("meta", {})
-    assert meta.get("llm_model") == "fake-ollama"
-    for key in ("prompt_path", "prompt_hash", "created_at"):
-        assert meta.get(key), f"Missing {key}"
+    assert "meta" not in data
     proposals = data.get("claim_proposals", [])
     assert isinstance(proposals, list) and proposals, "Expected claim proposals from micro-facts"
-    claim = proposals[0]["claim"]
-    assert claim["id"] == f"microfact.fact-{ENTRY_ID}"
+    proposal = proposals[0]
+    claim = proposal["claim"]
     assert "sync notes" in claim["statement"].lower()
-    assert proposals[0]["normalized_ids"] == [ENTRY_ID]
+    assert proposal.get("normalized_ids") == [ENTRY_ID]
+    evidence = proposal.get("evidence") or []
+    assert any(item.get("entry_id") == ENTRY_ID for item in evidence)
     preview = data.get("preview") or {}
     events = preview.get("claim_events") or []
     assert events, "Expected preview events for micro-facts consolidation"
     event = events[0]
-    assert event.get("action") == "created"
-    assert event.get("claim_id") == f"microfact.fact-{ENTRY_ID}"
+    assert event.get("action") == "upsert"
+    assert f"fact-{ENTRY_ID}" in (event.get("claim_id") or "")
     assert "Preview (claim consolidation)" in result.stdout
     assert str(facts_path) in result.stdout
 

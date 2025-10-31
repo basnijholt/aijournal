@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from aijournal.models import DailySummaryResponse, JournalSection, NormalizedEntry
+from aijournal.domain.facts import DailySummary
+from aijournal.domain.journal import NormalizedEntry
+from aijournal.models.authoritative import JournalSection
 from aijournal.pipelines import summarize
 
 
@@ -20,15 +22,15 @@ def _normalized_entry(entry_id: str, title: str) -> NormalizedEntry:
 def test_generate_summary_uses_fake_path_when_requested() -> None:
     entries = [_normalized_entry("entry-1", "Deep Work")]
 
-    def request_factory() -> DailySummaryResponse:  # pragma: no cover - should not run
+    def request_factory() -> DailySummary:  # pragma: no cover - should not run
         raise AssertionError("request_factory should not be invoked for fake flows")
 
     def structured_call(  # pragma: no cover - should not run
-        func: Callable[[], DailySummaryResponse],
+        func: Callable[[], DailySummary],
         *,
         retries: int,
         label: str,
-    ) -> DailySummaryResponse:
+    ) -> DailySummary:
         raise AssertionError(f"structured_call called unexpectedly ({label=}, {retries=})")
 
     summary_result = summarize.generate_summary(
@@ -47,24 +49,24 @@ def test_generate_summary_uses_fake_path_when_requested() -> None:
 
 def test_generate_summary_merges_llm_results_with_fallback() -> None:
     entries = [_normalized_entry("entry-1", "Deep Work")]
-    response = DailySummaryResponse(
+    response = DailySummary(
         day="",
         bullets=["Refined insight", ""],
         highlights=[],
         todo_candidates=["", "Review notes"],
     )
 
-    def request_factory() -> DailySummaryResponse:
+    def request_factory() -> DailySummary:
         return response
 
     call_args: dict[str, object] = {}
 
     def structured_call(
-        func: Callable[[], DailySummaryResponse],
+        func: Callable[[], DailySummary],
         *,
         retries: int,
         label: str,
-    ) -> DailySummaryResponse:
+    ) -> DailySummary:
         call_args["retries"] = retries
         call_args["label"] = label
         return func()

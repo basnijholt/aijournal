@@ -23,7 +23,7 @@ DERIVED_DIRS: tuple[str, ...] = (
     "derived",
     "derived/summaries",
     "derived/microfacts",
-    "derived/profile_suggestions",
+    "derived/profile_proposals",
     "derived/interviews",
     "derived/advice",
     "derived/persona",
@@ -197,16 +197,3 @@ def resolve_prompt_path(prompt_path: str) -> Path:
     if cwd_candidate.exists():
         return cwd_candidate
     return PROJECT_ROOT / prompt_path
-
-
-__all__ = [
-    "AUTHORITATIVE_DIRS",
-    "DERIVED_DIRS",
-    "SEED_FILES",
-    "PROJECT_ROOT",
-    "ensure_directories",
-    "ensure_seed_files",
-    "find_data_root",
-    "normalized_entry_path",
-    "resolve_prompt_path",
-]

@@ -1,0 +1,33 @@
+model: "gpt-oss:20b"
+temperature: 0.2
+seed: 42
+paths:
+  data: "data"
+  profile: "profile"
+  derived: "derived"
+  prompts: "prompts"
+impact_weights:
+  values_goals: 1.5
+  decision_style: 1.3
+  affect_energy: 1.2
+  traits: 1.0
+  social: 0.9
+  claims: 1.0
+  claim_types:
+    value: 1.4
+    goal: 1.4
+    boundary: 1.3
+    trait: 1.2
+    preference: 1.0
+    habit: 0.9
+    aversion: 1.1
+    skill: 1.0
+advisor:
+  max_recos: 3
+  include_risks: true
+token_estimator:
+  char_per_token: 4.2
+persona:
+  token_budget: 1200
+  max_claims: 24
+  min_claims: 8

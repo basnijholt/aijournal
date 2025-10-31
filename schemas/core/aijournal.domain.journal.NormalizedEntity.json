@@ -1,0 +1,25 @@
+{
+  "additionalProperties": false,
+  "description": "Structured entity extracted during normalization.",
+  "properties": {
+    "extra": {
+      "additionalProperties": true,
+      "title": "Extra",
+      "type": "object"
+    },
+    "type": {
+      "title": "Type",
+      "type": "string"
+    },
+    "value": {
+      "title": "Value",
+      "type": "string"
+    }
+  },
+  "required": [
+    "type",
+    "value"
+  ],
+  "title": "NormalizedEntity",
+  "type": "object"
+}

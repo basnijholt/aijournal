@@ -1,0 +1,48 @@
+{
+  "additionalProperties": false,
+  "description": "Optional filters applied during retrieval.",
+  "properties": {
+    "date_from": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Date From"
+    },
+    "date_to": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Date To"
+    },
+    "source_types": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Source Types",
+      "type": "array",
+      "uniqueItems": true
+    },
+    "tags": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Tags",
+      "type": "array",
+      "uniqueItems": true
+    }
+  },
+  "title": "RetrievalFilters",
+  "type": "object"
+}

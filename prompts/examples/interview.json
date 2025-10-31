@@ -1,0 +1,16 @@
+{
+  "questions": [
+    {
+      "id": "morning-reflection-frequency",
+      "text": "How often do post-focus reflections get skipped?",
+      "target_facet": "habits.focus_block",
+      "priority": "high"
+    },
+    {
+      "id": "travel-adjustments",
+      "text": "What changes during travel weeks disrupt focus blocks?",
+      "target_facet": "claim:goal.focus_hours_per_week",
+      "priority": "medium"
+    }
+  ]
+}

@@ -4,26 +4,21 @@ from __future__ import annotations
 
 import json
 import os
-from collections.abc import Callable, Iterable, Sequence
-from datetime import UTC, datetime
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Literal, NamedTuple
+from typing import Any, NamedTuple
 
-import yaml
 from pydantic import BaseModel, Field
 
-from aijournal.commands.ingest import _fake_structured_entry, _load_config
-from aijournal.ingest_agent import IngestResult, build_ingest_agent, ingest_with_agent
-from aijournal.models import (
-    JournalSection,
-    ManifestEntry,
-    NormalizedEntry,
-)
-from aijournal.pipelines import normalization
+from aijournal.api.capture import CaptureInput
+from aijournal.commands.ingest import _load_config
+from aijournal.common.logging import StructuredLogger
+from aijournal.models.authoritative import ManifestEntry
 from aijournal.services.capture.results import OperationResult, StageResult
+from aijournal.services.capture.stages.stage0_persist import EntryResult
+from aijournal.services.capture.utils import normalize_markdown
 from aijournal.services.ollama import build_ollama_config_from_mapping
 from aijournal.utils import time as time_utils
-from aijournal.utils.paths import normalized_entry_path
 
 from .stages.stage0_persist import run_persist_stage_0
 from .stages.stage1_normalize import run_normalize_stage_1
@@ -36,20 +31,9 @@ from .stages.stage7_persona import run_persona_stage_7
 from .stages.stage8_pack import run_pack_stage_8
 from .utils import (
     digest_bytes,
-    digest_text,
     emit_operation_event,
-    ensure_manifest,
-    ensure_unique_slug,
-    journal_path,
     relative_path,
-    use_fake_llm,
-    write_manifest,
-    write_markdown_entry,
-    write_snapshot,
-    write_yaml_if_changed,
 )
-from .utils import manifest_index as _manifest_index
-from .utils import manifest_path as _manifest_path
 
 
 class CaptureStage(NamedTuple):
@@ -260,23 +244,20 @@ def _make_telemetry_logger(
     sink: Callable[[dict[str, object]], None] | None = None,
 ) -> tuple[Callable[[dict[str, object]], None], Path]:
     log_path = _telemetry_log_path(root, run_id)
-    log_path.parent.mkdir(parents=True, exist_ok=True)
+    sinks: list[Callable[[dict[str, object]], None]] = []
+    if sink is not None:
+        sinks.append(sink)
+    logger = StructuredLogger(
+        path=log_path,
+        base={"run_id": run_id, "command": "capture"},
+        sinks=sinks,
+        enabled=True,
+    )
 
-    def _write(event: dict[str, object]) -> None:
-        payload = {
-            "run_id": run_id,
-            "timestamp": time_utils.format_timestamp(time_utils.now()),
-            **event,
-        }
-        with log_path.open("a", encoding="utf-8") as handle:
-            handle.write(json.dumps(payload, ensure_ascii=False) + "\n")
-        if sink is not None:
-            try:
-                sink(payload)
-            except Exception:  # pragma: no cover - defensive sink guard
-                return
+    def emit_wrapper(event: dict[str, object]) -> None:
+        logger.emit(**event)
 
-    return _write, log_path
+    return emit_wrapper, log_path
 
 
 def _capture_result_path(root: Path, run_id: str) -> Path:
@@ -302,651 +283,6 @@ def load_capture_result(root: Path, run_id: str) -> CaptureResult:
 
 
 DEFAULT_TIMEOUT_SECONDS = 120.0
-
-
-def _resolve_created_dt(preferred: object, fallback: datetime) -> datetime:
-    if preferred:
-        if isinstance(preferred, datetime):
-            parsed = preferred
-        elif (
-            hasattr(preferred, "year") and hasattr(preferred, "month") and hasattr(preferred, "day")
-        ):
-            parsed = datetime(preferred.year, preferred.month, preferred.day, tzinfo=UTC)
-        else:
-            text = str(preferred)
-            try:
-                parsed = datetime.fromisoformat(text)
-            except ValueError:
-                parsed = datetime.strptime(text, "%Y-%m-%d")
-        if parsed.tzinfo is None:
-            parsed = parsed.replace(tzinfo=UTC)
-        return parsed
-    return fallback
-
-
-def _resolve_title(inputs: CaptureInput, body: str) -> str:
-    if inputs.title:
-        return inputs.title
-    stripped = body.strip().splitlines()
-    if stripped:
-        return stripped[0][:120]
-    return "Captured Entry"
-
-
-def _build_manifest_entry(
-    *,
-    digest: str,
-    markdown_path: Path,
-    normalized_path: Path,
-    source_type: str,
-    created_at: str,
-    slug: str,
-    tags: list[str],
-    root: Path,
-    canonical_path: Path | None = None,
-    snapshot_path: Path | None = None,
-    aliases: Sequence[str] | None = None,
-) -> ManifestEntry:
-    canonical_rel = (
-        relative_path(canonical_path, root)
-        if canonical_path is not None
-        else relative_path(markdown_path, root)
-    )
-    snapshot_rel = relative_path(snapshot_path, root) if snapshot_path is not None else None
-    return ManifestEntry(
-        hash=digest,
-        path=relative_path(markdown_path, root),
-        normalized=relative_path(normalized_path, root),
-        source_type=source_type,
-        ingested_at=time_utils.format_timestamp(time_utils.now()),
-        created_at=created_at,
-        id=slug,
-        tags=tags,
-        model=None,
-        canonical_journal_path=canonical_rel,
-        snapshot_path=snapshot_rel,
-        aliases=list(aliases or []),
-    )
-
-
-def _coalesce_tags(*tag_sets: Iterable[str]) -> list[str]:
-    ordered: list[str] = []
-    seen: set[str] = set()
-    for tags in tag_sets:
-        for tag in tags:
-            if tag not in seen:
-                ordered.append(tag)
-                seen.add(tag)
-    return ordered
-
-
-def _coerce_frontmatter_tags(raw: object) -> list[str]:
-    if raw is None:
-        return []
-    if isinstance(raw, list):
-        return [str(item) for item in raw if isinstance(item, (str, int, float))]
-    if isinstance(raw, str):
-        return [raw]
-    return []
-
-
-def _extract_json_frontmatter_block(text: str) -> tuple[str, str]:
-    depth = 0
-    in_string = False
-    escape = False
-    start_index = None
-    for index, char in enumerate(text):
-        if start_index is None:
-            if char.isspace():
-                continue
-            if char != "{":
-                raise ValueError("JSON frontmatter must start with '{'")
-            start_index = index
-            depth = 1
-            continue
-
-        if in_string:
-            if escape:
-                escape = False
-                continue
-            if char == "\\":
-                escape = True
-                continue
-            if char == '"':
-                in_string = False
-            continue
-
-        if char == '"':
-            in_string = True
-            continue
-        if char == "{":
-            depth += 1
-            continue
-        if char == "}":
-            depth -= 1
-            if depth == 0 and start_index is not None:
-                end_index = index + 1
-                block = text[start_index:end_index]
-                remainder = text[end_index:]
-                return block, remainder
-    raise ValueError("Unterminated JSON frontmatter block")
-
-
-def _extract_json_frontmatter(text: str) -> tuple[dict[str, object], str]:
-    block, body = _extract_json_frontmatter_block(text)
-    try:
-        data = json.loads(block) or {}
-    except json.JSONDecodeError as exc:  # pragma: no cover - defensive
-        raise ValueError("Invalid JSON frontmatter") from exc
-    if not isinstance(data, dict):
-        data = {}
-    return data, body.lstrip("\n")
-
-
-def _normalize_markdown(
-    markdown_path: Path,
-    *,
-    root: Path,
-    source_hash: str,
-    source_type: str,
-) -> tuple[Path, bool]:
-    frontmatter, body = _split_frontmatter(markdown_path.read_text(encoding="utf-8"))
-
-    created_dt = _resolve_created_dt(frontmatter.get("created_at"), time_utils.now())
-    created_str = time_utils.format_timestamp(created_dt)
-    date_str = created_dt.strftime("%Y-%m-%d")
-
-    entry_id_raw = frontmatter.get("id") or frontmatter.get("slug")
-    if entry_id_raw is None:
-        entry_id_raw = markdown_path.stem
-    entry_id = str(entry_id_raw)
-
-    title_raw = frontmatter.get("title") or entry_id.replace("-", " ").title()
-    title = str(title_raw)
-
-    tags = _coerce_frontmatter_tags(frontmatter.get("tags"))
-    sections_raw = _scan_headings(body)
-    sections_models: list[JournalSection] = []
-    for section in sections_raw:
-        heading = str(section.get("heading", title))
-        level_raw = section.get("level", 1)
-        if isinstance(level_raw, (int, float, str)):
-            try:
-                level = int(level_raw)
-            except (TypeError, ValueError):
-                level = 1
-        else:
-            level = 1
-        sections_models.append(
-            JournalSection(
-                heading=heading,
-                level=level,
-                summary=None,
-            ),
-        )
-    summary_raw = frontmatter.get("summary")
-    summary_text = str(summary_raw) if summary_raw is not None else (body.strip() or None)
-    if not sections_models:
-        sections_models = [JournalSection(heading=title, level=1, summary=summary_text)]
-
-    normalized_entry = NormalizedEntry(
-        id=entry_id,
-        created_at=created_str,
-        source_path=relative_path(markdown_path, root),
-        title=title,
-        tags=tags,
-        sections=sections_models,
-        summary=summary_text,
-        source_hash=source_hash,
-        source_type=source_type,
-    )
-    normalized_path = normalized_entry_path(root, date_str, entry_id)
-    changed = write_yaml_if_changed(
-        normalized_path,
-        normalized_entry.model_dump(mode="python"),
-    )
-    return normalized_path, changed
-
-
-def _persist_text_entry(
-    inputs: CaptureInput,
-    root: Path,
-    manifest_entries: list[ManifestEntry],
-) -> EntryResult:
-    ensure_manifest(manifest_entries, root)
-    manifest_path = _manifest_path(root)
-    manifest_index = _manifest_index(manifest_entries)
-
-    now_dt = time_utils.now()
-    created_dt = _resolve_created_dt(inputs.date, now_dt)
-    date_str = created_dt.strftime("%Y-%m-%d")
-
-    body_text = (inputs.text or "").strip()
-    title = _resolve_title(inputs, body_text)
-    base_slug = inputs.slug or f"{date_str}-{time_utils.slugify_title(title)}"
-    slug = ensure_unique_slug(root, date_str, base_slug)
-    aliases: list[str] = []
-    entry_warnings: list[str] = []
-    if slug != base_slug:
-        aliases.append(base_slug)
-        entry_warnings.append(f'slug "{base_slug}" already exists; stored as "{slug}"')
-
-    markdown_path = journal_path(root, date_str, slug)
-    frontmatter_tags = _coalesce_tags(inputs.tags)
-    projects = _coalesce_tags(inputs.projects)
-
-    frontmatter: dict[str, Any] = {
-        "id": slug,
-        "created_at": time_utils.format_timestamp(created_dt),
-        "title": title,
-        "tags": frontmatter_tags,
-        "source_type": inputs.source_type,
-        "origin": {"kind": "capture"},
-    }
-    frontmatter["origin"]["canonical_path"] = relative_path(markdown_path, root)
-    if projects:
-        frontmatter["projects"] = projects
-    if inputs.mood:
-        frontmatter["mood"] = inputs.mood
-    summary_text = body_text or None
-    if summary_text:
-        frontmatter["summary"] = summary_text
-
-    content = yaml.safe_dump(frontmatter, sort_keys=False).strip()
-    markdown_content = f"---\n{content}\n---\n"
-    if body_text:
-        markdown_content += f"\n{body_text}\n"
-    else:
-        markdown_content += "\n"
-    digest = digest_text(markdown_content)
-    if digest in manifest_index:
-        # Entry already exists with identical content.
-        existing = manifest_index[digest]
-        return EntryResult(
-            markdown_path=existing.path,
-            normalized_path=existing.normalized,
-            date=existing.created_at[:10],
-            slug=existing.id,
-            deduped=True,
-            changed=False,
-            warnings=[],
-            source_hash=digest,
-            source_type=existing.source_type,
-        )
-
-    write_markdown_entry(markdown_path, frontmatter, body_text)
-
-    normalized_path, normalized_changed = _normalize_markdown(
-        markdown_path,
-        root=root,
-        source_hash=digest,
-        source_type=inputs.source_type,
-    )
-
-    entry = _build_manifest_entry(
-        digest=digest,
-        markdown_path=markdown_path,
-        normalized_path=normalized_path,
-        source_type=inputs.source_type,
-        created_at=time_utils.format_timestamp(created_dt),
-        slug=slug,
-        tags=frontmatter_tags,
-        root=root,
-        canonical_path=markdown_path,
-        aliases=aliases,
-    )
-    manifest_entries.append(entry)
-    write_manifest(manifest_path, manifest_entries)
-    manifest_index[digest] = entry
-
-    return EntryResult(
-        markdown_path=relative_path(markdown_path, root),
-        normalized_path=relative_path(normalized_path, root),
-        date=date_str,
-        slug=slug,
-        deduped=False,
-        changed=True,
-        warnings=entry_warnings,
-        source_hash=digest,
-        source_type=inputs.source_type,
-    )
-
-
-def _split_frontmatter(text: str) -> tuple[dict[str, object], str]:
-    stripped = text.lstrip()
-    if stripped.startswith("{"):
-        return _extract_json_frontmatter(stripped)
-
-    delimiter = None
-    if stripped.startswith("---"):
-        delimiter = "---"
-    elif stripped.startswith("+++"):
-        delimiter = "+++"
-    if delimiter is None:
-        msg = "Markdown entry missing YAML/TOML frontmatter delimiter"
-        raise ValueError(msg)
-
-    parts = stripped.split(delimiter, 2)
-    if len(parts) < 3:
-        msg = "Incomplete YAML/TOML frontmatter block"
-        raise ValueError(msg)
-
-    frontmatter_raw = parts[1].strip()
-    body = parts[2].lstrip("\n")
-    data = yaml.safe_load(frontmatter_raw) or {}
-    if not isinstance(data, dict):
-        data = {}
-    return data, body
-
-
-def _scan_headings(text: str) -> list[dict[str, object]]:
-    sections: list[dict[str, object]] = []
-    for line in text.splitlines():
-        stripped = line.strip()
-        if not stripped.startswith("#"):
-            continue
-        hashes, _, heading = stripped.partition(" ")
-        if not heading:
-            continue
-        level = len(hashes)
-        sections.append({"heading": heading.strip(), "level": level})
-    return sections
-
-
-def _ingest_frontmatter(
-    inputs: CaptureInput,
-    *,
-    root: Path,
-    source_path: Path,
-    raw_text: str,
-    digest: str,
-) -> tuple[dict[str, Any], str, NormalizedEntry, list[str]]:
-    """Infer front matter and normalized entry using the ingest agent."""
-
-    config = _load_config(root)
-    fallback_sections = _scan_headings(raw_text)
-    warnings: list[str] = []
-
-    if use_fake_llm():
-        structured: IngestResult = _fake_structured_entry(source_path)
-    else:
-        agent = build_ingest_agent(
-            config, model=config.get("model") if isinstance(config, dict) else None
-        )
-        structured = ingest_with_agent(agent, source_path=source_path, markdown=raw_text)
-
-    normalized_dict, _ = normalization.normalized_from_structured(
-        structured,
-        source_path=relative_path(source_path, root),
-        root=root,
-        digest=digest,
-        source_type=inputs.source_type,
-        fallback_sections=fallback_sections,
-        fallback_tags=[],
-        fallback_summary=None,
-    )
-    normalized_entry = NormalizedEntry.model_validate(normalized_dict)
-
-    frontmatter_data: dict[str, Any] = {
-        "id": normalized_entry.id,
-        "created_at": normalized_entry.created_at,
-        "title": normalized_entry.title,
-        "tags": list(normalized_entry.tags or []),
-    }
-    if normalized_entry.summary:
-        frontmatter_data["summary"] = normalized_entry.summary
-
-    warnings.append("front matter synthesized via ingest agent")
-    return frontmatter_data, raw_text.strip(), normalized_entry, warnings
-
-
-def _persist_file_entry(
-    inputs: CaptureInput,
-    root: Path,
-    manifest_entries: list[ManifestEntry],
-    *,
-    source_path: Path | None = None,
-    snapshot: bool = True,
-    manifest_index_cache: dict[str, ManifestEntry] | None = None,
-) -> EntryResult:
-    if source_path is None:
-        if not inputs.paths:
-            raise ValueError("capture --from requires at least one path")
-        source_path = Path(inputs.paths[0]).expanduser().resolve()
-    else:
-        source_path = source_path.expanduser().resolve()
-
-    ensure_manifest(manifest_entries, root)
-    manifest_path = _manifest_path(root)
-    local_index = (
-        manifest_index_cache
-        if manifest_index_cache is not None
-        else _manifest_index(manifest_entries)
-    )
-
-    raw_bytes = source_path.read_bytes()
-    digest = digest_bytes(raw_bytes)
-
-    if digest in local_index:
-        existing = local_index[digest]
-        return EntryResult(
-            markdown_path=existing.path,
-            normalized_path=existing.normalized,
-            date=existing.created_at[:10],
-            slug=existing.id,
-            deduped=True,
-            changed=False,
-            warnings=[],
-            source_hash=digest,
-            source_type=existing.source_type,
-        )
-
-    text = raw_bytes.decode("utf-8")
-    normalized_seed: NormalizedEntry | None = None
-    ingest_warnings: list[str] = []
-    try:
-        frontmatter_data, body = _split_frontmatter(text)
-        body = body.strip()
-    except ValueError:
-        frontmatter_data, body, normalized_seed, ingest_warnings = _ingest_frontmatter(
-            inputs,
-            root=root,
-            source_path=source_path,
-            raw_text=text,
-            digest=digest,
-        )
-
-    created_dt = _resolve_created_dt(
-        frontmatter_data.get("created_at") or inputs.date,
-        time_utils.now(),
-    )
-    date_str = created_dt.strftime("%Y-%m-%d")
-
-    title_raw = frontmatter_data.get("title") or _resolve_title(inputs, body)
-    title = str(title_raw)
-    slug_source = frontmatter_data.get("id") or frontmatter_data.get("slug") or inputs.slug
-    if slug_source is not None:
-        slug_source = str(slug_source)
-    else:
-        slug_source = f"{date_str}-{time_utils.slugify_title(title)}"
-    slug = ensure_unique_slug(root, date_str, slug_source)
-
-    aliases: list[str] = []
-    entry_warnings: list[str] = list(ingest_warnings)
-    if slug != slug_source:
-        aliases.append(slug_source)
-        entry_warnings.append(f'slug "{slug_source}" already exists; stored as "{slug}"')
-
-    tags = _coalesce_tags(
-        _coerce_frontmatter_tags(frontmatter_data.get("tags")),
-        inputs.tags,
-    )
-    projects = _coalesce_tags(
-        _coerce_frontmatter_tags(frontmatter_data.get("projects")),
-        inputs.projects,
-    )
-
-    markdown_path = journal_path(root, date_str, slug)
-    canonical_rel = relative_path(markdown_path, root)
-    frontmatter_out: dict[str, Any] = {
-        "id": slug,
-        "created_at": time_utils.format_timestamp(created_dt),
-        "title": title,
-        "tags": tags,
-        "source_type": inputs.source_type,
-        "origin": {
-            "kind": "import",
-            "original_path": str(source_path),
-            "import_hash": digest,
-            "canonical_path": canonical_rel,
-        },
-    }
-    if projects:
-        frontmatter_out["projects"] = projects
-    mood = frontmatter_data.get("mood") or inputs.mood
-    if mood:
-        frontmatter_out["mood"] = mood
-    summary_raw = frontmatter_data.get("summary")
-    if summary_raw is not None:
-        summary_text = str(summary_raw)
-    elif body:
-        summary_text = body
-    else:
-        summary_text = None
-    if summary_text:
-        frontmatter_out["summary"] = summary_text
-
-    for key, value in frontmatter_data.items():
-        if key not in frontmatter_out:
-            frontmatter_out[key] = value
-
-    snapshot_path_obj: Path | None = None
-    if snapshot:
-        snapshot_path_obj = write_snapshot(raw_bytes, root, digest)
-        frontmatter_out["origin"]["snapshot_path"] = relative_path(snapshot_path_obj, root)
-
-    write_markdown_entry(markdown_path, frontmatter_out, body)
-
-    normalized_path = normalized_entry_path(root, date_str, slug)
-    if normalized_seed is not None:
-        normalized_seed.id = slug
-        normalized_seed.created_at = time_utils.format_timestamp(created_dt)
-        normalized_seed.source_path = relative_path(markdown_path, root)
-        normalized_seed.source_hash = digest
-        normalized_seed.source_type = inputs.source_type
-        normalized_seed.tags = tags
-        if summary_text:
-            normalized_seed.summary = summary_text
-        normalized_payload = normalized_seed.model_dump(mode="python")
-        normalized_changed = write_yaml_if_changed(normalized_path, normalized_payload)
-    else:
-        normalized_path, normalized_changed = _normalize_markdown(
-            markdown_path,
-            root=root,
-            source_hash=digest,
-            source_type=inputs.source_type,
-        )
-
-    entry = _build_manifest_entry(
-        digest=digest,
-        markdown_path=markdown_path,
-        normalized_path=normalized_path,
-        source_type=inputs.source_type,
-        created_at=time_utils.format_timestamp(created_dt),
-        slug=slug,
-        tags=tags,
-        root=root,
-        canonical_path=markdown_path,
-        snapshot_path=snapshot_path_obj,
-        aliases=aliases,
-    )
-    manifest_entries.append(entry)
-    write_manifest(manifest_path, manifest_entries)
-    local_index[digest] = entry
-
-    return EntryResult(
-        markdown_path=relative_path(markdown_path, root),
-        normalized_path=relative_path(normalized_path, root),
-        date=date_str,
-        slug=slug,
-        deduped=False,
-        changed=True,
-        warnings=entry_warnings,
-        source_hash=digest,
-        source_type=inputs.source_type,
-    )
-
-
-class CaptureInput(BaseModel):
-    """User-provided options for a capture run."""
-
-    source: Literal["stdin", "editor", "file", "dir"] = Field(
-        ...,
-        description="Primary source for captured content.",
-    )
-    text: str | None = Field(None, description="Raw text provided on the CLI.")
-    paths: list[str] = Field(default_factory=list, description="Paths to capture from.")
-    source_type: Literal["journal", "notes", "blog"] = Field(
-        "journal",
-        description="Semantic classification of the captured material.",
-    )
-    date: str | None = Field(None, description="Override created_at date (YYYY-MM-DD).")
-    title: str | None = Field(None, description="Override title for captured entries.")
-    slug: str | None = Field(None, description="Explicit slug to use when persisting.")
-    tags: list[str] = Field(default_factory=list, description="Tags to merge into front matter.")
-    projects: list[str] = Field(
-        default_factory=list,
-        description="Projects to merge into front matter.",
-    )
-    mood: str | None = Field(None, description="Mood value to record in front matter.")
-    apply_profile: Literal["auto", "review"] = Field(
-        "auto",
-        description="How profile updates should be applied after derivations.",
-    )
-    rebuild: Literal["auto", "always", "skip"] = Field(
-        "auto",
-        description="How index/persona rebuilds should be triggered.",
-    )
-    pack: Literal["L1", "L3", "L4"] | None = Field(
-        None,
-        description="Optional pack level to emit when persona changes.",
-    )
-    retries: int = Field(1, ge=0, description="LLM structured-output retries per stage.")
-    progress: bool = Field(True, description="Whether to display progress indicators.")
-    dry_run: bool = Field(False, description="Skip writes and report planned actions only.")
-    snapshot: bool = Field(True, description="Store raw snapshots for file imports.")
-    min_stage: int = Field(
-        0,
-        ge=0,
-        le=CAPTURE_MAX_STAGE,
-        description="Lowest capture stage to execute (see stage table).",
-    )
-    max_stage: int = Field(
-        CAPTURE_MAX_STAGE,
-        ge=0,
-        le=CAPTURE_MAX_STAGE,
-        description="Highest capture stage to execute (see stage table).",
-    )
-
-
-class EntryResult(BaseModel):
-    """Outcome for a single journal entry processed during capture."""
-
-    markdown_path: str | None = Field(None, description="Authoritative Markdown path.")
-    normalized_path: str | None = Field(None, description="Normalized YAML emitted for the entry.")
-    date: str = Field(..., description="Date bucket for the entry (YYYY-MM-DD).")
-    slug: str = Field(..., description="Slug assigned to the entry.")
-    deduped: bool = Field(
-        False, description="True when the input was skipped due to identical hash."
-    )
-    changed: bool = Field(False, description="True when content or metadata changed on disk.")
-    warnings: list[str] = Field(default_factory=list, description="Non-fatal issues encountered.")
-    source_hash: str | None = Field(
-        None, description="Hash of the Markdown content used for dedupe/normalization."
-    )
-    source_type: str | None = Field(
-        None, description="Source type recorded for the entry (journal/notes/blog)."
-    )
 
 
 class CaptureResult(BaseModel):
@@ -1013,7 +349,7 @@ def run_capture(
     root = root or Path.cwd()
     config_payload = _load_config(root)
     ollama_config = build_ollama_config_from_mapping(config_payload)
-    config_host = config_payload.get("host") if isinstance(config_payload, dict) else None
+    config_host = config_payload.host
     env_host = os.getenv("AIJOURNAL_OLLAMA_HOST")
     env_base_url = os.getenv("OLLAMA_BASE_URL")
     resolved_run_id = run_id or _generate_run_id()
@@ -1239,8 +575,8 @@ def run_capture(
         suggestion_paths = profile_outputs.suggestion_paths
         applied_count = profile_outputs.applied_count
         for _ in suggestion_paths:
-            artifacts_changed["profile_suggestions"] = (
-                artifacts_changed.get("profile_suggestions", 0) + 1
+            artifacts_changed["profile_proposals"] = (
+                artifacts_changed.get("profile_proposals", 0) + 1
             )
         if apply_result and apply_result.changed:
             artifacts_changed["profile"] = artifacts_changed.get("profile", 0) + applied_count
@@ -1268,7 +604,7 @@ def run_capture(
             )
         else:
             profile_result = OperationResult.noop(
-                "no dates required profile suggestions",
+                "no dates required profile proposals",
                 details={"dates": []},
             )
             record_stage_outcome(
@@ -1510,7 +846,7 @@ def normalize_entries(entries: list[EntryResult], root: Path) -> dict[str, Any]:
             continue
         source_hash = entry.source_hash or digest_bytes(markdown_path.read_bytes())
         source_type = entry.source_type or "journal"
-        normalized_path, changed = _normalize_markdown(
+        normalized_path, changed = normalize_markdown(
             markdown_path,
             root=root,
             source_hash=source_hash,
@@ -1521,16 +857,3 @@ def normalize_entries(entries: list[EntryResult], root: Path) -> dict[str, Any]:
             changed_paths.append(relative_path(normalized_path, root))
         entry.normalized_path = relative_path(normalized_path, root)
     return {"normalized": normalized, "paths": changed_paths}
-
-
-__all__ = [
-    "CaptureStage",
-    "CAPTURE_STAGES",
-    "CAPTURE_MAX_STAGE",
-    "CaptureInput",
-    "EntryResult",
-    "CaptureResult",
-    "load_capture_result",
-    "normalize_entries",
-    "run_capture",
-]

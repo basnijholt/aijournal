@@ -7,26 +7,23 @@ from typing import Any, cast
 
 from pydantic import ValidationError
 
-from aijournal.fakes import fake_microfacts
-from aijournal.models import (
+from aijournal.domain.changes import ClaimAtomInput, ClaimProposal
+from aijournal.domain.claims import (
     ClaimAtom,
-    ClaimProposal,
-    ClaimProposalPayload,
-    ClaimSketch,
     ClaimSource,
     ClaimSourceSpan,
-    ExtractedFactsResponse,
-    ManifestEntry,
-    MicroFact,
-    MicroFactsFile,
-    NormalizedEntry,
     Scope,
 )
+from aijournal.domain.evidence import SourceRef, redact_source_text
+from aijournal.domain.facts import MicroFact, MicroFactsFile
+from aijournal.domain.journal import NormalizedEntry
+from aijournal.fakes import fake_microfacts
+from aijournal.models.authoritative import ManifestEntry
 from aijournal.pipelines import normalization
 from aijournal.utils import time as time_utils
 
 StructuredCall = Callable[..., Any]
-FactsRequestFactory = Callable[[], ExtractedFactsResponse]
+FactsRequestFactory = Callable[[], MicroFactsFile]
 
 
 def merge_unique(existing: Iterable[str], extras: Iterable[str]) -> list[str]:
@@ -49,6 +46,19 @@ def merge_unique(existing: Iterable[str], extras: Iterable[str]) -> list[str]:
         seen.add(key)
         merged.append(key)
     return merged
+
+
+def _proposal_key(proposal: ClaimProposal) -> str:
+    claim = proposal.claim
+    return "|".join(
+        [
+            claim.type,
+            claim.subject,
+            claim.predicate,
+            claim.value,
+            claim.statement,
+        ]
+    )
 
 
 def _fact_sources_from_evidence(fact: MicroFact) -> list[ClaimSource]:
@@ -130,7 +140,6 @@ def _microfact_claim_proposals(
         )
 
         manifest_entry = manifest_index.get(entry_id) if entry_id else None
-        source_hash = entry.source_hash if entry and entry.source_hash else None
 
         normalized_ids: list[str] = []
         if entry_id:
@@ -138,7 +147,6 @@ def _microfact_claim_proposals(
         elif entry_by_id:
             normalized_ids = [next(iter(entry_by_id.keys()))]
 
-        evidence_hashes = [source_hash] if source_hash else []
         manifest_hashes = [manifest_entry.hash] if manifest_entry else []
 
         raw_claim = {
@@ -170,11 +178,28 @@ def _microfact_claim_proposals(
         except (ValidationError, ValueError):
             continue
 
+        claim_input = ClaimAtomInput(
+            type=claim_model.type,
+            subject=claim_model.subject,
+            predicate=claim_model.predicate,
+            value=claim_model.value,
+            statement=claim_model.statement,
+            scope=claim_model.scope,
+            strength=claim_model.strength,
+            status=claim_model.status,
+            method=claim_model.method,
+            user_verified=claim_model.user_verified,
+            review_after_days=claim_model.review_after_days,
+        )
+
         proposals.append(
             ClaimProposal(
-                claim=claim_model,
+                claim=claim_input,
                 normalized_ids=normalized_ids,
-                evidence_hashes=evidence_hashes,
+                evidence=[
+                    SourceRef.model_validate(src.model_dump(mode="python"))
+                    for src in provenance_sources
+                ],
                 manifest_hashes=manifest_hashes,
                 rationale=f"Derived from micro-fact {fact.id}",
             )
@@ -186,123 +211,99 @@ def normalize_claim_proposals(
     raw_claims: Iterable[Any],
     *,
     normalized_ids: list[str],
-    evidence_hashes: list[str],
     manifest_hashes: list[str],
     default_sources: Sequence[ClaimSource],
     timestamp: str,
 ) -> list[ClaimProposal]:
     proposals: list[ClaimProposal] = []
     for raw in raw_claims:
-        if isinstance(raw, ClaimProposal):
-            claim_model = raw.claim.model_copy(deep=True)
-            proposals.append(
-                ClaimProposal(
-                    claim=claim_model,
-                    normalized_ids=merge_unique(raw.normalized_ids, normalized_ids),
-                    evidence_hashes=merge_unique(raw.evidence_hashes, evidence_hashes),
-                    manifest_hashes=merge_unique(raw.manifest_hashes, manifest_hashes),
-                    rationale=raw.rationale,
-                ),
-            )
-            continue
-        sketch_like, metadata = _coerce_claim_sketch(raw)
-        if sketch_like is None:
-            continue
-
-        if isinstance(sketch_like, ClaimSketch):
-            sketch = sketch_like
-        else:
-            try:
-                sketch = ClaimSketch.model_validate(sketch_like.model_dump(mode="python"))
-            except ValidationError:
-                continue
-
-        if metadata.rationale is None:
-            metadata.rationale = sketch.rationale
-
-        payload_normalized_ids = merge_unique(sketch.normalized_ids, metadata.normalized_ids)
-        payload_evidence_hashes = merge_unique(sketch.evidence_hashes, metadata.evidence_hashes)
-        payload_manifest_hashes = merge_unique(sketch.manifest_hashes, metadata.manifest_hashes)
-
         try:
-            claim_model = normalization.normalize_claim_atom(
-                sketch.model_dump(mode="python"),
-                timestamp=timestamp,
-                default_sources=default_sources,
-            )
-        except (ValidationError, ValueError):
+            proposal = raw if isinstance(raw, ClaimProposal) else ClaimProposal.model_validate(raw)
+        except ValidationError:
             continue
+
+        claim_atom = _normalize_claim_input(
+            proposal.claim,
+            timestamp=timestamp,
+            default_sources=default_sources,
+            evidence=proposal.evidence,
+        )
+
+        claim_input = ClaimAtomInput(
+            type=claim_atom.type,
+            subject=claim_atom.subject,
+            predicate=claim_atom.predicate,
+            value=claim_atom.value,
+            statement=claim_atom.statement,
+            scope=claim_atom.scope,
+            strength=claim_atom.strength,
+            status=claim_atom.status,
+            method=claim_atom.method,
+            user_verified=claim_atom.user_verified,
+            review_after_days=claim_atom.review_after_days,
+        )
+
+        combined_sources = _merge_sources(default_sources, proposal.evidence)
+
+        sanitized_sources = [
+            SourceRef.model_validate(
+                redact_source_text(src).model_dump(mode="python"),
+            )
+            for src in combined_sources
+        ]
 
         proposals.append(
             ClaimProposal(
-                claim=claim_model,
-                normalized_ids=merge_unique(payload_normalized_ids, normalized_ids),
-                evidence_hashes=merge_unique(payload_evidence_hashes, evidence_hashes),
-                manifest_hashes=merge_unique(payload_manifest_hashes, manifest_hashes),
-                rationale=metadata.rationale,
+                claim=claim_input,
+                normalized_ids=merge_unique(proposal.normalized_ids, normalized_ids),
+                evidence=sanitized_sources,
+                manifest_hashes=merge_unique(proposal.manifest_hashes, manifest_hashes),
+                rationale=proposal.rationale,
             ),
         )
+
     return proposals
 
 
-class _SketchMetadata:
-    __slots__ = ("normalized_ids", "evidence_hashes", "manifest_hashes", "rationale")
+def _normalize_claim_input(
+    claim_input: ClaimAtomInput,
+    *,
+    timestamp: str,
+    default_sources: Sequence[ClaimSource],
+    evidence: Sequence[SourceRef],
+) -> ClaimAtom:
+    combined_sources = _merge_sources(default_sources, evidence)
+    claim_dict = claim_input.model_dump(mode="python")
+    return normalization.normalize_claim_atom(
+        claim_dict,
+        timestamp=timestamp,
+        default_sources=combined_sources,
+    )
 
-    def __init__(
-        self,
-        *,
-        normalized_ids: Iterable[str] = (),
-        evidence_hashes: Iterable[str] = (),
-        manifest_hashes: Iterable[str] = (),
-        rationale: str | None = None,
-    ) -> None:
-        self.normalized_ids = list(normalized_ids)
-        self.evidence_hashes = list(evidence_hashes)
-        self.manifest_hashes = list(manifest_hashes)
-        self.rationale = rationale
 
+def _merge_sources(
+    existing: Sequence[ClaimSource],
+    extras: Sequence[SourceRef],
+) -> list[ClaimSource]:
+    merged: list[ClaimSource] = []
+    seen: set[tuple[str, tuple[tuple[str | None, int | None, int | None, int | None], ...]]] = set()
 
-def _coerce_claim_sketch(raw: Any) -> tuple[ClaimSketch | ClaimAtom | None, _SketchMetadata]:
-    metadata = _SketchMetadata()
-
-    if isinstance(raw, ClaimSketch):
-        metadata = _SketchMetadata(
-            normalized_ids=raw.normalized_ids,
-            evidence_hashes=raw.evidence_hashes,
-            manifest_hashes=raw.manifest_hashes,
-            rationale=raw.rationale,
+    def key(
+        source: SourceRef,
+    ) -> tuple[str, tuple[tuple[str | None, int | None, int | None, int | None], ...]]:
+        span_key = tuple(
+            (span.type, span.index, span.start, span.end) for span in source.spans or []
         )
-        return raw, metadata
+        return source.entry_id, span_key
 
-    if isinstance(raw, ClaimProposalPayload):
-        metadata = _SketchMetadata(
-            normalized_ids=raw.normalized_ids,
-            evidence_hashes=raw.evidence_hashes,
-            manifest_hashes=raw.manifest_hashes,
-            rationale=raw.rationale,
-        )
-        return raw.claim, metadata
-
-    if hasattr(raw, "model_dump"):
-        payload = raw.model_dump(mode="python")
-    else:
-        payload = raw
-
-    if isinstance(payload, dict):
-        claim_data = payload.get("claim") or payload
-        metadata = _SketchMetadata(
-            normalized_ids=payload.get("normalized_ids") or [],
-            evidence_hashes=payload.get("evidence_hashes") or [],
-            manifest_hashes=payload.get("manifest_hashes") or [],
-            rationale=str(payload.get("rationale") or payload.get("reason") or "").strip() or None,
-        )
-        try:
-            sketch = ClaimSketch.model_validate(claim_data)
-        except ValidationError:
-            return None, _SketchMetadata()
-        return sketch, metadata
-
-    return None, _SketchMetadata()
+    for source in list(existing) + list(extras):
+        candidate = redact_source_text(SourceRef.model_validate(source.model_dump(mode="python")))
+        identifier = key(candidate)
+        if identifier in seen:
+            continue
+        seen.add(identifier)
+        merged.append(ClaimSource.model_validate(candidate.model_dump(mode="python")))
+    return merged
 
 
 def generate_microfacts(
@@ -313,48 +314,32 @@ def generate_microfacts(
     structured_call: StructuredCall,
     request_factory: FactsRequestFactory,
     retries: int,
-    context: tuple[list[str], list[str], list[str], list[ClaimSource]],
+    context: tuple[list[str], list[str], list[ClaimSource]],
     manifest_index: dict[str, ManifestEntry],
 ) -> MicroFactsFile:
     """Build a `MicroFactsFile` containing facts and claim proposals."""
 
-    normalized_ids, evidence_hashes, manifest_hashes, default_sources = context
+    normalized_ids, manifest_hashes, default_sources = context
     manifest_index = manifest_index or {}
     claim_timestamp = time_utils.format_timestamp(time_utils.now())
 
-    raw_claim_candidates: Iterable[Any] = []
     if use_fake_llm:
-        facts_model = MicroFactsFile(facts=fake_microfacts(entries))
-        if facts_model.claim_proposals:
-            raw_claim_candidates = [
-                proposal.model_dump(mode="python") for proposal in facts_model.claim_proposals
-            ]
+        generated = MicroFactsFile(facts=fake_microfacts(entries))
     else:
         response = cast(
-            ExtractedFactsResponse,
+            MicroFactsFile,
             structured_call(request_factory, retries=retries, label=f"facts {date}"),
         )
-        facts_model = MicroFactsFile(
-            facts=[
-                MicroFact(
-                    id=fact.id,
-                    statement=fact.statement,
-                    confidence=float(fact.confidence),
-                    evidence=fact.evidence.model_copy(deep=True),
-                    first_seen=fact.first_seen,
-                    last_seen=fact.last_seen,
-                )
-                for fact in response.facts
-            ],
-        )
-        raw_claim_candidates = [
-            proposal.model_dump(mode="python") for proposal in response.claim_proposals
-        ]
+        generated = response
+
+    facts_model = MicroFactsFile.model_validate(generated.model_dump(mode="python"))
+    raw_claim_candidates: Iterable[Any] = [
+        proposal.model_dump(mode="python") for proposal in facts_model.claim_proposals
+    ]
 
     llm_claims = normalize_claim_proposals(
         raw_claims=raw_claim_candidates,
         normalized_ids=normalized_ids,
-        evidence_hashes=evidence_hashes,
         manifest_hashes=manifest_hashes,
         default_sources=default_sources,
         timestamp=claim_timestamp,
@@ -370,26 +355,19 @@ def generate_microfacts(
     combined: list[ClaimProposal] = []
     seen_ids: set[str] = set()
     for proposal in llm_claims:
-        claim_id = proposal.claim.id
-        if claim_id in seen_ids:
+        key = _proposal_key(proposal)
+        if key in seen_ids:
             continue
         combined.append(proposal)
-        seen_ids.add(claim_id)
+        seen_ids.add(key)
 
     for proposal in derived_claims:
-        claim_id = proposal.claim.id
-        if claim_id in seen_ids:
+        key = _proposal_key(proposal)
+        if key in seen_ids:
             continue
         combined.append(proposal)
-        seen_ids.add(claim_id)
+        seen_ids.add(key)
 
     facts_model.claim_proposals = combined
 
     return facts_model
-
-
-__all__ = [
-    "generate_microfacts",
-    "merge_unique",
-    "normalize_claim_proposals",
-]

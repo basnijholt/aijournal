@@ -1,0 +1,395 @@
+{
+  "$defs": {
+    "ClaimAtomInput": {
+      "additionalProperties": false,
+      "description": "Normalized claim payload without identifiers or provenance.",
+      "properties": {
+        "method": {
+          "$ref": "#/$defs/ClaimMethod"
+        },
+        "predicate": {
+          "title": "Predicate",
+          "type": "string"
+        },
+        "review_after_days": {
+          "title": "Review After Days",
+          "type": "integer"
+        },
+        "scope": {
+          "$ref": "#/$defs/Scope"
+        },
+        "statement": {
+          "title": "Statement",
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/ClaimStatus"
+        },
+        "strength": {
+          "title": "Strength",
+          "type": "number"
+        },
+        "subject": {
+          "title": "Subject",
+          "type": "string"
+        },
+        "type": {
+          "$ref": "#/$defs/ClaimType"
+        },
+        "user_verified": {
+          "title": "User Verified",
+          "type": "boolean"
+        },
+        "value": {
+          "title": "Value",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "subject",
+        "predicate",
+        "value",
+        "statement",
+        "scope",
+        "strength",
+        "status",
+        "method",
+        "user_verified",
+        "review_after_days"
+      ],
+      "title": "ClaimAtomInput",
+      "type": "object"
+    },
+    "ClaimMethod": {
+      "enum": [
+        "self_report",
+        "inferred",
+        "behavioral"
+      ],
+      "title": "ClaimMethod",
+      "type": "string"
+    },
+    "ClaimProposal": {
+      "additionalProperties": false,
+      "description": "Structured claim update prepared for downstream review.",
+      "properties": {
+        "claim": {
+          "$ref": "#/$defs/ClaimAtomInput"
+        },
+        "evidence": {
+          "items": {
+            "$ref": "#/$defs/SourceRef"
+          },
+          "title": "Evidence",
+          "type": "array"
+        },
+        "manifest_hashes": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Manifest Hashes",
+          "type": "array"
+        },
+        "normalized_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Normalized Ids",
+          "type": "array"
+        },
+        "rationale": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rationale"
+        }
+      },
+      "required": [
+        "claim"
+      ],
+      "title": "ClaimProposal",
+      "type": "object"
+    },
+    "ClaimStatus": {
+      "enum": [
+        "accepted",
+        "tentative",
+        "rejected"
+      ],
+      "title": "ClaimStatus",
+      "type": "string"
+    },
+    "ClaimType": {
+      "enum": [
+        "preference",
+        "value",
+        "goal",
+        "boundary",
+        "trait",
+        "habit",
+        "aversion",
+        "skill"
+      ],
+      "title": "ClaimType",
+      "type": "string"
+    },
+    "FacetChange": {
+      "additionalProperties": false,
+      "description": "Facet modification proposed by characterization pipelines.",
+      "properties": {
+        "confidence": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Confidence"
+        },
+        "evidence": {
+          "items": {
+            "$ref": "#/$defs/SourceRef"
+          },
+          "title": "Evidence",
+          "type": "array"
+        },
+        "method": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Method"
+        },
+        "operation": {
+          "$ref": "#/$defs/FacetOperation"
+        },
+        "path": {
+          "title": "Path",
+          "type": "string"
+        },
+        "rationale": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rationale"
+        },
+        "review_after_days": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Review After Days"
+        },
+        "user_verified": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "User Verified"
+        },
+        "value": {
+          "anyOf": [
+            {},
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Value"
+        }
+      },
+      "required": [
+        "path",
+        "operation"
+      ],
+      "title": "FacetChange",
+      "type": "object"
+    },
+    "FacetOperation": {
+      "enum": [
+        "set",
+        "remove",
+        "merge"
+      ],
+      "title": "FacetOperation",
+      "type": "string"
+    },
+    "Scope": {
+      "additionalProperties": false,
+      "description": "Contextual qualifiers for a claim atom.",
+      "properties": {
+        "conditions": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Conditions",
+          "type": "array"
+        },
+        "context": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Context",
+          "type": "array"
+        },
+        "domain": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Domain"
+        }
+      },
+      "title": "Scope",
+      "type": "object"
+    },
+    "SourceRef": {
+      "additionalProperties": false,
+      "description": "Reference to a normalized entry and the supporting spans.",
+      "properties": {
+        "entry_id": {
+          "title": "Entry Id",
+          "type": "string"
+        },
+        "spans": {
+          "items": {
+            "$ref": "#/$defs/Span"
+          },
+          "title": "Spans",
+          "type": "array"
+        }
+      },
+      "required": [
+        "entry_id"
+      ],
+      "title": "SourceRef",
+      "type": "object"
+    },
+    "Span": {
+      "additionalProperties": false,
+      "description": "Detailed pointer back into a source document.",
+      "properties": {
+        "end": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "End"
+        },
+        "index": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Index"
+        },
+        "start": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Start"
+        },
+        "text": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Text"
+        },
+        "type": {
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "title": "Span",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Aggregate container for proposed claim and facet updates.",
+  "properties": {
+    "claims": {
+      "items": {
+        "$ref": "#/$defs/ClaimProposal"
+      },
+      "title": "Claims",
+      "type": "array"
+    },
+    "facets": {
+      "items": {
+        "$ref": "#/$defs/FacetChange"
+      },
+      "title": "Facets",
+      "type": "array"
+    },
+    "interview_prompts": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Interview Prompts",
+      "type": "array"
+    }
+  },
+  "title": "ProfileUpdateProposals",
+  "type": "object"
+}

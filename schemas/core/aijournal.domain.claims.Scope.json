@@ -1,0 +1,34 @@
+{
+  "additionalProperties": false,
+  "description": "Contextual qualifiers for a claim atom.",
+  "properties": {
+    "conditions": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Conditions",
+      "type": "array"
+    },
+    "context": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Context",
+      "type": "array"
+    },
+    "domain": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Domain"
+    }
+  },
+  "title": "Scope",
+  "type": "object"
+}

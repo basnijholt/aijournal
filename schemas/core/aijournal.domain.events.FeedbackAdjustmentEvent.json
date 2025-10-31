@@ -1,0 +1,35 @@
+{
+  "additionalProperties": false,
+  "description": "Record of a claim strength adjustment triggered by chat feedback.",
+  "properties": {
+    "claim_id": {
+      "title": "Claim Id",
+      "type": "string"
+    },
+    "delta": {
+      "title": "Delta",
+      "type": "number"
+    },
+    "kind": {
+      "default": "feedback",
+      "title": "Kind",
+      "type": "string"
+    },
+    "new_strength": {
+      "title": "New Strength",
+      "type": "number"
+    },
+    "old_strength": {
+      "title": "Old Strength",
+      "type": "number"
+    }
+  },
+  "required": [
+    "claim_id",
+    "old_strength",
+    "new_strength",
+    "delta"
+  ],
+  "title": "FeedbackAdjustmentEvent",
+  "type": "object"
+}
