@@ -70,21 +70,21 @@ def prepare_inputs(ctx: RunContext, options: PersonaBuildOptions) -> PersonaPrep
         ctx.emit(event="command_failed", reason="no_profile_data")
         raise typer.Exit(1)
 
-    persona_cfg = ctx.config.persona or {}
+    persona_cfg = ctx.config.persona
     token_budget = int(
         options.token_budget_override
         if options.token_budget_override is not None
-        else persona_cfg.get("token_budget") or PERSONA_DEFAULTS["token_budget"]
+        else persona_cfg.token_budget
     )
     max_claims = int(
         options.max_claims_override
         if options.max_claims_override is not None
-        else persona_cfg.get("max_claims") or PERSONA_DEFAULTS["max_claims"]
+        else persona_cfg.max_claims
     )
     min_claims = int(
         options.min_claims_override
         if options.min_claims_override is not None
-        else persona_cfg.get("min_claims") or PERSONA_DEFAULTS["min_claims"]
+        else persona_cfg.min_claims
     )
     if token_budget <= 0:
         typer.secho("Token budget must be positive", fg=typer.colors.RED, err=True)
@@ -96,10 +96,9 @@ def prepare_inputs(ctx: RunContext, options: PersonaBuildOptions) -> PersonaPrep
         typer.secho("min-claims must be between 0 and max-claims", fg=typer.colors.RED, err=True)
         raise typer.Exit(1)
 
-    token_estimator = ctx.config.token_estimator or {}
-    char_per_token = coerce_float(token_estimator.get("char_per_token")) or DEFAULT_CHAR_PER_TOKEN
+    char_per_token = ctx.config.token_estimator.char_per_token
 
-    impact_weights = ctx.config.impact_weights or {}
+    impact_weights = ctx.config.impact_weights.model_dump(mode="python")
     now_dt = time_utils.now()
 
     ctx.emit(

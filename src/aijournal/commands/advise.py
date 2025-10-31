@@ -66,7 +66,7 @@ def prepare_inputs(ctx: RunContext, options: AdviceOptions) -> AdvicePrepared:
         ctx.emit(event="command_failed", reason="no_profile")
         raise typer.Exit(1)
 
-    weights = ctx.config.impact_weights or {}
+    weights = ctx.config.impact_weights.model_dump(mode="python")
     latest_day = _latest_normalized_day(ctx.root)
     entries = _load_normalized_entries(ctx.root, latest_day) if latest_day else []
     pending_prompts = _collect_pending_interview_prompts(ctx.root)

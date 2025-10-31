@@ -29,7 +29,7 @@ from aijournal.services.retriever import (
     RetrievedChunk,
     Retriever,
 )
-from aijournal.utils.coercion import coerce_float, coerce_int
+from aijournal.utils.coercion import coerce_int
 
 _INTENT_KEYWORDS: dict[str, tuple[str, ...]] = {
     "planning": (
@@ -81,7 +81,7 @@ class ChatService:
         self._fake_mode = os.getenv("AIJOURNAL_FAKE_OLLAMA") == "1"
         self._retriever = retriever or Retriever(self._root, self._config)
 
-        self._chat_cfg = self._config.chat or {}
+        self._chat_cfg = self._config.chat
 
     def close(self) -> None:
         """Release underlying resources."""
@@ -108,7 +108,7 @@ class ChatService:
         intent = self._classify_intent(sanitized_question)
 
         requested_top = max(1, int(top))
-        cfg_limit = coerce_int(self._chat_cfg.get("max_retrieved_chunks"))
+        cfg_limit = self._chat_cfg.max_retrieved_chunks
         effective_top = min(requested_top, cfg_limit) if cfg_limit else requested_top
 
         search_started = time.perf_counter()
@@ -363,12 +363,12 @@ class ChatService:
         )
 
     def _build_ollama_config(self) -> OllamaConfig:
-        model_override = self._chat_cfg.get("model")
-        host_override = self._chat_cfg.get("host")
-        timeout_override = coerce_float(self._chat_cfg.get("timeout"))
-        temperature_override = coerce_float(self._chat_cfg.get("temperature"))
-        seed_override = coerce_int(self._chat_cfg.get("seed"))
-        max_tokens_override = coerce_int(self._chat_cfg.get("max_tokens"))
+        model_override = self._chat_cfg.model
+        host_override = self._chat_cfg.host
+        timeout_override = self._chat_cfg.timeout
+        temperature_override = self._chat_cfg.temperature
+        seed_override = self._chat_cfg.seed
+        max_tokens_override = self._chat_cfg.max_tokens
 
         return build_ollama_config_from_mapping(
             self._config,
@@ -384,7 +384,7 @@ class ChatService:
     # Intent and follow-up helpers
     # ------------------------------------------------------------------
     def _effective_model_name(self) -> str:
-        override = self._chat_cfg.get("model")
+        override = self._chat_cfg.model
         if isinstance(override, str) and override.strip():
             return override.strip()
         config_model = self._config.model

@@ -359,7 +359,7 @@ def run_profile_status_command(ctx: RunContext, options: ProfileStatusOptions) -
         profile = profile_to_dict(profile_model)
 
         config = _load_config(ctx.root)
-        weights = config.impact_weights or {}
+        weights = config.impact_weights.model_dump(mode="python")
 
         return ProfileStatusPrepared(
             profile=profile,
