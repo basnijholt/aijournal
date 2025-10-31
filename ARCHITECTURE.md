@@ -75,7 +75,7 @@ aijournal/
 
 ### 2.2 Core Components
 
-- **CLI (`src/aijournal/cli.py`)** – Thin Typer glue that wires user-facing commands to the orchestration layer. It exposes everyday verbs (`init`, `capture`, `chat`, `advise`, `status`, `serve chat`, `export pack`) while advanced utilities are namespaced under `ops.*`.
+- **CLI (`src/aijournal/cli.py`)** – Thin Typer glue that wires user-facing commands to the orchestration layer. It exposes everyday verbs (`init`, `capture`, `chat`, `advise`, `status`, `serve chat`, `export pack`) while advanced utilities are namespaced under `ops.*`. Persona utilities now cover the optional calibration loop: `ops persona calibrate` ingests user-supplied survey/EMA files and `ops persona metrics` rolls them into a calibration report alongside `ops persona build/status`.
 - **Commands (`src/aijournal/commands/`)** – Feature-specific runners that orchestrate file I/O, pipelines, and error handling for each CLI surface (capture, ops.pipeline, ops.profile, ops.index, ops.persona, ops.feedback, ops.system, ops.dev, etc.).
 - **Pipelines (`src/aijournal/pipelines/`)** – Deterministic workflows that combine services, prompts, and validation for a single use case (summaries, facts, characterization, packs, advice). Pipelines avoid Typer and file-system concerns so they remain testable.
 - **Models (`src/aijournal/models/`)** – Pydantic schemas that validate every authoritative and derived artifact before it hits disk.
@@ -200,7 +200,7 @@ Derived schemas (see `src/aijournal/models/derived.py`):
 - `prompts/profile_suggest.md` – Proposes claim/facet upserts with rationale, method, and review cadence.
 - `prompts/characterize.md` – Produces consolidated claim/facet updates tied to manifest hashes plus interview prompts.
 - `prompts/interview.md` – Generates targeted follow-up questions using staleness and scope gaps.
-- `prompts/advise.md` – Advisor mode, requiring `why_this_fits_you` with claim/facet citations, risks, mitigations, and tone alignment.
+- `prompts/advise.md` – Advisor mode, requiring `why_this_fits_you` with claim/facet citations, explicit evidence IDs, COM-B lever selection, and an implementation intention (`if_then`) for each recommendation alongside tone alignment.
 
 All structured prompts go through `run_ollama_agent`, which sanitizes JSON, retries validation up to `--retries`, and surfaces actionable errors when the model fails to comply. Changing a prompt invalidates the hashed metadata stored alongside derived outputs.
 

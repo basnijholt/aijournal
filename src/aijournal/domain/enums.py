@@ -45,3 +45,9 @@ class ClaimEventAction(StrEnum):
 class FeedbackDirection(StrEnum):
     UP = "up"
     DOWN = "down"
+
+
+class ComBLever(StrEnum):
+    CAPABILITY = "capability"
+    OPPORTUNITY = "opportunity"
+    MOTIVATION = "motivation"

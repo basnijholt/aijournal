@@ -5,6 +5,7 @@ from __future__ import annotations
 from pydantic import Field
 
 from aijournal.common.base import StrictModel
+from aijournal.domain.enums import ComBLever
 
 
 class AdviceReference(StrictModel):
@@ -22,6 +23,9 @@ class AdviceRecommendation(StrictModel):
     steps: list[str] = Field(default_factory=list)
     risks: list[str] = Field(default_factory=list)
     mitigations: list[str] = Field(default_factory=list)
+    evidence: list[str] = Field(default_factory=list)
+    com_b: ComBLever | None = None
+    if_then: str | None = None
 
 
 class AdviceCard(StrictModel):
@@ -35,4 +39,5 @@ class AdviceCard(StrictModel):
     next_actions: list[str] = Field(default_factory=list)
     confidence: float | None = None
     alignment: AdviceReference = Field(default_factory=AdviceReference)
+    recent_evidence: list[str] = Field(default_factory=list)
     style: dict[str, object] = Field(default_factory=dict)
