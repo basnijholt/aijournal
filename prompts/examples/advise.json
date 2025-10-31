@@ -44,6 +44,8 @@
   },
   "style": {
     "tone": "direct",
-    "depth": "actionable-first"
+    "reading_level": "intermediate",
+    "include_risks": true,
+    "coaching_prompts": false
   }
 }
