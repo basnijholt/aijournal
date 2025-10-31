@@ -82,7 +82,7 @@ from aijournal.commands.summarize import (
 from aijournal.commands.summarize import (
     _structured_call_with_retry as _commands_structured_call_with_retry,
 )
-from aijournal.commands.system import run_status_summary, run_system_doctor
+from aijournal.commands.system import run_system_doctor_cli, run_system_status_cli
 from aijournal.common.context import RunContext, create_run_context
 from aijournal.domain.changes import ClaimProposal, FacetChange
 from aijournal.domain.claims import ClaimAtom, ClaimSource, Scope
@@ -588,109 +588,13 @@ def capture(
 @app.command()
 def status() -> None:
     """Display persona, index, and retrieval freshness."""
-
-    root = Path.cwd()
-    summary = run_status_summary(root)
-
-    persona = summary["persona"]
-    index_info = summary["index"]
-    pending = summary["pending_updates"]
-    ollama = summary["ollama"]
-
-    exit_code = 0
-
-    typer.echo("Workspace status:\n")
-
-    if persona["status"] == "fresh":
-        typer.secho("Persona: fresh", fg=typer.colors.GREEN)
-    else:
-        color = typer.colors.YELLOW if persona["status"] == "stale" else typer.colors.RED
-        typer.secho(f"Persona: {persona['status']}", fg=color)
-        for reason in persona["reasons"]:
-            typer.echo(f"  - {reason}")
-        exit_code = 1
-
-    index_messages: list[str] = []
-    if index_info["has_index_db"] and index_info["has_annoy_index"]:
-        typer.secho("Index: ready", fg=typer.colors.GREEN)
-    else:
-        typer.secho("Index: missing artifacts", fg=typer.colors.RED)
-        if not index_info["has_index_db"]:
-            index_messages.append("index.db not found")
-        if not index_info["has_annoy_index"]:
-            index_messages.append("annoy.index not found")
-        exit_code = 1
-    if index_info.get("meta_error"):
-        index_messages.append(f"meta error: {index_info['meta_error']}")
-    elif index_info.get("meta"):
-        meta = index_info["meta"] or {}
-        chunk_count = meta.get("chunk_count")
-        entry_count = meta.get("entry_count")
-        updated_at = meta.get("updated_at")
-        pieces = []
-        if chunk_count is not None:
-            pieces.append(f"chunks={chunk_count}")
-        if entry_count is not None:
-            pieces.append(f"entries={entry_count}")
-        if updated_at:
-            pieces.append(f"updated={updated_at}")
-        if pieces:
-            index_messages.append(" ".join(pieces))
-    for line in index_messages:
-        typer.echo(f"  {line}")
-
-    pending_count = pending["count"]
-    if pending_count:
-        typer.secho(
-            f"Pending profile updates: {pending_count}",
-            fg=typer.colors.YELLOW,
-        )
-        for name in pending["samples"]:
-            typer.echo(f"  - {name}")
-    else:
-        typer.secho("Pending profile updates: none", fg=typer.colors.GREEN)
-
-    typer.echo(f"Ollama host: {ollama['host']}")
-    typer.echo("Run `aijournal ops system doctor` for detailed diagnostics.")
-
-    if exit_code:
-        raise typer.Exit(exit_code)
+    run_system_status_cli()
 
 
 @ops_system_app.command("doctor")
 def system_doctor() -> None:
     """Run system diagnostics and emit machine-readable results."""
-
-    root = Path.cwd()
-    result = run_system_doctor(root)
-
-    typer.echo("System diagnostics:\n")
-    for check in result["checks"]:
-        ok = bool(check.get("ok"))
-        color = typer.colors.GREEN if ok else typer.colors.RED
-        status_text = "ok" if ok else "failed"
-        typer.secho(f"{check['name']}: {status_text}", fg=color)
-        hint = check.get("hint")
-        if hint:
-            typer.echo(f"  hint: {hint}")
-        details = check.get("details")
-        if isinstance(details, dict):
-            for key, value in details.items():
-                if value in (None, [], {}, ""):
-                    continue
-                if isinstance(value, (list, tuple)):
-                    display = ", ".join(str(item) for item in value)
-                elif isinstance(value, dict):
-                    display = json.dumps(value, ensure_ascii=False)
-                else:
-                    display = str(value)
-                typer.echo(f"  {key}: {display}")
-
-    typer.echo("\nJSON summary:")
-    typer.echo(json.dumps(result, indent=2, ensure_ascii=False))
-
-    if not result["ok"]:
-        raise typer.Exit(1)
+    run_system_doctor_cli()
 
 
 @ops_audit_app.command("provenance")
