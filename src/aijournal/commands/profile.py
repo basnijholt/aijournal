@@ -21,7 +21,7 @@ from aijournal.commands.summarize import (
     _log_entry_progress,
     _validate_timeout,
 )
-from aijournal.common.meta import Artifact, ArtifactKind, ArtifactMeta
+from aijournal.common.meta import Artifact, ArtifactKind
 from aijournal.domain.changes import ClaimProposal, FacetChange, ProfileUpdateProposals
 from aijournal.domain.claims import (
     ClaimAtom,
@@ -31,7 +31,6 @@ from aijournal.domain.claims import (
     Scope,
 )
 from aijournal.domain.evidence import SourceRef, redact_source_text
-from aijournal.domain.facts import SummaryMeta
 from aijournal.domain.journal import NormalizedEntry
 from aijournal.fakes import fake_profile_proposals
 from aijournal.io.artifacts import load_artifact_data, save_artifact
@@ -97,10 +96,10 @@ def run_profile_suggest(
         raise typer.Exit(1)
 
     path = _derived_profile_proposals_path(root, date)
-    summary_meta = _build_meta("prompts/profile_suggest.md", config=config)
+    artifact_meta = _build_meta("prompts/profile_suggest.md", config=config)
     artifact = Artifact[ProfileUpdateProposals](
         kind=ArtifactKind.PROFILE_PROPOSALS,
-        meta=_artifact_meta_from_summary_meta(summary_meta),
+        meta=artifact_meta,
         data=proposals,
     )
     save_artifact(path, artifact)
@@ -223,21 +222,6 @@ def _profile_proposals_payload(
         )
 
     return _sanitize_proposals(proposals)
-
-
-def _artifact_meta_from_summary_meta(meta: SummaryMeta | None) -> ArtifactMeta:
-    created_at = (
-        meta.created_at
-        if meta and meta.created_at
-        else time_utils.format_timestamp(time_utils.now())
-    )
-    model = meta.llm_model if meta else None
-    return ArtifactMeta(
-        created_at=created_at,
-        model=model,
-        prompt_path=meta.prompt_path if meta else None,
-        prompt_hash=meta.prompt_hash if meta else None,
-    )
 
 
 def _sanitize_proposals(proposals: ProfileUpdateProposals) -> ProfileUpdateProposals:

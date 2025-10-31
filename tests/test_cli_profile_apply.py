@@ -18,7 +18,6 @@ from aijournal.domain.changes import (
 )
 from aijournal.domain.claims import ClaimAtom
 from aijournal.domain.evidence import SourceRef
-from aijournal.domain.facts import SummaryMeta
 from aijournal.io.artifacts import save_artifact
 from tests.helpers import make_claim_atom
 
@@ -68,12 +67,6 @@ def _seed_authoritative(workspace: Path) -> None:
 
 
 def _seed_suggestions(workspace: Path) -> Path:
-    summary_meta = SummaryMeta(
-        llm_model="fake-ollama",
-        prompt_path="prompts/profile_suggest.md",
-        prompt_hash="seed",
-        created_at=f"{DATE}T10:00:00Z",
-    )
     proposed_claim = ClaimAtom.model_validate(
         make_claim_atom(
             "pref_evening",
@@ -115,7 +108,12 @@ def _seed_suggestions(workspace: Path) -> Path:
     )
     artifact = Artifact[ProfileUpdateProposals](
         kind=ArtifactKind.PROFILE_PROPOSALS,
-        meta=ArtifactMeta(created_at=summary_meta.created_at, model=summary_meta.llm_model),
+        meta=ArtifactMeta(
+            created_at=f"{DATE}T10:00:00Z",
+            model="fake-ollama",
+            prompt_path="prompts/profile_suggest.md",
+            prompt_hash="seed",
+        ),
         data=proposals,
     )
     path = workspace / "derived" / "profile_proposals" / f"{DATE}.yaml"

@@ -14,7 +14,6 @@ from aijournal.common.meta import Artifact, ArtifactKind, ArtifactMeta
 from aijournal.domain.changes import ClaimAtomInput, ClaimProposal, ProfileUpdateProposals
 from aijournal.domain.claims import ClaimAtom
 from aijournal.domain.evidence import SourceRef
-from aijournal.domain.facts import SummaryMeta
 from aijournal.io.artifacts import save_artifact
 from aijournal.models.derived import (
     AdviceCard,
@@ -117,20 +116,15 @@ def _seed_advice(tmp_path: Path, day: str = DATE, question: str = ADVICE_QUESTIO
         alignment=AdviceReference(claims=["pref_focus"], facets=["values.self_direction"]),
         style={"tone": "direct"},
     )
-    summary_meta = SummaryMeta(
-        llm_model="fake-ollama",
+    summary_meta = ArtifactMeta(
+        created_at=f"{day}T10:00:00Z",
+        model="fake-ollama",
         prompt_path="prompts/advise.md",
         prompt_hash="seed",
-        created_at=f"{day}T10:00:00Z",
     )
     artifact = Artifact[AdviceCard](
         kind=ArtifactKind.ADVICE_CARD,
-        meta=ArtifactMeta(
-            created_at=summary_meta.created_at,
-            model=summary_meta.llm_model,
-            prompt_path=summary_meta.prompt_path,
-            prompt_hash=summary_meta.prompt_hash,
-        ),
+        meta=summary_meta,
         data=advice_card,
     )
     save_artifact(advice_path, artifact)
@@ -139,11 +133,11 @@ def _seed_advice(tmp_path: Path, day: str = DATE, question: str = ADVICE_QUESTIO
 
 def _seed_profile_proposals(tmp_path: Path, day: str = DATE) -> Path:
     proposals_path = tmp_path / "derived" / "profile_proposals" / f"{day}.yaml"
-    meta = SummaryMeta(
-        llm_model="fake-ollama",
+    meta = ArtifactMeta(
+        created_at=f"{day}T10:00:00Z",
+        model="fake-ollama",
         prompt_path="prompts/profile_suggest.md",
         prompt_hash="seed",
-        created_at=f"{day}T10:00:00Z",
     )
     claim_model = ClaimAtom.model_validate(
         make_claim_atom(
@@ -178,7 +172,7 @@ def _seed_profile_proposals(tmp_path: Path, day: str = DATE) -> Path:
     )
     artifact = Artifact[ProfileUpdateProposals](
         kind=ArtifactKind.PROFILE_PROPOSALS,
-        meta=ArtifactMeta(created_at=meta.created_at, model=meta.llm_model),
+        meta=meta,
         data=payload,
     )
     save_artifact(proposals_path, artifact)

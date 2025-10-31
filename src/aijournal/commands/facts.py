@@ -24,10 +24,10 @@ from aijournal.commands.summarize import (
     _structured_call_with_retry,
     _validate_timeout,
 )
-from aijournal.common.meta import Artifact, ArtifactKind, ArtifactMeta
+from aijournal.common.meta import Artifact, ArtifactKind
 from aijournal.domain.changes import ClaimProposal
 from aijournal.domain.claims import ClaimAtom, ClaimSource
-from aijournal.domain.facts import MicroFactsFile, SummaryMeta
+from aijournal.domain.facts import MicroFactsFile
 from aijournal.domain.journal import NormalizedEntry
 from aijournal.io.artifacts import save_artifact
 from aijournal.models.authoritative import ManifestEntry
@@ -131,7 +131,7 @@ def run_facts(
         typer.secho(f"Facts extraction failed: {exc}", fg=typer.colors.RED, err=True)
         raise typer.Exit(1)
 
-    summary_meta = _build_meta("prompts/extract_facts.md", config=config)
+    artifact_meta = _build_meta("prompts/extract_facts.md", config=config)
     preview = build_claim_preview(
         facts_data.claim_proposals,
         [claim.model_copy(deep=True) for claim in claim_models],
@@ -140,7 +140,6 @@ def run_facts(
     facts_data.preview = preview
 
     facts_path = _derived_microfacts_path(root, date)
-    artifact_meta = _artifact_meta_from_summary_meta(summary_meta)
     save_artifact(
         facts_path,
         Artifact[MicroFactsFile](
@@ -150,13 +149,3 @@ def run_facts(
         ),
     )
     return preview, facts_path
-
-
-def _artifact_meta_from_summary_meta(meta: SummaryMeta) -> ArtifactMeta:
-    created_at = meta.created_at or time_utils.format_timestamp(time_utils.now())
-    return ArtifactMeta(
-        created_at=created_at,
-        model=meta.llm_model,
-        prompt_path=meta.prompt_path,
-        prompt_hash=meta.prompt_hash,
-    )

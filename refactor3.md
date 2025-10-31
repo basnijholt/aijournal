@@ -358,7 +358,7 @@ class PersonaCore(StrictModel):
     claims: list[ClaimAtom] = []
 ```
 
-`PersonaCoreMeta` remains as a light struct stored under `ArtifactMeta.notes["persona"]`.
+Persona artifacts attach metadata (token budgets, trim details, etc.) via `ArtifactMeta.notes["persona"]`; no separate `PersonaCoreMeta` schema persists.
 
 ### 4.9 Retrieval & Chunks
 
