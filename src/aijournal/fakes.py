@@ -12,7 +12,7 @@ from aijournal.domain.changes import (
     ProfileUpdateProposals,
 )
 from aijournal.domain.claims import ClaimAtom
-from aijournal.domain.enums import ClaimStatus, ComBLever, FacetOperation
+from aijournal.domain.enums import ClaimStatus, FacetOperation
 from aijournal.domain.evidence import SourceRef
 from aijournal.domain.facts import DailySummary, FactEvidence, MicroFact
 from aijournal.domain.journal import NormalizedEntry
@@ -129,9 +129,6 @@ def fake_advise(
             "Share the plan with collaborators early.",
             "Add end-of-day shutdown reminders to honor boundaries.",
         ],
-        evidence=[f"claim:{claim_id}" if claim_id else "claim:unknown", "microfact:focus-block"],
-        com_b=ComBLever.OPPORTUNITY,
-        if_then="If it is 8am on a workday, then start with the planned focus session.",
     )
 
     if pending_prompts:
@@ -151,7 +148,6 @@ def fake_advise(
         ],
         confidence=0.5,
         alignment=alignment,
-        recent_evidence=["microfact:focus-block"],
         style=style,
     )
 
