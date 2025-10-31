@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
 
@@ -30,6 +31,8 @@ from aijournal.commands.summarize import (
     _log_entry_progress,
     _structured_call_with_retry,
 )
+from aijournal.common.command_runner import run_command_pipeline
+from aijournal.common.context import RunContext, create_run_context
 from aijournal.common.meta import Artifact, ArtifactKind
 from aijournal.domain.changes import (
     ClaimProposal,
@@ -49,6 +52,190 @@ from aijournal.pipelines import characterize as characterize_pipeline
 from aijournal.pipelines import facts as facts_pipeline
 from aijournal.services.ollama import LLMResponseError
 from aijournal.utils import time as time_utils
+
+
+class CharacterizeOptions(BaseModel):
+    date: str
+    timeout: float
+    retries: int
+    progress: bool
+
+
+@dataclass(slots=True)
+class CharacterizePrepared:
+    date: str
+    timeout: float
+    retries: int
+    progress: bool
+    entries_with_paths: list[tuple[NormalizedEntry, Path]]
+    manifest_index: dict[str, ManifestEntry]
+    profile: dict[str, Any]
+    claim_models: Sequence[ClaimAtom]
+    config: dict[str, Any]
+
+
+@dataclass(slots=True)
+class CharacterizeResult:
+    artifact: Artifact[ProfileUpdateBatch]
+    batch_path: Path
+
+
+def run_characterize_command(
+    ctx: RunContext,
+    options: CharacterizeOptions,
+    *,
+    build_claim_preview: Callable[
+        [Sequence[ClaimProposal], Sequence[ClaimAtom], str], ProfileUpdatePreview | None
+    ],
+    normalize_claims: Callable[..., list[ClaimProposal]],
+    invoke_structured_llm: Callable[..., BaseModel],
+    structured_call: Callable[..., BaseModel],
+) -> Path:
+    normalize_fn = normalize_claims if normalize_claims is not None else _normalize_claim_proposals
+
+    def _prepare_inputs(ctx: RunContext, opts: CharacterizeOptions) -> CharacterizePrepared:
+        root = ctx.root
+        entries_with_paths = _load_normalized_entries_with_paths(root, opts.date)
+        if not entries_with_paths:
+            typer.secho(f"No normalized entries for {opts.date}", fg=typer.colors.RED, err=True)
+            ctx.emit({"event": "command_failed", "reason": "missing_entries"})
+            raise typer.Exit(1)
+
+        timeout_value = _validate_timeout(opts.timeout)
+        manifest_entries = _load_manifest(_manifest_path(root))
+        manifest_index = _manifest_by_id(manifest_entries)
+        profile_model, claim_models = load_profile_components(root)
+        profile = profile_to_dict(profile_model)
+        config_mapping = dict(ctx.config)
+
+        entries = [entry for entry, _ in entries_with_paths]
+        _log_entry_progress(f"Characterizing entries for {opts.date}", entries, opts.progress)
+
+        ctx.emit(
+            {
+                "event": "prepare_summary",
+                "entry_count": len(entries_with_paths),
+                "claims": len(claim_models),
+            }
+        )
+
+        # Replace timeout in options with validated value
+        opts.timeout = timeout_value
+
+        return CharacterizePrepared(
+            date=opts.date,
+            timeout=timeout_value,
+            retries=opts.retries,
+            progress=opts.progress,
+            entries_with_paths=entries_with_paths,
+            manifest_index=manifest_index,
+            profile=profile,
+            claim_models=claim_models,
+            config=config_mapping,
+        )
+
+    def _invoke_pipeline(ctx: RunContext, prepared: CharacterizePrepared) -> CharacterizeResult:
+        entries = [entry for entry, _ in prepared.entries_with_paths]
+        try:
+            proposals_model, interview_prompts = _characterize_payload(
+                prepared.date,
+                entries,
+                prepared.profile,
+                prepared.claim_models,
+                prepared.manifest_index,
+                prepared.config,
+                timeout=prepared.timeout,
+                retries=prepared.retries,
+                normalize_claims=normalize_fn,
+                invoke_structured_llm=invoke_structured_llm,
+                structured_call=structured_call,
+            )
+        except LLMResponseError as exc:
+            typer.secho(f"Characterize failed: {exc}", fg=typer.colors.RED, err=True)
+            ctx.emit({"event": "command_failed", "reason": "llm_error", "error": str(exc)})
+            raise typer.Exit(1)
+
+        interview_prompts = facts_pipeline.merge_unique(
+            proposals_model.interview_prompts,
+            interview_prompts,
+        )
+        proposals_model.interview_prompts = interview_prompts
+
+        timestamp = time_utils.format_timestamp(time_utils.now())
+        batch_id = f"{prepared.date}-{timestamp}"
+
+        preview_model = build_claim_preview(
+            proposals_model.claims,
+            prepared.claim_models,
+            timestamp,
+        )
+        if interview_prompts:
+            prompts = [prompt for prompt in interview_prompts if prompt]
+            if prompts:
+                if preview_model is None:
+                    preview_model = ProfileUpdatePreview(
+                        interview_prompts=facts_pipeline.merge_unique([], prompts)
+                    )
+                else:
+                    preview_model.interview_prompts = facts_pipeline.merge_unique(
+                        preview_model.interview_prompts,
+                        prompts,
+                    )
+
+        inputs: list[ProfileUpdateInput] = []
+        for data, path in prepared.entries_with_paths:
+            entry_id = data.id or path.stem
+            manifest_entry = prepared.manifest_index.get(entry_id)
+            manifest_hash = manifest_entry.hash if manifest_entry else None
+            inputs.append(
+                ProfileUpdateInput(
+                    id=entry_id,
+                    normalized_path=_relative_source_path(path, ctx.root),
+                    source_hash=data.source_hash or manifest_hash,
+                    manifest_hash=manifest_hash,
+                    tags=list(data.tags or []),
+                ),
+            )
+
+        artifact_meta = _build_meta("prompts/characterize.md", config=prepared.config)
+        batch_model = ProfileUpdateBatch(
+            batch_id=batch_id,
+            created_at=timestamp,
+            date=prepared.date,
+            inputs=inputs,
+            proposals=proposals_model,
+            preview=preview_model,
+        )
+        batch_path = _pending_updates_path(ctx.root, batch_id)
+        artifact = Artifact[ProfileUpdateBatch](
+            kind=ArtifactKind.PROFILE_UPDATES,
+            meta=artifact_meta,
+            data=batch_model,
+        )
+
+        ctx.emit(
+            {
+                "event": "pipeline_complete",
+                "claims": len(proposals_model.claims),
+                "interview_prompts": len(interview_prompts),
+                "batch_id": batch_id,
+            }
+        )
+        return CharacterizeResult(artifact=artifact, batch_path=batch_path)
+
+    def _persist_output(ctx: RunContext, result: CharacterizeResult) -> Path:
+        pending_dir = result.batch_path.parent
+        pending_dir.mkdir(parents=True, exist_ok=True)
+        save_artifact(result.batch_path, result.artifact)
+        return result.batch_path
+
+    return run_command_pipeline(
+        ctx,
+        options,
+        prepare_inputs=_prepare_inputs,
+        invoke_pipeline=_invoke_pipeline,
+        persist_output=_persist_output,
+    )
 
 
 def run_characterize(
@@ -71,99 +258,31 @@ def run_characterize(
         normalize_fn = normalize_claims
 
     root = Path.cwd()
-    entries_with_paths = _load_normalized_entries_with_paths(root, date)
-    if not entries_with_paths:
-        typer.secho(f"No normalized entries for {date}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(1)
-
-    timeout_value = _validate_timeout(timeout)
-    manifest_entries = _load_manifest(_manifest_path(root))
-    manifest_index = _manifest_by_id(manifest_entries)
-    profile_model, claim_models = load_profile_components(root)
-    profile = profile_to_dict(profile_model)
     config = _load_config(root)
-
-    entries = [entry for entry, _ in entries_with_paths]
-    _log_entry_progress(f"Characterizing entries for {date}", entries, progress)
-    try:
-        proposals_model, interview_prompts = _characterize_payload(
-            date,
-            entries,
-            profile,
-            claim_models,
-            manifest_index,
-            config,
-            timeout=timeout_value,
-            retries=retries,
-            normalize_claims=normalize_fn,
-            invoke_structured_llm=invoke_structured_llm,
-            structured_call=structured_call,
-        )
-    except LLMResponseError as exc:
-        typer.secho(f"Characterize failed: {exc}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(1)
-
-    interview_prompts = facts_pipeline.merge_unique(
-        proposals_model.interview_prompts,
-        interview_prompts,
+    ctx = create_run_context(
+        command="characterize",
+        root=root,
+        config=config,
+        use_fake_llm=_use_fake_llm(),
+        trace=False,
+        verbose_json=False,
     )
-    proposals_model.interview_prompts = interview_prompts
 
-    timestamp = time_utils.format_timestamp(time_utils.now())
-    batch_id = f"{date}-{timestamp}"
-
-    preview_model = build_claim_preview(
-        proposals_model.claims,
-        claim_models,
-        timestamp,
-    )
-    if interview_prompts:
-        prompts = [prompt for prompt in interview_prompts if prompt]
-        if prompts:
-            if preview_model is None:
-                preview_model = ProfileUpdatePreview(
-                    interview_prompts=facts_pipeline.merge_unique([], prompts)
-                )
-            else:
-                preview_model.interview_prompts = facts_pipeline.merge_unique(
-                    preview_model.interview_prompts,
-                    prompts,
-                )
-
-    inputs: list[ProfileUpdateInput] = []
-    for data, path in entries_with_paths:
-        entry_id = data.id or path.stem
-        manifest_entry = manifest_index.get(entry_id)
-        manifest_hash = manifest_entry.hash if manifest_entry else None
-        inputs.append(
-            ProfileUpdateInput(
-                id=entry_id,
-                normalized_path=_relative_source_path(path, root),
-                source_hash=data.source_hash or manifest_hash,
-                manifest_hash=manifest_hash,
-                tags=list(data.tags or []),
-            ),
-        )
-
-    artifact_meta = _build_meta("prompts/characterize.md", config=config)
-    batch_model = ProfileUpdateBatch(
-        batch_id=batch_id,
-        created_at=timestamp,
+    options = CharacterizeOptions(
         date=date,
-        inputs=inputs,
-        proposals=proposals_model,
-        preview=preview_model,
+        timeout=timeout,
+        retries=retries,
+        progress=progress,
     )
-    pending_dir = _pending_updates_dir(root)
-    pending_dir.mkdir(parents=True, exist_ok=True)
-    batch_path = _pending_updates_path(root, batch_id)
-    artifact = Artifact[ProfileUpdateBatch](
-        kind=ArtifactKind.PROFILE_UPDATES,
-        meta=artifact_meta,
-        data=batch_model,
+
+    return run_characterize_command(
+        ctx,
+        options,
+        build_claim_preview=build_claim_preview,
+        normalize_claims=normalize_fn,
+        invoke_structured_llm=invoke_structured_llm,
+        structured_call=structured_call,
     )
-    save_artifact(batch_path, artifact)
-    return batch_path
 
 
 def _validate_timeout(value: float) -> float:
