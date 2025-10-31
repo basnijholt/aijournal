@@ -74,11 +74,14 @@ def _load_yaml(path: Path) -> dict[str, Any]:
     return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
 
 
+CONFIG_FILENAME = "config.yaml"
+
+
 def _load_config(root: Path) -> AppConfig:
-    del root  # Use WorkspacePaths instead
-    config_path = WorkspacePaths.config_dir() / "config.yaml"
+    config_path = root / "config" / CONFIG_FILENAME
     if not config_path.exists():
         return AppConfig()
+
     data = _load_yaml(config_path)
     return AppConfig.model_validate(data)
 
