@@ -313,21 +313,17 @@ def _summarize_day_payload(
 
 
 def run_summarize(
-    date: str,
-    *,
-    timeout: float,
-    retries: int,
-    progress: bool,
+    date: str, *, timeout: float, retries: int, progress: bool, workspace: Path | None = None
 ) -> Path:
     """Backward-compatible entrypoint using current working directory."""
     from aijournal.commands.ingest import _load_config, _use_fake_llm
     from aijournal.common.context import create_run_context
 
-    root = Path.cwd()
-    config = _load_config(root)
+    workspace = workspace or Path.cwd()
+    config = _load_config(workspace)
     ctx = create_run_context(
         command="summarize",
-        workspace=root,
+        workspace=workspace,
         config=config,
         use_fake_llm=_use_fake_llm(),
         trace=False,

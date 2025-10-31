@@ -4,9 +4,9 @@ This document captures follow-up items surfaced while testing the capture-first 
 
 ---
 
-## 1. Configurable Ollama Host via `config/config.yaml` — ✅ Completed
+## 1. Configurable Ollama Host via `config.yaml` — ✅ Completed
 
-**Status:** Implemented. `build_ollama_config_from_mapping` already respects a `host` value in `config/config.yaml`; precedence is CLI override → env (`AIJOURNAL_OLLAMA_HOST` / `OLLAMA_BASE_URL`) → config `host` → default `http://127.0.0.1:11434`. README/ARCHITECTURE describe the knob. No further action required.
+**Status:** Implemented. `build_ollama_config_from_mapping` already respects a `host` value in `config.yaml`; precedence is CLI override → env (`AIJOURNAL_OLLAMA_HOST` / `OLLAMA_BASE_URL`) → config `host` → default `http://127.0.0.1:11434`. README/ARCHITECTURE describe the knob. No further action required.
 
 ---
 

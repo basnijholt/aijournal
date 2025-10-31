@@ -44,7 +44,7 @@ aijournal/
   docs/
     workflow.md
     archive/PLAN-v0.3.md
-  config/config.yaml
+  config.yaml
   src/aijournal/
     cli.py
     commands/
@@ -113,7 +113,7 @@ aijournal/
 
 ### 3.4 Persona Core
 
-`aijournal ops persona build` ranks claim atoms by `effective_strength × impact_weight` (weights defined in `config/config.yaml`) and selects enough claims to fit within the configured token budget alongside key facets (values, goals, boundaries, coaching preferences). The builder records trimming metadata, source mtimes, and refuses to run packs or chat when the persona core is stale.
+`aijournal ops persona build` ranks claim atoms by `effective_strength × impact_weight` (weights defined in `config.yaml`) and selects enough claims to fit within the configured token budget alongside key facets (values, goals, boundaries, coaching preferences). The builder records trimming metadata, source mtimes, and refuses to run packs or chat when the persona core is stale.
 
 ### 3.5 Provenance, Re-Validation, and Impact Weights
 
@@ -210,7 +210,7 @@ All structured prompts go through `run_ollama_agent`, which sanitizes JSON, retr
 
 ## 8. Configuration and Environment
 
-- `config/config.yaml` captures model defaults, Ollama host, embedding model, temperature, token estimator, impact weights, advisor and chat settings, index parameters, and persona budgets.
+- `config.yaml` captures model defaults, Ollama host, embedding model, temperature, token estimator, impact weights, advisor and chat settings, index parameters, and persona budgets.
 - Environment overrides:
   - `AIJOURNAL_CONFIG` – alternate config path.
   - `AIJOURNAL_MODEL`, `AIJOURNAL_OLLAMA_HOST`, `OLLAMA_BASE_URL` – run-time model/endpoint selection.

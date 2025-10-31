@@ -130,14 +130,15 @@ def run_profile_suggest(
     timeout: float,
     retries: int,
     progress: bool,
+    workspace: Path | None = None,
 ) -> Path:
     """Generate profile suggestions for a specific date."""
 
-    root = Path.cwd()
-    config = _load_config(root)
+    workspace = workspace or Path.cwd()
+    config = _load_config(workspace)
     ctx = create_run_context(
         command="profile.suggest",
-        workspace=root,
+        workspace=workspace,
         config=config,
         use_fake_llm=_use_fake_llm(),
         trace=False,
@@ -159,14 +160,15 @@ def run_profile_apply(
     *,
     suggestions_path: Path | None,
     auto_confirm: bool,
+    workspace: Path | None = None,
 ) -> str:
     """Apply previously generated profile suggestions."""
 
-    root = Path.cwd()
-    config = _load_config(root)
+    workspace = workspace or Path.cwd()
+    config = _load_config(workspace)
     ctx = create_run_context(
         command="profile.apply",
-        workspace=root,
+        workspace=workspace,
         config=config,
         use_fake_llm=_use_fake_llm(),
         trace=False,
@@ -182,9 +184,9 @@ def run_profile_apply(
     return run_profile_apply_command(ctx, options)
 
 
-def run_profile_status(*, root: Path | None = None) -> None:
+def run_profile_status(workspace: Path | None = None, *, root: Path | None = None) -> None:
     """Show ranked facets/claims requiring review."""
-    workspace = root or Path.cwd()
+    workspace = workspace or Path.cwd()
     config_path = workspace / "config.yaml"
     config = _load_yaml(config_path) if config_path.exists() else {}
     ctx = create_run_context(

@@ -236,6 +236,7 @@ def run_characterize_command(
 
 def run_characterize(
     date: str,
+    workspace: Path | None = None,
     *,
     timeout: float,
     retries: int,
@@ -253,11 +254,11 @@ def run_characterize(
     else:
         normalize_fn = normalize_claims
 
-    root = Path.cwd()
-    config = _load_config(root)
+    workspace = workspace or Path.cwd()
+    config = _load_config(workspace)
     ctx = create_run_context(
         command="characterize",
-        workspace=root,
+        workspace=workspace,
         config=config,
         use_fake_llm=_use_fake_llm(),
         trace=False,

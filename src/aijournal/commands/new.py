@@ -297,7 +297,7 @@ def persist_output(ctx: RunContext, result: NewResult) -> None:
     typer.echo(result.message)
 
 
-def run_new_command(ctx: RunContext, options: NewOptions) -> None:
+def run_new_command(ctx: RunContext, options: NewOptions, workspace: Path | None = None) -> None:
     run_command_pipeline(
         ctx,
         options,
@@ -312,11 +312,12 @@ def run_new(
     tags: list[str] | None,
     fake: int,
     seed: int | None,
+    workspace: Path | None = None,
 ) -> None:
-    base = Path.cwd()
+    workspace = workspace or Path.cwd()
     ctx = create_run_context(
         command="ops.dev.new",
-        workspace=base,
+        workspace=workspace,
         config={},
         use_fake_llm=_use_fake_llm(),
         trace=False,

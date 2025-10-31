@@ -249,15 +249,16 @@ def run_facts(
     build_claim_preview: Callable[
         [Sequence[ClaimProposal], Sequence[ClaimAtom], str], ProfileUpdatePreview | None
     ],
+    workspace: Path | None = None,
 ) -> tuple[ProfileUpdatePreview | None, Path]:
     from aijournal.commands.ingest import _load_config, _use_fake_llm
     from aijournal.common.context import create_run_context
 
-    root = Path.cwd()
-    config = _load_config(root)
+    workspace = workspace or Path.cwd()
+    config = _load_config(workspace)
     ctx = create_run_context(
         command="facts",
-        workspace=root,
+        workspace=workspace,
         config=config,
         use_fake_llm=_use_fake_llm(),
         trace=False,

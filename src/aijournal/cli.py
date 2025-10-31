@@ -769,7 +769,7 @@ def new(
 ) -> None:
     """Create a new journal entry or synthesize fake entries for testing."""
     _emit_deprecation("aijournal ops dev new", "aijournal capture --text")
-    run_new(title, tags, fake, seed)
+    run_new(title, tags, fake, seed, _get_workspace())
 
 
 @ops_pipeline_app.command("ingest", hidden=True)
@@ -806,6 +806,7 @@ def ingest(
     _emit_deprecation("aijournal ops pipeline ingest", "aijournal capture --from")
     run_ingest(
         sources,
+        _get_workspace(),
         source_type=source_type,
         limit=limit,
         snapshot=snapshot,
@@ -1896,6 +1897,7 @@ def chat(
     """Run a retrieval-augmented chat turn against your journal."""
     run_chat(
         question,
+        _get_workspace(),
         top=top,
         tags=tags,
         source=source,

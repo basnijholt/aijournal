@@ -280,6 +280,7 @@ def run_chat_command(ctx: RunContext, options: ChatOptions) -> None:
 
 def run_chat(
     question: str,
+    workspace: Path | None = None,
     *,
     top: int,
     tags: str | None,
@@ -290,11 +291,11 @@ def run_chat(
     save: bool,
     feedback: str | None,
 ) -> None:
-    root = Path.cwd()
-    config = _load_config(root)
+    workspace = workspace or Path.cwd()
+    config = _load_config(workspace)
     ctx = create_run_context(
         command="chat",
-        workspace=root,
+        workspace=workspace,
         config=config,
         use_fake_llm=_use_fake_llm(),
         trace=False,

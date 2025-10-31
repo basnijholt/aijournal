@@ -190,7 +190,9 @@ def persist_output(ctx: RunContext, result: AuditResult) -> None:
         raise typer.Exit(1)
 
 
-def run_audit_command(ctx: RunContext, options: AuditOptions) -> None:
+def run_audit_command(
+    ctx: RunContext, options: AuditOptions, workspace: Path | None = None
+) -> None:
     run_command_pipeline(
         ctx,
         options,
@@ -200,11 +202,11 @@ def run_audit_command(ctx: RunContext, options: AuditOptions) -> None:
     )
 
 
-def run_audit_provenance_cli(*, fix: bool) -> None:
-    root = Path.cwd()
+def run_audit_provenance_cli(workspace: Path | None = None, *, fix: bool) -> None:
+    workspace = workspace or Path.cwd()
     ctx = create_run_context(
         command="ops.audit.provenance",
-        workspace=root,
+        workspace=workspace,
         config={},
         use_fake_llm=_use_fake_llm(),
         trace=False,
