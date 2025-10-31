@@ -38,7 +38,7 @@ class StructuredLogger:
         if self.enabled:
             self.path.parent.mkdir(parents=True, exist_ok=True)
 
-    def emit(self, event: Mapping[str, Any]) -> None:
+    def emit(self, **event: Any) -> None:
         payload: dict[str, Any] = {
             **self.base,
             **event,
@@ -54,30 +54,26 @@ class StructuredLogger:
     @contextmanager
     def span(self, step: str, **fields: Any):
         start = time.perf_counter()
-        self.emit({"event": "start", "step": step, **fields})
+        self.emit(event="start", step=step, **fields)
         try:
             yield
         except Exception as exc:
             duration_ms = (time.perf_counter() - start) * 1000.0
             self.emit(
-                {
-                    "event": "error",
-                    "step": step,
-                    "duration_ms": duration_ms,
-                    "error": str(exc),
-                    **fields,
-                }
+                event="error",
+                step=step,
+                duration_ms=duration_ms,
+                error=str(exc),
+                **fields,
             )
             raise
         else:
             duration_ms = (time.perf_counter() - start) * 1000.0
             self.emit(
-                {
-                    "event": "end",
-                    "step": step,
-                    "duration_ms": duration_ms,
-                    **fields,
-                }
+                event="end",
+                step=step,
+                duration_ms=duration_ms,
+                **fields,
             )
 
 

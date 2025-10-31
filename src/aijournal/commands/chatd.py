@@ -37,9 +37,9 @@ class ChatdResult:
 def prepare_inputs(ctx: RunContext, options: ChatdOptions) -> ChatdPrepared:
     if options.port <= 0 or options.port > 65535:
         typer.secho("--port must be between 1 and 65535.", fg=typer.colors.RED, err=True)
-        ctx.emit({"event": "command_failed", "reason": "invalid_port"})
+        ctx.emit(event="command_failed", reason="invalid_port")
         raise typer.Exit(1)
-    ctx.emit({"event": "prepare_summary", "host": options.host, "port": options.port})
+    ctx.emit(event="prepare_summary", host=options.host, port=options.port)
     return ChatdPrepared(host=options.host, port=options.port)
 
 
@@ -52,12 +52,12 @@ def invoke_pipeline(ctx: RunContext, prepared: ChatdPrepared) -> ChatdResult:
             fg=typer.colors.RED,
             err=True,
         )
-        ctx.emit({"event": "command_failed", "reason": "missing_uvicorn"})
+        ctx.emit(event="command_failed", reason="missing_uvicorn")
         raise typer.Exit(1)
 
     config = _load_config(ctx.root)
     app_instance = build_chat_app(ctx.root, config)
-    ctx.emit({"event": "pipeline_complete", "host": prepared.host, "port": prepared.port})
+    ctx.emit(event="pipeline_complete", host=prepared.host, port=prepared.port)
     return ChatdResult(
         host=prepared.host,
         port=prepared.port,

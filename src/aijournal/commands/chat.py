@@ -179,7 +179,7 @@ def _render_feedback_summary(
 def prepare_inputs(ctx: RunContext, options: ChatOptions) -> ChatPrepared:
     if options.top <= 0:
         typer.secho("--top must be positive.", fg=typer.colors.RED, err=True)
-        ctx.emit({"event": "command_failed", "reason": "invalid_top"})
+        ctx.emit(event="command_failed", reason="invalid_top")
         raise typer.Exit(1)
 
     filters = RetrievalFilters(
@@ -196,12 +196,10 @@ def prepare_inputs(ctx: RunContext, options: ChatOptions) -> ChatPrepared:
     feedback_value = _normalize_feedback_option(options.feedback)
 
     ctx.emit(
-        {
-            "event": "prepare_summary",
-            "top": options.top,
-            "save": options.save,
-            "has_feedback": bool(feedback_value),
-        }
+        event="prepare_summary",
+        top=options.top,
+        save=options.save,
+        has_feedback=bool(feedback_value),
     )
 
     return ChatPrepared(
@@ -225,17 +223,15 @@ def invoke_pipeline(ctx: RunContext, prepared: ChatPrepared) -> ChatResult:
         )
     except (RuntimeError, ValueError) as exc:
         typer.secho(str(exc), fg=typer.colors.RED, err=True)
-        ctx.emit({"event": "command_failed", "reason": "chat_error", "error": str(exc)})
+        ctx.emit(event="command_failed", reason="chat_error", error=str(exc))
         raise typer.Exit(1) from exc
     finally:
         service.close()
 
     ctx.emit(
-        {
-            "event": "pipeline_complete",
-            "intent": turn.intent,
-            "chunks": turn.telemetry.chunk_count,
-        }
+        event="pipeline_complete",
+        intent=turn.intent,
+        chunks=turn.telemetry.chunk_count,
     )
     return ChatResult(turn=turn, prepared=prepared)
 

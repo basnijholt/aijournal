@@ -212,9 +212,9 @@ def prepare_inputs(ctx: RunContext, options: NewOptions) -> NewPrepared:
                 fg=typer.colors.RED,
                 err=True,
             )
-            ctx.emit({"event": "command_failed", "reason": "fake_with_title"})
+            ctx.emit(event="command_failed", reason="fake_with_title")
             raise typer.Exit(1)
-        ctx.emit({"event": "prepare_summary", "mode": "fake", "count": options.fake})
+        ctx.emit(event="prepare_summary", mode="fake", count=options.fake)
         return NewPrepared(
             mode="fake",
             base=base,
@@ -228,11 +228,11 @@ def prepare_inputs(ctx: RunContext, options: NewOptions) -> NewPrepared:
 
     if options.seed is not None:
         typer.secho("--seed is only valid together with --fake.", fg=typer.colors.RED, err=True)
-        ctx.emit({"event": "command_failed", "reason": "seed_without_fake"})
+        ctx.emit(event="command_failed", reason="seed_without_fake")
         raise typer.Exit(1)
     if not options.title:
         typer.secho("Title is required unless --fake is provided.", fg=typer.colors.RED, err=True)
-        ctx.emit({"event": "command_failed", "reason": "missing_title"})
+        ctx.emit(event="command_failed", reason="missing_title")
         raise typer.Exit(1)
 
     current_time = time_utils.now()
@@ -240,7 +240,7 @@ def prepare_inputs(ctx: RunContext, options: NewOptions) -> NewPrepared:
     entry_path = _journal_path(base, current_time, slug)
     if entry_path.exists():
         typer.echo(f"Entry exists: {entry_path}")
-        ctx.emit({"event": "command_failed", "reason": "entry_exists", "path": str(entry_path)})
+        ctx.emit(event="command_failed", reason="entry_exists", path=str(entry_path))
         raise typer.Exit(1)
 
     frontmatter = {
@@ -249,7 +249,7 @@ def prepare_inputs(ctx: RunContext, options: NewOptions) -> NewPrepared:
         "title": options.title,
         "tags": options.tags or [],
     }
-    ctx.emit({"event": "prepare_summary", "mode": "entry", "title": options.title})
+    ctx.emit(event="prepare_summary", mode="entry", title=options.title)
     return NewPrepared(
         mode="entry",
         base=base,
@@ -274,12 +274,10 @@ def invoke_pipeline(ctx: RunContext, prepared: NewPrepared) -> NewResult:
         if skipped:
             summary += f" ({skipped} skipped)"
         ctx.emit(
-            {
-                "event": "pipeline_complete",
-                "mode": "fake",
-                "created": created,
-                "skipped": skipped,
-            }
+            event="pipeline_complete",
+            mode="fake",
+            created=created,
+            skipped=skipped,
         )
         return NewResult(message=summary, entry_path=None)
 
@@ -287,11 +285,9 @@ def invoke_pipeline(ctx: RunContext, prepared: NewPrepared) -> NewResult:
     assert prepared.frontmatter is not None
     _write_markdown_entry(prepared.entry_path, prepared.frontmatter)
     ctx.emit(
-        {
-            "event": "pipeline_complete",
-            "mode": "entry",
-            "path": str(prepared.entry_path),
-        }
+        event="pipeline_complete",
+        mode="entry",
+        path=str(prepared.entry_path),
     )
     return NewResult(message=str(prepared.entry_path), entry_path=prepared.entry_path)
 

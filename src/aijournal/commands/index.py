@@ -199,7 +199,7 @@ def run_index_search_command(ctx: RunContext, options: IndexSearchOptions) -> No
 def _prepare_rebuild_inputs(ctx: RunContext, options: IndexRebuildOptions) -> IndexRebuildPrepared:
     if options.limit is not None and options.limit <= 0:
         typer.secho("--limit must be positive when provided.", fg=typer.colors.RED, err=True)
-        ctx.emit({"event": "invalid_option", "option": "limit"})
+        ctx.emit(event="invalid_option", option="limit")
         raise typer.Exit(1)
 
     since_filter = _resolve_since_filter(options.since)
@@ -212,7 +212,7 @@ def _prepare_rebuild_inputs(ctx: RunContext, options: IndexRebuildOptions) -> In
             fg=typer.colors.RED,
             err=True,
         )
-        ctx.emit({"event": "no_entries"})
+        ctx.emit(event="no_entries")
         raise typer.Exit(1)
 
     manifest_index = _manifest_by_id(_load_manifest(_manifest_path(ctx.root)))
@@ -224,17 +224,15 @@ def _prepare_rebuild_inputs(ctx: RunContext, options: IndexRebuildOptions) -> In
     )
     if not tasks:
         typer.secho("No normalized entries with valid IDs found.", fg=typer.colors.RED, err=True)
-        ctx.emit({"event": "no_tasks"})
+        ctx.emit(event="no_tasks")
         raise typer.Exit(1)
 
     config = _load_config(ctx.root)
     ctx.emit(
-        {
-            "event": "prepare_index",
-            "entries": len(entries),
-            "tasks": len(tasks),
-            "since": since_filter,
-        }
+        event="prepare_index",
+        entries=len(entries),
+        tasks=len(tasks),
+        since=since_filter,
     )
     return IndexRebuildPrepared(
         tasks=list(tasks),
@@ -303,12 +301,10 @@ def _invoke_rebuild_pipeline(ctx: RunContext, prepared: IndexRebuildPrepared) ->
 
     message = f"Indexed {chunk_total} chunks across {entry_total} entries (mode: rebuild)."
     ctx.emit(
-        {
-            "event": "index_rebuild_complete",
-            "chunks": chunk_total,
-            "entries": entry_total,
-            "dates": touched_dates,
-        }
+        event="index_rebuild_complete",
+        chunks=chunk_total,
+        entries=entry_total,
+        dates=touched_dates,
     )
     return IndexRebuildResult(
         message=message,
@@ -320,12 +316,10 @@ def _invoke_rebuild_pipeline(ctx: RunContext, prepared: IndexRebuildPrepared) ->
 
 def _persist_rebuild_output(ctx: RunContext, result: IndexRebuildResult) -> str:
     ctx.emit(
-        {
-            "event": "persist_complete",
-            "message": result.message,
-            "chunks": result.chunks,
-            "entries": result.entries,
-        }
+        event="persist_complete",
+        message=result.message,
+        chunks=result.chunks,
+        entries=result.entries,
     )
     return result.message
 
@@ -333,11 +327,11 @@ def _persist_rebuild_output(ctx: RunContext, result: IndexRebuildResult) -> str:
 def _prepare_tail_inputs(ctx: RunContext, options: IndexTailOptions) -> IndexTailPrepared:
     if options.days <= 0:
         typer.secho("--days must be positive.", fg=typer.colors.RED, err=True)
-        ctx.emit({"event": "invalid_option", "option": "days"})
+        ctx.emit(event="invalid_option", option="days")
         raise typer.Exit(1)
     if options.limit is not None and options.limit <= 0:
         typer.secho("--limit must be positive when provided.", fg=typer.colors.RED, err=True)
-        ctx.emit({"event": "invalid_option", "option": "limit"})
+        ctx.emit(event="invalid_option", option="limit")
         raise typer.Exit(1)
 
     db_path = _index_db_path(ctx.root)
@@ -347,7 +341,7 @@ def _prepare_tail_inputs(ctx: RunContext, options: IndexTailOptions) -> IndexTai
             fg=typer.colors.RED,
             err=True,
         )
-        ctx.emit({"event": "missing_index_db", "path": str(db_path)})
+        ctx.emit(event="missing_index_db", path=str(db_path))
         raise typer.Exit(1)
 
     since_filter = _resolve_since_filter(options.since, fallback_days=options.days)
@@ -360,7 +354,7 @@ def _prepare_tail_inputs(ctx: RunContext, options: IndexTailOptions) -> IndexTai
             fg=typer.colors.RED,
             err=True,
         )
-        ctx.emit({"event": "no_entries"})
+        ctx.emit(event="no_entries")
         raise typer.Exit(1)
 
     manifest_index = _manifest_by_id(_load_manifest(_manifest_path(ctx.root)))
@@ -372,12 +366,10 @@ def _prepare_tail_inputs(ctx: RunContext, options: IndexTailOptions) -> IndexTai
     )
     config = _load_config(ctx.root)
     ctx.emit(
-        {
-            "event": "prepare_tail",
-            "entries": len(entries),
-            "tasks": len(tasks),
-            "since": since_filter,
-        }
+        event="prepare_tail",
+        entries=len(entries),
+        tasks=len(tasks),
+        since=since_filter,
     )
     return IndexTailPrepared(
         tasks=list(tasks),
@@ -394,7 +386,7 @@ def _invoke_tail_pipeline(ctx: RunContext, prepared: IndexTailPrepared) -> Index
     try:
         pending = index_pipeline.filter_tasks_for_tail(conn, prepared.tasks)
         if not pending:
-            ctx.emit({"event": "index_up_to_date"})
+            ctx.emit(event="index_up_to_date")
             return IndexTailResult(
                 message="Index already up to date for requested window.",
                 chunks=0,
@@ -448,12 +440,10 @@ def _invoke_tail_pipeline(ctx: RunContext, prepared: IndexTailPrepared) -> Index
             f"Indexed {stats['chunks']} chunks across {stats['entries']} entries (mode: tail)."
         )
         ctx.emit(
-            {
-                "event": "index_tail_complete",
-                "chunks": stats.get("chunks", 0),
-                "entries": stats.get("entries", 0),
-                "dates": touched_dates,
-            }
+            event="index_tail_complete",
+            chunks=stats.get("chunks", 0),
+            entries=stats.get("entries", 0),
+            dates=touched_dates,
         )
         return IndexTailResult(
             message=message,
@@ -467,13 +457,11 @@ def _invoke_tail_pipeline(ctx: RunContext, prepared: IndexTailPrepared) -> Index
 
 def _persist_tail_output(ctx: RunContext, result: IndexTailResult) -> str:
     ctx.emit(
-        {
-            "event": "persist_complete",
-            "message": result.message,
-            "chunks": result.chunks,
-            "entries": result.entries,
-            "up_to_date": result.up_to_date,
-        }
+        event="persist_complete",
+        message=result.message,
+        chunks=result.chunks,
+        entries=result.entries,
+        up_to_date=result.up_to_date,
     )
     return result.message
 
@@ -481,7 +469,7 @@ def _persist_tail_output(ctx: RunContext, result: IndexTailResult) -> str:
 def _prepare_search_inputs(ctx: RunContext, options: IndexSearchOptions) -> IndexSearchPrepared:
     if options.top <= 0:
         typer.secho("--top must be positive.", fg=typer.colors.RED, err=True)
-        ctx.emit({"event": "invalid_option", "option": "top"})
+        ctx.emit(event="invalid_option", option="top")
         raise typer.Exit(1)
 
     filters = RetrievalFilters(
@@ -491,11 +479,9 @@ def _prepare_search_inputs(ctx: RunContext, options: IndexSearchOptions) -> Inde
         date_to=_validate_date_option(options.date_to, "--date-to"),
     )
     ctx.emit(
-        {
-            "event": "prepare_search",
-            "top": options.top,
-            "filters": filters.model_dump(mode="json"),
-        }
+        event="prepare_search",
+        top=options.top,
+        filters=filters.model_dump(mode="json"),
     )
     return IndexSearchPrepared(query=options.query, top=options.top, filters=filters)
 
@@ -507,17 +493,15 @@ def _invoke_search_pipeline(ctx: RunContext, prepared: IndexSearchPrepared) -> I
         result = retriever.search(prepared.query, k=prepared.top, filters=prepared.filters)
     except (RuntimeError, ValueError) as exc:
         typer.secho(str(exc), fg=typer.colors.RED, err=True)
-        ctx.emit({"event": "search_error", "error": str(exc)})
+        ctx.emit(event="search_error", error=str(exc))
         raise typer.Exit(1) from exc
     finally:
         retriever.close()
 
     ctx.emit(
-        {
-            "event": "search_complete",
-            "results": len(result.chunks),
-            "fake_mode": getattr(result.meta, "fake_mode", False),
-        }
+        event="search_complete",
+        results=len(result.chunks),
+        fake_mode=getattr(result.meta, "fake_mode", False),
     )
     return IndexSearchResult(result=result)
 

@@ -116,13 +116,11 @@ def prepare_inputs(ctx: RunContext, options: PackOptions) -> PackPrepared:
     _, _, char_per_token = _index_settings(config_mapping)
 
     ctx.emit(
-        {
-            "event": "prepare_summary",
-            "level": normalized_level,
-            "date": resolved_date,
-            "budget": budget,
-            "history_days": options.history_days,
-        }
+        event="prepare_summary",
+        level=normalized_level,
+        date=resolved_date,
+        budget=budget,
+        history_days=options.history_days,
     )
     return PackPrepared(
         normalized_level=normalized_level,
@@ -178,12 +176,10 @@ def invoke_pipeline(ctx: RunContext, prepared: PackPrepared) -> PackResult:
     )
 
     ctx.emit(
-        {
-            "event": "pipeline_complete",
-            "level": prepared.normalized_level,
-            "total_tokens": total_tokens,
-            "trimmed": len(trimmed),
-        }
+        event="pipeline_complete",
+        level=prepared.normalized_level,
+        total_tokens=total_tokens,
+        trimmed=len(trimmed),
     )
     return PackResult(
         bundle=bundle,

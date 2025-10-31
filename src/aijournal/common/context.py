@@ -38,8 +38,8 @@ class RunContext:
     trace_enabled: bool = False
     verbose_json: bool = False
 
-    def emit(self, event: Mapping[str, Any]) -> None:
-        self.logger.emit(event)
+    def emit(self, **event: Any) -> None:
+        self.logger.emit(**event)
 
     def span(self, step: str, **fields: Any):
         return self.logger.span(step, **fields)

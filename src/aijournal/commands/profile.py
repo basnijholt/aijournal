@@ -224,11 +224,9 @@ def run_profile_suggest_command(
         )
 
         ctx.emit(
-            {
-                "event": "prepare_summary",
-                "entries": len(entries),
-                "claims": len(claims),
-            }
+            event="prepare_summary",
+            entries=len(entries),
+            claims=len(claims),
         )
         return ProfileSuggestPrepared(
             date=opts.date,
@@ -265,11 +263,9 @@ def run_profile_suggest_command(
         )
 
         ctx.emit(
-            {
-                "event": "pipeline_complete",
-                "claims": len(proposals.claims),
-                "facets": len(proposals.facets),
-            }
+            event="pipeline_complete",
+            claims=len(proposals.claims),
+            facets=len(proposals.facets),
         )
         return ProfileSuggestResult(artifact=artifact, path=path)
 
@@ -308,11 +304,9 @@ def run_profile_apply_command(
         claims = [claim.model_copy(deep=True) for claim in claim_models]
         timestamp = time_utils.format_timestamp(time_utils.now())
         ctx.emit(
-            {
-                "event": "prepare_summary",
-                "claims": len(claims),
-                "facet_changes": len(proposals.facets),
-            }
+            event="prepare_summary",
+            claims=len(claims),
+            facet_changes=len(proposals.facets),
         )
         return ProfileApplyPrepared(
             root=ctx.root,
