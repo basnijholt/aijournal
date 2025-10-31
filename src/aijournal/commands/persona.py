@@ -13,6 +13,7 @@ import typer
 from pydantic import BaseModel
 
 from aijournal.commands.ingest import _use_fake_llm
+from aijournal.common.app_config import AppConfig
 from aijournal.common.command_runner import run_command_pipeline
 from aijournal.common.context import RunContext, create_run_context
 from aijournal.common.meta import Artifact, ArtifactKind, ArtifactMeta
@@ -69,9 +70,7 @@ def prepare_inputs(ctx: RunContext, options: PersonaBuildOptions) -> PersonaPrep
         ctx.emit(event="command_failed", reason="no_profile_data")
         raise typer.Exit(1)
 
-    config_mapping = dict(ctx.config)
-    persona_cfg_raw = config_mapping.get("persona")
-    persona_cfg = persona_cfg_raw if isinstance(persona_cfg_raw, dict) else {}
+    persona_cfg = ctx.config.persona or {}
     token_budget = int(
         options.token_budget_override
         if options.token_budget_override is not None
@@ -97,12 +96,10 @@ def prepare_inputs(ctx: RunContext, options: PersonaBuildOptions) -> PersonaPrep
         typer.secho("min-claims must be between 0 and max-claims", fg=typer.colors.RED, err=True)
         raise typer.Exit(1)
 
-    token_estimator_raw = config_mapping.get("token_estimator")
-    token_estimator = token_estimator_raw if isinstance(token_estimator_raw, dict) else {}
+    token_estimator = ctx.config.token_estimator or {}
     char_per_token = coerce_float(token_estimator.get("char_per_token")) or DEFAULT_CHAR_PER_TOKEN
 
-    impact_weights_raw = config_mapping.get("impact_weights")
-    impact_weights = impact_weights_raw if isinstance(impact_weights_raw, dict) else {}
+    impact_weights = ctx.config.impact_weights or {}
     now_dt = time_utils.now()
 
     ctx.emit(
@@ -367,7 +364,7 @@ def run_persona_build(
     profile: dict[str, Any],
     claim_models: Sequence[ClaimAtom],
     *,
-    config: dict[str, Any],
+    config: AppConfig,
     root: Path | None = None,
     token_budget_override: int | None = None,
     max_claims_override: int | None = None,

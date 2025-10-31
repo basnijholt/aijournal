@@ -30,6 +30,7 @@ from aijournal.commands.summarize import (
     _json_block,
     _log_entry_progress,
 )
+from aijournal.common.app_config import AppConfig
 from aijournal.common.command_runner import run_command_pipeline
 from aijournal.common.context import RunContext, create_run_context
 from aijournal.common.meta import Artifact, ArtifactKind
@@ -70,7 +71,7 @@ class CharacterizePrepared:
     manifest_index: dict[str, ManifestEntry]
     profile: dict[str, Any]
     claim_models: Sequence[ClaimAtom]
-    config: dict[str, Any]
+    config: AppConfig
 
 
 @dataclass(slots=True)
@@ -105,7 +106,6 @@ def run_characterize_command(
         manifest_index = _manifest_by_id(manifest_entries)
         profile_model, claim_models = load_profile_components(root)
         profile = profile_to_dict(profile_model)
-        config_mapping = dict(ctx.config)
 
         entries = [entry for entry, _ in entries_with_paths]
         _log_entry_progress(f"Characterizing entries for {opts.date}", entries, opts.progress)
@@ -128,7 +128,7 @@ def run_characterize_command(
             manifest_index=manifest_index,
             profile=profile,
             claim_models=claim_models,
-            config=config_mapping,
+            config=ctx.config,
         )
 
     def _invoke_pipeline(ctx: RunContext, prepared: CharacterizePrepared) -> CharacterizeResult:
@@ -314,7 +314,7 @@ def _characterize_payload(
     profile: dict[str, Any],
     claims: Sequence[ClaimAtom],
     manifest_index: dict[str, ManifestEntry],
-    config: dict[str, Any],
+    config: AppConfig,
     *,
     timeout: float | None = None,
     retries: int,

@@ -11,6 +11,7 @@ from typer.testing import CliRunner
 
 from aijournal.api.chat import ChatResponse
 from aijournal.cli import app
+from aijournal.common.app_config import AppConfig
 from aijournal.common.meta import ArtifactKind
 from aijournal.domain.chat_sessions import ChatSessionLearnings, ChatSessionSummary
 from aijournal.domain.persona import PersonaCore
@@ -140,7 +141,8 @@ def test_chat_service_requires_persona_core(
 ) -> None:
     monkeypatch.chdir(tmp_path)
     cli_runner.invoke(app, ["init"], catch_exceptions=False)
-    config = yaml.safe_load((tmp_path / "config" / "config.yaml").read_text(encoding="utf-8"))
+    config_dict = yaml.safe_load((tmp_path / "config" / "config.yaml").read_text(encoding="utf-8"))
+    config = AppConfig.model_validate(config_dict)
     service = ChatService(tmp_path, config)
     try:
         with pytest.raises(RuntimeError, match="Persona core not found"):
@@ -154,7 +156,7 @@ def test_chat_service_builds_config_with_overrides(tmp_path: Path) -> None:
         def close(self) -> None:
             pass
 
-    config = {
+    config_dict = {
         "model": "global-model",
         "temperature": "0.1",
         "chat": {
@@ -166,6 +168,7 @@ def test_chat_service_builds_config_with_overrides(tmp_path: Path) -> None:
             "host": "http://chat-host:11434",
         },
     }
+    config = AppConfig.model_validate(config_dict)
 
     service = ChatService(tmp_path, config, retriever=DummyRetriever())
     try:

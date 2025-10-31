@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from pydantic_ai import ModelSettings, UnexpectedModelBehavior
 from pydantic_ai.exceptions import UserError
 
+from aijournal.common.app_config import AppConfig
 from aijournal.common.meta import LLMResult
 from aijournal.services.ollama import (
     LLMResponseError,
@@ -236,12 +237,13 @@ def test_run_ollama_agent_coerces_scalar_lists(
 def test_build_config_coerces_numeric_settings(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("AIJOURNAL_MODEL", raising=False)
     monkeypatch.delenv("AIJOURNAL_OLLAMA_HOST", raising=False)
-    config = {
+    config_dict = {
         "model": "llama3.1:8b-instruct",
         "temperature": "0.45",
         "seed": "99",
         "max_tokens": "2048",
     }
+    config = AppConfig.model_validate(config_dict)
 
     result = build_ollama_config_from_mapping(config)
 
@@ -256,11 +258,12 @@ def test_build_config_coerces_numeric_settings(monkeypatch: pytest.MonkeyPatch) 
 def test_build_config_prefers_explicit_overrides(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("AIJOURNAL_MODEL", raising=False)
     monkeypatch.delenv("AIJOURNAL_OLLAMA_HOST", raising=False)
-    config = {
+    config_dict = {
         "model": "config-model",
         "temperature": 0.2,
         "seed": 7,
     }
+    config = AppConfig.model_validate(config_dict)
 
     result = build_ollama_config_from_mapping(
         config,
@@ -279,7 +282,8 @@ def test_build_config_prefers_explicit_overrides(monkeypatch: pytest.MonkeyPatch
 def test_build_config_respects_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("AIJOURNAL_MODEL", "env-model")
     monkeypatch.setenv("AIJOURNAL_OLLAMA_HOST", "http://env-host")
-    config: dict[str, object] = {"model": "config-model", "host": "http://config-host"}
+    config_dict: dict[str, object] = {"model": "config-model", "host": "http://config-host"}
+    config = AppConfig.model_validate(config_dict)
 
     result = build_ollama_config_from_mapping(config)
 
@@ -291,7 +295,8 @@ def test_build_config_uses_config_host(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("AIJOURNAL_MODEL", raising=False)
     monkeypatch.delenv("AIJOURNAL_OLLAMA_HOST", raising=False)
     monkeypatch.delenv("OLLAMA_BASE_URL", raising=False)
-    config = {"host": "http://config-host:11434", "model": "config-model"}
+    config_dict = {"host": "http://config-host:11434", "model": "config-model"}
+    config = AppConfig.model_validate(config_dict)
 
     result = build_ollama_config_from_mapping(config)
 
@@ -302,7 +307,8 @@ def test_build_config_uses_config_host(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_environment_model_overrides_config(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("AIJOURNAL_MODEL", "env-model")
     monkeypatch.delenv("AIJOURNAL_OLLAMA_HOST", raising=False)
-    config = {"model": "config-model"}
+    config_dict = {"model": "config-model"}
+    config = AppConfig.model_validate(config_dict)
 
     result = build_ollama_config_from_mapping(config)
 

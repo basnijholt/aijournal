@@ -17,6 +17,7 @@ from pydantic_ai.exceptions import UserError
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.ollama import OllamaProvider
 
+from aijournal.common.app_config import AppConfig
 from aijournal.common.meta import LLMResult
 from aijournal.utils import time as time_utils
 from aijournal.utils.coercion import coerce_float, coerce_int
@@ -95,17 +96,20 @@ def build_ollama_model(model_name: str, host: str | None = None) -> OpenAIChatMo
 
 
 def build_ollama_config_from_mapping(
-    config: Mapping[str, Any] | None = None,
+    config: AppConfig | None = None,
     *,
     model: str | None = None,
     host: str | None = None,
     timeout: float | None = None,
+    temperature: float | None = None,
+    seed: int | None = None,
+    max_tokens: int | None = None,
 ) -> OllamaConfig:
     """Construct an OllamaConfig from a loose mapping of settings."""
 
-    settings = config or {}
-    raw_config_model = settings.get("model")
-    raw_config_host = settings.get("host")
+    cfg = config or AppConfig()
+    raw_config_model = cfg.model
+    raw_config_host = cfg.host
 
     env_model = os.getenv("AIJOURNAL_MODEL")
     resolved_model = (
@@ -117,18 +121,33 @@ def build_ollama_config_from_mapping(
 
     config_host_value = str(raw_config_host) if raw_config_host else None
     resolved_host = resolve_ollama_host(host, config_host=config_host_value)
-    temperature = coerce_float(settings.get("temperature"))
-    seed = coerce_int(settings.get("seed"))
-    max_tokens = coerce_int(settings.get("max_tokens"))
-    effective_timeout = timeout if timeout is not None else coerce_float(settings.get("timeout"))
+    effective_temperature = (
+        temperature if temperature is not None else coerce_float(cfg.temperature)
+    )
+    effective_seed = seed if seed is not None else coerce_int(cfg.seed)
+    effective_max_tokens = max_tokens if max_tokens is not None else coerce_int(cfg.max_tokens)
+    effective_timeout = timeout if timeout is not None else coerce_float(cfg.timeout)
     return OllamaConfig(
         model=resolved_model,
         host=resolved_host,
-        temperature=temperature,
-        seed=seed,
-        max_tokens=max_tokens,
+        temperature=effective_temperature,
+        seed=effective_seed,
+        max_tokens=effective_max_tokens,
         timeout=effective_timeout,
     )
+
+
+def resolve_model_name(
+    config: AppConfig | None,
+    *,
+    use_fake_llm: bool,
+    fake_label: str = "fake-ollama",
+) -> str:
+    """Return the effective model name, accounting for fake-LLM mode."""
+
+    if use_fake_llm:
+        return fake_label
+    return build_ollama_config_from_mapping(config).model
 
 
 def _model_settings_from_config(config: OllamaConfig) -> ModelSettings | None:

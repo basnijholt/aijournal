@@ -13,6 +13,7 @@ from typer.testing import CliRunner
 
 from aijournal.api.chat import ChatResponse
 from aijournal.cli import app
+from aijournal.common.app_config import AppConfig
 from aijournal.domain.persona import PersonaCore
 from aijournal.io.yaml_io import dump_yaml
 from aijournal.services.chat import ChatService, ChatTelemetry, ChatTurn
@@ -163,7 +164,10 @@ def test_chatd_streams_answer(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
     )
 
     config_path = tmp_path / "config" / "config.yaml"
-    config = yaml.safe_load(config_path.read_text(encoding="utf-8")) if config_path.exists() else {}
+    config_dict = (
+        yaml.safe_load(config_path.read_text(encoding="utf-8")) if config_path.exists() else {}
+    )
+    config = AppConfig.model_validate(config_dict)
     app_instance = build_chat_app(tmp_path, config)
     client = TestClient(app_instance)
 
@@ -195,7 +199,10 @@ def test_chatd_no_save(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     )
 
     config_path = tmp_path / "config" / "config.yaml"
-    config = yaml.safe_load(config_path.read_text(encoding="utf-8")) if config_path.exists() else {}
+    config_dict = (
+        yaml.safe_load(config_path.read_text(encoding="utf-8")) if config_path.exists() else {}
+    )
+    config = AppConfig.model_validate(config_dict)
     app_instance = build_chat_app(tmp_path, config)
     client = TestClient(app_instance)
 
@@ -245,7 +252,10 @@ def test_chatd_feedback_adjusts_claims(tmp_path: Path, monkeypatch: pytest.Monke
     monkeypatch.setattr(ChatService, "run", _fake_run, raising=True)
 
     config_path = tmp_path / "config" / "config.yaml"
-    config = yaml.safe_load(config_path.read_text(encoding="utf-8")) if config_path.exists() else {}
+    config_dict = (
+        yaml.safe_load(config_path.read_text(encoding="utf-8")) if config_path.exists() else {}
+    )
+    config = AppConfig.model_validate(config_dict)
     app_instance = build_chat_app(tmp_path, config)
     client = TestClient(app_instance)
 
@@ -272,7 +282,10 @@ def test_capture_endpoint_streams_and_records(
     _init_workspace(tmp_path, monkeypatch)
 
     config_path = tmp_path / "config" / "config.yaml"
-    config = yaml.safe_load(config_path.read_text(encoding="utf-8")) if config_path.exists() else {}
+    config_dict = (
+        yaml.safe_load(config_path.read_text(encoding="utf-8")) if config_path.exists() else {}
+    )
+    config = AppConfig.model_validate(config_dict)
     app_instance = build_chat_app(tmp_path, config)
 
     with TestClient(app_instance) as client:
@@ -315,7 +328,10 @@ def test_capture_run_not_found(
     _init_workspace(tmp_path, monkeypatch)
 
     config_path = tmp_path / "config" / "config.yaml"
-    config = yaml.safe_load(config_path.read_text(encoding="utf-8")) if config_path.exists() else {}
+    config_dict = (
+        yaml.safe_load(config_path.read_text(encoding="utf-8")) if config_path.exists() else {}
+    )
+    config = AppConfig.model_validate(config_dict)
     app_instance = build_chat_app(tmp_path, config)
 
     with TestClient(app_instance) as client:

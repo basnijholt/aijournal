@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from datetime import UTC, datetime
 from pathlib import Path
 
 from pydantic import BaseModel, Field, field_validator
 from pydantic_ai import Agent
 
+from aijournal.common.app_config import AppConfig
 from aijournal.common.types import TimestampStr
 from aijournal.domain.journal import Section as IngestSection
 from aijournal.services.ollama import build_ollama_agent, build_ollama_config_from_mapping
@@ -79,7 +79,7 @@ class IngestResult(BaseModel):
 
 
 def build_ingest_agent(
-    config: Mapping[str, object] | None,
+    config: AppConfig | None,
     *,
     model: str | None = None,
 ) -> Agent:

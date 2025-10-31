@@ -10,11 +10,12 @@ from contextlib import contextmanager
 from datetime import UTC, date, datetime
 from pathlib import Path
 from threading import RLock
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from annoy import AnnoyIndex
 from pydantic import ConfigDict, Field
 
+from aijournal.common.app_config import AppConfig
 from aijournal.common.base import StrictModel
 from aijournal.domain.index import IndexMeta, RetrievedChunk
 from aijournal.io.artifacts import load_artifact
@@ -60,10 +61,10 @@ class Retriever:
     def __init__(
         self,
         root: Path,
-        config: dict[str, Any] | None = None,
+        config: AppConfig | None = None,
     ) -> None:
         self.root = Path(root)
-        self.config: dict[str, Any] = dict(config or {})
+        self.config: AppConfig = config or AppConfig()
         self.index_dir = self.root / "derived" / "index"
         self.db_path = self.index_dir / "index.db"
         self.annoy_path = self.index_dir / "annoy.index"
@@ -75,8 +76,7 @@ class Retriever:
         self._embedder_instance: EmbeddingBackend | None = None
         self._fake_mode = os.getenv("AIJOURNAL_FAKE_OLLAMA") == "1"
 
-        index_cfg_raw = self.config.get("index")
-        index_cfg = index_cfg_raw if isinstance(index_cfg_raw, dict) else {}
+        index_cfg = self.config.index or {}
         self.search_k_factor = float(index_cfg.get("search_k_factor") or 3.0)
 
     def search(
@@ -206,9 +206,7 @@ class Retriever:
     def _get_embedder(self) -> EmbeddingBackend:
         if self._embedder_instance is None:
             model = str(
-                self._meta.embedding_model
-                or self.config.get("embedding_model")
-                or "embeddinggemma",
+                self._meta.embedding_model or self.config.embedding_model or "embeddinggemma",
             )
             host = os.getenv("AIJOURNAL_OLLAMA_HOST")
             dimension = self._meta.vector_dimension

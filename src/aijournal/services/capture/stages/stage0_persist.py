@@ -60,9 +60,7 @@ def _ingest_frontmatter(
     if use_fake_llm():
         structured: IngestResult = _fake_structured_entry(source_path)
     else:
-        agent = build_ingest_agent(
-            config, model=config.get("model") if isinstance(config, dict) else None
-        )
+        agent = build_ingest_agent(config, model=config.model)
         structured = ingest_with_agent(agent, source_path=source_path, markdown=raw_text)
 
     normalized_dict, _ = normalization.normalized_from_structured(

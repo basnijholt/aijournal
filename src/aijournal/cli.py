@@ -80,6 +80,7 @@ from aijournal.commands.summarize import (
     _invoke_structured_llm as _commands_invoke_structured_llm,
 )
 from aijournal.commands.system import run_system_doctor_cli, run_system_status_cli
+from aijournal.common.app_config import AppConfig
 from aijournal.common.context import RunContext, create_run_context
 from aijournal.domain.changes import ClaimProposal, FacetChange
 from aijournal.domain.claims import ClaimAtom, ClaimSource, Scope
@@ -641,7 +642,7 @@ def _invoke_structured_llm(
     *,
     response_model: type[Any],
     agent_name: str,
-    config: dict[str, Any],
+    config: AppConfig,
     timeout: float | None = None,
     max_attempts: int = 2,
     retry_message: str | None = None,
@@ -680,7 +681,7 @@ def _structured_call_with_retry(
 def _summarize_day_payload(
     entries: Sequence[NormalizedEntry],
     date: str,
-    config: dict[str, Any],
+    config: AppConfig,
     *,
     timeout: float | None,
     retries: int,
@@ -1587,7 +1588,7 @@ def interview(
         raise typer.Exit(1)
 
     config = _load_config(root)
-    weights = config.get("impact_weights", {})
+    weights = config.impact_weights or {}
 
     max_questions = _coaching_max_questions(profile)
     pending_prompts = _collect_pending_interview_prompts(root)

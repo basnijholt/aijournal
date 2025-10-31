@@ -13,6 +13,7 @@ from typing import Any
 from pydantic import ValidationError
 
 from aijournal.api.chat import ChatCitation, ChatCitationRef, ChatResponse
+from aijournal.common.app_config import AppConfig
 from aijournal.common.meta import LLMResult
 from aijournal.domain.chat import ChatTelemetry, ChatTurn
 from aijournal.domain.persona import PersonaCore
@@ -70,18 +71,17 @@ class ChatService:
     def __init__(
         self,
         root: Path,
-        config: dict[str, Any] | None = None,
+        config: AppConfig | None = None,
         *,
         retriever: Retriever | None = None,
     ) -> None:
         self._root = Path(root)
-        self._config = dict(config or {})
+        self._config: AppConfig = config or AppConfig()
         self._persona_path = self._root / "derived" / "persona" / "persona_core.yaml"
         self._fake_mode = os.getenv("AIJOURNAL_FAKE_OLLAMA") == "1"
         self._retriever = retriever or Retriever(self._root, self._config)
 
-        chat_cfg_raw = self._config.get("chat")
-        self._chat_cfg = chat_cfg_raw if isinstance(chat_cfg_raw, dict) else {}
+        self._chat_cfg = self._config.chat or {}
 
     def close(self) -> None:
         """Release underlying resources."""
@@ -363,24 +363,21 @@ class ChatService:
         )
 
     def _build_ollama_config(self) -> OllamaConfig:
-        overrides: dict[str, Any] = {}
-        for key in ("model", "temperature", "seed", "max_tokens"):
-            value = self._chat_cfg.get(key)
-            if value is not None:
-                overrides[key] = value
-
-        merged = dict(self._config)
-        merged.update(overrides)
-
         model_override = self._chat_cfg.get("model")
         host_override = self._chat_cfg.get("host")
         timeout_override = coerce_float(self._chat_cfg.get("timeout"))
+        temperature_override = coerce_float(self._chat_cfg.get("temperature"))
+        seed_override = coerce_int(self._chat_cfg.get("seed"))
+        max_tokens_override = coerce_int(self._chat_cfg.get("max_tokens"))
 
         return build_ollama_config_from_mapping(
-            merged,
+            self._config,
             model=str(model_override) if isinstance(model_override, str) else None,
             host=str(host_override).strip() if isinstance(host_override, str) else None,
             timeout=timeout_override,
+            temperature=temperature_override,
+            seed=seed_override,
+            max_tokens=max_tokens_override,
         )
 
     # ------------------------------------------------------------------
@@ -390,7 +387,7 @@ class ChatService:
         override = self._chat_cfg.get("model")
         if isinstance(override, str) and override.strip():
             return override.strip()
-        config_model = self._config.get("model")
+        config_model = self._config.model
         if isinstance(config_model, str) and config_model.strip():
             return str(config_model).strip()
         env_model = os.getenv("AIJOURNAL_MODEL")

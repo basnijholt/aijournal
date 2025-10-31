@@ -14,6 +14,7 @@ from fastapi.responses import StreamingResponse
 
 from aijournal.api.capture import CaptureInput, CaptureRequest
 from aijournal.api.chat import ChatRequest
+from aijournal.common.app_config import AppConfig
 from aijournal.services.chat import ChatService
 from aijournal.services.feedback import FeedbackAdjustment, apply_chat_feedback
 from aijournal.services.retriever import RetrievalFilters
@@ -56,13 +57,12 @@ def _default_session_id() -> str:
     return f"chat-{datetime.now(tz=UTC).strftime('%Y%m%d-%H%M%S')}"
 
 
-def build_chat_app(root: Path, config: dict[str, Any] | None = None) -> FastAPI:
+def build_chat_app(root: Path, config: AppConfig | None = None) -> FastAPI:
     """Return a FastAPI app bound to the chat orchestrator."""
 
     app = FastAPI(title="aijournal-chatd", version="0.3.0")
 
-    resolved_config = dict(config or {})
-    service = ChatService(root, resolved_config)
+    service = ChatService(root, config)
 
     # Delay import to avoid circular import during module initialization
     from aijournal.io.chat_sessions import ChatSessionRecorder

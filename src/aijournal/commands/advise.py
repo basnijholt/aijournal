@@ -24,6 +24,7 @@ from aijournal.commands.summarize import (
     _json_block,
     _load_normalized_entries,
 )
+from aijournal.common.app_config import AppConfig
 from aijournal.common.command_runner import run_command_pipeline
 from aijournal.common.context import RunContext
 from aijournal.common.meta import Artifact, ArtifactKind
@@ -31,7 +32,7 @@ from aijournal.domain.claims import ClaimAtom
 from aijournal.io.artifacts import load_artifact, save_artifact
 from aijournal.models.derived import AdviceCard, ProfileUpdateBatch
 from aijournal.pipelines import advise as advise_pipeline
-from aijournal.services.ollama import build_ollama_config_from_mapping
+from aijournal.services.ollama import resolve_model_name
 from aijournal.utils import time as time_utils
 
 
@@ -65,7 +66,7 @@ def prepare_inputs(ctx: RunContext, options: AdviceOptions) -> AdvicePrepared:
         ctx.emit(event="command_failed", reason="no_profile")
         raise typer.Exit(1)
 
-    weights = ctx.config.get("impact_weights", {}) if isinstance(ctx.config, dict) else {}
+    weights = ctx.config.impact_weights or {}
     latest_day = _latest_normalized_day(ctx.root)
     entries = _load_normalized_entries(ctx.root, latest_day) if latest_day else []
     pending_prompts = _collect_pending_interview_prompts(ctx.root)
@@ -93,19 +94,16 @@ def prepare_inputs(ctx: RunContext, options: AdviceOptions) -> AdvicePrepared:
 
 
 def invoke_pipeline(ctx: RunContext, prepared: AdvicePrepared) -> AdviceResult:
-    config = dict(ctx.config) if isinstance(ctx.config, dict) else {}
     advice_card = _advice_payload(
         prepared.question,
         prepared.profile,
         prepared.claims,
-        config,
+        ctx.config,
         rankings=prepared.rankings,
         pending_prompts=prepared.pending_prompts,
         use_fake_llm=ctx.use_fake_llm,
     )
-    model_name = "fake-ollama"
-    if not ctx.use_fake_llm:
-        model_name = build_ollama_config_from_mapping(config).model
+    model_name = resolve_model_name(ctx.config, use_fake_llm=ctx.use_fake_llm)
     day = time_utils.created_date(time_utils.format_timestamp(time_utils.now()))
     ctx.emit(
         event="pipeline_complete",
@@ -197,7 +195,7 @@ def _advice_payload(
     question: str,
     profile: dict[str, Any],
     claims: Sequence[ClaimAtom],
-    config: dict[str, Any],
+    config: AppConfig,
     *,
     rankings: Sequence[InterviewTarget],
     pending_prompts: Sequence[str],

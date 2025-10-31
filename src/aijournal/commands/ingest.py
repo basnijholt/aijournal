@@ -16,6 +16,7 @@ import yaml
 from pydantic import BaseModel, ValidationError
 from pydantic_ai import Agent
 
+from aijournal.common.app_config import AppConfig
 from aijournal.common.command_runner import run_command_pipeline
 from aijournal.common.context import RunContext, create_run_context
 from aijournal.ingest_agent import (
@@ -45,7 +46,7 @@ class IngestOptions(BaseModel):
 @dataclass(slots=True)
 class IngestPrepared:
     files: list[Path]
-    config: dict[str, Any]
+    config: AppConfig
     manifest_path: Path
     manifest_entries: list[ManifestEntry]
     known_hashes: dict[str, ManifestEntry]
@@ -73,11 +74,12 @@ def _load_yaml(path: Path) -> dict[str, Any]:
     return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
 
 
-def _load_config(root: Path) -> dict[str, Any]:
+def _load_config(root: Path) -> AppConfig:
     config_path = root / "config" / "config.yaml"
     if not config_path.exists():
-        return {}
-    return _load_yaml(config_path)
+        return AppConfig()
+    data = _load_yaml(config_path)
+    return AppConfig.model_validate(data)
 
 
 def _use_fake_llm() -> bool:
@@ -359,7 +361,6 @@ def _prepare_ingest_inputs(ctx: RunContext, options: IngestOptions) -> IngestPre
     manifest_entries = _load_manifest(manifest_path)
     known_hashes = {entry.hash: entry for entry in manifest_entries if entry.hash}
 
-    config = dict(ctx.config)
     ctx.emit(
         event="prepare_ingest",
         files=len(files),
@@ -369,7 +370,7 @@ def _prepare_ingest_inputs(ctx: RunContext, options: IngestOptions) -> IngestPre
 
     return IngestPrepared(
         files=files,
-        config=config,
+        config=ctx.config,
         manifest_path=manifest_path,
         manifest_entries=list(manifest_entries),
         known_hashes=known_hashes,

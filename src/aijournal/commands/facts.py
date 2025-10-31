@@ -35,7 +35,7 @@ from aijournal.io.artifacts import save_artifact
 from aijournal.models.authoritative import ManifestEntry
 from aijournal.models.derived import ProfileUpdatePreview
 from aijournal.pipelines import facts as facts_pipeline
-from aijournal.services.ollama import LLMResponseError, build_ollama_config_from_mapping
+from aijournal.services.ollama import LLMResponseError, resolve_model_name
 from aijournal.utils import time as time_utils
 
 
@@ -159,7 +159,6 @@ def prepare_inputs(ctx: RunContext, options: FactsOptions) -> FactsPrepared:
 
 
 def invoke_pipeline(ctx: RunContext, prepared: FactsPrepared) -> FactsResult:
-    config = dict(ctx.config) if isinstance(ctx.config, dict) else {}
     context = _characterization_context(prepared.entries, prepared.manifest_index)
 
     def request_microfacts() -> MicroFactsFile:
@@ -173,7 +172,7 @@ def invoke_pipeline(ctx: RunContext, prepared: FactsPrepared) -> FactsResult:
                 },
                 response_model=MicroFactsFile,
                 agent_name="aijournal-facts",
-                config=config,
+                config=ctx.config,
                 timeout=prepared.timeout,
                 max_attempts=max(1, prepared.retries + 1),
                 retry_message=(
@@ -209,10 +208,7 @@ def invoke_pipeline(ctx: RunContext, prepared: FactsPrepared) -> FactsResult:
 
 def persist_output(ctx: RunContext, result: FactsResult) -> FactsOutput:
     facts_path = _derived_microfacts_path(ctx.root, result.date)
-    config_dict = dict(ctx.config) if isinstance(ctx.config, dict) else {}
-    model_name = "fake-ollama"
-    if not ctx.use_fake_llm:
-        model_name = build_ollama_config_from_mapping(config_dict).model
+    model_name = resolve_model_name(ctx.config, use_fake_llm=ctx.use_fake_llm)
     artifact_meta = _build_meta("prompts/extract_facts.md", model=model_name)
     save_artifact(
         facts_path,

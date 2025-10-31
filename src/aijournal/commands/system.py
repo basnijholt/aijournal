@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
-from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -16,6 +15,7 @@ from pydantic import BaseModel
 
 from aijournal.commands.ingest import _load_config, _use_fake_llm
 from aijournal.commands.persona import persona_state
+from aijournal.common.app_config import AppConfig
 from aijournal.common.command_runner import run_command_pipeline
 from aijournal.common.context import RunContext, create_run_context
 from aijournal.domain.index import IndexMeta
@@ -100,7 +100,7 @@ def _check_pending_updates(root: Path) -> dict[str, Any]:
 
 
 def _check_ollama(
-    config: Mapping[str, Any],
+    config: AppConfig,
     host_override: str | None = None,
 ) -> tuple[bool, dict[str, Any]]:
     if _use_fake_llm():
@@ -194,7 +194,7 @@ def run_status_summary(root: Path) -> dict[str, Any]:
             index_info["meta_error"] = str(exc)
 
     pending_info = _check_pending_updates(root)
-    config_host = config.get("host") if isinstance(config, Mapping) else None
+    config_host = config.host
     host = resolve_ollama_host(
         os.getenv("AIJOURNAL_OLLAMA_HOST"),
         config_host=str(config_host) if config_host else None,
