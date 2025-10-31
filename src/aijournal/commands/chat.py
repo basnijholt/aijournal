@@ -4,16 +4,20 @@ from __future__ import annotations
 
 import json
 from collections.abc import Sequence
+from dataclasses import dataclass
 from pathlib import Path
 
 import typer
+from pydantic import BaseModel
 
 from aijournal.commands.index import (
     _format_search_snippet,
     _split_filter_values,
     _validate_date_option,
 )
-from aijournal.commands.ingest import _load_config
+from aijournal.commands.ingest import _load_config, _use_fake_llm
+from aijournal.common.command_runner import run_command_pipeline
+from aijournal.common.context import RunContext, create_run_context
 from aijournal.io.chat_sessions import ChatSessionRecorder
 from aijournal.services.chat import ChatService, ChatTurn
 from aijournal.services.feedback import (
@@ -25,71 +29,32 @@ from aijournal.services.retriever import RetrievalFilters
 from aijournal.utils import time as time_utils
 
 
-def run_chat(
-    question: str,
-    *,
-    top: int,
-    tags: str | None,
-    source: str | None,
-    date_from: str | None,
-    date_to: str | None,
-    session: str | None,
-    save: bool,
-    feedback: str | None,
-) -> None:
-    """Execute a retrieval-augmented chat turn and render the response."""
-    if top <= 0:
-        typer.secho("--top must be positive.", fg=typer.colors.RED, err=True)
-        raise typer.Exit(1)
+class ChatOptions(BaseModel):
+    question: str
+    top: int
+    tags: str | None = None
+    source: str | None = None
+    date_from: str | None = None
+    date_to: str | None = None
+    session: str | None = None
+    save: bool = False
+    feedback: str | None = None
 
-    root = Path.cwd()
-    config = _load_config(root)
-    filters = RetrievalFilters(
-        tags=_split_filter_values(tags),
-        source_types=_split_filter_values(source),
-        date_from=_validate_date_option(date_from, "--date-from"),
-        date_to=_validate_date_option(date_to, "--date-to"),
-    )
 
-    service = ChatService(root, config)
-    try:
-        turn = service.run(question, top=top, filters=filters)
-    except (RuntimeError, ValueError) as exc:
-        typer.secho(str(exc), fg=typer.colors.RED, err=True)
-        raise typer.Exit(1) from exc
-    finally:
-        service.close()
+@dataclass(slots=True)
+class ChatPrepared:
+    question: str
+    top: int
+    filters: RetrievalFilters
+    session_input: str | None
+    save: bool
+    feedback: str | None
 
-    feedback_value = _normalize_feedback_option(feedback)
-    session_id = session.strip() if isinstance(session, str) and session.strip() else None
-    saved_dir: Path | None = None
-    if save:
-        session_id = session_id or time_utils.generate_session_id()
-        recorder = ChatSessionRecorder(root, session_id)
-        recorder.append(turn, feedback=feedback_value)
-        saved_dir = recorder.session_dir
-    else:
-        session_id = session_id or time_utils.generate_session_id()
 
-    _render_chat_turn(
-        turn,
-        session_id=session_id,
-        saved_dir=saved_dir,
-        persisted=save,
-    )
-
-    _log_chat_telemetry(turn, session_id=session_id)
-
-    if feedback_value:
-        adjustments, feedback_path = apply_chat_feedback(
-            root,
-            turn_answer=turn.answer,
-            question=turn.question,
-            session_id=session_id,
-            timestamp=turn.timestamp,
-            feedback=feedback_value,
-        )
-        _render_feedback_summary(adjustments, feedback_path, feedback_value)
+@dataclass(slots=True)
+class ChatResult:
+    turn: ChatTurn
+    prepared: ChatPrepared
 
 
 def _normalize_feedback_option(value: str | None) -> str | None:
@@ -200,11 +165,154 @@ def _render_feedback_summary(
         return
 
     typer.echo("")
-    typer.echo(f"Recorded {feedback} feedback for {len(adjustments)} claim(s):")
+    typer.secho("Feedback adjustments applied:", fg=typer.colors.GREEN)
     for adj in adjustments:
-        sign = "+" if adj.delta >= 0 else ""
         typer.echo(
-            f"- {adj.claim_id}: {adj.old_strength:.2f} -> {adj.new_strength:.2f} ({sign}{adj.delta:.2f})",
+            f"  claim={adj.claim_id} delta={adj.delta:+.2f} old={adj.old_strength:.2f} new={adj.new_strength:.2f}",
         )
-    if feedback_path is not None:
-        typer.echo(f"Queued feedback batch: {feedback_path}")
+    if feedback_path:
+        typer.echo(f"  Saved adjustments to {feedback_path}")
+    typer.echo(f"  Feedback: {feedback}")
+    typer.echo("")
+
+
+def prepare_inputs(ctx: RunContext, options: ChatOptions) -> ChatPrepared:
+    if options.top <= 0:
+        typer.secho("--top must be positive.", fg=typer.colors.RED, err=True)
+        ctx.emit({"event": "command_failed", "reason": "invalid_top"})
+        raise typer.Exit(1)
+
+    filters = RetrievalFilters(
+        tags=_split_filter_values(options.tags),
+        source_types=_split_filter_values(options.source),
+        date_from=_validate_date_option(options.date_from, "--date-from"),
+        date_to=_validate_date_option(options.date_to, "--date-to"),
+    )
+
+    session_input = None
+    if isinstance(options.session, str):
+        session_input = options.session.strip() or None
+
+    feedback_value = _normalize_feedback_option(options.feedback)
+
+    ctx.emit(
+        {
+            "event": "prepare_summary",
+            "top": options.top,
+            "save": options.save,
+            "has_feedback": bool(feedback_value),
+        }
+    )
+
+    return ChatPrepared(
+        question=options.question,
+        top=options.top,
+        filters=filters,
+        session_input=session_input,
+        save=options.save,
+        feedback=feedback_value,
+    )
+
+
+def invoke_pipeline(ctx: RunContext, prepared: ChatPrepared) -> ChatResult:
+    config = _load_config(ctx.root)
+    service = ChatService(ctx.root, config)
+    try:
+        turn = service.run(
+            prepared.question,
+            top=prepared.top,
+            filters=prepared.filters,
+        )
+    except (RuntimeError, ValueError) as exc:
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        ctx.emit({"event": "command_failed", "reason": "chat_error", "error": str(exc)})
+        raise typer.Exit(1) from exc
+    finally:
+        service.close()
+
+    ctx.emit(
+        {
+            "event": "pipeline_complete",
+            "intent": turn.intent,
+            "chunks": turn.telemetry.chunk_count,
+        }
+    )
+    return ChatResult(turn=turn, prepared=prepared)
+
+
+def persist_output(ctx: RunContext, result: ChatResult) -> None:
+    prepared = result.prepared
+    turn = result.turn
+    session_id = prepared.session_input or time_utils.generate_session_id()
+    saved_dir: Path | None = None
+
+    if prepared.save:
+        recorder = ChatSessionRecorder(ctx.root, session_id)
+        recorder.append(turn, feedback=prepared.feedback)
+        saved_dir = recorder.session_dir
+
+    _render_chat_turn(
+        turn,
+        session_id=session_id,
+        saved_dir=saved_dir,
+        persisted=prepared.save,
+    )
+
+    _log_chat_telemetry(turn, session_id=session_id)
+
+    if prepared.feedback:
+        adjustments, feedback_path = apply_chat_feedback(
+            ctx.root,
+            turn_answer=turn.answer,
+            question=turn.question,
+            session_id=session_id,
+            timestamp=turn.timestamp,
+            feedback=prepared.feedback,
+        )
+        _render_feedback_summary(adjustments, feedback_path, prepared.feedback)
+
+
+def run_chat_command(ctx: RunContext, options: ChatOptions) -> None:
+    run_command_pipeline(
+        ctx,
+        options,
+        prepare_inputs=prepare_inputs,
+        invoke_pipeline=invoke_pipeline,
+        persist_output=persist_output,
+    )
+
+
+def run_chat(
+    question: str,
+    *,
+    top: int,
+    tags: str | None,
+    source: str | None,
+    date_from: str | None,
+    date_to: str | None,
+    session: str | None,
+    save: bool,
+    feedback: str | None,
+) -> None:
+    root = Path.cwd()
+    config = _load_config(root)
+    ctx = create_run_context(
+        command="chat",
+        root=root,
+        config=config,
+        use_fake_llm=_use_fake_llm(),
+        trace=False,
+        verbose_json=False,
+    )
+    options = ChatOptions(
+        question=question,
+        top=top,
+        tags=tags,
+        source=source,
+        date_from=date_from,
+        date_to=date_to,
+        session=session,
+        save=save,
+        feedback=feedback,
+    )
+    run_chat_command(ctx, options)
