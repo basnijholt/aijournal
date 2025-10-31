@@ -22,7 +22,6 @@ from aijournal.commands.summarize import (
     _json_block,
     _load_normalized_entries,
     _log_entry_progress,
-    _structured_call_with_retry,
     _validate_timeout,
 )
 from aijournal.common.command_runner import run_command_pipeline
@@ -189,7 +188,7 @@ def invoke_pipeline(ctx: RunContext, prepared: FactsPrepared) -> FactsResult:
         prepared.entries,
         prepared.date,
         use_fake_llm=ctx.use_fake_llm,
-        structured_call=_structured_call_with_retry,
+        structured_call=lambda func, *, retries, label: func(),
         request_factory=request_microfacts,
         retries=prepared.retries,
         context=context,

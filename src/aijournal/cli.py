@@ -79,9 +79,6 @@ from aijournal.commands.summarize import (
 from aijournal.commands.summarize import (
     _invoke_structured_llm as _commands_invoke_structured_llm,
 )
-from aijournal.commands.summarize import (
-    _structured_call_with_retry as _commands_structured_call_with_retry,
-)
 from aijournal.commands.system import run_system_doctor_cli, run_system_status_cli
 from aijournal.common.context import RunContext, create_run_context
 from aijournal.domain.changes import ClaimProposal, FacetChange
@@ -677,7 +674,7 @@ def _structured_call_with_retry(
     retries: int,
     label: str,
 ) -> Any:
-    return _commands_structured_call_with_retry(func, retries=retries, label=label)
+    return func()
 
 
 def _summarize_day_payload(

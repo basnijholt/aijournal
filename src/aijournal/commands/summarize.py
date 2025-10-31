@@ -153,16 +153,6 @@ def _is_timeout_exception(exc: BaseException) -> bool:
     return False
 
 
-def _structured_call_with_retry(
-    func: Callable[[], BaseModel],
-    *,
-    retries: int,
-    label: str,
-) -> BaseModel:
-    del retries, label
-    return func()
-
-
 def _json_block(data: Any) -> str:
     return json.dumps(data, indent=2, ensure_ascii=False)
 
@@ -296,7 +286,7 @@ def _summarize_day_payload(
     use_fake_llm: bool | None = None,
 ) -> DailySummary:
     invoke = invoke_structured_llm or _invoke_structured_llm
-    structured = structured_call or _structured_call_with_retry
+    structured = structured_call or (lambda func, *, retries, label: func())
     fake_mode = use_fake_llm if use_fake_llm is not None else _use_fake_llm()
 
     def request_summary() -> DailySummary:
