@@ -242,7 +242,7 @@ The L1→L4 memory hierarchy aligns with contemporary personality science when t
 8. **Trusted-Other Ingestion (Optional):** Provide `aijournal capture --trusted-other` for informant input, stored as separate evidence channels with independent decay.
 
 ### To-Do Checklist
-- [ ] Audit repo for legacy meta classes (`SummaryMeta`, `PersonaCoreMeta`), migrate any remaining metadata into `ArtifactMeta.notes`, and refresh schemas/docs/examples.
+- [x] Audit repo for legacy meta classes (`SummaryMeta`, `PersonaCoreMeta`); confirmed only historical docs mention them and no schema/code updates required.
 - [ ] Update all prompts and examples to the new ClaimAtomInput/enum/`para` span requirements and convert the advice flow to emit `AdviceCard` objects.
 - [ ] Introduce shared `StrEnum` vocabularies in `domain/enums.py`, refactor models/prompts/tests to use them, and bless the resulting schema snapshots.
 - [ ] Add skeleton injection + two-step repair loop + coercion logging to structured runners, exposing metrics in `LLMResult` and CI.
