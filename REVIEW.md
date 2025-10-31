@@ -107,6 +107,7 @@ Current `prompts/extract_facts.md` only requests the `facts` array, so claim pro
 - All domain models inherit from `StrictModel` (`aijournal/common/base.py`), forbidding unknown keys.
 - `scripts/check_schemas.py` snapshots JSON Schemas under `schemas/core/` and runs in the bundled pre-push hook.
 - `tests/test_ollama_services.py` confirms `run_ollama_agent` logs structured failures and translates provider errors into `LLMResponseError`.
+- Historical per-payload meta classes (`SummaryMeta`, `PersonaCoreMeta`) have been removed from `src/aijournal/domain`. All feature-specific metadata must now live inside `ArtifactMeta.notes`. Audit remaining docs (for example `refactor3.md`) and schema snapshots so they no longer reference the deleted meta structures.
 
 ## 4. Services & Pipelines
 ### 4.1 Ollama Runner (`src/aijournal/services/ollama.py`)
@@ -120,6 +121,7 @@ Stage handlers live in `services/capture/stages/` and return `OperationResult`/`
 ### 4.3 Retriever (`src/aijournal/services/retriever.py`)
 - Builds SQLite FTS and Annoy indexes; scoring combines cosine similarity with a recency term (`score = 0.7 * cosine + 0.3 * recency`, `recency = 1 / (1 + 0.05 * days_since)`).
 - CLI surfaces (`ops index rebuild`, `ops index search`) exercise these paths; `tests/test_retriever.py` asserts deterministic results against fixture workspaces.
+- Retrieval helpers now return `StrictModel` instances (`RetrievalFilters`, `RetrievalMeta`, `RetrievalResult`, `RetrievedChunk`). Keep all structs crossing CLI/API boundaries as `StrictModel`s; reserve plain dataclasses for internal helpers only.
 
 ### 4.4 Persona Builder (`src/aijournal/pipelines/persona.py`)
 - Ranks claim atoms via `effective_strength × impact_weight` using weights in `config/config.yaml`.
@@ -139,7 +141,7 @@ External feedback (LLM without repository access) aligned with local inspection;
 2. Keep evidence at the proposal level (`"evidence": [{"entry_id": ..., "spans": [{"type": "para", "index": 0}]}]`).
 3. Limit `value` to `string | list[string]`; drop `merge` option so downstream logic stays deterministic.
 4. Standardize fallback to `{"claims": [], "facets": []}` and instruct the model not to add extra keys.
-5. Update `prompts/examples/profile_suggest.json` and relevant tests.
+5. Update prompt text/examples to list the exact enum values (`type`, `status`, `method`) pulled from the shared enums file, then update `prompts/examples/profile_suggest.json` and relevant tests.
 
 ### 5.2 `prompts/characterize.md`
 **Observed:** Example payload includes `claim.id`, `provenance`, `normalized_ids`, `evidence_hashes`, and facet values as arbitrary objects. Instructions already require the top-level keys but not the input shape.
@@ -149,12 +151,12 @@ External feedback (LLM without repository access) aligned with local inspection;
 2. Require evidence spans to use `"type": "para"`; default to empty list only when evidence truly lacks spans.
 3. Constrain facet `value` to `string | list[string]` and keep `operation` to `set|remove`.
 4. Reinforce `rationale ≤ 25 words` and `interview_prompts ≤ 20 words`.
-5. Update `prompts/examples/characterize.json` and tests.
+5. Update prompt text/examples to enumerate allowed values (`claim.type`, `status`, `method`) and sync `prompts/examples/characterize.json` plus tests.
 
 ### 5.3 `prompts/extract_facts.md`
 **Observed:** Output skeleton only contains `"facts"` array despite `MicroFactsFile` expecting `claim_proposals` and `preview`.
 
-**Actions:** Expand skeleton to include empty defaults (`"claim_proposals": [], "preview": null`) and mirror that in failure fallback.
+**Actions:** Prefer to keep the LLM payload minimal (`{"facts": [...]}`) and let the pipeline wrap it into `Artifact[MicroFactsFile]` with `claim_proposals: []` and `preview: null`. If you opt to enforce the full envelope at the prompt layer, update the skeleton and fallback accordingly.
 
 ### 5.4 `prompts/advise.md`
 **Observed:**
@@ -172,7 +174,7 @@ External feedback (LLM without repository access) aligned with local inspection;
 - Add ≤18 word cap per line and switch fallback to `{ "day": "$date", "bullets": [], "highlights": [], "todo_candidates": [] }` instead of error objects.
 
 ### 5.6 `prompts/interview.md`
-- Clarify `probing.max_questions ≤ 3` and `≤20` word prompts; rest is consistent with `InterviewSet` schema.
+- Clarify `probing.max_questions ≤ 3`, question length ≤20 words, and require `target` references to use either a profile facet path or `claim:<id>` so downstream tooling can resolve follow-ups cleanly.
 
 ## 6. Runner-Level Enhancements
 ### 6.1 Skeleton Injection
@@ -230,19 +232,32 @@ The L1→L4 memory hierarchy aligns with contemporary personality science when t
 - Add `strength_ci` once sufficient observations exist.
 
 ## 8. Implementation Roadmap
-1. **Prompt Refactor:** Update templates per §5, revise `prompts/examples/*`, and align regression tests.
-2. **Schema Tightening:** Introduce enumerations (`AdviceStyle`, facet value unions) and regenerate schemas with `uv run python scripts/check_schemas.py --bless` followed by a non-bless run.
-3. **Runner Enhancements:** Implement skeleton injection, repair loop, and coercion logging in command modules; enrich `LLMResult` metadata.
-4. **Telemetry Metrics:** Aggregate validation/coercion stats; alert on threshold breaches.
-5. **Evaluation Toolkit:** Add `aijournal ops persona calibrate` for survey/EMA ingestion and `aijournal ops persona metrics` to compute correlations, ICCs, and calibration curves.
-6. **Advice Mechanistic Tags:** Extend `AdviceCard` with `com_b_lever` and `if_then` fields; require each recommendation to cite ≥1 claim and ≥1 recent evidence ID.
-7. **Trusted-Other Ingestion (Optional):** Provide `aijournal capture --trusted-other` for informant input, stored as separate evidence channels with independent decay.
+1. **Single-Meta Audit:** Confirm no residual `SummaryMeta`/`PersonaCoreMeta` usages, migrate lingering metadata into `ArtifactMeta.notes`, and refresh docs/schemas/examples to document the single-envelope invariant.
+2. **Prompt Refactor & Advice Cut-Over:** Update templates per §5, remove `AdviceLLMResponse` in favor of direct `AdviceCard` payloads (with `id: null`, bounded `style`, capped lists), revise `prompts/examples/*`, and align regression tests.
+3. **Schema Tightening:** Introduce shared `StrEnum` types (e.g., `domain/enums.py` housing `ClaimType`, `ClaimStatus`, `ClaimMethod`, `AdviceTone`, etc.), update domain models/prompts to reference the canonical vocabularies, and regenerate schemas with `uv run python scripts/check_schemas.py --bless` followed by a non-bless run.
+4. **Runner Enhancements:** Implement skeleton injection, repair loop, and coercion logging in command modules; enrich `LLMResult` metadata.
+5. **Telemetry Metrics:** Aggregate validation/coercion stats; alert on threshold breaches.
+6. **Evaluation Toolkit:** Add `aijournal ops persona calibrate` for survey/EMA ingestion and `aijournal ops persona metrics` to compute correlations, ICCs, and calibration curves.
+7. **Advice Mechanistic Tags:** Extend `AdviceCard` with `com_b_lever` and `if_then` fields; require each recommendation to cite ≥1 claim and ≥1 recent evidence ID.
+8. **Trusted-Other Ingestion (Optional):** Provide `aijournal capture --trusted-other` for informant input, stored as separate evidence channels with independent decay.
+
+### To-Do Checklist
+- [ ] Audit repo for legacy meta classes (`SummaryMeta`, `PersonaCoreMeta`), migrate any remaining metadata into `ArtifactMeta.notes`, and refresh schemas/docs/examples.
+- [ ] Update all prompts and examples to the new ClaimAtomInput/enum/`para` span requirements and convert the advice flow to emit `AdviceCard` objects.
+- [ ] Introduce shared `StrEnum` vocabularies in `domain/enums.py`, refactor models/prompts/tests to use them, and bless the resulting schema snapshots.
+- [ ] Add skeleton injection + two-step repair loop + coercion logging to structured runners, exposing metrics in `LLMResult` and CI.
+- [ ] Build telemetry surfaces that aggregate validation/coercion counts and enforce thresholds in CI.
+- [ ] Ship survey/EMA ingestion + reporting commands (`ops persona calibrate`, `ops persona metrics`) to track convergent/discriminant/test–retest/calibration stats and enforce kill criteria.
+- [ ] Extend `AdviceCard` with COM-B / implementation-intention fields and ensure recommendations cite both claims and recent evidence.
+- [ ] (Optional) Implement trusted-other ingestion with separate evidence channels and document usage.
 
 ## 9. Additional Observations
 - **Pre-push Guard:** `.githooks/pre-push` runs schema checks, pytest, and pre-commit—ensure they pass after prompt/schema refactors.
 - **Failure Archive:** Monitor `derived/logs/structured_failures/` after changes to confirm reduced error volume.
 - **Persona Freshness:** `aijournal ops persona status` reports stale cores; consider auto-rebuilding when `profile/` timestamps change.
 - **Run Logs:** Continue recording live-mode workflows in `/tmp/aijournal_live_run_*/run_log.md` for reproducibility.
+- **Citation Contract:** Keep the two-layer citation model (IDs on the wire, resolved spans in transcripts) and call it out explicitly in contributor docs so no one reverts to raw strings.
+- **Two-step Generation:** Where LLMs struggle, split large tasks into typed sub-steps (e.g., LLM emits facts only; server derives claim proposals and previews) to keep prompts simple and artifacts strict.
 
 ## 10. References
 1. Youyou, W., Kosinski, M., & Stillwell, D. (2015). *Computer-based personality judgments are more accurate than those made by humans.* Proceedings of the National Academy of Sciences.
