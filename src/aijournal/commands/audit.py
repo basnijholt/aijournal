@@ -22,6 +22,7 @@ from aijournal.io.artifacts import load_artifact, save_artifact
 from aijournal.io.yaml_io import write_yaml_model
 from aijournal.models.authoritative import ClaimsFile
 from aijournal.models.derived import ProfileUpdateBatch
+from aijournal.utils.paths import WorkspacePaths
 
 
 @dataclass(frozen=True)
@@ -72,7 +73,7 @@ def run_audit_provenance(*, root: Path, fix: bool) -> list[AuditFileResult]:
 
     results: list[AuditFileResult] = []
 
-    claims_path = root / "profile" / "claims.yaml"
+    claims_path = WorkspacePaths.profile() / "claims.yaml"
     if claims_path.exists():
         try:
             raw_claims = yaml.safe_load(claims_path.read_text(encoding="utf-8")) or {}
@@ -119,7 +120,7 @@ def run_audit_provenance(*, root: Path, fix: bool) -> list[AuditFileResult]:
                 ),
             )
 
-    persona_path = root / "derived" / "persona" / "persona_core.yaml"
+    persona_path = WorkspacePaths.derived() / "persona" / "persona_core.yaml"
     if persona_path.exists():
         artifact_entry = _load_auditable_artifact(persona_path)
         if artifact_entry is not None:

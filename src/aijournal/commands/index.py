@@ -28,6 +28,7 @@ from aijournal.pipelines import index as index_pipeline
 from aijournal.services.embedding import EmbeddingBackend
 from aijournal.services.retriever import RetrievalFilters, RetrievalResult, Retriever
 from aijournal.utils import time as time_utils
+from aijournal.utils.paths import WorkspacePaths
 
 INDEX_DB_FILENAME = "index.db"
 ANNOY_FILENAME = "annoy.index"
@@ -529,7 +530,8 @@ def _persist_search_output(ctx: RunContext, search_result: IndexSearchResult) ->
 
 
 def _index_dir(root: Path) -> Path:
-    return root / "derived" / "index"
+    del root  # Use WorkspacePaths instead
+    return WorkspacePaths.derived() / "index"
 
 
 def _index_db_path(root: Path) -> Path:
@@ -549,7 +551,8 @@ def _index_meta_path(root: Path) -> Path:
 
 
 def _collect_normalized_files(root: Path, since: str | None) -> list[tuple[str, Path]]:
-    normalized_root = root / "data" / "normalized"
+    del root  # Use WorkspacePaths instead
+    normalized_root = WorkspacePaths.data() / "normalized"
     if not normalized_root.exists():
         return []
     entries: list[tuple[str, Path]] = []

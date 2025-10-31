@@ -52,6 +52,7 @@ from aijournal.pipelines import characterize as characterize_pipeline
 from aijournal.pipelines import facts as facts_pipeline
 from aijournal.services.ollama import LLMResponseError
 from aijournal.utils import time as time_utils
+from aijournal.utils.paths import WorkspacePaths
 
 
 class CharacterizeOptions(BaseModel):
@@ -290,7 +291,8 @@ def _validate_timeout(value: float) -> float:
 
 
 def _load_normalized_entries_with_paths(root: Path, day: str) -> list[tuple[NormalizedEntry, Path]]:
-    folder = root / "data" / "normalized" / day
+    del root  # Use WorkspacePaths instead
+    folder = WorkspacePaths.data() / "normalized" / day
     if not folder.exists():
         return []
     entries: list[tuple[NormalizedEntry, Path]] = []
@@ -300,7 +302,8 @@ def _load_normalized_entries_with_paths(root: Path, day: str) -> list[tuple[Norm
 
 
 def _pending_updates_dir(root: Path) -> Path:
-    return root / "derived" / "pending" / "profile_updates"
+    del root  # Use WorkspacePaths instead
+    return WorkspacePaths.derived() / "pending" / "profile_updates"
 
 
 def _pending_updates_path(root: Path, batch_id: str) -> Path:
