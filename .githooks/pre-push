@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+echo "Running schema guard..."
+uv run python scripts/check_schemas.py
+
+echo "Running pytest..."
+uv run pytest -q
+
+echo "Running pre-commit hooks..."
+pre-commit run --all-files

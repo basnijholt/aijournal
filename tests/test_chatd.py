@@ -11,9 +11,13 @@ import yaml
 from fastapi.testclient import TestClient
 from typer.testing import CliRunner
 
+from aijournal.api.chat import ChatResponse
 from aijournal.cli import app
-from aijournal.models import PersonaCore
-from aijournal.services import ChatService, ChatTelemetry, ChatTurn, build_chat_app
+from aijournal.common.app_config import AppConfig
+from aijournal.domain.persona import PersonaCore
+from aijournal.io.yaml_io import dump_yaml
+from aijournal.services.chat import ChatService, ChatTelemetry, ChatTurn
+from aijournal.services.chat_api import build_chat_app
 from tests.helpers import make_claim_atom, write_manifest, write_normalized_entry
 
 
@@ -52,7 +56,7 @@ def capture_pipeline_mocks(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> N
     monkeypatch.setattr(
         "aijournal.commands.profile.run_profile_suggest",
         lambda date, *, timeout, retries, progress: _ensure_file(
-            tmp_path / "derived" / "profile_suggestions" / f"{date}.yaml",
+            tmp_path / "derived" / "profile_proposals" / f"{date}.yaml",
             "suggest",
         ),
     )
@@ -71,7 +75,7 @@ def capture_pipeline_mocks(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> N
     )
 
     monkeypatch.setattr(
-        "aijournal.commands.profile._load_profile_components",
+        "aijournal.commands.profile.load_profile_components",
         lambda root: (None, [object()]),
     )
 
@@ -160,7 +164,10 @@ def test_chatd_streams_answer(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
     )
 
     config_path = tmp_path / "config" / "config.yaml"
-    config = yaml.safe_load(config_path.read_text(encoding="utf-8")) if config_path.exists() else {}
+    config_dict = (
+        yaml.safe_load(config_path.read_text(encoding="utf-8")) if config_path.exists() else {}
+    )
+    config = AppConfig.model_validate(config_dict)
     app_instance = build_chat_app(tmp_path, config)
     client = TestClient(app_instance)
 
@@ -178,6 +185,8 @@ def test_chatd_streams_answer(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
     assert session_dir.exists()
     assert answer["event"] == "answer"
     assert answer["citations"], "Expected citations in streamed answer"
+    assert "code" in answer["citations"][0]
+    assert "marker" in answer["citations"][0]
 
 
 def test_chatd_no_save(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -190,7 +199,10 @@ def test_chatd_no_save(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     )
 
     config_path = tmp_path / "config" / "config.yaml"
-    config = yaml.safe_load(config_path.read_text(encoding="utf-8")) if config_path.exists() else {}
+    config_dict = (
+        yaml.safe_load(config_path.read_text(encoding="utf-8")) if config_path.exists() else {}
+    )
+    config = AppConfig.model_validate(config_dict)
     app_instance = build_chat_app(tmp_path, config)
     client = TestClient(app_instance)
 
@@ -208,7 +220,7 @@ def test_chatd_feedback_adjusts_claims(tmp_path: Path, monkeypatch: pytest.Monke
 
     claims_path = tmp_path / "profile" / "claims.yaml"
     claims_payload = {"claims": [make_claim_atom("focus-claim", "Focus work", strength=0.5)]}
-    claims_path.write_text(yaml.safe_dump(claims_payload, sort_keys=False), encoding="utf-8")
+    claims_path.write_text(dump_yaml(claims_payload, sort_keys=False), encoding="utf-8")
 
     def _fake_run(self, question: str, *, top: int = 6, filters=None) -> ChatTurn:  # type: ignore[override]
         telemetry = ChatTelemetry(
@@ -217,9 +229,16 @@ def test_chatd_feedback_adjusts_claims(tmp_path: Path, monkeypatch: pytest.Monke
             retriever_source="stub",
             model="fake",
         )
+        response = ChatResponse(
+            answer="Signal from claim [claim:focus-claim] informs the response.",
+            citations=[],
+            clarifying_question=None,
+            timestamp="2025-02-03T00:00:00Z",
+        )
         return ChatTurn(
             question=question,
-            answer="Signal from claim [claim:focus-claim] informs the response.",
+            answer=response.answer,
+            response=response,
             persona=PersonaCore(),
             citations=[],
             retrieved_chunks=[],
@@ -233,7 +252,10 @@ def test_chatd_feedback_adjusts_claims(tmp_path: Path, monkeypatch: pytest.Monke
     monkeypatch.setattr(ChatService, "run", _fake_run, raising=True)
 
     config_path = tmp_path / "config" / "config.yaml"
-    config = yaml.safe_load(config_path.read_text(encoding="utf-8")) if config_path.exists() else {}
+    config_dict = (
+        yaml.safe_load(config_path.read_text(encoding="utf-8")) if config_path.exists() else {}
+    )
+    config = AppConfig.model_validate(config_dict)
     app_instance = build_chat_app(tmp_path, config)
     client = TestClient(app_instance)
 
@@ -260,7 +282,10 @@ def test_capture_endpoint_streams_and_records(
     _init_workspace(tmp_path, monkeypatch)
 
     config_path = tmp_path / "config" / "config.yaml"
-    config = yaml.safe_load(config_path.read_text(encoding="utf-8")) if config_path.exists() else {}
+    config_dict = (
+        yaml.safe_load(config_path.read_text(encoding="utf-8")) if config_path.exists() else {}
+    )
+    config = AppConfig.model_validate(config_dict)
     app_instance = build_chat_app(tmp_path, config)
 
     with TestClient(app_instance) as client:
@@ -303,7 +328,10 @@ def test_capture_run_not_found(
     _init_workspace(tmp_path, monkeypatch)
 
     config_path = tmp_path / "config" / "config.yaml"
-    config = yaml.safe_load(config_path.read_text(encoding="utf-8")) if config_path.exists() else {}
+    config_dict = (
+        yaml.safe_load(config_path.read_text(encoding="utf-8")) if config_path.exists() else {}
+    )
+    config = AppConfig.model_validate(config_dict)
     app_instance = build_chat_app(tmp_path, config)
 
     with TestClient(app_instance) as client:

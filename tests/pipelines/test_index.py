@@ -4,8 +4,14 @@ import json
 import sqlite3
 from pathlib import Path
 
+import numpy as np
+
+from aijournal.common.meta import ArtifactKind
+from aijournal.domain.index import ChunkBatch, IndexMeta
+from aijournal.domain.journal import NormalizedEntry
+from aijournal.io.artifacts import load_artifact, load_artifact_data
 from aijournal.io.yaml_io import write_yaml_model
-from aijournal.models import ManifestEntry, NormalizedEntry
+from aijournal.models.authoritative import ManifestEntry
 from aijournal.pipelines import index as index_pipeline
 from aijournal.services.embedding import EmbeddingBackend
 
@@ -145,9 +151,71 @@ def test_write_index_meta(tmp_path: Path) -> None:
         index_meta_path=lambda base: meta_path,
     )
 
-    payload = json.loads(meta_path.read_text(encoding="utf-8"))
-    assert payload["chunk_count"] == 10
-    assert payload["annoy_trees"] == 10
+    meta = load_artifact_data(meta_path, IndexMeta)
+    assert meta.chunk_count == 10
+    assert meta.annoy_trees == 10
+
+
+def test_write_chunk_manifests(tmp_path: Path) -> None:
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    _prepare_schema(conn)
+
+    entry_id = "entry-1"
+    embedder = EmbeddingBackend(model="fake", fake_mode=True)
+    base_vector = np.arange(0, min(16, embedder.dim), dtype=float)
+    if base_vector.size < embedder.dim:
+        base_vector = np.pad(base_vector, (0, embedder.dim - base_vector.size))
+    vector = base_vector.tolist()
+
+    conn.execute(
+        """
+        INSERT INTO chunks (
+            chunk_id, normalized_id, normalized_path, chunk_index, chunk_text,
+            date, tags, source_type, source_path, tokens, source_hash, manifest_hash, embedding
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            "chunk-1",
+            entry_id,
+            "normalized/path.yaml",
+            0,
+            "Focus chunk",
+            "2024-01-02",
+            json.dumps(["focus"]),
+            "markdown",
+            "data/entry.md",
+            120,
+            "source-hash",
+            "manifest-hash",
+            index_pipeline.vector_to_blob(vector),
+        ),
+    )
+
+    chunk_dir = tmp_path / "chunks"
+    index_pipeline.write_chunk_manifests(
+        conn,
+        chunk_dir,
+        days={"2024-01-02"},
+        embedder=embedder,
+    )
+
+    artifact_path = chunk_dir / "2024-01-02.yaml"
+    artifact = load_artifact(artifact_path, ChunkBatch)
+    assert artifact.kind is ArtifactKind.INDEX_CHUNKS
+    assert artifact.meta.model == embedder.model
+    assert artifact.meta.notes and artifact.meta.notes["vector_dimension"] == str(embedder.dim)
+    assert artifact.data.day == "2024-01-02"
+    assert len(artifact.data.chunks) == 1
+    chunk = artifact.data.chunks[0]
+    assert chunk.text == "Focus chunk"
+    assert chunk.tags == ["focus"]
+    assert chunk.date == "2024-01-02"
+
+    vector_path = chunk_dir / "2024-01-02.npy"
+    assert vector_path.exists()
+    loaded_vectors = np.load(vector_path)
+    assert loaded_vectors.shape[0] == 1
 
 
 def test_token_estimate_defaults() -> None:

@@ -23,6 +23,3 @@ def coerce_int(value: Any) -> int | None:
         return int(value)
     except (TypeError, ValueError):
         return None
-
-
-__all__ = ["coerce_float", "coerce_int"]

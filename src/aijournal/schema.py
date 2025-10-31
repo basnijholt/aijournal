@@ -6,19 +6,14 @@ from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, ValidationError
 
-from aijournal.models.authoritative import (
-    ClaimsFile,
-    JournalEntry,
-    NormalizedEntry,
-    SelfProfile,
-)
+from aijournal.domain.changes import ProfileUpdateProposals
+from aijournal.domain.facts import DailySummary
+from aijournal.domain.journal import NormalizedEntry
+from aijournal.domain.persona import InterviewSet, PersonaCore
+from aijournal.models.authoritative import ClaimsFile, JournalEntry, SelfProfile
 from aijournal.models.derived import (
     AdviceCard,
-    DailySummary,
-    InterviewSet,
     MicroFactsFile,
-    PersonaCoreFile,
-    ProfileSuggestions,
     ProfileUpdateBatch,
 )
 
@@ -43,8 +38,8 @@ _MODEL_REGISTRY: dict[str, type[BaseModel]] = {
     "journal_entry": JournalEntry,
     "microfacts": MicroFactsFile,
     "normalized_entry": NormalizedEntry,
-    "persona_core": PersonaCoreFile,
-    "profile_suggestions": ProfileSuggestions,
+    "persona_core": PersonaCore,
+    "profile_proposals": ProfileUpdateProposals,
     "profile_updates": ProfileUpdateBatch,
     "self_profile": SelfProfile,
     "summary": DailySummary,
@@ -71,6 +66,3 @@ def validate_schema(schema_name: str, payload: Any) -> None:
             errors.append(f"{location}: {err.get('msg', 'invalid value')}")
     if errors:
         raise SchemaValidationError(schema_name, errors)
-
-
-__all__ = ["SchemaValidationError", "validate_schema"]

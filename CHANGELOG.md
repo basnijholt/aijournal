@@ -2,12 +2,16 @@
 
 ## Unreleased
 
+- Chat service fully migrated to strict domain models: `ChatService` now returns `ChatTurn`/`ChatTelemetry` `StrictModel`s end-to-end and CLI/API/tests no longer depend on legacy dataclasses.
+- Advice cards plus chat summaries/learnings now persist as `Artifact[T]` envelopes with dedicated domain schemas and updated fixtures/tests.
+- Added `aijournal ops audit provenance [--fix]` to report or redact any persisted `span.text` provenance and wired it into docs/workflow guidance.
+- Removed the legacy pending-batch YAML readers; CLI/modules now require strict `Artifact[ProfileUpdateBatch]` envelopes and surface guidance when stale files are discovered.
 - CLI commands `summarize`, `facts`, `profile suggest`, and `characterize` now run through the shared Pydantic AI agent pipeline (`run_ollama_agent` + structured response models) and surface errors when schemas fail validation instead of emitting heuristic fallbacks.
 - Centralized float/int coercion in `aijournal.utils.coercion` and extended the chat service to respect `config.chat` overrides (model, temperature, seed, timeout).
 - Expanded README/plan docs and tests to describe and exercise the unified Pydantic AI configuration helper.
 - Added shared `--progress` and `--retries` flags across long-running LLM calls to surface per-entry progress and control retry behaviour.
 - Added `aijournal new --fake N` (with `--seed`) to synthesize deterministic Markdown entries for fixtures, demos, and CI without hitting Ollama.
-- Added `aijournal index rebuild/tail` to generate Annoy + SQLite retrieval indexes (with chunk manifests + meta) using local or fake embeddings.
+- Added `aijournal index rebuild/tail` to generate Annoy + SQLite retrieval indexes (with chunk artifacts + meta) using local or fake embeddings.
 - Added `aijournal.services.retriever.Retriever` with ANN + fallback search plus Pytests for both modes.
 - Added `aijournal persona build` to generate `derived/persona/persona_core.yaml` with configurable token budgets, claim ranking, trimming metadata, and full schema/Pytest coverage.
 - Added `aijournal persona status` plus pack-level persona gating: persona core stores profile mtimes, `pack` refuses to run without it, and warns when profile edits make the cache stale.

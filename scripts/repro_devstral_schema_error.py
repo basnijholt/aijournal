@@ -13,9 +13,9 @@ from string import Template
 from typing import Any
 
 import yaml
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
-from aijournal.models import SimpleProfileSuggestionsResponse
+from aijournal.domain.changes import ProfileUpdateProposals
 from aijournal.services.ollama import build_ollama_agent, build_ollama_config_from_mapping
 
 STRUCTURED_SYSTEM_PROMPT = (
@@ -25,25 +25,9 @@ STRUCTURED_SYSTEM_PROMPT = (
 )
 
 
-class MiniProfileSuggestions(BaseModel):
+class MiniProfileProposals(BaseModel):
     summary: str
     ideas: list[str]
-
-
-class SimpleSuggestion(BaseModel):
-    kind: str
-    id: str | None = None
-    statement: str | None = None
-    facet_path: str | None = None
-    value: Any | None = None
-    rationale: str | None = None
-    evidence: list[str] = Field(default_factory=list)
-    status: str | None = None
-    confidence: float | None = None
-
-
-class SimpleSuggestionsResponse(BaseModel):
-    suggestions: list[SimpleSuggestion] = Field(default_factory=list)
 
 
 def dump_exc(exc: BaseException) -> None:
@@ -91,39 +75,64 @@ def build_prompt(mode: str, date: str) -> tuple[type[BaseModel], str]:
         prompt = (
             "Summarize why schema-constrained responses might fail and list three debugging ideas."
         )
-        return MiniProfileSuggestions, prompt
+        return MiniProfileProposals, prompt
     if mode == "simple":
         prompt = """
-Return JSON exactly following:
+Return JSON exactly following the `ProfileUpdateProposals` schema:
 {
-  "suggestions": [
+  "claims": [
     {
-      "kind": "claim" | "facet",
-      "id": "optional-claim-id",
-      "statement": "...",                # required when kind="claim"
-      "facet_path": "...",               # required when kind="facet"
-      "value": <JSON value>,             # required when kind="facet"
-      "rationale": "...",
-      "evidence": ["entry-id"],
-      "status": "accepted" | "tentative",
-      "confidence": 0.0-1.0
+      "claim": {
+        "type": "goal" | "habit" | "value" | ...,
+        "subject": "who or what the claim refers to",
+        "predicate": "relationship or attribute",
+        "value": "normalized value",
+        "statement": "Readable sentence",
+        "scope": {"domain": "optional", "context": ["tags"], "conditions": []},
+        "strength": 0.0-1.0,
+        "status": "accepted" | "tentative" | "rejected",
+        "method": "self_report" | "inferred" | "behavioral",
+        "user_verified": false,
+        "review_after_days": integer
+      },
+      "normalized_ids": ["normalized-entry-id"],
+      "evidence": [
+        {"entry_id": "normalized-entry-id", "spans": [{"type": "paragraph", "index": 0}]}
+      ],
+      "manifest_hashes": ["optional-manifest-hash"],
+      "rationale": "≤25 word justification"
+    }
+  ],
+  "facets": [
+    {
+      "path": "values_motivations.recurring_theme",
+      "operation": "set" | "merge" | "remove",
+      "value": <JSON value when operation is set/merge>,
+      "method": "inferred" | "self_report" | "behavioral",
+      "confidence": 0.0-1.0,
+      "review_after_days": integer,
+      "user_verified": false,
+      "evidence": [
+        {"entry_id": "normalized-entry-id", "spans": [{"type": "paragraph", "index": 1}]}
+      ],
+      "rationale": "≤25 word justification"
     }
   ]
 }
-Only include fields relevant to the suggestion type. Use the notes below to ground your output and leave the array empty if nothing is justified.
+Use the notes below to ground your output and leave the arrays empty if nothing is justified.
 
 Notes:
 - 2024-12-04 journal: Evening walks helped you decompress after work.
 - 2024-12-05 journal: Weekly check-ins improved focus and accountability.
 """
-        return SimpleProfileSuggestionsResponse, prompt
+        return ProfileUpdateProposals, prompt
 
     variables = load_profile_inputs(date)
     variables["date"] = date
     template_path = Path("prompts") / "profile_suggest.md"
     template = Template(template_path.read_text(encoding="utf-8"))
     prompt_text = template.safe_substitute(variables)
-    return SimpleProfileSuggestionsResponse, prompt_text
+    return ProfileUpdateProposals, prompt_text
 
 
 def main() -> None:

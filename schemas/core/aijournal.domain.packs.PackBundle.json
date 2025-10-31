@@ -1,0 +1,115 @@
+{
+  "$defs": {
+    "PackEntry": {
+      "additionalProperties": false,
+      "description": "Single file included in an export pack.",
+      "properties": {
+        "content": {
+          "title": "Content",
+          "type": "string"
+        },
+        "path": {
+          "title": "Path",
+          "type": "string"
+        },
+        "role": {
+          "title": "Role",
+          "type": "string"
+        },
+        "tokens": {
+          "title": "Tokens",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "role",
+        "path",
+        "tokens",
+        "content"
+      ],
+      "title": "PackEntry",
+      "type": "object"
+    },
+    "PackMeta": {
+      "additionalProperties": false,
+      "description": "Metadata describing the assembled pack.",
+      "properties": {
+        "generated_at": {
+          "title": "Generated At",
+          "type": "string"
+        },
+        "max_tokens": {
+          "title": "Max Tokens",
+          "type": "integer"
+        },
+        "total_tokens": {
+          "title": "Total Tokens",
+          "type": "integer"
+        },
+        "trimmed": {
+          "items": {
+            "$ref": "#/$defs/TrimmedFile"
+          },
+          "title": "Trimmed",
+          "type": "array"
+        }
+      },
+      "required": [
+        "total_tokens",
+        "max_tokens",
+        "generated_at"
+      ],
+      "title": "PackMeta",
+      "type": "object"
+    },
+    "TrimmedFile": {
+      "additionalProperties": false,
+      "description": "Record of a file trimmed due to token budget limits.",
+      "properties": {
+        "path": {
+          "title": "Path",
+          "type": "string"
+        },
+        "role": {
+          "title": "Role",
+          "type": "string"
+        }
+      },
+      "required": [
+        "role",
+        "path"
+      ],
+      "title": "TrimmedFile",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Structured representation of a pack export.",
+  "properties": {
+    "date": {
+      "title": "Date",
+      "type": "string"
+    },
+    "files": {
+      "items": {
+        "$ref": "#/$defs/PackEntry"
+      },
+      "title": "Files",
+      "type": "array"
+    },
+    "level": {
+      "title": "Level",
+      "type": "string"
+    },
+    "meta": {
+      "$ref": "#/$defs/PackMeta"
+    }
+  },
+  "required": [
+    "level",
+    "date",
+    "meta"
+  ],
+  "title": "PackBundle",
+  "type": "object"
+}

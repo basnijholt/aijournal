@@ -7,12 +7,14 @@ import json
 import re
 from collections.abc import AsyncIterator, Iterable
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
 
+from aijournal.api.capture import CaptureInput, CaptureRequest
+from aijournal.api.chat import ChatRequest
+from aijournal.common.app_config import AppConfig
 from aijournal.services.chat import ChatService
 from aijournal.services.feedback import FeedbackAdjustment, apply_chat_feedback
 from aijournal.services.retriever import RetrievalFilters
@@ -22,42 +24,6 @@ try:  # pragma: no cover - optional dependency
     import orjson
 except ModuleNotFoundError:  # pragma: no cover - optional dependency
     orjson = None  # type: ignore[assignment]
-
-
-class ChatRequest(BaseModel):
-    """Incoming chat payload for the API endpoint."""
-
-    question: str = Field(min_length=1)
-    top: int | None = Field(default=None, ge=1)
-    tags: list[str] | None = None
-    source: list[str] | None = None
-    date_from: str | None = None
-    date_to: str | None = None
-    session_id: str | None = Field(default=None, pattern=r"^[A-Za-z0-9_.\-]+$")
-    save: bool = True
-    feedback: str | None = None
-
-
-class CaptureRequest(BaseModel):
-    """Request payload for capture streaming API."""
-
-    source: Literal["stdin", "editor", "file", "dir"]
-    text: str | None = None
-    paths: list[str] = Field(default_factory=list)
-    source_type: Literal["journal", "notes", "blog"] = "journal"
-    date: str | None = None
-    title: str | None = None
-    slug: str | None = None
-    tags: list[str] = Field(default_factory=list)
-    projects: list[str] = Field(default_factory=list)
-    mood: str | None = None
-    apply_profile: Literal["auto", "review"] = "auto"
-    rebuild: Literal["auto", "always", "skip"] = "auto"
-    pack: Literal["L1", "L3", "L4"] | None = None
-    retries: int = Field(1, ge=0)
-    progress: bool = True
-    dry_run: bool = False
-    snapshot: bool = True
 
 
 def _json_line(payload: dict[str, Any]) -> bytes:
@@ -91,13 +57,12 @@ def _default_session_id() -> str:
     return f"chat-{datetime.now(tz=UTC).strftime('%Y%m%d-%H%M%S')}"
 
 
-def build_chat_app(root: Path, config: dict[str, Any] | None = None) -> FastAPI:
+def build_chat_app(root: Path, config: AppConfig | None = None) -> FastAPI:
     """Return a FastAPI app bound to the chat orchestrator."""
 
     app = FastAPI(title="aijournal-chatd", version="0.3.0")
 
-    resolved_config = dict(config or {})
-    service = ChatService(root, resolved_config)
+    service = ChatService(root, config)
 
     # Delay import to avoid circular import during module initialization
     from aijournal.io.chat_sessions import ChatSessionRecorder
@@ -179,7 +144,13 @@ def build_chat_app(root: Path, config: dict[str, Any] | None = None) -> FastAPI:
                 "event": "answer",
                 "question": turn.question,
                 "answer": turn.answer,
-                "citations": [citation.code for citation in turn.citations],
+                "citations": [
+                    {
+                        **citation.model_dump(mode="json"),
+                        "marker": citation.marker,
+                    }
+                    for citation in turn.citations
+                ],
                 "clarifying_question": turn.clarifying_question,
                 "fake_mode": turn.fake_mode,
             }
@@ -189,9 +160,13 @@ def build_chat_app(root: Path, config: dict[str, Any] | None = None) -> FastAPI:
 
     @app.post("/capture")
     async def capture_endpoint(payload: CaptureRequest) -> StreamingResponse:
-        from aijournal.services.capture import CaptureInput, run_capture
+        from aijournal.services.capture import CAPTURE_MAX_STAGE, run_capture
 
-        capture_input = CaptureInput.model_validate(payload.model_dump(mode="python"))
+        capture_input = CaptureInput.from_request(
+            payload,
+            min_stage=0,
+            max_stage=CAPTURE_MAX_STAGE,
+        )
         loop = asyncio.get_running_loop()
         queue: asyncio.Queue[bytes | None] = asyncio.Queue()
 
@@ -245,6 +220,3 @@ def build_chat_app(root: Path, config: dict[str, Any] | None = None) -> FastAPI:
         return result.model_dump(mode="json")
 
     return app
-
-
-__all__ = ["build_chat_app", "ChatRequest", "CaptureRequest"]

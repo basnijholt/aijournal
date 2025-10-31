@@ -15,15 +15,12 @@ from typing import Any, Literal
 import numpy as np
 from annoy import AnnoyIndex
 
-from aijournal.io.yaml_io import load_yaml_model, write_yaml_model
-from aijournal.models import (
-    ChunkManifest,
-    ChunkManifestChunk,
-    ChunkManifestMeta,
-    IndexMeta,
-    ManifestEntry,
-    NormalizedEntry,
-)
+from aijournal.common.meta import Artifact, ArtifactKind, ArtifactMeta
+from aijournal.domain.index import Chunk, ChunkBatch, IndexMeta
+from aijournal.domain.journal import NormalizedEntry
+from aijournal.io.artifacts import save_artifact
+from aijournal.io.yaml_io import load_yaml_model
+from aijournal.models.authoritative import ManifestEntry
 from aijournal.pipelines import normalization
 from aijournal.services.embedding import EmbeddingBackend
 from aijournal.utils import time as time_utils
@@ -415,16 +412,17 @@ def write_chunk_manifests(
             """,
             (day,),
         ).fetchall()
-        chunk_models: list[ChunkManifestChunk] = []
+        chunks: list[Chunk] = []
         vectors: list[list[float]] = []
         for row in rows:
             tags = json.loads(row["tags"] or "[]")
-            chunk_models.append(
-                ChunkManifestChunk(
+            chunks.append(
+                Chunk(
                     chunk_id=str(row["chunk_id"]),
                     normalized_id=str(row["normalized_id"]),
                     chunk_index=int(row["chunk_index"]),
-                    chunk_text=str(row["chunk_text"] or ""),
+                    text=str(row["chunk_text"] or ""),
+                    date=day,
                     tags=list(tags),
                     source_type=row["source_type"],
                     source_path=str(row["source_path"] or ""),
@@ -435,17 +433,22 @@ def write_chunk_manifests(
             )
             vectors.append(blob_to_vector(row["embedding"]))
 
-        manifest_path = chunk_dir / f"{day}.yaml"
-        manifest = ChunkManifest(
-            day=day,
-            chunks=chunk_models,
-            meta=ChunkManifestMeta(
-                embedding_model=embedder.model,
-                vector_dimension=embedder.dim,
-                generated_at=time_utils.format_timestamp(time_utils.now()),
+        timestamp = time_utils.format_timestamp(time_utils.now())
+        artifact = Artifact[ChunkBatch](
+            kind=ArtifactKind.INDEX_CHUNKS,
+            meta=ArtifactMeta(
+                created_at=timestamp,
+                model=embedder.model,
+                notes={
+                    "vector_dimension": str(embedder.dim),
+                    "chunk_count": str(len(chunks)),
+                },
             ),
+            data=ChunkBatch(day=day, chunks=chunks),
         )
-        write_yaml_model(manifest_path, manifest)
+
+        artifact_path = chunk_dir / f"{day}.yaml"
+        save_artifact(artifact_path, artifact)
         vector_array = (
             np.array(vectors, dtype="float32")
             if vectors
@@ -476,6 +479,7 @@ def write_index_meta(
     touched_dates: Iterable[str],
     index_meta_path: Callable[[Path], Path],
 ) -> None:
+    timestamp = time_utils.format_timestamp(time_utils.now())
     index_meta = IndexMeta(
         embedding_model=embedder.model,
         vector_dimension=embedder.dimension,
@@ -489,29 +493,16 @@ def write_index_meta(
         since=since,
         limit=limit,
         touched_dates=sorted(set(touched_dates)),
-        updated_at=time_utils.format_timestamp(time_utils.now()),
+        updated_at=timestamp,
     )
-    payload = index_meta.model_dump(mode="python", exclude_none=True)
+    artifact = Artifact[IndexMeta](
+        kind=ArtifactKind.INDEX_META,
+        meta=ArtifactMeta(
+            created_at=timestamp,
+            model=embedder.model,
+        ),
+        data=index_meta,
+    )
     meta_path = index_meta_path(root)
-    meta_path.parent.mkdir(parents=True, exist_ok=True)
-    meta_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
-
-
-__all__ = [
-    "ANN_METRIC",
-    "CHUNK_MAX_CHARS",
-    "CHUNK_TARGET_CHARS",
-    "ChunkRecord",
-    "IndexTask",
-    "SourceRecord",
-    "prepare_index_tasks",
-    "filter_tasks_for_tail",
-    "build_chunk_records",
-    "index_entries",
-    "rebuild_annoy_index",
-    "write_chunk_manifests",
-    "gather_index_stats",
-    "write_index_meta",
-    "select_source_hash",
-    "hash_file",
-]
+    artifact_format = meta_path.suffix.lstrip(".") or "json"
+    save_artifact(meta_path, artifact, format=artifact_format)

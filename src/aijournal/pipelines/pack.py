@@ -3,11 +3,10 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
-from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any
 
+from aijournal.domain.packs import PackBundle, PackEntry, PackMeta, TrimmedFile
 from aijournal.utils import time as time_utils
 
 ROLE_ORDER = [
@@ -20,7 +19,7 @@ ROLE_ORDER = [
     "summaries",
     "microfacts",
     "advice",
-    "profile_suggestions",
+    "profile_proposals",
     "journal_raw",
 ]
 
@@ -29,46 +28,13 @@ TRIM_PRIORITY = [
     "prompt",
     "config",
     "advice",
-    "profile_suggestions",
+    "profile_proposals",
     "microfacts",
     "summaries",
     "normalized",
     "profile",
     "claims",
 ]
-
-
-@dataclass
-class PackEntry:
-    role: str
-    path: str
-    tokens: int
-    content: str
-
-
-@dataclass
-class TrimmedFile:
-    role: str
-    path: str
-
-
-@dataclass
-class PackMeta:
-    total_tokens: int
-    max_tokens: int
-    trimmed: list[TrimmedFile]
-    generated_at: str
-
-
-@dataclass
-class PackBundle:
-    level: str
-    date: str
-    files: list[PackEntry]
-    meta: PackMeta
-
-    def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
 
 
 class PackAssemblyError(RuntimeError):
@@ -210,8 +176,8 @@ def collect_pack_entries(
     if level in {"L3", "L4"}:
         advice_dir = root / "derived" / "advice" / date
         _add_dir(entries, "advice", advice_dir, pattern="*.yaml")
-        profile_suggestions = root / "derived" / "profile_suggestions" / f"{date}.yaml"
-        _add_path(entries, "profile_suggestions", profile_suggestions)
+        profile_proposals = root / "derived" / "profile_proposals" / f"{date}.yaml"
+        _add_path(entries, "profile_proposals", profile_proposals)
 
     if level == "L4":
         prompts_dir = root / "prompts"
@@ -266,17 +232,3 @@ def build_pack_payload(
         generated_at=time_utils.format_timestamp(time_utils.now()),
     )
     return PackBundle(level=level, date=date, files=entries, meta=meta)
-
-
-__all__ = [
-    "PackAssemblyError",
-    "PackBundle",
-    "PackEntry",
-    "PackMeta",
-    "TrimmedFile",
-    "build_pack_payload",
-    "collect_pack_entries",
-    "trim_entries",
-    "ROLE_ORDER",
-    "TRIM_PRIORITY",
-]

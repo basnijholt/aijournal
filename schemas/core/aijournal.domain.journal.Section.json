@@ -1,0 +1,44 @@
+{
+  "additionalProperties": false,
+  "description": "Normalized representation of a markdown heading or section.",
+  "properties": {
+    "heading": {
+      "title": "Heading",
+      "type": "string"
+    },
+    "level": {
+      "default": 1,
+      "title": "Level",
+      "type": "integer"
+    },
+    "para_index": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Para Index"
+    },
+    "summary": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Summary"
+    }
+  },
+  "required": [
+    "heading"
+  ],
+  "title": "Section",
+  "type": "object"
+}

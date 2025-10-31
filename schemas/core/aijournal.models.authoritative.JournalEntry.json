@@ -1,0 +1,63 @@
+{
+  "additionalProperties": false,
+  "description": "Human-authored Markdown entry metadata.",
+  "properties": {
+    "created_at": {
+      "title": "Created At",
+      "type": "string"
+    },
+    "id": {
+      "title": "Id",
+      "type": "string"
+    },
+    "mood": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Mood"
+    },
+    "projects": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Projects",
+      "type": "array"
+    },
+    "summary": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Summary"
+    },
+    "tags": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Tags",
+      "type": "array"
+    },
+    "title": {
+      "title": "Title",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "created_at",
+    "title"
+  ],
+  "title": "JournalEntry",
+  "type": "object"
+}

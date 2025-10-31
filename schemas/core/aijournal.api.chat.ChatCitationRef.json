@@ -1,0 +1,16 @@
+{
+  "additionalProperties": false,
+  "description": "Reference emitted by the LLM; resolved against retrieved chunks.",
+  "properties": {
+    "code": {
+      "minLength": 1,
+      "title": "Code",
+      "type": "string"
+    }
+  },
+  "required": [
+    "code"
+  ],
+  "title": "ChatCitationRef",
+  "type": "object"
+}

@@ -1,0 +1,44 @@
+{
+  "additionalProperties": false,
+  "description": "Structured interview question proposed by the characterization pipeline.",
+  "properties": {
+    "id": {
+      "title": "Id",
+      "type": "string"
+    },
+    "priority": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Priority"
+    },
+    "target_facet": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Target Facet"
+    },
+    "text": {
+      "title": "Text",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "text"
+  ],
+  "title": "InterviewQuestion",
+  "type": "object"
+}

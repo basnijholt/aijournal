@@ -5,10 +5,18 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import pytest
-import yaml
 from typer.testing import CliRunner
 
 from aijournal.cli import app
+from aijournal.common.meta import Artifact, ArtifactKind, ArtifactMeta
+from aijournal.domain.changes import ProfileUpdateProposals
+from aijournal.io.artifacts import load_artifact, save_artifact
+from aijournal.io.yaml_io import dump_yaml
+from aijournal.models.derived import (
+    AdviceCard,
+    ProfileUpdateBatch,
+    ProfileUpdatePreview,
+)
 from tests.helpers import make_claim_atom
 
 if TYPE_CHECKING:
@@ -41,7 +49,7 @@ boundaries_ethics:
   red_lines:
     - "No health advice"
 """
-    claims = yaml.safe_dump(
+    claims = dump_yaml(
         {
             "claims": [
                 make_claim_atom(
@@ -60,27 +68,38 @@ boundaries_ethics:
 
 
 def _seed_pending_prompt(workspace: Path) -> None:
-    payload = {
-        "preview": {
-            "interview_prompts": ["Where do morning routines break down during travel weeks?"],
-        }
-    }
+    batch = ProfileUpdateBatch(
+        batch_id="pending-batch",
+        created_at=f"{DATE}T00:00:00Z",
+        date=DATE,
+        proposals=ProfileUpdateProposals(),
+        preview=ProfileUpdatePreview(
+            interview_prompts=["Where do morning routines break down during travel weeks?"],
+        ),
+    )
     path = workspace / "derived" / "pending" / "profile_updates" / "pending.yaml"
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
+    save_artifact(
+        path,
+        Artifact[ProfileUpdateBatch](
+            kind=ArtifactKind.PROFILE_UPDATES,
+            meta=ArtifactMeta(created_at=f"{DATE}T00:00:00Z"),
+            data=batch,
+        ),
+    )
 
 
 def _invoke(
     workspace: Path,
     cli_runner: CliRunner,
-) -> tuple[dict[str, object], Path, int]:
+) -> tuple[ArtifactKind, AdviceCard, Path, int]:
     result = cli_runner.invoke(app, ["advise", "How to plan next week?"])
     assert result.exit_code == 0, result.output
     folder = workspace / "derived" / "advice" / DATE
     files = sorted(folder.glob("*.yaml"))
     assert files, "No advice file generated"
-    data = yaml.safe_load(files[0].read_text(encoding="utf-8"))
-    return data, files[0], len(files)
+    artifact = load_artifact(files[0], AdviceCard)
+    return artifact.kind, artifact.data, artifact.meta, files[0], len(files)
 
 
 def test_advise_generates_advice(
@@ -90,20 +109,23 @@ def test_advise_generates_advice(
     _seed_profile(cli_workspace)
     _seed_pending_prompt(cli_workspace)
 
-    data, advice_file, _count = _invoke(cli_workspace, cli_runner)
+    kind, card, meta, advice_file, _count = _invoke(cli_workspace, cli_runner)
 
-    assert isinstance(data.get("recommendations"), list)
-    assert data.get("alignment")
-    assumptions = data.get("assumptions") or []
+    assert kind is ArtifactKind.ADVICE_CARD
+
+    assert card.recommendations
+    assert card.alignment
+    assumptions = card.assumptions or []
     assert any("Focus best before lunch" in str(item) for item in assumptions)
-    steps = data.get("recommendations", [{}])[0].get("steps") or []
+    steps = card.recommendations[0].steps if card.recommendations else []
     assert len(steps) >= 2
     assert "deep-work" in steps[0]
     assert "How to plan next week" in steps[1]
     assert any("morning routines" in step and "travel weeks" in step for step in steps)
-    meta = data.get("meta", {})
-    for key in ("llm_model", "prompt_path", "prompt_hash", "created_at"):
-        assert meta.get(key)
+    assert meta.model
+    assert meta.prompt_path
+    assert meta.prompt_hash
+    assert meta.created_at
 
 
 def test_advise_is_idempotent(
@@ -113,11 +135,13 @@ def test_advise_is_idempotent(
     _seed_profile(cli_workspace)
     _seed_pending_prompt(cli_workspace)
 
-    data1, advice_file, count1 = _invoke(cli_workspace, cli_runner)
+    kind1, data1, meta1, advice_file, count1 = _invoke(cli_workspace, cli_runner)
     before = advice_file.stat().st_mtime
 
-    data2, advice_file_again, count2 = _invoke(cli_workspace, cli_runner)
+    kind2, data2, meta2, advice_file_again, count2 = _invoke(cli_workspace, cli_runner)
+    assert kind1 is ArtifactKind.ADVICE_CARD
+    assert kind2 is ArtifactKind.ADVICE_CARD
     assert advice_file_again == advice_file
     assert count1 == count2
     assert advice_file_again.stat().st_mtime == before
-    assert data1["recommendations"][0]["steps"] == data2["recommendations"][0]["steps"]
+    assert data1.recommendations[0].steps == data2.recommendations[0].steps

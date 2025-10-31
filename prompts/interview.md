@@ -26,6 +26,9 @@ Guidelines:
 - Prefer action-oriented language that invites concrete clarification.
 - Output **only** the JSON payload (no commentary, markdown, or trailing text).
 
+If you cannot propose any questions while staying within the schema, respond with `{"questions": []}`.
+See `prompts/examples/interview.json` for a minimal compliant example.
+
 DATE: $date
 PROFILE_JSON:
 $profile_json

@@ -1,0 +1,124 @@
+{
+  "$defs": {
+    "ChatLearningEntry": {
+      "additionalProperties": false,
+      "description": "Entry capturing a single learning from a chat turn.",
+      "properties": {
+        "citations": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Citations",
+          "type": "array"
+        },
+        "clarifying_question": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Clarifying Question"
+        },
+        "feedback": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Feedback"
+        },
+        "intent": {
+          "title": "Intent",
+          "type": "string"
+        },
+        "question": {
+          "title": "Question",
+          "type": "string"
+        },
+        "telemetry": {
+          "$ref": "#/$defs/ChatTelemetry"
+        },
+        "turn_index": {
+          "title": "Turn Index",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "turn_index",
+        "question",
+        "intent",
+        "telemetry"
+      ],
+      "title": "ChatLearningEntry",
+      "type": "object"
+    },
+    "ChatTelemetry": {
+      "additionalProperties": false,
+      "description": "Telemetry captured during a chat turn.",
+      "properties": {
+        "chunk_count": {
+          "title": "Chunk Count",
+          "type": "integer"
+        },
+        "model": {
+          "title": "Model",
+          "type": "string"
+        },
+        "retrieval_ms": {
+          "title": "Retrieval Ms",
+          "type": "number"
+        },
+        "retriever_source": {
+          "title": "Retriever Source",
+          "type": "string"
+        }
+      },
+      "required": [
+        "retrieval_ms",
+        "chunk_count",
+        "retriever_source",
+        "model"
+      ],
+      "title": "ChatTelemetry",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Rollup of learnings captured across a chat session.",
+  "properties": {
+    "created_at": {
+      "title": "Created At",
+      "type": "string"
+    },
+    "learnings": {
+      "items": {
+        "$ref": "#/$defs/ChatLearningEntry"
+      },
+      "title": "Learnings",
+      "type": "array"
+    },
+    "session_id": {
+      "title": "Session Id",
+      "type": "string"
+    },
+    "updated_at": {
+      "title": "Updated At",
+      "type": "string"
+    }
+  },
+  "required": [
+    "session_id",
+    "created_at",
+    "updated_at"
+  ],
+  "title": "ChatSessionLearnings",
+  "type": "object"
+}

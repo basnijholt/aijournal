@@ -1,30 +1,16 @@
 # aijournal Improvements Backlog
 
-This document captures follow-up items surfaced while testing the capture-first workflow on October 28, 2025. Each item includes a short rationale, acceptance criteria, and an implementation sketch so we can schedule/elaborate later.
+This document captures follow-up items surfaced while testing the capture-first workflow on October 28, 2025. Notes below were reviewed and updated on October 30, 2025 to flag completed work and reprioritize the remaining backlog.
 
 ---
 
-## 1. Configurable Ollama Host via `config/config.yaml`
+## 1. Configurable Ollama Host via `config/config.yaml` — ✅ Completed
 
-**Pain:** Capture obeys `AIJOURNAL_MODEL` from the config file, but the host still requires exporting `AIJOURNAL_OLLAMA_HOST`. On live runs we *always* point at `http://192.168.1.143:11434`, so missing the export leads to flaky structured-output failures (characterize blew up under the default `localhost`).
-
-**Proposal:** Allow `config/config.yaml` to carry a `host` field. When set, `build_ollama_config_from_mapping` should treat it as the default, with environment variables retaining higher priority for ad-hoc overrides.
-
-**Acceptance criteria**
-
-- Add optional `host` key to the config schema (documented in README + sample config).
-- `build_ollama_config_from_mapping` resolves host precedence as: CLI override > env (`AIJOURNAL_OLLAMA_HOST` or `OLLAMA_BASE_URL`) > config `host` > default `http://127.0.0.1:11434`.
-- `aijournal ops system doctor` and capture telemetry display the resolved host so misconfigurations are obvious.
-
-**Implementation sketch**
-
-- Update config schema (and `schema.py` models) to accept `host`.
-- Extend `build_ollama_config_from_mapping` with a `settings.get("host")` fallback.
-- Adjust docs (README, ARCHITECTURE) to show the new knob and precedence rules.
+**Status:** Implemented. `build_ollama_config_from_mapping` already respects a `host` value in `config/config.yaml`; precedence is CLI override → env (`AIJOURNAL_OLLAMA_HOST` / `OLLAMA_BASE_URL`) → config `host` → default `http://127.0.0.1:11434`. README/ARCHITECTURE describe the knob. No further action required.
 
 ---
 
-## 2. Automatic Resume / Completion Checker for Capture
+## 2. Automatic Resume / Completion Checker for Capture — 🔄 Still relevant
 
 **Pain:** When an LLM stage fails (see characterize schema errors), recovery is manual: operators must trawl `derived/logs/capture/<run_id>.jsonl` and rerun individual `ops` commands. There’s no high-level view of “what still needs to be done.”
 
@@ -42,6 +28,8 @@ This document captures follow-up items surfaced while testing the capture-first 
   - If persona/index artifacts are older than their inputs, mark as stale.
 - Replay mode reuses existing command runners (no duplicated business logic) and records results back into capture telemetry.
 
+**Status:** Still outstanding and valuable. Recent refactors made stage outputs more deterministic, so the detection logic can lean on artifact hashes/mtimes without additional state. Worth scheduling once the prompt/runner work in `REVIEW.md` is underway.
+
 **Implementation sketch**
 
 - Build helpers to compare `data/normalized/`, `derived/summaries/`, `derived/microfacts/`, etc., using stored `source_hash` / `manifest_hashes` when available.
@@ -50,24 +38,26 @@ This document captures follow-up items surfaced while testing the capture-first 
 
 ---
 
-## 3. Structured Failure Reporting (Optional Follow-up)
+## 3. Structured Failure Reporting (Optional Follow-up) — 🎯 Next after resume
 
 Detection via filesystem is nice, but we can also enrich the existing telemetry:
 
 - Extend `capture-<id>.result.json` with a `failed_stages` array containing stage name, date, and error message.
 - Surface recent failed stages in `aijournal status`, nudging operators to run the resume helper.
 
-This builds on items 1 & 2 but isn’t strictly required once automatic detection/resume is available.
+This builds on items 1 & 2 and pairs nicely with the resume helper. Once the detection CLI exists, wiring failure summaries into telemetry/status becomes straightforward. Keep in the backlog.
 
 **Additional context:** The capture orchestrator today writes two files per run—`capture-<id>.jsonl` (per-event logs) and `capture-<id>.result.json` (summary). Neither explicitly lists failed stages; the CLI only prints warnings inline. By serializing failures, downstream tooling (CLI, UI, status command) can quickly surface “characterize failed for 2025-10-28” without parsing NDJSON. The resume helper would consume the same data.
 
 ---
 
-## 4. Workspace Directory Consolidation
+## 4. Workspace Directory Consolidation — ❓ Deprioritize for now
 
 **Pain:** The repo root currently includes multiple top-level data directories (`data/`, `derived/`, `profile/`, `config/`, `prompts/`, `logs/`, etc.). For new operators this feels noisy, and automated tooling (e.g., backups) must exclude lots of sibling paths. We want a single “workspace” folder that encapsulates all mutable artifacts and keeps the repository’s root tidy.
 
 **Proposal:** Introduce a `workspace/` (name TBD) directory that contains all runtime/stateful folders, while the root keeps only code and documentation. Existing commands should honor the new layout via a configurable base path so migrations are straightforward.
+
+**Status:** Nice-to-have but not urgent. Current documentation, tooling, and automation assume the existing root-level layout, and refactoring paths would create churn during the ongoing prompt/schema work. Leave this item on ice until we have concrete multi-workspace or backup requirements.
 
 **Acceptance criteria**
 
@@ -130,3 +120,34 @@ This builds on items 1 & 2 but isn’t strictly required once automatic detectio
 - ✅ 2025-10-28: Deleted the unused `CaptureState` dataclass and associated imports; `run_capture` now runs on local state only. `uv run pytest` remains green.
 
 > Remember: six commits, tests green every time. Document progress in this file (append short notes under each bullet) as tasks are completed.
+
+---
+
+## 6. Structured Logging & Command Standardization — 🆕 Planned
+
+**Goal:** Make every command easier to debug (especially with AI assistance) and enforce a consistent orchestration structure without adding new behaviour.
+
+### 6.1 Structured Logging Scaffold
+- Introduce a lightweight `RunContext` object that carries `root`, `config`, fake/live flag, and a new `StructuredLogger`.
+- Logger writes NDJSON records to `derived/logs/run_trace.jsonl` with fields like `step`, `command`, `duration_ms`, `inputs_summary`, `output_path`, `llm_attempts`, `coercions`, `error`.
+- Add CLI flags (`--trace` / `--verbose-json`) to mirror log entries to stdout for manual debugging.
+- Provide `aijournal ops logs tail --last N` helper to pretty-print recent trace entries.
+- Acceptance: `advise` command uses the logger end-to-end, tests assert log file creation, documentation updated.
+- ✅ 2025-10-30: Implemented shared `RunContext`/`StructuredLogger`, added CLI trace flags and the `ops logs tail` helper, refreshed docs/tests.
+
+### 6.2 Standard Command Skeleton
+- For each command module define three top-level functions: `prepare_inputs(ctx, options)`, `invoke_pipeline(ctx, prepared)`, `persist_output(ctx, result)`.
+- `CommandOptions` becomes a small Pydantic model populated by Typer parser so orchestration code receives typed input instead of raw kwargs.
+- Update one pilot command (`advise`) to this pattern, then roll out across the rest in small commits.
+- Acceptance: every command module follows the same structure; imports stay acyclic; CI/tests remain green after each migration step.
+- ✅ 2025-10-30: `advise`, `summarize`, and `extract-facts` now follow the standard pipeline skeleton via `run_command_pipeline`; tests are green.
+- ✅ 2025-10-31: Completed rollout to remaining command surfaces including `index` and `ingest`; all CLI modules now share the standardized skeleton.
+
+### 6.3 Rollout Strategy
+1. Implement logging + context on a single command, adjust tests/docs.
+2. Adopt the standardized function names on that command, verify readability gains.
+3. Iterate across remaining commands in batches, updating modules & tests per commit.
+4. Extend docs (ARCHITECTURE + CONTRIBUTING) with the logging format and the new orchestration pattern.
+- ✅ 2025-10-30: Logging scaffold, command skeleton, docs, and tests landed; remaining commands can migrate incrementally following the same pattern.
+
+> Reminder: treat each stage of the rollout as its own commit with `uv run pytest` + targeted tests green before moving to the next batch.

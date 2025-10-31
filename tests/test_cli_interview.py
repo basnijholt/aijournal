@@ -5,11 +5,11 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-import yaml
 from typer.testing import CliRunner
 
 from aijournal.cli import app
-from aijournal.models import InterviewQuestion, InterviewSet
+from aijournal.domain.persona import InterviewQuestion, InterviewSet
+from aijournal.io.yaml_io import dump_yaml
 
 DATE = "2025-02-03"
 
@@ -33,7 +33,7 @@ def _seed_profile(tmp_path) -> None:
             },
         },
     }
-    _write(tmp_path / "profile" / "self_profile.yaml", yaml.safe_dump(profile))
+    _write(tmp_path / "profile" / "self_profile.yaml", dump_yaml(profile))
     claims = {
         "claims": [
             {
@@ -43,7 +43,7 @@ def _seed_profile(tmp_path) -> None:
             },
         ],
     }
-    _write(tmp_path / "profile" / "claims.yaml", yaml.safe_dump(claims))
+    _write(tmp_path / "profile" / "claims.yaml", dump_yaml(claims))
 
 
 def _seed_normalized(tmp_path) -> None:
@@ -56,7 +56,7 @@ def _seed_normalized(tmp_path) -> None:
     }
     _write(
         tmp_path / "data" / "normalized" / DATE / "entry.yaml",
-        yaml.safe_dump(entry),
+        dump_yaml(entry),
     )
 
 
@@ -81,8 +81,8 @@ def test_interview_fallback_when_no_stale(
     cli_runner: CliRunner,
 ) -> None:
     fresh_profile = {"traits": {"big_five": {"openness": {"last_updated": DATE}}}}
-    _write(cli_workspace / "profile" / "self_profile.yaml", yaml.safe_dump(fresh_profile))
-    _write(cli_workspace / "profile" / "claims.yaml", yaml.safe_dump({"claims": []}))
+    _write(cli_workspace / "profile" / "self_profile.yaml", dump_yaml(fresh_profile))
+    _write(cli_workspace / "profile" / "claims.yaml", dump_yaml({"claims": []}))
     _seed_normalized(cli_workspace)
 
     result = cli_runner.invoke(app, ["ops", "profile", "interview", "--date", DATE])

@@ -3,20 +3,20 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path
 from typing import Any, cast
 
 import typer
-import yaml
+from pydantic import BaseModel, ValidationError
 
-from aijournal.commands.ingest import _load_config, _use_fake_llm
 from aijournal.commands.pack import _latest_normalized_day
 from aijournal.commands.profile import (
     InterviewTarget,
     _compute_rankings,
-    _load_profile_components,
-    _profile_to_dict,
+    load_profile_components,
+    profile_to_dict,
 )
 from aijournal.commands.summarize import (
     _build_meta,
@@ -24,28 +24,52 @@ from aijournal.commands.summarize import (
     _json_block,
     _load_normalized_entries,
 )
-from aijournal.io.yaml_io import write_yaml_model
-from aijournal.models import AdviceCard, AdviceLLMResponse, ClaimAtom
+from aijournal.common.app_config import AppConfig
+from aijournal.common.command_runner import run_command_pipeline
+from aijournal.common.context import RunContext
+from aijournal.common.meta import Artifact, ArtifactKind
+from aijournal.domain.claims import ClaimAtom
+from aijournal.io.artifacts import load_artifact, save_artifact
+from aijournal.models.derived import AdviceCard, ProfileUpdateBatch
 from aijournal.pipelines import advise as advise_pipeline
-from aijournal.services import build_ollama_config_from_mapping
+from aijournal.services.ollama import resolve_model_name
 from aijournal.utils import time as time_utils
 
 
-def run_advise(question: str) -> Path:
-    """Generate advice from the current profile and return the output path."""
-    root = Path.cwd()
-    profile_model, claim_models = _load_profile_components(root)
-    profile = _profile_to_dict(profile_model)
+class AdviceOptions(BaseModel):
+    question: str
+
+
+@dataclass(slots=True)
+class AdvicePrepared:
+    question: str
+    profile: dict[str, Any]
+    claims: list[ClaimAtom]
+    rankings: list[InterviewTarget]
+    pending_prompts: list[str]
+
+
+@dataclass(slots=True)
+class AdviceResult:
+    card: AdviceCard
+    question: str
+    day: str
+    model_name: str
+
+
+def prepare_inputs(ctx: RunContext, options: AdviceOptions) -> AdvicePrepared:
+    profile_model, claim_models = load_profile_components(ctx.root)
+    profile = profile_to_dict(profile_model)
     claims = [claim.model_copy(deep=True) for claim in claim_models]
     if not profile and not claims:
         typer.secho("No profile data", fg=typer.colors.RED, err=True)
+        ctx.emit(event="command_failed", reason="no_profile")
         raise typer.Exit(1)
 
-    config = _load_config(root)
-    weights = config.get("impact_weights", {})
-    latest_day = _latest_normalized_day(root)
-    entries = _load_normalized_entries(root, latest_day) if latest_day else []
-    pending_prompts = _collect_pending_interview_prompts(root)
+    weights = ctx.config.impact_weights.model_dump(mode="python")
+    latest_day = _latest_normalized_day(ctx.root)
+    entries = _load_normalized_entries(ctx.root, latest_day) if latest_day else []
+    pending_prompts = _collect_pending_interview_prompts(ctx.root)
     rankings = _compute_rankings(
         profile,
         claims,
@@ -54,23 +78,87 @@ def run_advise(question: str) -> Path:
         entries=entries,
         pending_prompts=pending_prompts,
     )
-    advice_card = _advice_payload(
-        question,
-        profile,
-        claims,
-        config,
-        rankings=rankings,
-        pending_prompts=pending_prompts,
+    ctx.emit(
+        event="prepare_summary",
+        claims=len(claims),
+        rankings=len(rankings),
+        pending_prompts=len(pending_prompts),
     )
-    model_name = (
-        "fake-ollama" if _use_fake_llm() else build_ollama_config_from_mapping(config).model
+    return AdvicePrepared(
+        question=options.question,
+        profile=profile,
+        claims=claims,
+        rankings=list(rankings),
+        pending_prompts=list(pending_prompts),
     )
-    advice_card.meta = _build_meta("prompts/advise.md", model=model_name)
 
+
+def invoke_pipeline(ctx: RunContext, prepared: AdvicePrepared) -> AdviceResult:
+    advice_card = _advice_payload(
+        prepared.question,
+        prepared.profile,
+        prepared.claims,
+        ctx.config,
+        rankings=prepared.rankings,
+        pending_prompts=prepared.pending_prompts,
+        use_fake_llm=ctx.use_fake_llm,
+    )
+    model_name = resolve_model_name(ctx.config, use_fake_llm=ctx.use_fake_llm)
     day = time_utils.created_date(time_utils.format_timestamp(time_utils.now()))
-    advice_path = _derived_advice_path(root, day, question)
-    write_yaml_model(advice_path, advice_card)
+    ctx.emit(
+        event="pipeline_complete",
+        recommendations=len(advice_card.recommendations),
+        confidence=advice_card.confidence,
+    )
+    return AdviceResult(
+        card=advice_card,
+        question=prepared.question,
+        day=day,
+        model_name=model_name,
+    )
+
+
+def persist_output(ctx: RunContext, result: AdviceResult) -> Path:
+    advice_path = _derived_advice_path(ctx.root, result.day, result.question)
+    artifact_meta = _build_meta("prompts/advise.md", model=result.model_name)
+    save_artifact(
+        advice_path,
+        Artifact[AdviceCard](
+            kind=ArtifactKind.ADVICE_CARD,
+            meta=artifact_meta,
+            data=result.card,
+        ),
+    )
+    ctx.emit(event="artifact_written", path=str(advice_path))
     return advice_path
+
+
+def run_advise_command(ctx: RunContext, options: AdviceOptions) -> Path:
+    return run_command_pipeline(
+        ctx,
+        options,
+        prepare_inputs=prepare_inputs,
+        invoke_pipeline=invoke_pipeline,
+        persist_output=persist_output,
+    )
+
+
+def run_advise(question: str) -> Path:
+    """Backward-compatible entrypoint using the current working directory."""
+    from aijournal.commands.ingest import _load_config, _use_fake_llm
+    from aijournal.common.context import create_run_context
+
+    root = Path.cwd()
+    config = _load_config(root)
+    ctx = create_run_context(
+        command="advise",
+        root=root,
+        config=config,
+        use_fake_llm=_use_fake_llm(),
+        trace=False,
+        verbose_json=False,
+    )
+    return run_advise_command(ctx, AdviceOptions(question=question))
 
 
 def _collect_pending_interview_prompts(root: Path, limit: int = 5) -> list[str]:
@@ -80,11 +168,15 @@ def _collect_pending_interview_prompts(root: Path, limit: int = 5) -> list[str]:
     prompts: list[str] = []
     for path in sorted((p for p in directory.glob("*.yaml") if p.is_file()), reverse=True):
         try:
-            payload = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-        except yaml.YAMLError:
+            artifact = load_artifact(path, ProfileUpdateBatch)
+        except (ValidationError, ValueError):
             continue
-        preview = payload.get("preview") or {}
-        for prompt in preview.get("interview_prompts") or []:
+        if artifact.kind is not ArtifactKind.PROFILE_UPDATES:
+            continue
+        preview = artifact.data.preview
+        if not preview:
+            continue
+        for prompt in preview.interview_prompts:
             text = str(prompt).strip()
             if text and text not in prompts:
                 prompts.append(text)
@@ -103,10 +195,11 @@ def _advice_payload(
     question: str,
     profile: dict[str, Any],
     claims: Sequence[ClaimAtom],
-    config: dict[str, Any],
+    config: AppConfig,
     *,
     rankings: Sequence[InterviewTarget],
     pending_prompts: Sequence[str],
+    use_fake_llm: bool,
 ) -> AdviceCard:
     rankings_payload = [
         {
@@ -120,9 +213,9 @@ def _advice_payload(
         for target in rankings[:8]
     ]
 
-    def request_advice() -> AdviceLLMResponse:
+    def request_advice() -> AdviceCard:
         return cast(
-            AdviceLLMResponse,
+            AdviceCard,
             _invoke_structured_llm(
                 "prompts/advise.md",
                 {
@@ -135,12 +228,12 @@ def _advice_payload(
                     "rankings_json": _json_block(rankings_payload),
                     "pending_prompts_json": _json_block(list(pending_prompts)),
                 },
-                response_model=AdviceLLMResponse,
+                response_model=AdviceCard,
                 agent_name="aijournal-advise",
                 config=config,
                 max_attempts=2,
                 retry_message=(
-                    "Return JSON with keys `id`, `query`, `assumptions`, `recommendations`, "
+                    "Return JSON with keys `query`, `assumptions`, `recommendations`, "
                     "`tradeoffs`, `next_actions`, `confidence`, `alignment`, `style`."
                 ),
             ),
@@ -150,7 +243,7 @@ def _advice_payload(
         question,
         profile,
         claims,
-        use_fake_llm=_use_fake_llm(),
+        use_fake_llm=use_fake_llm,
         advice_identifier=_advice_identifier,
         request_advice=request_advice,
         rankings=rankings,
@@ -161,9 +254,3 @@ def _advice_payload(
 def _derived_advice_path(root: Path, day: str, question: str) -> Path:
     slug = time_utils.slugify_title(question)
     return root / "derived" / "advice" / day / f"{slug}.yaml"
-
-
-__all__ = [
-    "run_advise",
-    "_collect_pending_interview_prompts",
-]

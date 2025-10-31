@@ -2,38 +2,41 @@
 
 from __future__ import annotations
 
+import json
 from typing import TYPE_CHECKING
 
 import yaml
 
-from aijournal.io import load_yaml_model, write_yaml_model
-from aijournal.models import (
-    AdviceCard,
-    AdviceRecommendation,
-    AdviceReference,
-    Claim,
-    ClaimsFile,
+from aijournal.common.meta import Artifact, ArtifactKind, ArtifactMeta
+from aijournal.domain.changes import (
+    ClaimAtomInput,
+    ClaimProposal,
+    FacetChange,
+    ProfileUpdateProposals,
+)
+from aijournal.domain.claims import (
+    ClaimAtom,
     ClaimSource,
     ClaimSourceSpan,
+    Scope,
+)
+from aijournal.domain.evidence import SourceRef
+from aijournal.domain.facts import (
     DailySummary,
     FactEvidence,
     FactEvidenceSpan,
-    InterviewQuestion,
-    InterviewSet,
-    JournalEntry,
-    JournalSection,
     MicroFact,
     MicroFactsFile,
-    NormalizedEntry,
-    PersonaCore,
-    PersonaCoreFile,
-    PersonaCoreMeta,
-    ProfileSuggestions,
-    ProfileSuggestionUpdate,
-    ProfileSuggestionUpsert,
-    Scope,
-    SelfProfile,
-    SummaryMeta,
+)
+from aijournal.domain.journal import NormalizedEntry
+from aijournal.domain.persona import InterviewQuestion, InterviewSet, PersonaCore
+from aijournal.io.artifacts import load_artifact, save_artifact
+from aijournal.io.yaml_io import load_yaml_model, write_yaml_model
+from aijournal.models.authoritative import ClaimsFile, JournalEntry, JournalSection, SelfProfile
+from aijournal.models.derived import (
+    AdviceCard,
+    AdviceRecommendation,
+    AdviceReference,
 )
 from aijournal.schema import validate_schema
 
@@ -47,35 +50,41 @@ def _fixture_path(tmp_path: Path, name: str) -> Path:
 
 def _assert_schema(path: Path, schema: str) -> None:
     payload = yaml.safe_load(path.read_text(encoding="utf-8"))
-    validate_schema(schema, payload)
+    if isinstance(payload, dict) and "data" in payload and "kind" in payload:
+        validate_schema(schema, payload["data"])
+    else:
+        validate_schema(schema, payload)
 
 
 def test_daily_summary_roundtrip(tmp_path: Path) -> None:
     path = _fixture_path(tmp_path, "summary")
-    meta = SummaryMeta(
-        llm_model="llama3.1:8b-instruct",
+    meta = ArtifactMeta(
+        created_at="2025-10-25T12:00:00Z",
+        model="llama3.1:8b-instruct",
         prompt_path="prompts/summarize_day.md",
         prompt_hash="abc123",
-        created_at="2025-10-25T12:00:00Z",
     )
     summary = DailySummary(
         day="2025-10-25",
         bullets=["Planned the week"],
         highlights=["Family scheduling sorted"],
         todo_candidates=["Block deep-work mornings"],
-        meta=meta,
     )
-    write_yaml_model(path, summary)
-    assert path.exists()
-
-    loaded = load_yaml_model(path, DailySummary)
-    assert loaded == summary
+    artifact = Artifact[DailySummary](
+        kind=ArtifactKind.SUMMARY_DAILY,
+        meta=meta,
+        data=summary,
+    )
+    save_artifact(path, artifact)
+    loaded = load_artifact(path, DailySummary)
+    assert loaded.data == summary
+    assert loaded.kind is ArtifactKind.SUMMARY_DAILY
     _assert_schema(path, "summary")
 
 
 def test_claim_file_roundtrip(tmp_path: Path) -> None:
     path = _fixture_path(tmp_path, "claims")
-    claim = Claim(
+    claim = ClaimAtom(
         id="pref.deep_work.window",
         type="preference",
         subject="deep_work",
@@ -120,12 +129,6 @@ def test_advice_card_roundtrip(tmp_path: Path) -> None:
         risks=["Unexpected pings"],
         mitigations=["Set Slack status"],
     )
-    meta = SummaryMeta(
-        llm_model="llama3.1:8b-instruct",
-        prompt_path="prompts/advise.md",
-        prompt_hash="xyz",
-        created_at="2025-10-25T12:00:00Z",
-    )
     card = AdviceCard(
         id="adv_2025-10-25_01",
         query="How should I schedule my week?",
@@ -136,12 +139,22 @@ def test_advice_card_roundtrip(tmp_path: Path) -> None:
         confidence=0.72,
         alignment=reference,
         style={"tone": "direct"},
-        meta=meta,
     )
-    write_yaml_model(path, card)
+    artifact = Artifact[AdviceCard](
+        kind=ArtifactKind.ADVICE_CARD,
+        meta=ArtifactMeta(
+            created_at="2025-10-25T12:00:00Z",
+            model="llama3.1:8b-instruct",
+            prompt_path="prompts/advise.md",
+            prompt_hash="xyz",
+        ),
+        data=card,
+    )
+    save_artifact(path, artifact)
 
-    loaded = load_yaml_model(path, AdviceCard)
-    assert loaded == card
+    loaded = load_artifact(path, AdviceCard)
+    assert loaded.kind is ArtifactKind.ADVICE_CARD
+    assert loaded.data == card
     _assert_schema(path, "advice")
 
 
@@ -165,7 +178,7 @@ def test_journal_and_normalized_models_structure(tmp_path: Path) -> None:
 
 def test_persona_core_roundtrip(tmp_path: Path) -> None:
     path = _fixture_path(tmp_path, "persona_core")
-    claim = Claim(
+    claim = ClaimAtom(
         id="pref.test",
         type="preference",
         subject="focus",
@@ -190,30 +203,43 @@ def test_persona_core_roundtrip(tmp_path: Path) -> None:
         profile={"values_motivations": {"drivers": ["Mastery"]}},
         claims=[claim],
     )
-    meta = PersonaCoreMeta(
-        generated_at="2025-10-25T12:00:00Z",
-        token_budget=1200,
-        planned_tokens=420,
-        char_per_token=4.2,
-        selection_strategy="strength*impact*decay",
-        claim_pool=1,
-        claim_count=1,
+    notes = {
+        "token_budget": "1200",
+        "planned_tokens": "420",
+        "selection_strategy": "strength*impact*decay",
+        "claim_pool": "1",
+        "claim_count": "1",
+        "max_claims": "0",
+        "min_claims": "0",
+        "budget_exceeded": json.dumps(False),
+        "source_mtimes": json.dumps({}, sort_keys=True, separators=(",", ":")),
+    }
+    notes = {key: value for key, value in notes.items() if value not in {"", "{}", "[]"}}
+    artifact = Artifact[PersonaCore](
+        kind=ArtifactKind.PERSONA_CORE,
+        meta=ArtifactMeta(
+            created_at="2025-10-25T12:00:00Z",
+            model=None,
+            char_per_token=4.2,
+            notes=notes or None,
+            sources={"profile": "profile/self_profile.yaml"},
+        ),
+        data=persona,
     )
-    payload = PersonaCoreFile(persona=persona, meta=meta)
-    write_yaml_model(path, payload)
+    save_artifact(path, artifact)
 
-    loaded = load_yaml_model(path, PersonaCoreFile)
-    assert loaded == payload
+    loaded = load_artifact(path, PersonaCore)
+    assert loaded.data == persona
     _assert_schema(path, "persona_core")
 
 
 def test_microfacts_file_roundtrip(tmp_path: Path) -> None:
     path = _fixture_path(tmp_path, "microfacts")
-    meta = SummaryMeta(
-        llm_model="llama3.1:8b-instruct",
+    meta = ArtifactMeta(
+        created_at="2025-10-25T12:05:00Z",
+        model="llama3.1:8b-instruct",
         prompt_path="prompts/extract_facts.md",
         prompt_hash="def",
-        created_at="2025-10-25T12:05:00Z",
     )
     facts = MicroFactsFile(
         facts=[
@@ -229,11 +255,16 @@ def test_microfacts_file_roundtrip(tmp_path: Path) -> None:
                 last_seen="2025-10-25",
             ),
         ],
-        meta=meta,
     )
-    write_yaml_model(path, facts)
-    loaded = load_yaml_model(path, MicroFactsFile)
-    assert loaded == facts
+    artifact = Artifact[MicroFactsFile](
+        kind=ArtifactKind.MICROFACTS_DAILY,
+        meta=meta,
+        data=facts,
+    )
+    save_artifact(path, artifact)
+    loaded = load_artifact(path, MicroFactsFile)
+    assert loaded.data == facts
+    assert loaded.kind is ArtifactKind.MICROFACTS_DAILY
     _assert_schema(path, "microfacts")
 
 
@@ -242,12 +273,8 @@ def test_load_with_default(tmp_path: Path) -> None:
     default = DailySummary(
         day="2025-10-25",
         bullets=[],
-        meta=SummaryMeta(
-            llm_model="llama3.1:8b-instruct",
-            prompt_path="prompts/summarize_day.md",
-            prompt_hash=None,
-            created_at="2025-10-25T00:00:00Z",
-        ),
+        highlights=[],
+        todo_candidates=[],
     )
     loaded = load_yaml_model(missing, DailySummary, default=default)
     assert loaded == default
@@ -255,12 +282,6 @@ def test_load_with_default(tmp_path: Path) -> None:
 
 def test_interview_set_roundtrip(tmp_path: Path) -> None:
     path = _fixture_path(tmp_path, "interviews")
-    meta = SummaryMeta(
-        llm_model="llama3.1:8b-instruct",
-        prompt_path="prompts/profile_probe.md",
-        prompt_hash="ghi",
-        created_at="2025-10-25T12:10:00Z",
-    )
     interviews = InterviewSet(
         questions=[
             InterviewQuestion(
@@ -270,7 +291,6 @@ def test_interview_set_roundtrip(tmp_path: Path) -> None:
                 priority="high",
             ),
         ],
-        meta=meta,
     )
     write_yaml_model(path, interviews)
     loaded = load_yaml_model(path, InterviewSet)
@@ -295,35 +315,52 @@ def test_journal_entry_serialization(tmp_path: Path) -> None:
     _assert_schema(path, "journal_entry")
 
 
-def test_profile_suggestions_schema(tmp_path: Path) -> None:
-    path = _fixture_path(tmp_path, "profile_suggestions")
-    meta = SummaryMeta(
-        llm_model="llama3.1:8b-instruct",
+def test_profile_proposals_schema(tmp_path: Path) -> None:
+    path = _fixture_path(tmp_path, "profile_proposals")
+    meta = ArtifactMeta(
+        created_at="2025-10-25T12:15:00Z",
+        model="llama3.1:8b-instruct",
         prompt_path="prompts/profile_suggest.md",
         prompt_hash="meta",
-        created_at="2025-10-25T12:15:00Z",
     )
-    suggestions = ProfileSuggestions(
-        upserts=[
-            ProfileSuggestionUpsert(
-                target="claims",
-                operation="upsert",
-                value={"id": "pref_focus", "statement": "Focus best before lunch"},
-                rationale="Repeated pattern",
-            ),
-        ],
-        updates=[
-            ProfileSuggestionUpdate(
-                target="values_motivations.schwartz_top5",
-                operation="set",
-                value=["Self-Direction", "Security"],
-                method="inferred",
-            ),
-        ],
+    claim_input = ClaimAtomInput(
+        type="preference",
+        subject="Focus",
+        predicate="insight",
+        value="Focus best before lunch",
+        statement="Focus best before lunch",
+        scope=Scope(),
+        strength=0.7,
+        status="tentative",
+        method="inferred",
+        user_verified=False,
+        review_after_days=120,
+    )
+    claim_proposal = ClaimProposal(
+        claim=claim_input,
+        normalized_ids=["pref_focus"],
+        evidence=[SourceRef(entry_id="2025-10-25-entry", spans=[])],
+        rationale="Recurring pattern in planning entries.",
+    )
+    facet_change = FacetChange(
+        path="values_motivations.schwartz_top5",
+        operation="set",
+        value=["Self-Direction", "Security"],
+        method="inferred",
+        evidence=[SourceRef(entry_id="profile.snapshot", spans=[])],
+    )
+    proposals = ProfileUpdateProposals(
+        claims=[claim_proposal],
+        facets=[facet_change],
+        interview_prompts=["How often does afternoon fatigue show up?"],
+    )
+    artifact = Artifact[ProfileUpdateProposals](
+        kind=ArtifactKind.PROFILE_PROPOSALS,
         meta=meta,
+        data=proposals,
     )
-    write_yaml_model(path, suggestions)
-    _assert_schema(path, "profile_suggestions")
+    save_artifact(path, artifact)
+    _assert_schema(path, "profile_proposals")
 
 
 def test_self_profile_schema(tmp_path: Path) -> None:

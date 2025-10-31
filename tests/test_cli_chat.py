@@ -9,8 +9,14 @@ import pytest
 import yaml
 from typer.testing import CliRunner
 
+from aijournal.api.chat import ChatResponse
 from aijournal.cli import app
-from aijournal.models import PersonaCore
+from aijournal.common.app_config import AppConfig
+from aijournal.common.meta import ArtifactKind
+from aijournal.domain.chat_sessions import ChatSessionLearnings, ChatSessionSummary
+from aijournal.domain.persona import PersonaCore
+from aijournal.io.artifacts import load_artifact
+from aijournal.io.yaml_io import dump_yaml
 from aijournal.services.chat import ChatService, ChatTelemetry, ChatTurn
 from tests.helpers import make_claim_atom, write_manifest, write_normalized_entry
 
@@ -83,21 +89,37 @@ def test_chat_fake_mode_outputs_answer_with_citation(
     session_id = session_line.split(":", 1)[1].strip()
     session_dir = cli_workspace / "derived" / "chat_sessions" / session_id
     assert session_dir.exists()
-    transcript = session_dir / "transcript.jsonl"
+    transcript = session_dir / "transcript.json"
     summary = session_dir / "summary.yaml"
     learnings = session_dir / "learnings.yaml"
     assert transcript.exists()
     assert summary.exists()
     assert learnings.exists()
 
-    lines = transcript.read_text(encoding="utf-8").strip().splitlines()
-    assert len(lines) == 2
-    payload = json.loads(lines[-1])
-    assert payload["role"] == "assistant"
-    assert "[entry:" in payload["text"]
-    assert payload["clarifying_question"]
-    assert payload["telemetry"]["chunk_count"] == 1
-    assert payload.get("feedback") is None
+    transcript_payload = json.loads(transcript.read_text(encoding="utf-8"))
+    assert transcript_payload["kind"] == "chat.transcript"
+    turns = transcript_payload["data"]["turns"]
+    assert len(turns) == 1
+    entry = turns[0]
+    assert entry["answer"].count("[entry:") >= 1
+    assert entry["clarifying_question"]
+    assert entry["telemetry"]["chunk_count"] == 1
+    assert entry.get("feedback") is None
+
+    summary_artifact = load_artifact(summary, ChatSessionSummary)
+    assert summary_artifact.kind is ArtifactKind.CHAT_SUMMARY
+    summary_data = summary_artifact.data
+    assert summary_data.turn_count == 1
+    assert summary_data.intent_counts
+    assert summary_data.last_citations
+
+    learnings_artifact = load_artifact(learnings, ChatSessionLearnings)
+    assert learnings_artifact.kind is ArtifactKind.CHAT_LEARNINGS
+    learnings_data = learnings_artifact.data
+    assert len(learnings_data.learnings) == 1
+    learning_entry = learnings_data.learnings[0]
+    assert learning_entry.citations
+    assert learning_entry.telemetry.chunk_count == 1
 
 
 def test_chat_errors_when_index_missing(
@@ -119,7 +141,8 @@ def test_chat_service_requires_persona_core(
 ) -> None:
     monkeypatch.chdir(tmp_path)
     cli_runner.invoke(app, ["init"], catch_exceptions=False)
-    config = yaml.safe_load((tmp_path / "config" / "config.yaml").read_text(encoding="utf-8"))
+    config_dict = yaml.safe_load((tmp_path / "config" / "config.yaml").read_text(encoding="utf-8"))
+    config = AppConfig.model_validate(config_dict)
     service = ChatService(tmp_path, config)
     try:
         with pytest.raises(RuntimeError, match="Persona core not found"):
@@ -133,7 +156,7 @@ def test_chat_service_builds_config_with_overrides(tmp_path: Path) -> None:
         def close(self) -> None:
             pass
 
-    config = {
+    config_dict = {
         "model": "global-model",
         "temperature": "0.1",
         "chat": {
@@ -145,6 +168,7 @@ def test_chat_service_builds_config_with_overrides(tmp_path: Path) -> None:
             "host": "http://chat-host:11434",
         },
     }
+    config = AppConfig.model_validate(config_dict)
 
     service = ChatService(tmp_path, config, retriever=DummyRetriever())
     try:
@@ -190,7 +214,7 @@ def test_chat_feedback_adjusts_claim_strength(
 
     claims_path = cli_workspace / "profile" / "claims.yaml"
     claims_payload = {"claims": [make_claim_atom("focus-claim", "Focus work", strength=0.5)]}
-    claims_path.write_text(yaml.safe_dump(claims_payload, sort_keys=False), encoding="utf-8")
+    claims_path.write_text(dump_yaml(claims_payload, sort_keys=False), encoding="utf-8")
 
     def _fake_run(self, question: str, *, top: int = 6, filters=None) -> ChatTurn:  # type: ignore[override]
         telemetry = ChatTelemetry(
@@ -199,9 +223,16 @@ def test_chat_feedback_adjusts_claim_strength(
             retriever_source="stub",
             model="fake",
         )
+        response = ChatResponse(
+            answer="It aligns with your focus routines [claim:focus-claim].",
+            citations=[],
+            clarifying_question=None,
+            timestamp="2025-02-03T00:00:00Z",
+        )
         return ChatTurn(
             question=question,
-            answer="It aligns with your focus routines [claim:focus-claim].",
+            answer=response.answer,
+            response=response,
             persona=PersonaCore(),
             citations=[],
             retrieved_chunks=[],
@@ -224,3 +255,7 @@ def test_chat_feedback_adjusts_claim_strength(
     pending_dir = cli_workspace / "derived" / "pending" / "profile_updates"
     files = list(pending_dir.glob("feedback_*.yaml"))
     assert files, "Expected feedback file queued"
+    artifact = yaml.safe_load(files[0].read_text(encoding="utf-8"))
+    data = artifact.get("data", {})
+    assert data.get("feedback") == "up"
+    assert data.get("events", [])[0]["claim_id"] == "focus-claim"

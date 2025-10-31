@@ -7,10 +7,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
-import yaml
-
+from aijournal.common.meta import Artifact, ArtifactKind, ArtifactMeta
+from aijournal.domain.enums import FeedbackDirection
+from aijournal.domain.events import FeedbackAdjustmentEvent, FeedbackBatch
+from aijournal.io.artifacts import save_artifact
 from aijournal.io.yaml_io import load_yaml_model, write_yaml_model
-from aijournal.models import ClaimsFile
+from aijournal.models.authoritative import ClaimsFile
 
 _CLAIM_PATTERN: Final[re.Pattern[str]] = re.compile(r"\[claim:([A-Za-z0-9_.:-]+)\]")
 
@@ -106,28 +108,30 @@ def apply_chat_feedback(
     timestamp_slug = timestamp.replace(":", "").replace("T", "-")
     feedback_path = pending_dir / f"feedback_{slug}_{timestamp_slug}.yaml"
 
-    payload = {
-        "kind": "chat_feedback",
-        "session_id": session_id,
-        "timestamp": timestamp,
-        "question": question,
-        "feedback": feedback,
-        "claim_adjustments": [
-            {
-                "id": adj.claim_id,
-                "delta": adj.delta,
-                "new_strength": adj.new_strength,
-            }
+    feedback_value = FeedbackDirection.DOWN if delta < 0 else FeedbackDirection.UP
+
+    batch = FeedbackBatch(
+        batch_id=f"{slug}-{timestamp_slug}",
+        created_at=timestamp,
+        session_id=session_id,
+        question=question,
+        feedback=feedback_value,
+        events=[
+            FeedbackAdjustmentEvent(
+                claim_id=adj.claim_id,
+                old_strength=adj.old_strength,
+                new_strength=adj.new_strength,
+                delta=adj.delta,
+            )
             for adj in adjustments
         ],
-        "claim_markers": claim_ids,
-    }
-    feedback_path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
+    )
+    save_artifact(
+        feedback_path,
+        Artifact[FeedbackBatch](
+            kind=ArtifactKind.FEEDBACK_BATCH,
+            meta=ArtifactMeta(created_at=timestamp, model=None),
+            data=batch,
+        ),
+    )
     return adjustments, feedback_path
-
-
-__all__ = [
-    "FeedbackAdjustment",
-    "apply_chat_feedback",
-    "extract_claim_markers",
-]

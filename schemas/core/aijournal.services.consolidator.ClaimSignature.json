@@ -1,0 +1,55 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "claim_type": {
+      "title": "Claim Type",
+      "type": "string"
+    },
+    "predicate": {
+      "title": "Predicate",
+      "type": "string"
+    },
+    "scope": {
+      "maxItems": 3,
+      "minItems": 3,
+      "prefixItems": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      ],
+      "title": "Scope",
+      "type": "array"
+    },
+    "subject": {
+      "title": "Subject",
+      "type": "string"
+    }
+  },
+  "required": [
+    "claim_type",
+    "subject",
+    "predicate",
+    "scope"
+  ],
+  "title": "ClaimSignature",
+  "type": "object"
+}

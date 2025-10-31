@@ -5,11 +5,12 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from typing import Any, cast
 
+from aijournal.domain.facts import DailySummary
+from aijournal.domain.journal import NormalizedEntry
 from aijournal.fakes import fake_summarize
-from aijournal.models import DailySummary, DailySummaryResponse, NormalizedEntry
 
 StructuredCall = Callable[..., Any]
-ResponseFactory = Callable[[], DailySummaryResponse]
+ResponseFactory = Callable[[], DailySummary]
 
 
 def _todo_from_entries(entries: Sequence[NormalizedEntry]) -> list[str]:
@@ -38,7 +39,7 @@ def generate_summary(
         return fallback_model()
 
     response = cast(
-        DailySummaryResponse,
+        DailySummary,
         structured_call(request_factory, retries=retries, label=f"summarize {date}"),
     )
 
@@ -67,6 +68,3 @@ def generate_summary(
         highlights=highlights,
         todo_candidates=todo_candidates,
     )
-
-
-__all__ = ["generate_summary"]

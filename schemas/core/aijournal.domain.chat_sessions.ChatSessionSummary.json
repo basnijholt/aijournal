@@ -1,0 +1,104 @@
+{
+  "additionalProperties": false,
+  "description": "Aggregated summary metadata for a chat session.",
+  "properties": {
+    "created_at": {
+      "title": "Created At",
+      "type": "string"
+    },
+    "intent_counts": {
+      "additionalProperties": {
+        "type": "integer"
+      },
+      "title": "Intent Counts",
+      "type": "object"
+    },
+    "last_answer_preview": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Last Answer Preview"
+    },
+    "last_citations": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Last Citations",
+      "type": "array"
+    },
+    "last_clarifying_question": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Last Clarifying Question"
+    },
+    "last_feedback": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Last Feedback"
+    },
+    "last_question": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Last Question"
+    },
+    "last_retrieval_ms": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Last Retrieval Ms"
+    },
+    "session_id": {
+      "title": "Session Id",
+      "type": "string"
+    },
+    "turn_count": {
+      "default": 0,
+      "title": "Turn Count",
+      "type": "integer"
+    },
+    "updated_at": {
+      "title": "Updated At",
+      "type": "string"
+    }
+  },
+  "required": [
+    "session_id",
+    "created_at",
+    "updated_at"
+  ],
+  "title": "ChatSessionSummary",
+  "type": "object"
+}

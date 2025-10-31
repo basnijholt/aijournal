@@ -9,6 +9,7 @@ import yaml
 from typer.testing import CliRunner
 
 from aijournal.cli import app
+from aijournal.io.yaml_io import dump_yaml
 from tests.helpers import make_claim_atom
 
 if TYPE_CHECKING:
@@ -31,7 +32,7 @@ def skip_if_missing() -> None:
 
 def _write_yaml(path: Path, payload: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
+    path.write_text(dump_yaml(payload, sort_keys=False), encoding="utf-8")
 
 
 def _seed_normalized(workspace: Path) -> None:
@@ -82,7 +83,7 @@ def _invoke(
         args.extend(extra_args)
     result = cli_runner.invoke(app, ["ops", "profile", *args[1:]])
     assert result.exit_code == 0, result.output
-    path = workspace / "derived" / "profile_suggestions" / f"{DATE}.yaml"
+    path = workspace / "derived" / "profile_proposals" / f"{DATE}.yaml"
     assert path.exists()
     folder = path.parent
     count = len(list(folder.glob("*.yaml")))
@@ -98,12 +99,17 @@ def test_profile_suggest_writes_suggestions(
 
     _, suggestions_path, _ = _invoke(cli_workspace, cli_runner)
 
-    data = yaml.safe_load(suggestions_path.read_text(encoding="utf-8"))
-    assert data.get("upserts") or data.get("updates"), "Expected suggested changes"
-    meta = data.get("meta", {})
-    for key in ("llm_model", "prompt_path", "prompt_hash", "created_at"):
-        assert meta.get(key)
-    assert meta.get("llm_model") == "fake-ollama"
+    artifact = yaml.safe_load(suggestions_path.read_text(encoding="utf-8"))
+    assert artifact.get("kind") == "profile.proposals"
+    meta = artifact.get("meta", {})
+    assert meta.get("created_at")
+    assert meta.get("model") == "fake-ollama"
+    assert meta.get("prompt_path") == "prompts/profile_suggest.md"
+    data = artifact.get("data", {})
+    claims = data.get("claims", [])
+    facets = data.get("facets", [])
+    assert claims or facets, "Expected proposed changes"
+    assert "meta" not in data
 
 
 def test_profile_suggest_is_idempotent(

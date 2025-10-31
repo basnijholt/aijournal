@@ -1,0 +1,87 @@
+{
+  "$defs": {
+    "Span": {
+      "additionalProperties": false,
+      "description": "Detailed pointer back into a source document.",
+      "properties": {
+        "end": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "End"
+        },
+        "index": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Index"
+        },
+        "start": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Start"
+        },
+        "text": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Text"
+        },
+        "type": {
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "title": "Span",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Reference to a normalized entry and the supporting spans.",
+  "properties": {
+    "entry_id": {
+      "title": "Entry Id",
+      "type": "string"
+    },
+    "spans": {
+      "items": {
+        "$ref": "#/$defs/Span"
+      },
+      "title": "Spans",
+      "type": "array"
+    }
+  },
+  "required": [
+    "entry_id"
+  ],
+  "title": "SourceRef",
+  "type": "object"
+}

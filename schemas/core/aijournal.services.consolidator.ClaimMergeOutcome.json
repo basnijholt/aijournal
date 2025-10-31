@@ -1,0 +1,269 @@
+{
+  "$defs": {
+    "ClaimConflict": {
+      "additionalProperties": false,
+      "properties": {
+        "claim_id": {
+          "title": "Claim Id",
+          "type": "string"
+        },
+        "existing_value": {
+          "title": "Existing Value",
+          "type": "string"
+        },
+        "incoming_sources": {
+          "items": {
+            "$ref": "#/$defs/SourceRef"
+          },
+          "title": "Incoming Sources",
+          "type": "array"
+        },
+        "incoming_value": {
+          "title": "Incoming Value",
+          "type": "string"
+        },
+        "signature": {
+          "$ref": "#/$defs/ClaimSignature"
+        },
+        "statement": {
+          "title": "Statement",
+          "type": "string"
+        }
+      },
+      "required": [
+        "claim_id",
+        "signature",
+        "statement",
+        "existing_value",
+        "incoming_value"
+      ],
+      "title": "ClaimConflict",
+      "type": "object"
+    },
+    "ClaimSignature": {
+      "additionalProperties": false,
+      "properties": {
+        "claim_type": {
+          "title": "Claim Type",
+          "type": "string"
+        },
+        "predicate": {
+          "title": "Predicate",
+          "type": "string"
+        },
+        "scope": {
+          "maxItems": 3,
+          "minItems": 3,
+          "prefixItems": [
+            {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          ],
+          "title": "Scope",
+          "type": "array"
+        },
+        "subject": {
+          "title": "Subject",
+          "type": "string"
+        }
+      },
+      "required": [
+        "claim_type",
+        "subject",
+        "predicate",
+        "scope"
+      ],
+      "title": "ClaimSignature",
+      "type": "object"
+    },
+    "SourceRef": {
+      "additionalProperties": false,
+      "description": "Reference to a normalized entry and the supporting spans.",
+      "properties": {
+        "entry_id": {
+          "title": "Entry Id",
+          "type": "string"
+        },
+        "spans": {
+          "items": {
+            "$ref": "#/$defs/Span"
+          },
+          "title": "Spans",
+          "type": "array"
+        }
+      },
+      "required": [
+        "entry_id"
+      ],
+      "title": "SourceRef",
+      "type": "object"
+    },
+    "Span": {
+      "additionalProperties": false,
+      "description": "Detailed pointer back into a source document.",
+      "properties": {
+        "end": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "End"
+        },
+        "index": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Index"
+        },
+        "start": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Start"
+        },
+        "text": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Text"
+        },
+        "type": {
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "title": "Span",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Result of attempting to incorporate a claim observation.",
+  "properties": {
+    "action": {
+      "title": "Action",
+      "type": "string"
+    },
+    "changed": {
+      "title": "Changed",
+      "type": "boolean"
+    },
+    "claim_id": {
+      "title": "Claim Id",
+      "type": "string"
+    },
+    "conflict": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ClaimConflict"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "delta_strength": {
+      "default": 0.0,
+      "title": "Delta Strength",
+      "type": "number"
+    },
+    "related_action": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Related Action"
+    },
+    "related_claim_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Related Claim Id"
+    },
+    "related_signature": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ClaimSignature"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "signature": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ClaimSignature"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    }
+  },
+  "required": [
+    "changed",
+    "action",
+    "claim_id"
+  ],
+  "title": "ClaimMergeOutcome",
+  "type": "object"
+}

@@ -1,0 +1,54 @@
+{
+  "$defs": {
+    "TrimmedFile": {
+      "additionalProperties": false,
+      "description": "Record of a file trimmed due to token budget limits.",
+      "properties": {
+        "path": {
+          "title": "Path",
+          "type": "string"
+        },
+        "role": {
+          "title": "Role",
+          "type": "string"
+        }
+      },
+      "required": [
+        "role",
+        "path"
+      ],
+      "title": "TrimmedFile",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Metadata describing the assembled pack.",
+  "properties": {
+    "generated_at": {
+      "title": "Generated At",
+      "type": "string"
+    },
+    "max_tokens": {
+      "title": "Max Tokens",
+      "type": "integer"
+    },
+    "total_tokens": {
+      "title": "Total Tokens",
+      "type": "integer"
+    },
+    "trimmed": {
+      "items": {
+        "$ref": "#/$defs/TrimmedFile"
+      },
+      "title": "Trimmed",
+      "type": "array"
+    }
+  },
+  "required": [
+    "total_tokens",
+    "max_tokens",
+    "generated_at"
+  ],
+  "title": "PackMeta",
+  "type": "object"
+}

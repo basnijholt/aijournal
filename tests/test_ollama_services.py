@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -8,7 +9,9 @@ from pydantic import BaseModel
 from pydantic_ai import ModelSettings, UnexpectedModelBehavior
 from pydantic_ai.exceptions import UserError
 
-from aijournal.services import (
+from aijournal.common.app_config import AppConfig
+from aijournal.common.meta import LLMResult
+from aijournal.services.ollama import (
     LLMResponseError,
     OllamaConfig,
     build_ollama_agent,
@@ -25,6 +28,7 @@ class _FakeAgent:
         self._raise_error = raise_error
         self.prompt: str | None = None
         self.calls = 0
+        self.name = "fake-agent"
 
     def run_sync(self, prompt: str, output_type: object | None = None) -> SimpleNamespace:
         self.prompt = prompt
@@ -43,59 +47,203 @@ class _FakeAgent:
                 if not isinstance(payload, dict):
                     raise ValueError("expected dict payload")
                 return SimpleNamespace(output=payload)
-        except Exception as exc:  # pragma: no cover - test helper only
+        except Exception as exc:  # pragma: no cover - helper safety
             raise UnexpectedModelBehavior(str(exc)) from exc
 
         return SimpleNamespace(output=text)
 
 
-def test_run_ollama_agent_returns_payload(monkeypatch) -> None:
+class _ListModel(BaseModel):
+    names: list[str]
+
+
+def test_run_ollama_agent_returns_payload(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.chdir(tmp_path)
     agent = _FakeAgent(['{"ok": true}'])
 
-    def fake_builder(*_: object, **__: object) -> _FakeAgent:
-        return agent
+    monkeypatch.setattr("aijournal.services.ollama.build_ollama_agent", lambda *_, **__: agent)
 
-    monkeypatch.setattr("aijournal.services.ollama.build_ollama_agent", fake_builder)
+    result: LLMResult[dict[str, object]] = run_ollama_agent(
+        OllamaConfig(model="fake-model"),
+        "prompt text",
+        prompt_path="prompts/example.md",
+        prompt_hash="hash",
+    )
 
-    result = run_ollama_agent(OllamaConfig(model="fake-model"), "prompt text")
-
-    assert result == {"ok": True}
+    assert result.payload == {"ok": True}
+    assert result.prompt_path == "prompts/example.md"
+    assert result.prompt_hash == "hash"
+    assert result.attempts == 1
+    assert result.repair_attempts == 0
+    assert result.coercions_applied == []
     assert agent.prompt == "prompt text"
 
+    metrics_path = tmp_path / "derived" / "logs" / "structured_metrics.jsonl"
+    metrics = [
+        json.loads(line)
+        for line in metrics_path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    assert metrics[-1]["attempts"] == 1
+    assert metrics[-1]["repair_attempts"] == 0
+    assert metrics[-1]["coercion_count"] == 0
 
-def test_run_ollama_agent_raises_on_invalid_payload(monkeypatch) -> None:
+
+def test_run_ollama_agent_logs_on_invalid_payload(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.chdir(tmp_path)
     agent = _FakeAgent(['["unexpected"]'])
 
-    def fake_builder(*_: object, **__: object) -> _FakeAgent:
-        return agent
-
-    monkeypatch.setattr("aijournal.services.ollama.build_ollama_agent", fake_builder)
+    monkeypatch.setattr("aijournal.services.ollama.build_ollama_agent", lambda *_, **__: agent)
 
     with pytest.raises(LLMResponseError):
-        run_ollama_agent(OllamaConfig(model="fake-model"), "prompt text")
+        run_ollama_agent(
+            OllamaConfig(model="fake-model"),
+            "prompt text",
+            prompt_path="prompts/test.md",
+            prompt_hash="hash",
+        )
+
+    failure_dir = tmp_path / "derived" / "logs" / "structured_failures" / "fake-agent"
+    logs = list(failure_dir.glob("*.json"))
+    assert logs, "structured failure should have been logged"
 
 
-def test_run_ollama_agent_strips_markdown_fences(monkeypatch) -> None:
-    agent = _FakeAgent(['```json\n{\n  "ok": true\n}\n``` extra text'])
+def test_run_ollama_agent_translates_user_errors(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.chdir(tmp_path)
 
-    def fake_builder(*_: object, **__: object) -> _FakeAgent:
-        return agent
+    class FailingAgent:
+        name = "failing"
 
-    monkeypatch.setattr("aijournal.services.ollama.build_ollama_agent", fake_builder)
+        def run_sync(self, prompt: str, **_: object) -> SimpleNamespace:
+            raise UserError("bad request")
+
+    monkeypatch.setattr(
+        "aijournal.services.ollama.build_ollama_agent", lambda *_, **__: FailingAgent()
+    )
+
+    with pytest.raises(LLMResponseError, match="Ollama provider error: bad request"):
+        run_ollama_agent(
+            OllamaConfig(model="fake"),
+            "prompt",
+            prompt_path="prompts/test.md",
+        )
+
+
+def test_run_ollama_agent_translates_unexpected_behavior(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.chdir(tmp_path)
+
+    class FailingAgent:
+        name = "failing"
+
+        def run_sync(self, prompt: str, **_: object) -> SimpleNamespace:
+            raise UnexpectedModelBehavior("bad")
+
+    monkeypatch.setattr(
+        "aijournal.services.ollama.build_ollama_agent", lambda *_, **__: FailingAgent()
+    )
+
+    with pytest.raises(LLMResponseError, match="Model returned invalid JSON: bad"):
+        run_ollama_agent(
+            OllamaConfig(model="fake"),
+            "prompt",
+            prompt_path="prompts/test.md",
+        )
+
+
+def test_run_ollama_agent_rejects_empty_payload(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    agent = _FakeAgent(["   "])
+
+    monkeypatch.setattr("aijournal.services.ollama.build_ollama_agent", lambda *_, **__: agent)
 
     with pytest.raises(LLMResponseError, match="Model returned invalid JSON"):
-        run_ollama_agent(OllamaConfig(model="fake-model"), "prompt text")
+        run_ollama_agent(
+            OllamaConfig(model="fake"),
+            "prompt",
+            prompt_path="prompts/test.md",
+        )
+
+
+def test_run_ollama_agent_handles_extra_commentary(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    text = '{"ok": true} trailing commentary that should be trimmed'
+    agent = _FakeAgent([text])
+
+    monkeypatch.setattr("aijournal.services.ollama.build_ollama_agent", lambda *_, **__: agent)
+
+    with pytest.raises(LLMResponseError, match="Model returned invalid JSON"):
+        run_ollama_agent(
+            OllamaConfig(model="fake-model"),
+            "prompt",
+            prompt_path="prompts/test.md",
+        )
+
+
+def test_run_ollama_agent_strips_markdown_fences(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    agent = _FakeAgent(['```json\n{\n  "ok": true\n}\n``` extra text'])
+
+    monkeypatch.setattr("aijournal.services.ollama.build_ollama_agent", lambda *_, **__: agent)
+
+    with pytest.raises(LLMResponseError, match="Model returned invalid JSON"):
+        run_ollama_agent(
+            OllamaConfig(model="fake-model"),
+            "prompt text",
+            prompt_path="prompts/test.md",
+        )
+
+
+def test_run_ollama_agent_coerces_scalar_lists(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    agent = _FakeAgent(['{"names": "solo"}'])
+
+    monkeypatch.setattr("aijournal.services.ollama.build_ollama_agent", lambda *_, **__: agent)
+
+    result: LLMResult[_ListModel] = run_ollama_agent(
+        OllamaConfig(model="fake-model"),
+        "prompt",
+        output_type=_ListModel,
+        prompt_path="prompts/test.md",
+    )
+
+    assert result.payload.names == ["solo"]
+    assert result.coercions_applied
+    assert result.coercions_applied[0]["rule"] == "wrap_scalar_in_list"
+    assert "JSON_SKELETON" in (agent.prompt or "")
+
+    metrics_path = tmp_path / "derived" / "logs" / "structured_metrics.jsonl"
+    metrics = [
+        json.loads(line)
+        for line in metrics_path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    assert metrics[-1]["coercion_count"] == 1
 
 
 def test_build_config_coerces_numeric_settings(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("AIJOURNAL_MODEL", raising=False)
     monkeypatch.delenv("AIJOURNAL_OLLAMA_HOST", raising=False)
-    config = {
+    config_dict = {
         "model": "llama3.1:8b-instruct",
         "temperature": "0.45",
         "seed": "99",
         "max_tokens": "2048",
     }
+    config = AppConfig.model_validate(config_dict)
 
     result = build_ollama_config_from_mapping(config)
 
@@ -110,11 +258,12 @@ def test_build_config_coerces_numeric_settings(monkeypatch: pytest.MonkeyPatch) 
 def test_build_config_prefers_explicit_overrides(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("AIJOURNAL_MODEL", raising=False)
     monkeypatch.delenv("AIJOURNAL_OLLAMA_HOST", raising=False)
-    config = {
+    config_dict = {
         "model": "config-model",
         "temperature": 0.2,
         "seed": 7,
     }
+    config = AppConfig.model_validate(config_dict)
 
     result = build_ollama_config_from_mapping(
         config,
@@ -133,7 +282,8 @@ def test_build_config_prefers_explicit_overrides(monkeypatch: pytest.MonkeyPatch
 def test_build_config_respects_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("AIJOURNAL_MODEL", "env-model")
     monkeypatch.setenv("AIJOURNAL_OLLAMA_HOST", "http://env-host")
-    config: dict[str, object] = {"model": "config-model", "host": "http://config-host"}
+    config_dict: dict[str, object] = {"model": "config-model", "host": "http://config-host"}
+    config = AppConfig.model_validate(config_dict)
 
     result = build_ollama_config_from_mapping(config)
 
@@ -145,7 +295,8 @@ def test_build_config_uses_config_host(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("AIJOURNAL_MODEL", raising=False)
     monkeypatch.delenv("AIJOURNAL_OLLAMA_HOST", raising=False)
     monkeypatch.delenv("OLLAMA_BASE_URL", raising=False)
-    config = {"host": "http://config-host:11434", "model": "config-model"}
+    config_dict = {"host": "http://config-host:11434", "model": "config-model"}
+    config = AppConfig.model_validate(config_dict)
 
     result = build_ollama_config_from_mapping(config)
 
@@ -156,7 +307,8 @@ def test_build_config_uses_config_host(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_environment_model_overrides_config(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("AIJOURNAL_MODEL", "env-model")
     monkeypatch.delenv("AIJOURNAL_OLLAMA_HOST", raising=False)
-    config = {"model": "config-model"}
+    config_dict = {"model": "config-model"}
+    config = AppConfig.model_validate(config_dict)
 
     result = build_ollama_config_from_mapping(config)
 
@@ -193,57 +345,6 @@ def test_resolve_ollama_base_url_appends_v1(monkeypatch: pytest.MonkeyPatch) -> 
 
     assert resolve_ollama_base_url("http://host") == "http://host/v1"
     assert resolve_ollama_base_url("http://host/v1") == "http://host/v1"
-
-
-def test_run_ollama_agent_translates_user_errors(monkeypatch: pytest.MonkeyPatch) -> None:
-    class FailingAgent:
-        def run_sync(self, prompt: str, **_: object) -> SimpleNamespace:
-            raise UserError("bad request")
-
-    monkeypatch.setattr(
-        "aijournal.services.ollama.build_ollama_agent", lambda *_, **__: FailingAgent()
-    )
-
-    with pytest.raises(LLMResponseError, match="Ollama provider error: bad request"):
-        run_ollama_agent(OllamaConfig(model="fake"), "prompt")
-
-
-def test_run_ollama_agent_translates_unexpected_behavior(monkeypatch: pytest.MonkeyPatch) -> None:
-    class FailingAgent:
-        def run_sync(self, prompt: str, **_: object) -> SimpleNamespace:
-            raise UnexpectedModelBehavior("bad")
-
-    monkeypatch.setattr(
-        "aijournal.services.ollama.build_ollama_agent", lambda *_, **__: FailingAgent()
-    )
-
-    with pytest.raises(LLMResponseError, match="Model returned invalid JSON: bad"):
-        run_ollama_agent(OllamaConfig(model="fake"), "prompt")
-
-
-def test_run_ollama_agent_rejects_empty_payload(monkeypatch: pytest.MonkeyPatch) -> None:
-    agent = _FakeAgent(["   "])
-
-    def fake_builder(*_: object, **__: object) -> _FakeAgent:
-        return agent
-
-    monkeypatch.setattr("aijournal.services.ollama.build_ollama_agent", fake_builder)
-
-    with pytest.raises(LLMResponseError, match="Model returned invalid JSON"):
-        run_ollama_agent(OllamaConfig(model="fake"), "prompt")
-
-
-def test_run_ollama_agent_handles_extra_commentary(monkeypatch: pytest.MonkeyPatch) -> None:
-    text = '{"ok": true} trailing commentary that should be trimmed'
-    agent = _FakeAgent([text])
-
-    def fake_builder(*_: object, **__: object) -> _FakeAgent:
-        return agent
-
-    monkeypatch.setattr("aijournal.services.ollama.build_ollama_agent", fake_builder)
-
-    with pytest.raises(LLMResponseError, match="Model returned invalid JSON"):
-        run_ollama_agent(OllamaConfig(model="fake-model"), "prompt")
 
 
 def test_build_ollama_agent_injects_model_settings(monkeypatch: pytest.MonkeyPatch) -> None:

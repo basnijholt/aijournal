@@ -6,15 +6,18 @@ import json
 import os
 import time
 from collections.abc import Sequence
-from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import ValidationError
 
-from aijournal.io.yaml_io import load_yaml_model
-from aijournal.models import PersonaCore, PersonaCoreFile
+from aijournal.api.chat import ChatCitation, ChatCitationRef, ChatResponse
+from aijournal.common.app_config import AppConfig
+from aijournal.common.meta import LLMResult
+from aijournal.domain.chat import ChatTelemetry, ChatTurn
+from aijournal.domain.persona import PersonaCore
+from aijournal.io.artifacts import load_artifact
 from aijournal.services.ollama import (
     LLMResponseError,
     OllamaConfig,
@@ -26,7 +29,7 @@ from aijournal.services.retriever import (
     RetrievedChunk,
     Retriever,
 )
-from aijournal.utils.coercion import coerce_float, coerce_int
+from aijournal.utils.coercion import coerce_int
 
 _INTENT_KEYWORDS: dict[str, tuple[str, ...]] = {
     "planning": (
@@ -62,93 +65,23 @@ _INTENT_KEYWORDS: dict[str, tuple[str, ...]] = {
 _ADVICE_VERBS = ("should i", "how do i", "help me", "guide me", "recommend")
 
 
-class ChatLLMResponse(BaseModel):
-    """Minimal schema enforced for live chat answers."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    answer: str = Field(..., max_length=4000)
-    citations: list[str] = Field(default_factory=list)
-    clarifying_question: str | None = None
-
-
-@dataclass(frozen=True)
-class ChatCitation:
-    """Reference to a retrieved chunk included in a chat response."""
-
-    chunk_id: str
-    code: str
-    normalized_id: str
-    chunk_index: int
-    source_path: str
-    date: str
-    tags: tuple[str, ...]
-    score: float
-
-    @property
-    def marker(self) -> str:
-        """Return the display marker used inside responses."""
-        return f"[entry:{self.code}]"
-
-    @classmethod
-    def from_chunk(cls, chunk: RetrievedChunk) -> ChatCitation:
-        code = f"{chunk.normalized_id}#p{chunk.chunk_index}"
-        return cls(
-            chunk_id=chunk.chunk_id,
-            code=code,
-            normalized_id=chunk.normalized_id,
-            chunk_index=chunk.chunk_index,
-            source_path=chunk.source_path,
-            date=chunk.date,
-            tags=tuple(chunk.tags),
-            score=chunk.score,
-        )
-
-
-@dataclass(frozen=True)
-class ChatTurn:
-    """Result of a single chat turn."""
-
-    question: str
-    answer: str
-    persona: PersonaCore
-    citations: list[ChatCitation]
-    retrieved_chunks: list[RetrievedChunk]
-    fake_mode: bool
-    intent: str
-    clarifying_question: str | None
-    telemetry: ChatTelemetry
-    timestamp: str
-
-
-@dataclass(frozen=True)
-class ChatTelemetry:
-    """Timing and retrieval statistics for a chat turn."""
-
-    retrieval_ms: float
-    chunk_count: int
-    retriever_source: str
-    model: str
-
-
 class ChatService:
     """Minimal chat orchestrator that composes persona + retrieval."""
 
     def __init__(
         self,
         root: Path,
-        config: dict[str, Any] | None = None,
+        config: AppConfig | None = None,
         *,
         retriever: Retriever | None = None,
     ) -> None:
         self._root = Path(root)
-        self._config = dict(config or {})
+        self._config: AppConfig = config or AppConfig()
         self._persona_path = self._root / "derived" / "persona" / "persona_core.yaml"
         self._fake_mode = os.getenv("AIJOURNAL_FAKE_OLLAMA") == "1"
         self._retriever = retriever or Retriever(self._root, self._config)
 
-        chat_cfg_raw = self._config.get("chat")
-        self._chat_cfg = chat_cfg_raw if isinstance(chat_cfg_raw, dict) else {}
+        self._chat_cfg = self._config.chat
 
     def close(self) -> None:
         """Release underlying resources."""
@@ -175,7 +108,7 @@ class ChatService:
         intent = self._classify_intent(sanitized_question)
 
         requested_top = max(1, int(top))
-        cfg_limit = coerce_int(self._chat_cfg.get("max_retrieved_chunks"))
+        cfg_limit = self._chat_cfg.max_retrieved_chunks
         effective_top = min(requested_top, cfg_limit) if cfg_limit else requested_top
 
         search_started = time.perf_counter()
@@ -191,7 +124,7 @@ class ChatService:
         allow_follow_up = self._allow_follow_up(persona)
 
         if self._fake_mode:
-            answer, citations, clarifying = self._fake_answer(
+            answer, citations, clarifying, response = self._fake_answer(
                 sanitized_question,
                 persona,
                 chunks,
@@ -199,7 +132,7 @@ class ChatService:
                 allow_follow_up=allow_follow_up,
             )
         else:
-            answer, citations, clarifying = self._real_answer(
+            answer, citations, clarifying, response = self._real_answer(
                 sanitized_question,
                 persona,
                 chunks,
@@ -215,9 +148,18 @@ class ChatService:
             retriever_source=result.meta.source,
             model=self._effective_model_name(),
         )
+        telemetry_payload = telemetry.model_dump(mode="python")
+        response = response.model_copy(
+            update={
+                "answer": answer,
+                "telemetry": telemetry_payload,
+                "timestamp": response.timestamp or timestamp,
+            }
+        )
         return ChatTurn(
             question=sanitized_question,
             answer=answer,
+            response=response,
             persona=persona,
             citations=citations,
             retrieved_chunks=chunks,
@@ -236,14 +178,14 @@ class ChatService:
             msg = "Persona core not found. Run `aijournal persona build` before using chat."
             raise RuntimeError(msg)
         try:
-            persona_file = load_yaml_model(self._persona_path, PersonaCoreFile)
+            persona_artifact = load_artifact(self._persona_path, PersonaCore)
         except FileNotFoundError as exc:
             msg = "Persona core not found. Run `aijournal persona build` before using chat."
             raise RuntimeError(msg) from exc
         except ValidationError as exc:
             msg = f"Persona core failed validation: {exc}"
             raise RuntimeError(msg) from exc
-        return persona_file.persona
+        return persona_artifact.data
 
     def _build_citations(
         self,
@@ -264,13 +206,18 @@ class ChatService:
         intent: str,
         allow_follow_up: bool,
         prefix: str = "(fake)",
-    ) -> tuple[str, list[ChatCitation], str | None]:
+    ) -> tuple[str, list[ChatCitation], str | None, ChatResponse]:
         if not chunks:
             answer = (
                 f"{prefix} No indexed journal entries matched '{question}'. "
                 "Rebuild the index if you recently added notes."
             )
-            return answer.strip(), [], None
+            response = ChatResponse(
+                answer=answer.strip(),
+                citations=[],
+                timestamp=None,
+            )
+            return answer.strip(), [], None, response
 
         top_chunk = chunks[0]
         citation = ChatCitation.from_chunk(top_chunk)
@@ -285,7 +232,13 @@ class ChatService:
         clarifying: str | None = None
         if allow_follow_up:
             clarifying = self._generate_clarifying_question(intent, question)
-        return answer.strip(), [citation], clarifying
+        response = ChatResponse(
+            answer=answer.strip(),
+            citations=[ChatCitationRef(code=citation.code)],
+            clarifying_question=clarifying,
+            timestamp=None,
+        )
+        return answer.strip(), [citation], clarifying, response
 
     def _real_answer(
         self,
@@ -296,7 +249,7 @@ class ChatService:
         *,
         intent: str,
         allow_follow_up: bool,
-    ) -> tuple[str, list[ChatCitation], str | None]:
+    ) -> tuple[str, list[ChatCitation], str | None, ChatResponse]:
         if not chunks:
             msg = (
                 "No journal chunks were retrieved for this chat question; "
@@ -311,20 +264,24 @@ class ChatService:
             intent=intent,
             allow_follow_up=allow_follow_up,
         )
-        payload: ChatLLMResponse = run_ollama_agent(
+        result: LLMResult[ChatResponse] = run_ollama_agent(
             self._build_ollama_config(),
             prompt,
-            output_type=ChatLLMResponse,
+            output_type=ChatResponse,
         )
+        response = result.payload
+        timestamp_str = datetime.now(tz=UTC).isoformat()
+        if not response.timestamp:
+            response = response.model_copy(update={"timestamp": timestamp_str})
+        answer = response.answer.strip()
 
-        answer = payload.answer.strip()
         if not answer:
             raise LLMResponseError("Chat model returned an empty answer.")
 
         citations: list[ChatCitation] = []
         missing_codes: list[str] = []
-        for raw_code in payload.citations:
-            code = raw_code.strip()
+        for citation_ref in response.citations:
+            code = citation_ref.code.strip()
             if not code:
                 continue
             citation = citations_map.get(code)
@@ -342,11 +299,14 @@ class ChatService:
             raise LLMResponseError("Chat model did not provide any citations.")
 
         clarifying: str | None = None
-        if allow_follow_up and payload.clarifying_question:
-            clarifying_candidate = payload.clarifying_question.strip()
+        if allow_follow_up and response.clarifying_question:
+            clarifying_candidate = response.clarifying_question.strip()
             clarifying = clarifying_candidate or None
 
-        return answer, citations, clarifying
+        response = response.model_copy(
+            update={"citations": [ChatCitationRef(code=c.code) for c in citations]}
+        )
+        return answer, citations, clarifying, response
 
     def _render_prompt(
         self,
@@ -388,10 +348,10 @@ class ChatService:
             "Respond with JSON using the schema:\n"
             "{\n"
             '  "answer": string,\n'
-            '  "citations": list[string],\n'
+            '  "citations": list[{"code": string}],\n'
             '  "clarifying_question": string | null\n'
             "}\n"
-            "Each item in citations must match one of the provided chunk citations."
+            "Each citation code must match one of the provided chunk citations."
         )
         return "\n\n".join(
             [
@@ -403,34 +363,31 @@ class ChatService:
         )
 
     def _build_ollama_config(self) -> OllamaConfig:
-        overrides: dict[str, Any] = {}
-        for key in ("model", "temperature", "seed", "max_tokens"):
-            value = self._chat_cfg.get(key)
-            if value is not None:
-                overrides[key] = value
-
-        merged = dict(self._config)
-        merged.update(overrides)
-
-        model_override = self._chat_cfg.get("model")
-        host_override = self._chat_cfg.get("host")
-        timeout_override = coerce_float(self._chat_cfg.get("timeout"))
+        model_override = self._chat_cfg.model
+        host_override = self._chat_cfg.host
+        timeout_override = self._chat_cfg.timeout
+        temperature_override = self._chat_cfg.temperature
+        seed_override = self._chat_cfg.seed
+        max_tokens_override = self._chat_cfg.max_tokens
 
         return build_ollama_config_from_mapping(
-            merged,
+            self._config,
             model=str(model_override) if isinstance(model_override, str) else None,
             host=str(host_override).strip() if isinstance(host_override, str) else None,
             timeout=timeout_override,
+            temperature=temperature_override,
+            seed=seed_override,
+            max_tokens=max_tokens_override,
         )
 
     # ------------------------------------------------------------------
     # Intent and follow-up helpers
     # ------------------------------------------------------------------
     def _effective_model_name(self) -> str:
-        override = self._chat_cfg.get("model")
+        override = self._chat_cfg.model
         if isinstance(override, str) and override.strip():
             return override.strip()
-        config_model = self._config.get("model")
+        config_model = self._config.model
         if isinstance(config_model, str) and config_model.strip():
             return str(config_model).strip()
         env_model = os.getenv("AIJOURNAL_MODEL")
@@ -500,11 +457,3 @@ def _persona_summary(persona: PersonaCore, *, max_claims: int = 3) -> dict[str, 
         "profile": profile,
         "claims": claims,
     }
-
-
-__all__ = [
-    "ChatCitation",
-    "ChatService",
-    "ChatTurn",
-    "ChatTelemetry",
-]

@@ -1,37 +1,65 @@
-You maintain a personal self-profile composed of claims and structured facets. Using the
-normalized entries plus the current profile, propose JSON suggestions using a single array
-named `suggestions`. Each suggestion must take one of two forms:
+You maintain a personal self-profile composed of structured claims and facets. Using the
+normalized entries plus the current profile, propose grounded updates that match the
+`ProfileUpdateProposals` schema below. Output must be a single JSON object with exactly the
+keys `claims` and `facets`—no narration or markdown fences.
 
 ```
 {
-  "suggestions": [
+  "claims": [
     {
-      "kind": "claim",
-      "id": "optional-kebab-id",
-      "statement": "Evidence-backed statement",
-      "rationale": "Short justification (≤20 words)",
-      "evidence": ["normalized-entry-id"],
-      "status": "accepted" | "tentative",
-      "confidence": 0.0-1.0
-    },
+      "claim": {
+        "type": "preference|value|goal|boundary|trait|habit|aversion|skill",
+        "subject": "who or what the claim refers to",
+        "predicate": "relationship or attribute",
+        "value": "string value",
+        "statement": "Readable sentence",
+        "scope": {"domain": "optional", "context": ["tags"], "conditions": []},
+        "strength": 0.0-1.0,
+        "status": "accepted|tentative|rejected",
+        "method": "self_report|inferred|behavioral",
+        "user_verified": false,
+        "review_after_days": integer
+      },
+      "normalized_ids": ["normalized-entry-id"],
+      "evidence": [
+        {"entry_id": "normalized-entry-id", "spans": [{"type": "para", "index": 0}]}
+      ],
+      "manifest_hashes": ["optional-manifest-hash"],
+      "rationale": "≤25 word justification"
+    }
+  ],
+  "facets": [
     {
-      "kind": "facet",
-      "facet_path": "coaching_prefs.check_ins.cadence",
-      "value": <JSON-compatible value>,
-      "rationale": "Short justification (≤20 words)",
-      "evidence": ["normalized-entry-id"]
+      "path": "values_motivations.recurring_theme",
+      "operation": "set" | "remove",
+      "value": "string or list of strings when operation is set",
+      "method": "inferred|self_report|behavioral",
+      "confidence": 0.0-1.0,
+      "review_after_days": integer,
+      "user_verified": false,
+      "evidence": [
+        {"entry_id": "normalized-entry-id", "spans": [{"type": "para", "index": 1}]}
+      ],
+      "rationale": "≤25 word justification"
     }
   ]
 }
 ```
 
+When producing enum fields, use the exact strings shown above (case-sensitive). The
+backend adds claim IDs, provenance, and any additional metadata.
+
 Guidelines:
-- Mine the structured data (`summary`, `sections`, `tags`) to surface meaningful changes even if full paragraphs are unavailable. Anchor every suggestion in the evidence snippets you can observe.
-- Only include fields relevant to the suggestion type (`statement` for claims, `facet_path` and `value` for facets).
-- Use the supplied entries for grounding; omit items when support is weak.
-- IDs are optional; provide them only when a stable slug already exists.
-- Keep rationales brief and factual, and reference evidence IDs where possible.
-- Return **only** the JSON payload shown above. No markdown fences or commentary.
+- Each `claims[i].claim` must match the `ClaimAtomInput` schema (no `id` or `provenance`; the backend generates them).
+- Mine `summary`, `sections`, and `tags` to justify every update; omit proposals when support is weak.
+- Prefer refining existing profile elements before introducing new claims or facets.
+- Keep `rationale` ≤ 25 words and reference which evidence supports the change.
+- Stick to `operation: "set"` (to upsert/replace) or `"remove"` (to delete); avoid `merge` for LLM output.
+- Return **only** the JSON payload. No markdown fences or commentary.
+- If no grounded updates exist, return `{ "claims": [], "facets": [] }`.
+
+If you cannot produce a valid payload matching this schema, respond with `{"claims": [], "facets": []}` as the entire output.
+See `prompts/examples/profile_suggest.json` for a minimal compliant example.
 
 DATE: $date
 

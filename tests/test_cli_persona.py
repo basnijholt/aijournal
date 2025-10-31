@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import json
 from typing import TYPE_CHECKING
 
 import yaml
 from typer.testing import CliRunner
 
 from aijournal.cli import app
+from aijournal.io.yaml_io import dump_yaml
 from tests.helpers import make_claim_atom
 
 if TYPE_CHECKING:
@@ -51,7 +53,7 @@ def _seed_claims(workspace: Path) -> None:
             ),
         ],
     }
-    path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
+    path.write_text(dump_yaml(payload, sort_keys=False), encoding="utf-8")
 
 
 def test_persona_build_generates_core(
@@ -65,11 +67,16 @@ def test_persona_build_generates_core(
 
     persona_path = cli_workspace / "derived" / "persona" / "persona_core.yaml"
     assert persona_path.exists()
-    payload = yaml.safe_load(persona_path.read_text(encoding="utf-8"))
-    assert payload["persona"]["claims"], "claims should be present"
-    assert payload["meta"]["claim_count"] == len(payload["persona"]["claims"])
-    assert payload["meta"]["planned_tokens"] > 0
-    source_mtimes = payload["meta"].get("source_mtimes", {})
+    artifact = yaml.safe_load(persona_path.read_text(encoding="utf-8"))
+    assert artifact.get("kind") == "persona.core"
+    data = artifact.get("data", {})
+    meta = artifact.get("meta", {})
+    notes = meta.get("notes", {}) or {}
+    persona_claims = data.get("claims", [])
+    assert persona_claims, "claims should be present"
+    assert notes.get("claim_count") == str(len(persona_claims))
+    assert int(notes.get("planned_tokens", "0")) > 0
+    source_mtimes = json.loads(notes.get("source_mtimes", "{}"))
     assert "profile/self_profile.yaml" in source_mtimes
     assert "profile/claims.yaml" in source_mtimes
 
@@ -97,12 +104,14 @@ def test_persona_build_trims_when_budget_forced(
     assert result.exit_code == 0, result.stdout
 
     persona_path = cli_workspace / "derived" / "persona" / "persona_core.yaml"
-    payload = yaml.safe_load(persona_path.read_text(encoding="utf-8"))
-    trimmed = payload["meta"].get("trimmed", [])
+    artifact = yaml.safe_load(persona_path.read_text(encoding="utf-8"))
+    meta = artifact.get("meta", {})
+    notes = meta.get("notes", {}) or {}
+    trimmed = json.loads(notes.get("trimmed", "[]"))
     assert trimmed, "expect at least one trimmed claim when forcing small budget"
-    trimmed_ids = [item["id"] for item in trimmed]
+    trimmed_ids = [item.get("id") for item in trimmed]
     assert "pref.evening" in trimmed_ids
-    assert isinstance(payload["meta"].get("budget_exceeded"), bool)
+    assert json.loads(notes.get("budget_exceeded", "false")) is True
 
 
 def test_persona_build_handles_empty_claims(
@@ -114,11 +123,12 @@ def test_persona_build_handles_empty_claims(
 
     result = cli_runner.invoke(app, ["ops", "persona", "build"])
     assert result.exit_code == 0, result.stdout
-    payload = yaml.safe_load(
+    artifact = yaml.safe_load(
         (cli_workspace / "derived" / "persona" / "persona_core.yaml").read_text(encoding="utf-8"),
     )
-    assert payload["persona"]["claims"] == []
-    assert payload["persona"]["profile"], "profile slice should be included when available"
+    persona_data = artifact.get("data", {})
+    assert persona_data.get("claims") == []
+    assert persona_data.get("profile"), "profile slice should be included when available"
 
 
 def test_persona_build_respects_min_claims(
@@ -142,11 +152,12 @@ def test_persona_build_respects_min_claims(
         ],
     )
     assert result.exit_code == 0, result.stdout
-    payload = yaml.safe_load(
+    artifact = yaml.safe_load(
         (cli_workspace / "derived" / "persona" / "persona_core.yaml").read_text(encoding="utf-8"),
     )
-    assert payload["meta"]["claim_count"] == 2
-    assert payload["meta"].get("budget_exceeded") is True
+    notes = artifact.get("meta", {}).get("notes", {}) or {}
+    assert notes.get("claim_count") == "2"
+    assert json.loads(notes.get("budget_exceeded", "false")) is True
 
 
 def test_persona_status_reports_fresh(
@@ -180,7 +191,7 @@ def test_persona_status_detects_stale_profile(
             last_updated="2025-02-05T19:00:00Z",
         ),
     )
-    claims_path.write_text(yaml.safe_dump(claims_payload, sort_keys=False), encoding="utf-8")
+    claims_path.write_text(dump_yaml(claims_payload, sort_keys=False), encoding="utf-8")
 
     status_result = cli_runner.invoke(app, ["ops", "persona", "status"])
     assert status_result.exit_code != 0

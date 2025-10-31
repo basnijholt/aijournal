@@ -1,0 +1,20 @@
+{
+  "additionalProperties": false,
+  "description": "Record of a file trimmed due to token budget limits.",
+  "properties": {
+    "path": {
+      "title": "Path",
+      "type": "string"
+    },
+    "role": {
+      "title": "Role",
+      "type": "string"
+    }
+  },
+  "required": [
+    "role",
+    "path"
+  ],
+  "title": "TrimmedFile",
+  "type": "object"
+}

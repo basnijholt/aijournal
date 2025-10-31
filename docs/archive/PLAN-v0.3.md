@@ -655,7 +655,7 @@ Health check:
   5. Generate responses that must cite claims/journal entries (`[claim:pref.deep_work.window]`, `[entry:2025-10-25_x9t3#p0]`), include `why this fits you`, and ask at most one clarifying question if `coaching_prefs.probing` allows.
   6. Extract micro-facts from user messages, run them through `ClaimConsolidator`, and queue updates under `derived/pending/profile_updates/…` (or micro-facts) with explicit provenance.
   7. Capture feedback (thumbs up/down) to tweak cited claim strengths (+0.03/−0.05 within 0..1).
-- Outputs live under `derived/chat_sessions/<session_id>/{transcript.jsonl, summary.yaml, learnings.yaml}` with deterministic ordering + metadata.
+- Outputs live under `derived/chat_sessions/<session_id>/{transcript.json, summary.yaml, learnings.yaml}` with deterministic ordering + metadata.
 
 ---
 
@@ -984,13 +984,13 @@ documentation parity, and live-mode polish moving without blocking on LLM availa
 
 ### Immediate focus (week of 2025-10-27)
 
-1. **feat(index): `index rebuild` + `index tail`.** ✅ _Shipped 2025-10-25 via the new Typer group, chunk manifests, Annoy map commits, and CLI coverage in `tests/test_cli_index.py`._
+1. **feat(index): `index rebuild` + `index tail`.** ✅ _Shipped 2025-10-25 via the new Typer group, chunk artifacts (ArtifactKind.INDEX_CHUNKS), Annoy map commits, and CLI coverage in `tests/test_cli_index.py`._
    - Implement chunker → SQLite (`fts5`) → Annoy writer with deterministic ordering.
    - Add `derived/index/meta.json` capturing `{embedding_model, dim, build_time, mode}` plus
      trimmed chunk stats.
    - Expose `--since`/`--limit` knobs and write regression tests that rebuild from
      fixtures and assert identical Annoy/SQLite digests across runs.
-   - Write human-readable chunk manifests (`derived/index/chunks/YYYY-MM-DD.yaml` + optional
+   - Write human-readable chunk artifacts (`derived/index/chunks/YYYY-MM-DD.yaml` + optional
      `.npy` vectors) alongside the database artifacts for inspection.
 
 2. **feat(retriever): shared search service.** ✅ _Shipped 2025-10-25 via `aijournal.services.retriever.Retriever`, the shared `EmbeddingBackend`, Pytests covering the ANN search path (`tests/test_retriever.py`), and (2025-10-27) the operator-facing `aijournal index search` CLI with coverage in `tests/test_cli_index.py`._

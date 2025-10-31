@@ -12,20 +12,24 @@ import json
 import os
 import sys
 from collections.abc import Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal, cast
 
+import click
 import httpx
 import typer
-import yaml
 from pydantic import ValidationError
 from typer.models import CommandInfo
 
+from aijournal.api.capture import CaptureRequest
 from aijournal.commands import summarize as summarize_commands
 from aijournal.commands.advise import (
+    AdviceOptions,
     _collect_pending_interview_prompts,
-    run_advise,
+    run_advise_command,
 )
+from aijournal.commands.audit import run_audit_provenance_cli
 from aijournal.commands.characterize import (
     _normalize_claim_proposals,
     _pending_updates_dir,
@@ -33,7 +37,10 @@ from aijournal.commands.characterize import (
 )
 from aijournal.commands.chat import run_chat
 from aijournal.commands.chatd import run_chatd
-from aijournal.commands.facts import run_facts
+from aijournal.commands.facts import (
+    FactsOptions,
+    run_facts_command,
+)
 from aijournal.commands.index import (
     run_index_rebuild,
     run_index_search,
@@ -53,61 +60,62 @@ from aijournal.commands.pack import run_pack
 from aijournal.commands.persona import persona_state, run_persona_build
 from aijournal.commands.profile import (
     InterviewTarget,
-    _apply_claim_upsert,
-    _apply_profile_update,
     _compute_rankings,
-    _load_profile_components,
-    _profile_to_dict,
+    apply_claim_upsert,
+    apply_profile_update,
+    load_profile_components,
+    profile_to_dict,
     run_profile_apply,
     run_profile_status,
     run_profile_suggest,
 )
 from aijournal.commands.summarize import (
+    DailySummaryOptions,
     _entries_to_payload,
     _json_block,
     _load_normalized_entries,
-    run_summarize,
+    run_summarize_command,
 )
 from aijournal.commands.summarize import (
     _invoke_structured_llm as _commands_invoke_structured_llm,
 )
-from aijournal.commands.summarize import (
-    _structured_call_with_retry as _commands_structured_call_with_retry,
-)
-from aijournal.commands.system import run_status_summary, run_system_doctor
-from aijournal.io.yaml_io import load_yaml_model, write_yaml_model
-from aijournal.models import (
-    ClaimAtom,
+from aijournal.commands.system import run_system_doctor_cli, run_system_status_cli
+from aijournal.common.app_config import AppConfig
+from aijournal.common.context import RunContext, create_run_context
+from aijournal.domain.changes import ClaimProposal, FacetChange
+from aijournal.domain.claims import ClaimAtom, ClaimSource, Scope
+from aijournal.domain.events import (
     ClaimConflictPayload,
+    ClaimEventAction,
     ClaimPreviewEvent,
-    ClaimProposal,
-    ClaimsFile,
     ClaimSignaturePayload,
-    FacetProposal,
-    InterviewQuestion,
-    InterviewSet,
-    NormalizedEntry,
-    ProfileUpdateBatch,
-    ProfileUpdatePreview,
-    Scope,
-    SelfProfile,
+    FeedbackBatch,
 )
+from aijournal.domain.evidence import redact_source_text
+from aijournal.domain.journal import NormalizedEntry
+from aijournal.domain.persona import InterviewQuestion, InterviewSet
+from aijournal.io.artifacts import load_artifact_data
+from aijournal.io.yaml_io import dump_yaml, load_yaml_model, write_yaml_model
+from aijournal.models.authoritative import ClaimsFile, SelfProfile
+from aijournal.models.derived import ProfileUpdateBatch, ProfileUpdatePreview
 from aijournal.pipelines import normalization
-from aijournal.services import (
-    ClaimConflict,
-    ClaimConsolidator,
-    ClaimMergeOutcome,
-    ClaimSignature,
-    LLMResponseError,
-    build_ollama_config_from_mapping,
-    resolve_ollama_host,
-    run_ollama_agent,
-)
 from aijournal.services.capture import (
     CAPTURE_MAX_STAGE,
     CAPTURE_STAGES,
     CaptureInput,
     run_capture,
+)
+from aijournal.services.consolidator import (
+    ClaimConflict,
+    ClaimConsolidator,
+    ClaimMergeOutcome,
+    ClaimSignature,
+)
+from aijournal.services.ollama import (
+    LLMResponseError,
+    build_ollama_config_from_mapping,
+    resolve_ollama_host,
+    run_ollama_agent,
 )
 from aijournal.utils import time as time_utils
 from aijournal.utils.coercion import coerce_int
@@ -126,16 +134,20 @@ persona_app = typer.Typer(help="Persona utilities.")
 ops_app = typer.Typer(help="Advanced operations namespace.")
 ops_pipeline_app = typer.Typer(help="Pipeline tools (normalize, summarize, characterize).")
 ops_feedback_app = typer.Typer(help="Feedback processing utilities.")
+ops_logs_app = typer.Typer(help="Log utilities.")
 ops_system_app = typer.Typer(help="System diagnostics and doctor helpers.")
 ops_dev_app = typer.Typer(help="Developer fixtures and helpers.")
+ops_audit_app = typer.Typer(help="Audit and governance utilities.")
 
 ops_app.add_typer(ops_pipeline_app, name="pipeline")
 ops_app.add_typer(profile_app, name="profile")
 ops_app.add_typer(index_app, name="index")
 ops_app.add_typer(persona_app, name="persona")
 ops_app.add_typer(ops_feedback_app, name="feedback")
+ops_app.add_typer(ops_logs_app, name="logs")
 ops_app.add_typer(ops_system_app, name="system")
 ops_app.add_typer(ops_dev_app, name="dev")
+ops_app.add_typer(ops_audit_app, name="audit")
 
 ops_system_app.add_typer(ollama_app, name="ollama")
 
@@ -146,6 +158,58 @@ serve_app = typer.Typer(help="Service runners and daemons.")
 
 app.add_typer(export_app, name="export")
 app.add_typer(serve_app, name="serve")
+
+
+@dataclass
+class CLISettings:
+    trace: bool = False
+    verbose_json: bool = False
+
+
+@app.callback()
+def _main_callback(
+    ctx: typer.Context,
+    trace: bool = typer.Option(
+        False,
+        "--trace",
+        help="Mirror structured trace events to stdout.",
+    ),
+    verbose_json: bool = typer.Option(
+        False,
+        "--verbose-json",
+        help="Mirror structured trace events as JSON to stdout.",
+    ),
+) -> None:
+    ctx.obj = CLISettings(trace=trace, verbose_json=verbose_json)
+
+
+def _cli_settings() -> CLISettings:
+    context = click.get_current_context(silent=True)
+    while context is not None:
+        obj = getattr(context, "obj", None)
+        if isinstance(obj, CLISettings):
+            return obj
+        context = context.parent
+    settings = CLISettings()
+    context = click.get_current_context(silent=True)
+    if context is not None:
+        context.obj = settings
+    return settings
+
+
+def _run_context(command: str, *, root: Path | None = None) -> RunContext:
+    settings = _cli_settings()
+    actual_root = root or Path.cwd()
+    config = _load_config(actual_root)
+    return create_run_context(
+        command=command,
+        root=actual_root,
+        config=config,
+        use_fake_llm=_use_fake_llm(),
+        trace=settings.trace,
+        verbose_json=settings.verbose_json,
+    )
+
 
 CAPTURE_STAGE_LOOKUP = {stage.stage_id: stage for stage in CAPTURE_STAGES}
 CAPTURE_STAGE_TABLE = "\n".join(
@@ -159,6 +223,93 @@ def _emit_deprecation(command: str, replacement: str | None = None) -> None:
     if replacement:
         message += f" Use `{replacement}` instead."
     typer.secho(message, fg=typer.colors.YELLOW, err=True)
+
+
+def _format_trace_line(payload: dict[str, Any]) -> tuple[str, str | None]:
+    timestamp = payload.get("timestamp", "?")
+    run_id = payload.get("run_id")
+    command = payload.get("command", "")
+    event = payload.get("event", "")
+    step = payload.get("step")
+    duration = payload.get("duration_ms")
+    error = payload.get("error")
+
+    parts: list[str] = [str(timestamp)]
+    if run_id:
+        parts.append(f"#{run_id}")
+    if command:
+        parts.append(str(command))
+    if event:
+        parts.append(str(event))
+    if step:
+        parts.append(f"step={step}")
+    if isinstance(duration, (int, float)):
+        parts.append(f"{duration:.1f}ms")
+    elif isinstance(duration, str) and duration:
+        parts.append(duration)
+    if error:
+        parts.append(f"error={error}")
+
+    color: str | None = None
+    if error or event == "error":
+        color = typer.colors.RED
+    elif event == "start":
+        color = typer.colors.BLUE
+    elif event == "end":
+        color = typer.colors.GREEN
+
+    message = " | ".join(part for part in parts if part)
+    return message, color
+
+
+@ops_logs_app.command("tail")
+def logs_tail(
+    last: int = typer.Option(
+        10,
+        "--last",
+        "-n",
+        min=1,
+        help="Number of recent trace events to display.",
+    ),
+    raw: bool = typer.Option(
+        False,
+        "--raw",
+        help="Emit raw JSON lines instead of formatted output.",
+    ),
+    path: Path | None = typer.Option(
+        None,
+        "--path",
+        help="Override trace log path (defaults to derived/logs/run_trace.jsonl).",
+    ),
+) -> None:
+    """Show the most recent structured trace events."""
+
+    root = Path.cwd()
+    log_path = path or root / "derived" / "logs" / "run_trace.jsonl"
+    if not log_path.exists():
+        typer.secho(f"No run trace log found at {log_path}", fg=typer.colors.YELLOW, err=True)
+        raise typer.Exit(1)
+
+    lines = log_path.read_text(encoding="utf-8").splitlines()
+    if not lines:
+        typer.secho("Log file is empty.", fg=typer.colors.YELLOW)
+        return
+
+    slice_start = max(0, len(lines) - last)
+    for line in lines[slice_start:]:
+        if raw:
+            typer.echo(line)
+            continue
+        try:
+            payload = json.loads(line)
+        except json.JSONDecodeError:
+            typer.echo(line)
+            continue
+        message, color = _format_trace_line(payload)
+        if color:
+            typer.secho(message, fg=color)
+        else:
+            typer.echo(message)
 
 
 @app.command(help="Capture Markdown into the journal workspace and refresh derived artifacts.")
@@ -343,7 +494,7 @@ def capture(
         resolved_paths = []
         source_mode = "stdin"
 
-    capture_input = CaptureInput(
+    capture_request = CaptureRequest(
         source=source_mode,
         text=effective_text,
         paths=resolved_paths,
@@ -361,6 +512,10 @@ def capture(
         progress=progress,
         dry_run=dry_run,
         snapshot=snapshot,
+    )
+
+    capture_input = CaptureInput.from_request(
+        capture_request,
         min_stage=min_stage,
         max_stage=max_stage,
     )
@@ -431,109 +586,25 @@ def capture(
 @app.command()
 def status() -> None:
     """Display persona, index, and retrieval freshness."""
-
-    root = Path.cwd()
-    summary = run_status_summary(root)
-
-    persona = summary["persona"]
-    index_info = summary["index"]
-    pending = summary["pending_updates"]
-    ollama = summary["ollama"]
-
-    exit_code = 0
-
-    typer.echo("Workspace status:\n")
-
-    if persona["status"] == "fresh":
-        typer.secho("Persona: fresh", fg=typer.colors.GREEN)
-    else:
-        color = typer.colors.YELLOW if persona["status"] == "stale" else typer.colors.RED
-        typer.secho(f"Persona: {persona['status']}", fg=color)
-        for reason in persona["reasons"]:
-            typer.echo(f"  - {reason}")
-        exit_code = 1
-
-    index_messages: list[str] = []
-    if index_info["has_index_db"] and index_info["has_annoy_index"]:
-        typer.secho("Index: ready", fg=typer.colors.GREEN)
-    else:
-        typer.secho("Index: missing artifacts", fg=typer.colors.RED)
-        if not index_info["has_index_db"]:
-            index_messages.append("index.db not found")
-        if not index_info["has_annoy_index"]:
-            index_messages.append("annoy.index not found")
-        exit_code = 1
-    if index_info.get("meta_error"):
-        index_messages.append(f"meta error: {index_info['meta_error']}")
-    elif index_info.get("meta"):
-        meta = index_info["meta"] or {}
-        chunk_count = meta.get("chunk_count")
-        entry_count = meta.get("entry_count")
-        updated_at = meta.get("updated_at")
-        pieces = []
-        if chunk_count is not None:
-            pieces.append(f"chunks={chunk_count}")
-        if entry_count is not None:
-            pieces.append(f"entries={entry_count}")
-        if updated_at:
-            pieces.append(f"updated={updated_at}")
-        if pieces:
-            index_messages.append(" ".join(pieces))
-    for line in index_messages:
-        typer.echo(f"  {line}")
-
-    pending_count = pending["count"]
-    if pending_count:
-        typer.secho(
-            f"Pending profile updates: {pending_count}",
-            fg=typer.colors.YELLOW,
-        )
-        for name in pending["samples"]:
-            typer.echo(f"  - {name}")
-    else:
-        typer.secho("Pending profile updates: none", fg=typer.colors.GREEN)
-
-    typer.echo(f"Ollama host: {ollama['host']}")
-    typer.echo("Run `aijournal ops system doctor` for detailed diagnostics.")
-
-    if exit_code:
-        raise typer.Exit(exit_code)
+    run_system_status_cli()
 
 
 @ops_system_app.command("doctor")
 def system_doctor() -> None:
     """Run system diagnostics and emit machine-readable results."""
+    run_system_doctor_cli()
 
-    root = Path.cwd()
-    result = run_system_doctor(root)
 
-    typer.echo("System diagnostics:\n")
-    for check in result["checks"]:
-        ok = bool(check.get("ok"))
-        color = typer.colors.GREEN if ok else typer.colors.RED
-        status_text = "ok" if ok else "failed"
-        typer.secho(f"{check['name']}: {status_text}", fg=color)
-        hint = check.get("hint")
-        if hint:
-            typer.echo(f"  hint: {hint}")
-        details = check.get("details")
-        if isinstance(details, dict):
-            for key, value in details.items():
-                if value in (None, [], {}, ""):
-                    continue
-                if isinstance(value, (list, tuple)):
-                    display = ", ".join(str(item) for item in value)
-                elif isinstance(value, dict):
-                    display = json.dumps(value, ensure_ascii=False)
-                else:
-                    display = str(value)
-                typer.echo(f"  {key}: {display}")
-
-    typer.echo("\nJSON summary:")
-    typer.echo(json.dumps(result, indent=2, ensure_ascii=False))
-
-    if not result["ok"]:
-        raise typer.Exit(1)
+@ops_audit_app.command("provenance")
+def audit_provenance_command(
+    fix: bool = typer.Option(
+        False,
+        "--fix/--no-fix",
+        help="Redact span.text fields when present instead of only reporting them.",
+    ),
+) -> None:
+    """Scan claims and derived artifacts for span.text remnants."""
+    run_audit_provenance_cli(fix=fix)
 
 
 @app.callback()
@@ -571,7 +642,7 @@ def _invoke_structured_llm(
     *,
     response_model: type[Any],
     agent_name: str,
-    config: dict[str, Any],
+    config: AppConfig,
     timeout: float | None = None,
     max_attempts: int = 2,
     retry_message: str | None = None,
@@ -604,13 +675,13 @@ def _structured_call_with_retry(
     retries: int,
     label: str,
 ) -> Any:
-    return _commands_structured_call_with_retry(func, retries=retries, label=label)
+    return func()
 
 
 def _summarize_day_payload(
     entries: Sequence[NormalizedEntry],
     date: str,
-    config: dict[str, Any],
+    config: AppConfig,
     *,
     timeout: float | None,
     retries: int,
@@ -806,11 +877,15 @@ def summarize(
 ) -> None:
     """Generate a daily summary from normalized entries."""
     _emit_deprecation("aijournal ops pipeline summarize", "aijournal capture --from/--text")
-    summary_path = run_summarize(
-        date,
-        timeout=timeout,
-        retries=retries,
-        progress=progress,
+    ctx = _run_context("summarize")
+    summary_path = run_summarize_command(
+        ctx,
+        DailySummaryOptions(
+            date=date,
+            timeout=timeout,
+            retries=retries,
+            progress=progress,
+        ),
     )
     typer.echo(str(summary_path))
 
@@ -849,19 +924,24 @@ def facts(
     """Generate micro-facts from normalized entries."""
     _emit_deprecation("aijournal ops pipeline extract-facts", "aijournal capture --from/--text")
     root = Path.cwd()
-    _, claim_models = _load_profile_components(root)
-    preview, facts_path = run_facts(
-        date,
-        timeout=timeout,
-        retries=retries,
-        progress=progress,
-        claim_models=claim_models,
-        build_claim_preview=lambda proposals, claims, timestamp: _build_claim_preview(
-            proposals,
-            claims,
-            timestamp=timestamp,
+    _, claim_models = load_profile_components(root)
+    ctx = _run_context("facts", root=root)
+    output = run_facts_command(
+        ctx,
+        FactsOptions(
+            date=date,
+            timeout=timeout,
+            retries=retries,
+            progress=progress,
+            claim_models=claim_models,
+            preview_builder=lambda proposals, claims, timestamp: _build_claim_preview(
+                proposals,
+                claims,
+                timestamp=timestamp,
+            ),
         ),
     )
+    preview, facts_path = output.preview, output.path
     if preview:
         _print_claim_preview(preview)
     typer.echo(str(facts_path))
@@ -990,11 +1070,11 @@ def review_updates(
         typer.secho(f"Batch file not found: {batch_path}", fg=typer.colors.RED, err=True)
         raise typer.Exit(1)
 
-    batch = load_yaml_model(batch_path, ProfileUpdateBatch)
+    batch = load_artifact_data(batch_path, ProfileUpdateBatch)
     claim_proposals: list[ClaimProposal] = [
         proposal.model_copy(deep=True) for proposal in batch.proposals.claims
     ]
-    facet_proposals: list[FacetProposal] = [
+    facet_proposals: list[FacetChange] = [
         proposal.model_copy(deep=True) for proposal in batch.proposals.facets
     ]
 
@@ -1004,7 +1084,12 @@ def review_updates(
     )
 
     for claim_proposal in claim_proposals:
-        typer.echo(f"- claim {claim_proposal.claim.id}: {claim_proposal.claim.statement}")
+        label = (
+            claim_proposal.normalized_ids[0]
+            if claim_proposal.normalized_ids
+            else claim_proposal.claim.statement[:48]
+        )
+        typer.echo(f"- claim {label}: {claim_proposal.claim.statement}")
 
     for facet_proposal in facet_proposals:
         if facet_proposal.path:
@@ -1019,21 +1104,22 @@ def review_updates(
             typer.echo("Hint: run `aijournal interview` to follow up on the queued prompts.")
         return
 
-    profile_model, claim_models = _load_profile_components(root)
-    profile = _profile_to_dict(profile_model)
+    profile_model, claim_models = load_profile_components(root)
+    profile = profile_to_dict(profile_model)
     claims_data = [claim.model_copy(deep=True) for claim in claim_models]
     timestamp = time_utils.format_timestamp(time_utils.now())
     applied = 0
     merge_events: list[ClaimMergeOutcome] = []
 
     for claim_proposal in claim_proposals:
-        if _apply_claim_upsert(claims_data, claim_proposal.claim, timestamp, events=merge_events):
+        incoming_atom = _claim_proposal_to_atom(claim_proposal, timestamp=timestamp)
+        if apply_claim_upsert(claims_data, incoming_atom, timestamp, events=merge_events):
             applied += 1
 
     for facet_proposal in facet_proposals:
         if not facet_proposal.path:
             continue
-        if _apply_profile_update(profile, facet_proposal.path, facet_proposal.value, timestamp):
+        if apply_profile_update(profile, facet_proposal.path, facet_proposal.value, timestamp):
             applied += 1
 
     if not applied:
@@ -1053,7 +1139,8 @@ def advise(
     question: str = typer.Argument(..., help="Question for the advisor to answer."),
 ) -> None:
     """Generate advice from the current profile."""
-    advice_path = run_advise(question)
+    ctx = _run_context("advise")
+    advice_path = run_advise_command(ctx, AdviceOptions(question=question))
     typer.echo(str(advice_path))
 
 
@@ -1070,7 +1157,7 @@ def ollama_health() -> None:
             "default": models[0]["name"],
             "models": models,
         }
-        typer.echo(yaml.safe_dump(payload, sort_keys=False).rstrip())
+        typer.echo(dump_yaml(payload, sort_keys=False).rstrip())
         return
 
     host = os.getenv("AIJOURNAL_OLLAMA_HOST")
@@ -1104,7 +1191,7 @@ def ollama_health() -> None:
         "default": build_ollama_config_from_mapping(config).model,
         "models": models_payload,
     }
-    typer.echo(yaml.safe_dump(payload, sort_keys=False).rstrip())
+    typer.echo(dump_yaml(payload, sort_keys=False).rstrip())
 
 
 @persona_app.command("build")
@@ -1124,8 +1211,8 @@ def persona_build(
 ) -> None:
     """Regenerate derived/persona/persona_core.yaml."""
     root = Path.cwd()
-    profile_model, claim_models = _load_profile_components(root)
-    profile = _profile_to_dict(profile_model)
+    profile_model, claim_models = load_profile_components(root)
+    profile = profile_to_dict(profile_model)
     config = _load_config(root)
     path, changed = run_persona_build(
         profile,
@@ -1262,15 +1349,20 @@ def _format_scope_label(scope: tuple[str | None, tuple[str, ...], tuple[str, ...
 
 
 def _emit_claim_merge_events(events: list[ClaimMergeOutcome], heading: str) -> None:
-    relevant = [event for event in events if event.action != "noop"]
+    relevant = [event for event in events if event.changed]
     if not relevant:
         return
     typer.echo(heading)
     for event in relevant:
-        if event.action == "created":
+        if event.action == "upsert":
             typer.echo(f"  • new claim {event.claim_id}")
-        elif event.action == "merged":
-            typer.echo(f"  • merged {event.claim_id} (Δstrength {event.delta_strength:+0.2f})")
+        elif event.action == "update":
+            note = f" (Δstrength {event.delta_strength:+0.2f})" if event.delta_strength else ""
+            typer.echo(f"  • updated {event.claim_id}{note}")
+        elif event.action == "strength_delta":
+            typer.echo(
+                f"  • strength adjusted {event.claim_id} (Δ {event.delta_strength:+0.2f})",
+            )
         elif event.action == "conflict" and event.conflict:
             conflict = event.conflict
             scope_label = _format_scope_label(conflict.signature.scope)
@@ -1281,19 +1373,14 @@ def _emit_claim_merge_events(events: list[ClaimMergeOutcome], heading: str) -> N
                 ),
                 fg=typer.colors.YELLOW,
             )
-        elif event.action == "scope_split":
-            existing_scope = (
-                _format_scope_label(event.conflict.signature.scope) if event.conflict else "global"
-            )
-            related_scope = (
-                _format_scope_label(event.related_signature.scope)
-                if event.related_signature
-                else "global"
-            )
-            target = event.related_claim_id or "new-claim"
-            typer.echo(
-                f"  • scope split {event.claim_id} [{existing_scope}] -> {target} [{related_scope}]"
-            )
+            if event.related_claim_id and event.related_signature:
+                related_scope = _format_scope_label(event.related_signature.scope)
+                action_note = f" ({event.related_action})" if event.related_action else ""
+                typer.echo(
+                    f"    ↳ spawned {event.related_claim_id} [{related_scope}]{action_note}",
+                )
+        elif event.action == "delete":
+            typer.echo(f"  • deleted {event.claim_id}")
 
 
 def _preview_claim_consolidation(
@@ -1302,7 +1389,7 @@ def _preview_claim_consolidation(
 ) -> None:
     if not claim_proposals:
         return
-    _, claim_models = _load_profile_components(root)
+    _, claim_models = load_profile_components(root)
     if not claim_models:
         return
     timestamp = time_utils.format_timestamp(time_utils.now())
@@ -1311,7 +1398,7 @@ def _preview_claim_consolidation(
     events: list[ClaimMergeOutcome] = []
     for proposal in claim_proposals:
         if isinstance(proposal, ClaimProposal):
-            incoming = proposal.claim.model_copy(deep=True)
+            incoming = _claim_proposal_to_atom(proposal, timestamp=timestamp)
         elif isinstance(proposal, dict):
             raw_claim = proposal.get("claim") if isinstance(proposal, dict) else None
             if raw_claim is None:
@@ -1323,9 +1410,31 @@ def _preview_claim_consolidation(
         else:
             continue
         outcome = consolidator.upsert(working_claims, incoming)
-        if outcome.action != "noop":
+        if outcome.changed:
             events.append(outcome)
     _emit_claim_merge_events(events, "Preview (claim consolidation):")
+
+
+def _claim_proposal_to_atom(proposal: ClaimProposal, *, timestamp: str) -> ClaimAtom:
+    claim_payload = proposal.claim.model_dump(mode="python")
+    evidence_sources = [
+        ClaimSource.model_validate(
+            redact_source_text(source).model_dump(mode="python"),
+        )
+        for source in proposal.evidence
+    ]
+    claim_payload["provenance"] = {
+        "sources": [source.model_dump(mode="python") for source in evidence_sources],
+        "first_seen": timestamp.split("T", 1)[0],
+        "last_updated": timestamp,
+        "observation_count": max(1, len(evidence_sources) or 1),
+    }
+
+    return normalization.normalize_claim_atom(
+        claim_payload,
+        timestamp=timestamp,
+        default_sources=evidence_sources,
+    )
 
 
 def _build_claim_preview(
@@ -1343,9 +1452,9 @@ def _build_claim_preview(
     prompts: list[str] = []
 
     for proposal in claim_proposals:
-        incoming = proposal.claim.model_copy(deep=True)
+        incoming = _claim_proposal_to_atom(proposal, timestamp=timestamp)
         outcome = consolidator.upsert(working_claims, incoming)
-        if outcome.action == "noop":
+        if not outcome.changed:
             continue
         signature_payload = (
             _signature_payload_from_signature(outcome.signature)
@@ -1367,7 +1476,7 @@ def _build_claim_preview(
             )
         events.append(
             ClaimPreviewEvent(
-                action=outcome.action,
+                action=ClaimEventAction(outcome.action),
                 claim_id=outcome.claim_id,
                 delta_strength=float(outcome.delta_strength or 0.0),
                 statement=incoming.statement,
@@ -1399,35 +1508,26 @@ def _scope_tuple_from_payload(
 
 
 def _print_claim_preview(preview: ProfileUpdatePreview) -> None:
-    events = [event for event in preview.claim_events if event.action != "noop"]
+    events = list(preview.claim_events)
     if events:
         typer.echo("Preview (claim consolidation):")
         for event in events:
             scope_label = _format_scope_label(_scope_tuple_from_payload(event.signature))
-            if event.action == "created":
+            if event.action == "upsert":
                 typer.echo(f"  • new claim {event.claim_id} [{scope_label}]")
-            elif event.action == "merged":
+            elif event.action == "update":
+                note = f" (Δstrength {event.delta_strength:+0.2f})" if event.delta_strength else ""
+                typer.echo(f"  • updated {event.claim_id} [{scope_label}]{note}")
+            elif event.action == "strength_delta":
                 typer.echo(
                     (
-                        f"  • merged {event.claim_id} [{scope_label}] "
-                        f"(Δstrength {event.delta_strength:+0.2f})"
-                    ),
-                )
-            elif event.action == "scope_split":
-                new_scope_label = _format_scope_label(
-                    _scope_tuple_from_payload(event.related_signature),
-                )
-                target = event.related_claim_id or "new-claim"
-                action_note = f" ({event.related_action})" if event.related_action else ""
-                typer.echo(
-                    (
-                        f"  • scope split {event.claim_id} [{scope_label}] -> "
-                        f"{target} [{new_scope_label}]{action_note}"
+                        f"  • strength adjusted {event.claim_id} [{scope_label}] "
+                        f"(Δ {event.delta_strength:+0.2f})"
                     ),
                 )
             elif event.action == "conflict" and event.conflict:
                 conflict = event.conflict
-                scope_label = _format_scope_label(
+                conflict_scope = _format_scope_label(
                     (
                         conflict.signature.domain,
                         tuple(conflict.signature.context),
@@ -1436,11 +1536,24 @@ def _print_claim_preview(preview: ProfileUpdatePreview) -> None:
                 )
                 typer.secho(
                     (
-                        f"  • conflict {event.claim_id} [{scope_label}]: "
+                        f"  • conflict {event.claim_id} [{conflict_scope}]: "
                         f"'{conflict.existing_value}' vs '{conflict.incoming_value}'"
                     ),
                     fg=typer.colors.YELLOW,
                 )
+                if event.related_claim_id and event.related_signature:
+                    new_scope_label = _format_scope_label(
+                        _scope_tuple_from_payload(event.related_signature),
+                    )
+                    action_note = f" ({event.related_action})" if event.related_action else ""
+                    typer.echo(
+                        (
+                            f"    ↳ spawned {event.related_claim_id} [{new_scope_label}]"
+                            f"{action_note}"
+                        ),
+                    )
+            elif event.action == "delete":
+                typer.echo(f"  • deleted {event.claim_id} [{scope_label}]")
             else:
                 typer.echo(f"  • {event.action} {event.claim_id} [{scope_label}]")
 
@@ -1462,8 +1575,8 @@ def interview(
 ) -> None:
     """Surface targeted interview probes based on stale facets."""
     root = Path.cwd()
-    profile_model, claim_models = _load_profile_components(root)
-    profile = _profile_to_dict(profile_model)
+    profile_model, claim_models = load_profile_components(root)
+    profile = profile_to_dict(profile_model)
     claims = [claim.model_copy(deep=True) for claim in claim_models]
     if not profile and not claims:
         typer.secho("No profile data", fg=typer.colors.RED, err=True)
@@ -1475,7 +1588,7 @@ def interview(
         raise typer.Exit(1)
 
     config = _load_config(root)
-    weights = config.get("impact_weights", {})
+    weights = config.impact_weights.model_dump(mode="python")
 
     max_questions = _coaching_max_questions(profile)
     pending_prompts = _collect_pending_interview_prompts(root)
@@ -1827,48 +1940,29 @@ def feedback_apply(
 
     for path in batch_paths:
         try:
-            payload = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-        except yaml.YAMLError as exc:  # pragma: no cover - malformed YAML
+            batch = load_artifact_data(path, FeedbackBatch)
+        except Exception as exc:  # pragma: no cover - malformed artifact
             typer.secho(
-                f"Skipping {path.name}: invalid YAML ({exc}).", fg=typer.colors.RED, err=True
-            )
-            continue
-
-        adjustments = payload.get("claim_adjustments") or []
-        if not isinstance(adjustments, list):
-            typer.secho(
-                f"Skipping {path.name}: claim_adjustments must be a list.",
+                f"Skipping {path.name}: {exc}",
                 fg=typer.colors.RED,
                 err=True,
             )
             continue
 
-        for item in adjustments:
-            claim_id = str(item.get("id") or "").strip()
-            if not claim_id:
-                continue
-            target_claim = claims_by_id.get(claim_id)
+        for event in batch.events:
+            target_claim = claims_by_id.get(event.claim_id)
             if target_claim is None:
                 typer.secho(
-                    f"{path.name} references unknown claim '{claim_id}' — skipping.",
+                    f"{path.name} references unknown claim '{event.claim_id}' — skipping.",
                     fg=typer.colors.YELLOW,
                     err=True,
                 )
                 continue
-            new_strength = item.get("new_strength")
-            try:
-                new_value = float(new_strength)
-            except (TypeError, ValueError):
-                typer.secho(
-                    f"Invalid strength '{new_strength}' for '{claim_id}' in {path.name}.",
-                    fg=typer.colors.RED,
-                    err=True,
-                )
-                continue
+
             old_value = float(target_claim.strength)
-            clamped_value = max(0.0, min(1.0, new_value))
+            clamped_value = max(0.0, min(1.0, float(event.new_strength)))
             target_claim.strength = clamped_value
-            total_adjustments.append((claim_id, old_value, clamped_value))
+            total_adjustments.append((event.claim_id, old_value, clamped_value))
 
         if archive:
             archive_path = _unique_archive_path(archive_dir / path.name)

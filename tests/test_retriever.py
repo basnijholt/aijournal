@@ -2,19 +2,20 @@
 
 from __future__ import annotations
 
+import json
 import threading
-from typing import TYPE_CHECKING
+from pathlib import Path
 
 import pytest
 import yaml
 from typer.testing import CliRunner
 
 from aijournal.cli import app
+from aijournal.common.app_config import AppConfig
+from aijournal.domain.index import IndexMeta
+from aijournal.io.artifacts import load_artifact_data
 from aijournal.services.retriever import RetrievalFilters, Retriever
-from tests.helpers import write_manifest, write_normalized_entry
-
-if TYPE_CHECKING:
-    from pathlib import Path
+from tests.helpers import copy_fixture_workspace, write_manifest, write_normalized_entry
 
 runner = CliRunner()
 
@@ -43,6 +44,42 @@ def _bootstrap_index(tmp_path: Path, *, day: str, entry_id: str, summary: str) -
         env={"AIJOURNAL_FAKE_OLLAMA": "1"},
     )
     assert result.exit_code == 0, result.stdout
+    meta_path = tmp_path / "derived" / "index" / "meta.json"
+    assert meta_path.exists(), "Expected index meta artifact to be written"
+    meta = load_artifact_data(meta_path, IndexMeta)
+    assert meta.embedding_model is not None
+
+
+def test_retriever_parity_with_fixture(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workspace = tmp_path / "workspace"
+    copy_fixture_workspace("miniwk", workspace)
+    monkeypatch.chdir(workspace)
+
+    result = runner.invoke(
+        app,
+        ["ops", "index", "rebuild"],
+        env={"AIJOURNAL_FAKE_OLLAMA": "1"},
+    )
+    assert result.exit_code == 0, result.stdout
+    meta_path = workspace / "derived" / "index" / "meta.json"
+    assert meta_path.exists()
+
+    spec = json.loads((workspace / "expected_retrieval.json").read_text(encoding="utf-8"))
+    config_dict = yaml.safe_load((workspace / "config" / "config.yaml").read_text(encoding="utf-8"))
+    config = AppConfig.model_validate(config_dict)
+
+    retriever = Retriever(workspace, config)
+    top = int(spec.get("top") or len(spec["expected_chunk_ids"]))
+    result = retriever.search(spec["query"], k=top)
+    chunk_ids = [chunk.chunk_id for chunk in result.chunks[: len(spec["expected_chunk_ids"])]]
+
+    assert chunk_ids == spec["expected_chunk_ids"], (
+        f"Chunk IDs {chunk_ids!r} do not match expected {spec['expected_chunk_ids']!r}."
+    )
+    retriever.close()
 
 
 def test_retriever_annoy_mode_returns_chunks(
@@ -61,7 +98,8 @@ def test_retriever_annoy_mode_returns_chunks(
         summary="Protected two focus blocks",
     )
 
-    config = yaml.safe_load((tmp_path / "config" / "config.yaml").read_text(encoding="utf-8"))
+    config_dict = yaml.safe_load((tmp_path / "config" / "config.yaml").read_text(encoding="utf-8"))
+    config = AppConfig.model_validate(config_dict)
     retriever = Retriever(tmp_path, config)
     result = retriever.search("focus blocks", k=3)
 
@@ -91,7 +129,8 @@ def test_retriever_errors_when_index_missing(
     (index_dir / "index.db").unlink()
     (index_dir / "annoy.index").unlink()
 
-    config = yaml.safe_load((tmp_path / "config" / "config.yaml").read_text(encoding="utf-8"))
+    config_dict = yaml.safe_load((tmp_path / "config" / "config.yaml").read_text(encoding="utf-8"))
+    config = AppConfig.model_validate(config_dict)
     retriever = Retriever(tmp_path, config)
     filters = RetrievalFilters(tags=frozenset({"focus"}))
     with pytest.raises(
@@ -118,7 +157,8 @@ def test_retriever_close_from_different_thread(
         summary="Captured focus rituals",
     )
 
-    config = yaml.safe_load((tmp_path / "config" / "config.yaml").read_text(encoding="utf-8"))
+    config_dict = yaml.safe_load((tmp_path / "config" / "config.yaml").read_text(encoding="utf-8"))
+    config = AppConfig.model_validate(config_dict)
     retriever = Retriever(tmp_path, config)
 
     # Opening a connection in the main thread

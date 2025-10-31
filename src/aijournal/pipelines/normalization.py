@@ -5,21 +5,20 @@ from __future__ import annotations
 import re
 from collections.abc import Iterable, Sequence
 from datetime import UTC, datetime
-from typing import Any, cast
+from typing import Any
 
-import typer
-
-from aijournal.ingest_agent import IngestResult, IngestSection
-from aijournal.models import (
+from aijournal.domain.claims import (
     ClaimAtom,
     ClaimSource,
     ClaimSourceSpan,
     ClaimStatus,
-    ProfileSuggestionUpsert,
     Provenance,
     Scope,
-    SimpleSuggestion,
 )
+from aijournal.domain.enums import ClaimMethod, ClaimType
+from aijournal.domain.enums import ClaimStatus as ClaimStatusEnum
+from aijournal.domain.evidence import redact_source_text
+from aijournal.ingest_agent import IngestResult, IngestSection
 from aijournal.utils import time as time_utils
 from aijournal.utils.coercion import coerce_float, coerce_int
 
@@ -28,7 +27,7 @@ def normalize_status(value: str | None) -> ClaimStatus:
     status = (value or "tentative").strip().lower()
     if status not in {"accepted", "tentative", "rejected"}:
         status = "tentative"
-    return cast(ClaimStatus, status)
+    return ClaimStatusEnum(status)
 
 
 def _clamp_strength(value: float | None, default: float = 0.6) -> float:
@@ -37,52 +36,6 @@ def _clamp_strength(value: float | None, default: float = 0.6) -> float:
     except (TypeError, ValueError):
         strength = default
     return max(0.0, min(1.0, strength))
-
-
-def simple_claim_to_upsert(
-    suggestion: SimpleSuggestion,
-    timestamp: str,
-) -> ProfileSuggestionUpsert | None:
-    statement = (suggestion.statement or "").strip()
-    if not statement:
-        typer.secho(
-            "Skipping claim suggestion without statement.", fg=typer.colors.YELLOW, err=True
-        )
-        return None
-
-    claim_id = (suggestion.id or time_utils.slugify_title(statement))[:96]
-    sources = [
-        ClaimSource(entry_id=str(entry).strip(), spans=[]) for entry in suggestion.evidence if entry
-    ]
-    provenance = Provenance(
-        sources=sources,
-        first_seen=timestamp,
-        last_updated=timestamp,
-        observation_count=max(1, len(sources)) or 1,
-    )
-
-    claim_atom = ClaimAtom(
-        id=claim_id,
-        type="preference",
-        subject="self",
-        predicate="insight",
-        value=statement,
-        statement=statement,
-        scope=Scope(),
-        strength=_clamp_strength(suggestion.confidence),
-        status=normalize_status(suggestion.status),
-        method="inferred",
-        user_verified=False,
-        review_after_days=120,
-        provenance=provenance,
-    )
-
-    return ProfileSuggestionUpsert(
-        target="claims",
-        operation="upsert",
-        value=claim_atom,
-        rationale=suggestion.rationale,
-    )
 
 
 def normalize_created_at(value: Any) -> str:
@@ -148,7 +101,10 @@ def normalize_sources(raw: Any) -> list[ClaimSource]:
         return sources
     for source in raw:
         if isinstance(source, ClaimSource):
-            sources.append(source.model_copy(deep=True))
+            sanitized = ClaimSource.model_validate(
+                redact_source_text(source).model_dump(mode="python"),
+            )
+            sources.append(sanitized)
             continue
         if not isinstance(source, dict):
             continue
@@ -172,7 +128,11 @@ def normalize_sources(raw: Any) -> list[ClaimSource]:
                         end=coerce_int(span.get("end")),
                     ),
                 )
-        sources.append(ClaimSource(entry_id=str(entry_id), spans=spans))
+        source_obj = ClaimSource(entry_id=str(entry_id), spans=spans)
+        sanitized = ClaimSource.model_validate(
+            redact_source_text(source_obj).model_dump(mode="python"),
+        )
+        sources.append(sanitized)
     return sources
 
 
@@ -188,7 +148,11 @@ def _default_claim_sources(raw: ClaimAtom | dict[str, Any]) -> list[ClaimSource]
     if not claim_id:
         return []
     claim_id_str = str(claim_id)
-    return [ClaimSource(entry_id=claim_id_str, spans=[])]
+    source = ClaimSource(entry_id=claim_id_str, spans=[])
+    sanitized = ClaimSource.model_validate(
+        redact_source_text(source).model_dump(mode="python"),
+    )
+    return [sanitized]
 
 
 def _coerce_timestamp(value: Any) -> str | None:
@@ -225,7 +189,12 @@ def normalize_provenance(
         )
 
     if (not provenance.sources) and default_sources:
-        provenance.sources = [source.model_copy(deep=True) for source in default_sources]
+        provenance.sources = [
+            ClaimSource.model_validate(
+                redact_source_text(source).model_dump(mode="python"),
+            )
+            for source in default_sources
+        ]
 
     first_seen_ts = _coerce_timestamp(provenance.first_seen)
     provenance.first_seen = (
@@ -236,6 +205,12 @@ def normalize_provenance(
     provenance.last_updated = _coerce_timestamp(provenance.last_updated) or timestamp
     if provenance.observation_count <= 0:
         provenance.observation_count = max(1, len(provenance.sources) or 1)
+    provenance.sources = [
+        ClaimSource.model_validate(
+            redact_source_text(source).model_dump(mode="python"),
+        )
+        for source in provenance.sources
+    ]
     return provenance
 
 
@@ -248,7 +223,12 @@ def normalize_claim_atom(
     if default_sources is None:
         default_sources = _default_claim_sources(data)
 
-    base = data.model_dump(mode="python") if isinstance(data, ClaimAtom) else dict(data)
+    if isinstance(data, ClaimAtom):
+        base = data.model_dump(mode="python")
+    elif hasattr(data, "model_dump"):
+        base = data.model_dump(mode="python")  # type: ignore[call-arg]
+    else:
+        base = dict(data)
 
     statement = str(base.get("statement") or "").strip()
     if not statement:
@@ -256,17 +236,11 @@ def normalize_claim_atom(
         raise ValueError(msg)
 
     claim_type_raw = str(base.get("type") or "preference").strip().lower()
-    valid_types = {
-        "preference",
-        "value",
-        "goal",
-        "boundary",
-        "trait",
-        "habit",
-        "aversion",
-        "skill",
-    }
-    claim_type = claim_type_raw if claim_type_raw in valid_types else "preference"
+    valid_types = {item.value for item in ClaimType}
+    claim_type_value = (
+        claim_type_raw if claim_type_raw in valid_types else ClaimType.PREFERENCE.value
+    )
+    claim_type = ClaimType(claim_type_value)
 
     subject_candidate = (
         base.get("subject")
@@ -301,12 +275,14 @@ def normalize_claim_atom(
     strength = max(0.0, min(1.0, strength_numeric if strength_numeric is not None else 0.6))
 
     status_raw = str(base.get("status") or "tentative").strip().lower()
-    valid_status = {"accepted", "tentative", "rejected"}
-    status = status_raw if status_raw in valid_status else "tentative"
+    valid_status = {item.value for item in ClaimStatusEnum}
+    status_value = status_raw if status_raw in valid_status else ClaimStatusEnum.TENTATIVE.value
+    status = ClaimStatusEnum(status_value)
 
     method_raw = str(base.get("method") or "inferred").strip().lower()
-    valid_methods = {"self_report", "inferred", "behavioral"}
-    method = method_raw if method_raw in valid_methods else "inferred"
+    valid_methods = {item.value for item in ClaimMethod}
+    method_value = method_raw if method_raw in valid_methods else ClaimMethod.INFERRED.value
+    method = ClaimMethod(method_value)
 
     user_verified = bool(base.get("user_verified", False))
     review_after_days = coerce_int(base.get("review_after_days")) or 120
@@ -319,15 +295,15 @@ def normalize_claim_atom(
 
     return ClaimAtom(
         id=claim_id,
-        type=claim_type,  # type: ignore[arg-type]
+        type=claim_type,
         subject=subject,
         predicate=predicate,
         value=value,
         statement=statement,
         scope=scope,
         strength=strength,
-        status=status,  # type: ignore[arg-type]
-        method=method,  # type: ignore[arg-type]
+        status=status,
+        method=method,
         user_verified=user_verified,
         review_after_days=review_after_days,
         provenance=provenance,
@@ -455,18 +431,3 @@ def normalized_from_structured(
         normalized["summary"] = summary
 
     return normalized, date_str
-
-
-__all__ = [
-    "clean_summary",
-    "merge_sections",
-    "normalize_claim_atom",
-    "normalize_created_at",
-    "normalize_provenance",
-    "normalize_scope",
-    "normalize_sources",
-    "normalize_status",
-    "normalize_tags",
-    "normalized_from_structured",
-    "simple_claim_to_upsert",
-]

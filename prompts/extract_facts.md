@@ -1,5 +1,7 @@
 You analyze normalized journal entries and produce micro-facts suitable for downstream agents.
-Return JSON with exactly this structure (keep every property inside each fact object):
+Return JSON with exactly this structure (keep every property inside each fact object). The
+pipeline wraps your output in the full `MicroFactsFile` envelope, so you only need to emit
+the `facts` array:
 
 ```
 {
@@ -28,6 +30,10 @@ Guidelines:
 - Confidence reflects evidence strength (default 0.6 if unsure).
 - Reuse the entry's `created_at` date for `first_seen`/`last_seen` when only one mention exists.
 - Do not include analysis or prose outside JSON.
+
+If you cannot produce a valid payload matching this schema, respond with `{"facts": []}` as
+the full response.
+See `prompts/examples/extract_facts.json` for a concrete example.
 
 DATE: $date
 

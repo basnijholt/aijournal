@@ -4,14 +4,32 @@ from __future__ import annotations
 
 import math
 from collections.abc import Sequence
-from dataclasses import dataclass
 from typing import Any
 
-from ..models import ClaimAtom, ClaimSource, ClaimSourceSpan, Provenance, Scope
+from pydantic import ConfigDict, Field
+
+from aijournal.common.base import StrictModel
+from aijournal.domain.claims import ClaimAtom, ClaimSource, ClaimSourceSpan, Provenance, Scope
+from aijournal.domain.enums import ClaimMethod, ClaimStatus
+from aijournal.domain.evidence import redact_source_text
 
 
 def _clamp01(value: float) -> float:
     return max(0.0, min(1.0, value))
+
+
+def _redacted_sources(sources: Sequence[ClaimSource]) -> list[ClaimSource]:
+    return [redact_source_text(source) for source in sources]
+
+
+def _redacted_provenance(provenance: Provenance, timestamp: str) -> Provenance:
+    redacted = provenance.model_copy(update={"sources": _redacted_sources(provenance.sources)})
+    redacted.last_updated = timestamp
+    if redacted.observation_count <= 0:
+        redacted.observation_count = max(1, len(redacted.sources) or 1)
+    if not redacted.first_seen:
+        redacted.first_seen = timestamp.split("T", 1)[0]
+    return redacted
 
 
 def _scope_tuple(scope: Scope | None) -> tuple[str | None, tuple[str, ...], tuple[str, ...]]:
@@ -41,8 +59,8 @@ _SCOPE_COMPLEMENTS: dict[str, str] = {
 }
 
 
-@dataclass(frozen=True)
-class ClaimSignature:
+class ClaimSignature(StrictModel):
+    model_config = ConfigDict(frozen=True)
     """Canonical identifier for matching claims without relying on the claim id."""
 
     claim_type: str
@@ -63,8 +81,8 @@ class ClaimSignature:
         return (self.claim_type, self.subject, self.predicate, self.scope)
 
 
-@dataclass(frozen=True)
-class ClaimConflict:
+class ClaimConflict(StrictModel):
+    model_config = ConfigDict(frozen=True)
     """Conflict emitted when incoming evidence contradicts an existing claim."""
 
     claim_id: str
@@ -72,11 +90,10 @@ class ClaimConflict:
     statement: str
     existing_value: str
     incoming_value: str
-    incoming_sources: list[ClaimSource]
+    incoming_sources: list[ClaimSource] = Field(default_factory=list)
 
 
-@dataclass
-class ClaimMergeOutcome:
+class ClaimMergeOutcome(StrictModel):
     """Result of attempting to incorporate a claim observation."""
 
     changed: bool
@@ -100,6 +117,13 @@ class ClaimConsolidator:
         incoming_atom = (
             incoming if isinstance(incoming, ClaimAtom) else ClaimAtom.model_validate(incoming)
         )
+        incoming_atom = incoming_atom.model_copy(
+            update={
+                "provenance": _redacted_provenance(
+                    incoming_atom.provenance, timestamp=self._timestamp
+                )
+            },
+        )
         typed_input = all(isinstance(item, ClaimAtom) for item in claims)
         atom_claims = [
             item if isinstance(item, ClaimAtom) else ClaimAtom.model_validate(item)
@@ -121,7 +145,7 @@ class ClaimConsolidator:
             claims.append(incoming)
             return ClaimMergeOutcome(
                 changed=True,
-                action="created",
+                action="upsert",
                 claim_id=incoming.id,
                 signature=signature,
             )
@@ -143,9 +167,20 @@ class ClaimConsolidator:
                     observations_changed,
                 ),
             )
+            structural_change = any(
+                (
+                    sources_delta,
+                    status_changed,
+                    method_changed,
+                    user_verified_changed,
+                ),
+            )
+            action = "strength_delta" if (delta != 0.0 and not structural_change) else "update"
+            if not changed:
+                action = "update"
             return ClaimMergeOutcome(
                 changed=changed,
-                action="merged" if changed else "noop",
+                action=action,
                 claim_id=existing.id,
                 delta_strength=delta,
                 signature=ClaimSignature.from_atom(existing),
@@ -167,6 +202,7 @@ class ClaimConsolidator:
         return None
 
     def _initialize_provenance(self, provenance: Provenance) -> None:
+        provenance.sources = _redacted_sources(provenance.sources)
         if provenance.observation_count <= 0:
             provenance.observation_count = max(1, len(provenance.sources) or 1)
         provenance.last_updated = self._timestamp
@@ -201,7 +237,7 @@ class ClaimConsolidator:
 
     def _merge_sources(self, existing: ClaimAtom, incoming: ClaimAtom) -> bool:
         existing_sources = list(existing.provenance.sources)
-        incoming_sources = list(incoming.provenance.sources)
+        incoming_sources = _redacted_sources(incoming.provenance.sources)
         combined = list(existing_sources)
         seen = {_source_key(source) for source in existing_sources}
         changed = False
@@ -217,17 +253,21 @@ class ClaimConsolidator:
         return changed
 
     def _maybe_promote_status(self, existing: ClaimAtom, incoming: ClaimAtom) -> bool:
-        if existing.status == "accepted":
+        if existing.status == ClaimStatus.ACCEPTED:
             return False
-        if incoming.status == "accepted":
-            existing.status = "accepted"
+        if incoming.status == ClaimStatus.ACCEPTED:
+            existing.status = ClaimStatus.ACCEPTED
             return True
         return False
 
     def _maybe_upgrade_method(self, existing: ClaimAtom, incoming: ClaimAtom) -> bool:
-        priorities = {"behavioral": 3, "self_report": 2, "inferred": 1}
-        existing_method = priorities.get(existing.method, 0)
-        incoming_method = priorities.get(incoming.method, 0)
+        priorities = {
+            ClaimMethod.BEHAVIORAL.value: 3,
+            ClaimMethod.SELF_REPORT.value: 2,
+            ClaimMethod.INFERRED.value: 1,
+        }
+        existing_method = priorities.get(str(existing.method), 0)
+        incoming_method = priorities.get(str(incoming.method), 0)
         if incoming_method > existing_method:
             existing.method = incoming.method
             return True
@@ -259,8 +299,8 @@ class ClaimConsolidator:
         if new_strength != prev_strength:
             existing.strength = new_strength
             changed = True
-        if existing.status != "tentative":
-            existing.status = "tentative"
+        if existing.status != ClaimStatus.TENTATIVE:
+            existing.status = ClaimStatus.TENTATIVE
             changed = True
 
         provenance = existing.provenance
@@ -272,7 +312,7 @@ class ClaimConsolidator:
         if not changed:
             return ClaimMergeOutcome(
                 changed=False,
-                action="noop",
+                action="update",
                 claim_id=existing.id,
                 delta_strength=0.0,
                 conflict=None,
@@ -355,7 +395,7 @@ class ClaimConsolidator:
             )
             return ClaimMergeOutcome(
                 changed=True,
-                action="scope_split",
+                action="conflict",
                 claim_id=existing.id,
                 delta_strength=scoped_outcome.delta_strength if scoped_outcome.changed else 0.0,
                 conflict=conflict,
@@ -423,11 +463,3 @@ def _source_key(
         return (span.type, span.index, span.start, span.end)
 
     return (source.entry_id, tuple(span_key(span) for span in source.spans))
-
-
-__all__ = [
-    "ClaimConsolidator",
-    "ClaimConflict",
-    "ClaimMergeOutcome",
-    "ClaimSignature",
-]

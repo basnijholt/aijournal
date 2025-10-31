@@ -75,6 +75,15 @@ Run `aijournal init` inside a fresh directory to materialize `data/`, `derived/`
 - `aijournal ops persona build` regenerates `derived/persona/persona_core.yaml` (≤ ~1200 tokens) by selecting top claim atoms + key profile facets. Packs/chat always include this file as L1 context.
 - There is intentionally **no** legacy format support—if schema changes, re-run `aijournal init` and regenerate data rather than carrying migration code.
 - Use `aijournal ops persona status` anytime you edit `profile/*.yaml` to confirm the cached persona core matches the latest mtimes. The builder now records source file mtimes and `pack` warns when the persona core is stale or missing so you remember to rebuild before sharing context bundles.
+- Retrieval, persona, advice, and feedback all run against a strict domain layer in `src/aijournal/domain/`. These `StrictModel` classes back both the CLI and persisted artifacts so serialization bugs surface immediately.
+
+### Strict schemas, artifacts, and migration stance
+
+- Every derived output now persists as an `Artifact[T]` envelope (`kind`, `meta`, `data`). Deterministic helpers in `aijournal/io/artifacts.py` keep the JSON/YAML on disk stable.
+- Legacy payloads are gone—commands read and write only the strict envelopes that live under `derived/`.
+- Source spans now strip raw text before writing claims or feedback to disk. `aijournal/domain/evidence.py` enforces this at the schema layer and `aijournal ops audit provenance` lets you scan/redact any lingering text when needed.
+- Governance hooks (`scripts/check_schemas.py`, JSON schema snapshots under `schemas/core/`, and mandatory pre-commit checks) ensure every schema change is intentional and reviewable.
+- Reference outputs under `docs/examples/` showcase the strict persona core, index metadata, microfacts, packs, feedback batches, and chat transcripts generated in fake mode.
 
 ## Usage
 
@@ -101,7 +110,7 @@ cd ~/journal
 aijournal capture --text "Blocked on hiring ops; need to queue backlog." --tags focus
 ```
 
-Writes a canonical Markdown file under `data/journal/YYYY/MM/DD/<slug>.md`, records a manifest row with the entry hash, stores a raw snapshot (`data/raw/<hash>.md`), and refreshes summaries, micro-facts, profile suggestions, persona/index, and optional packs in one shot.
+Writes a canonical Markdown file under `data/journal/YYYY/MM/DD/<slug>.md`, records a manifest row with the entry hash, stores a raw snapshot (`data/raw/<hash>.md`), and refreshes summaries, micro-facts, profile proposals, persona/index, and optional packs in one shot.
 
 You can also pipe raw Markdown straight into the command:
 
@@ -194,13 +203,14 @@ Produces `data/normalized/2025-02-03/<entry_id>.yaml`. Files are only rewritten 
 aijournal ops pipeline summarize --date 2025-02-03
 ```
 
-Calls `prompts/summarize_day.md` through Ollama and writes `derived/summaries/<DATE>.yaml` with
-`bullets`, `highlights`, `todo_candidates`, plus a stamped `meta` block. Set
+Calls `prompts/summarize_day.md` through Ollama and writes `derived/summaries/<DATE>.yaml` as an
+`Artifact[DailySummary]` envelope. The payload carries `bullets`, `highlights`, and
+`todo_candidates`; model/prompt metadata lives in the artifact `meta`. Set
 `AIJOURNAL_FAKE_OLLAMA=1` for deterministic fixtures.
 
 `summarize` (and the other LLM-backed commands) now streams responses through
-Pydantic AI's structured output validation. The CLI requests a `DailySummaryResponse`
-Pydantic model from the model and retries schema failures up to `--retries`
+Pydantic AI's structured output validation. The CLI requests a `DailySummary`
+Pydantic model from the LLM and retries schema failures up to `--retries`
 times (default 1). Use `--progress` to print each normalized entry before the request is
 sent. If the model keeps returning invalid JSON after the configured retries, the
 command aborts with an actionable error so you can inspect the upstream output.
@@ -211,10 +221,11 @@ command aborts with an actionable error so you can inspect the upstream output.
 aijournal ops pipeline extract-facts --date 2025-02-03
 ```
 
-Uses `prompts/extract_facts.md` to create `derived/microfacts/<DATE>.yaml` filled with
-evidence-backed statements. Outputs are validated against the `MicroFactsFile`
-model, and fake mode now emits typed `MicroFact` objects for each entry so the
-structure matches real runs even in CI. Each run now also attaches the derived
+Uses `prompts/extract_facts.md` to create `derived/microfacts/<DATE>.yaml` (an
+`Artifact[MicroFactsFile]`) filled with evidence-backed statements. Outputs are
+validated against the `MicroFactsFile` model, and fake mode now emits typed
+`MicroFact` objects for each entry so the structure matches real runs even in CI.
+Each run now also attaches the derived
 claim proposals and a consolidation preview: micro-facts are converted into
 `ClaimProposal` atoms, pushed through the shared `ClaimConsolidator`, and the
 resulting `preview.claim_events` mirror the output of `aijournal ops pipeline review --dry-run`.
@@ -223,7 +234,7 @@ back to tentative downgrades, and queued follow-up prompts surface in the CLI so
 you can jump straight into `aijournal ops profile interview`.
 
 Pass `--progress` to watch the entry-by-entry feed and `--retries` to control how many schema failures trigger a
-retry. Responses are validated against the `ExtractedFactsResponse` schema; if
+retry. Responses are validated against the `MicroFactsFile` schema; if
 validation still fails after the configured retries, the command stops with an
 error instead of silently emitting heuristics.
 
@@ -290,7 +301,8 @@ tests/CI.
 
 - Use `--session <id>` (or accept the autogenerated `chat-YYYYMMDD-HHMMSS`) to append to a running
   conversation. The turn is archived under `derived/chat_sessions/<session>/` as
-  `{transcript.jsonl,summary.yaml,learnings.yaml}` when `--save` is left enabled (default).
+  `{transcript.json,summary.yaml,learnings.yaml}` when `--save` is left enabled (default). The
+  transcript file is an `Artifact[T]` envelope containing every question/answer turn and telemetry.
 - Provide `--feedback up|down` to nudge cited claim strengths (+0.03 / −0.05, clamped 0–1). Each
   feedback event queues a pending update in `derived/pending/profile_updates/feedback_*.yaml`
   summarising the adjustments.
@@ -298,7 +310,7 @@ tests/CI.
 - Structured telemetry for every turn is emitted to stderr as a compact JSON line (`event:
   chat.telemetry`) so you can tail logs during automation.
 
-> Tip: transcripts, summaries, and learnings are just YAML/JSONL files—keep them under version
+> Tip: transcripts, summaries, and learnings are plain JSON/YAML artifacts—keep them under version
 > control or ship them into other tooling for audits. The telemetry log makes it easy to aggregate
 > response latency and chunk counts in shell pipelines.
 
@@ -333,30 +345,30 @@ aijournal ops feedback apply
 
 Applies pending feedback batches generated by chat, updates `profile/claims.yaml`, and archives processed files under `derived/pending/profile_updates/applied_feedback/`. The command exits non-zero when no batches were applied so scripts can detect no-op runs.
 
-### Profile suggestions
+### Profile proposals
 
 ```sh
 aijournal ops profile suggest --date 2025-02-03
 ```
 
 Runs `prompts/profile_suggest.md` with the current profile + claims and stores
-`derived/profile_suggestions/<DATE>.yaml`. Outputs are validated against the
-`ProfileSuggestions` Pydantic model before being written. Fake mode returns the
-same typed structures (claim upserts + facet updates) to keep pipelines consistent.
+`derived/profile_proposals/<DATE>.yaml`. Outputs are validated against the
+`ProfileUpdateProposals` schema before being written. Fake mode returns the same
+typed structures (claim proposals + facet changes) to keep pipelines and tests consistent.
 
-The live command asks the model for a simplified `suggestions` array (claims and
-facets) via Pydantic AI's structured output support. Use `--progress` and
+The live command asks the model for claim/facet proposals via Pydantic AI's
+structured output support. Use `--progress` and
 `--retries` to mirror the ergonomics of the other pipelines; if schema validation
 fails after the configured retries, the CLI exits with an error so upstream
 prompt/debugging is explicit.
 
-### Apply profile suggestions
+### Apply profile proposals
 
 ```sh
 aijournal ops profile apply --date 2025-02-03 --yes
 ```
 
-Applies the derived suggestions into `profile/self_profile.yaml` and `profile/claims.yaml`, updating `last_updated` stamps only when something changes.
+Applies the derived proposals into `profile/self_profile.yaml` and `profile/claims.yaml`, updating `last_updated` stamps only when something changes.
 
 ### Regenerate persona core (L1)
 
@@ -433,7 +445,7 @@ aijournal export pack --level L2 --dry-run
 # Persist a reusable bundle (rewrites only when content changes)
 aijournal export pack --level L1 --output derived/packs/l1.yaml
 
-# Include advice + profile suggestions (optional) in an L3 pack
+# Include advice + profile proposals (optional) in an L3 pack
 aijournal export pack --level L3 --date 2025-02-03 --max-tokens 2800
 
 # L4 with 2 days of history, prompts, config, and raw journals
@@ -462,7 +474,7 @@ aijournal ops index update
 
 - `derived/index/index.db` stores chunk metadata + FTS5 virtual table; `derived/index/annoy.index` stores embeddings; `meta.json` records embedding model/dim/build timestamp and whether fake mode ran.
 - Chunking is deterministic (700–1200 chars, sentence boundaries) and each chunk stores `{normalized_id, date, tags, source_type, chunk_index, tokens}`.
-- Human-friendly chunk manifests under `derived/index/chunks/YYYY-MM-DD.yaml` (plus optional `.npy` vector shards) mirror the indexed data so you can inspect or reuse it elsewhere, while the built-in retriever expects the Annoy/SQLite artifacts to be present.
+- Human-friendly chunk artifacts (`ArtifactKind.INDEX_CHUNKS`) under `derived/index/chunks/YYYY-MM-DD.yaml` wrap a `ChunkBatch` payload (day + chunk list) so you can inspect or reuse the indexed data. Matching `.npy` shards store the raw vectors. The built-in retriever still depends on the Annoy/SQLite pair.
 - `Retriever.search("question about deep work", k=12, filters=...)` (see `src/aijournal/services/retriever.py`) powers chat/advice and the `aijournal ops index search` CLI, combining Annoy cosine scores with a light recency boost. If the index artifacts are missing, retrieval fails fast and prompts you to rebuild.
 
 ### Configuration quick reference
