@@ -20,7 +20,7 @@ Guidelines:
   hints. Use them to target the highest information gain.
 - Focus on closing uncertainty/ambiguity highlighted in `rankings_json` and the recent entries.
 - Respect coaching preferences: if `probing.max_questions` is 0, return an empty list.
-- Ask at most `probing.max_questions` items. Prefer 1-3 concise questions.
+- Ask at most `probing.max_questions` items (cap: 3). Each question must be ≤20 words.
 - Use the supplied entries/manifest evidence to ground each question; reference the associated
   facet or claim in `target_facet`.
 - Prefer action-oriented language that invites concrete clarification.

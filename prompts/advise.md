@@ -3,6 +3,7 @@ question, respond with a JSON advice card matching this schema:
 
 ```
 {
+  "id": null,
   "query": "original question",
   "assumptions": ["Evidence references"],
   "recommendations": [
@@ -43,7 +44,23 @@ Guidelines:
 - Caps: ≤3 recommendations (each ≤5 steps); `risks`/`mitigations` ≤3 entries, list strings ≤160 characters.
 - Return **only** valid JSON.
 
-If you cannot produce a valid payload matching this schema, respond with a minimal valid object that includes the keys above and empty arrays for optional lists. See `prompts/examples/advise.json` for a compliant example.
+If you cannot produce a valid payload matching this schema, respond with the minimal valid object below (substitute `$question` literally with the provided question):
+
+```
+{
+  "id": null,
+  "query": "$question",
+  "assumptions": [],
+  "recommendations": [],
+  "tradeoffs": [],
+  "next_actions": [],
+  "confidence": null,
+  "alignment": {"facets": [], "claims": []},
+  "style": null
+}
+```
+
+See `prompts/examples/advise.json` for a compliant example.
 
 DATE: $date
 QUESTION: $question
