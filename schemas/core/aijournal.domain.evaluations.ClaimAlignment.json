@@ -1,0 +1,61 @@
+{
+  "additionalProperties": false,
+  "description": "Alignment metrics between persona claims and observed evidence.",
+  "properties": {
+    "claim_id": {
+      "title": "Claim Id",
+      "type": "string"
+    },
+    "claim_strength": {
+      "title": "Claim Strength",
+      "type": "number"
+    },
+    "delta": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Delta"
+    },
+    "matched_scale": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Matched Scale"
+    },
+    "scale_mean": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Scale Mean"
+    },
+    "statement": {
+      "title": "Statement",
+      "type": "string"
+    }
+  },
+  "required": [
+    "claim_id",
+    "statement",
+    "claim_strength",
+    "matched_scale",
+    "scale_mean",
+    "delta"
+  ],
+  "title": "ClaimAlignment",
+  "type": "object"
+}

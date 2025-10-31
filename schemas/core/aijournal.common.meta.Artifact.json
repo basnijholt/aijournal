@@ -18,7 +18,9 @@
         "chat.transcript",
         "chat.summary",
         "chat.learnings",
-        "advice.card"
+        "advice.card",
+        "persona.calibration",
+        "persona.metrics"
       ],
       "title": "ArtifactKind",
       "type": "string"

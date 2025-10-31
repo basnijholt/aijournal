@@ -1,0 +1,88 @@
+{
+  "$defs": {
+    "EMAObservation": {
+      "additionalProperties": false,
+      "description": "Ecological momentary assessment datapoint.",
+      "properties": {
+        "label": {
+          "title": "Label",
+          "type": "string"
+        },
+        "timestamp": {
+          "title": "Timestamp",
+          "type": "string"
+        },
+        "value": {
+          "title": "Value",
+          "type": "number"
+        }
+      },
+      "required": [
+        "timestamp",
+        "label",
+        "value"
+      ],
+      "title": "EMAObservation",
+      "type": "object"
+    },
+    "SurveyResponse": {
+      "additionalProperties": false,
+      "description": "Single survey submission capturing instrument scores.",
+      "properties": {
+        "date": {
+          "title": "Date",
+          "type": "string"
+        },
+        "instrument": {
+          "title": "Instrument",
+          "type": "string"
+        },
+        "respondent": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Respondent"
+        },
+        "scales": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "title": "Scales",
+          "type": "object"
+        }
+      },
+      "required": [
+        "date",
+        "instrument"
+      ],
+      "title": "SurveyResponse",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Aggregated payload persisted after a calibration ingestion run.",
+  "properties": {
+    "ema": {
+      "items": {
+        "$ref": "#/$defs/EMAObservation"
+      },
+      "title": "Ema",
+      "type": "array"
+    },
+    "surveys": {
+      "items": {
+        "$ref": "#/$defs/SurveyResponse"
+      },
+      "title": "Surveys",
+      "type": "array"
+    }
+  },
+  "title": "CalibrationRecord",
+  "type": "object"
+}
