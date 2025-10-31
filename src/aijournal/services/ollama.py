@@ -373,6 +373,18 @@ def _failure_log_dir(label: str | None) -> Path:
     return base
 
 
+def _metrics_log_path() -> Path:
+    return Path.cwd() / "derived" / "logs" / "structured_metrics.jsonl"
+
+
+def _append_metrics_record(record: dict[str, Any]) -> None:
+    path = _metrics_log_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = json.dumps(record, ensure_ascii=False)
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(payload + "\n")
+
+
 def _write_failure_log(
     *,
     label: str | None,
@@ -554,7 +566,7 @@ def run_ollama_agent(
             coercions_applied.extend(coercions)
 
         created_at = time_utils.format_timestamp(time_utils.now())
-        return LLMResult[_PayloadT](
+        result_payload = LLMResult[_PayloadT](
             model=config.model,
             prompt_path=prompt_path or "<inline>",
             prompt_hash=prompt_hash,
@@ -564,6 +576,19 @@ def run_ollama_agent(
             repair_attempts=repair_attempts,
             coercions_applied=coercions_applied,
         )
+
+        metrics_record = {
+            "prompt_path": result_payload.prompt_path,
+            "model": result_payload.model,
+            "label": log_label or getattr(agent, "name", None),
+            "attempts": result_payload.attempts,
+            "repair_attempts": result_payload.repair_attempts,
+            "coercion_count": len(result_payload.coercions_applied),
+            "created_at": result_payload.created_at,
+        }
+        _append_metrics_record(metrics_record)
+
+        return result_payload
 
     assert last_exc is not None  # pragma: no cover - safety net
     msg = f"Model returned invalid JSON: {last_exc}"
