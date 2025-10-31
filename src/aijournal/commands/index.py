@@ -210,7 +210,7 @@ def _prepare_rebuild_inputs(ctx: RunContext, options: IndexRebuildOptions) -> In
         raise typer.Exit(1)
 
     since_filter = _resolve_since_filter(options.since)
-    entries = _collect_normalized_files(ctx.root, since_filter)
+    entries = _collect_normalized_files(since_filter)
     if options.limit is not None:
         entries = entries[: options.limit]
     if not entries:
@@ -222,7 +222,7 @@ def _prepare_rebuild_inputs(ctx: RunContext, options: IndexRebuildOptions) -> In
         ctx.emit(event="no_entries")
         raise typer.Exit(1)
 
-    manifest_index = _manifest_by_id(_load_manifest(_manifest_path(ctx.root)))
+    manifest_index = _manifest_by_id(_load_manifest(_manifest_path()))
     tasks = index_pipeline.prepare_index_tasks(
         entries,
         root=ctx.root,
@@ -259,7 +259,7 @@ def _invoke_rebuild_pipeline(ctx: RunContext, prepared: IndexRebuildPrepared) ->
     entry_total = 0
     touched_dates: list[str] = []
 
-    index_dir = _index_dir(ctx.root)
+    index_dir = _index_dir()
     index_dir.mkdir(parents=True, exist_ok=True)
     conn = _connect_index_db(_index_db_path(ctx.root), overwrite=True)
     try:
@@ -352,7 +352,7 @@ def _prepare_tail_inputs(ctx: RunContext, options: IndexTailOptions) -> IndexTai
         raise typer.Exit(1)
 
     since_filter = _resolve_since_filter(options.since, fallback_days=options.days)
-    entries = _collect_normalized_files(ctx.root, since_filter)
+    entries = _collect_normalized_files(since_filter)
     if options.limit is not None:
         entries = entries[: options.limit]
     if not entries:
@@ -364,7 +364,7 @@ def _prepare_tail_inputs(ctx: RunContext, options: IndexTailOptions) -> IndexTai
         ctx.emit(event="no_entries")
         raise typer.Exit(1)
 
-    manifest_index = _manifest_by_id(_load_manifest(_manifest_path(ctx.root)))
+    manifest_index = _manifest_by_id(_load_manifest(_manifest_path()))
     tasks = index_pipeline.prepare_index_tasks(
         entries,
         root=ctx.root,
@@ -534,29 +534,27 @@ def _persist_search_output(ctx: RunContext, search_result: IndexSearchResult) ->
             typer.echo("")
 
 
-def _index_dir(root: Path) -> Path:
-    del root  # Use WorkspacePaths instead
+def _index_dir() -> Path:
     return WorkspacePaths.derived() / "index"
 
 
 def _index_db_path(root: Path) -> Path:
-    return _index_dir(root) / INDEX_DB_FILENAME
+    return _index_dir() / INDEX_DB_FILENAME
 
 
 def _annoy_index_path(root: Path) -> Path:
-    return _index_dir(root) / ANNOY_FILENAME
+    return _index_dir() / ANNOY_FILENAME
 
 
 def _chunk_manifest_dir(root: Path) -> Path:
-    return _index_dir(root) / "chunks"
+    return _index_dir() / "chunks"
 
 
 def _index_meta_path(root: Path) -> Path:
-    return _index_dir(root) / INDEX_META_FILENAME
+    return _index_dir() / INDEX_META_FILENAME
 
 
-def _collect_normalized_files(root: Path, since: str | None) -> list[tuple[str, Path]]:
-    del root  # Use WorkspacePaths instead
+def _collect_normalized_files(since: str | None) -> list[tuple[str, Path]]:
     normalized_root = WorkspacePaths.data() / "normalized"
     if not normalized_root.exists():
         return []

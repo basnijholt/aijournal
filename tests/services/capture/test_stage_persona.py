@@ -23,7 +23,7 @@ def test_stage7_persona_triggers_build(tmp_path: Path, monkeypatch) -> None:
 
     monkeypatch.setattr(
         "aijournal.commands.profile.load_profile_components",
-        lambda root: (object(), []),
+        lambda: (object(), []),
     )
 
     monkeypatch.setattr(

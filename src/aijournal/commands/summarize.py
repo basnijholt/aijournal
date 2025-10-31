@@ -163,8 +163,7 @@ def _entries_to_payload(entries: Sequence[NormalizedEntry]) -> list[dict[str, An
     return [entry.model_dump(mode="python") for entry in entries]
 
 
-def _load_normalized_entries(root: Path, day: str) -> list[NormalizedEntry]:
-    del root  # Use WorkspacePaths instead
+def _load_normalized_entries(day: str) -> list[NormalizedEntry]:
     folder = WorkspacePaths.data() / "normalized" / day
     if not folder.exists():
         return []
@@ -174,8 +173,7 @@ def _load_normalized_entries(root: Path, day: str) -> list[NormalizedEntry]:
     return entries
 
 
-def _derived_summary_path(root: Path, day: str) -> Path:
-    del root  # Use WorkspacePaths instead
+def _derived_summary_path(day: str) -> Path:
     return WorkspacePaths.derived() / "summaries" / f"{day}.yaml"
 
 
@@ -209,7 +207,7 @@ def _build_meta(
 
 
 def prepare_inputs(ctx: RunContext, options: DailySummaryOptions) -> DailySummaryPrepared:
-    entries = _load_normalized_entries(ctx.root, options.date)
+    entries = _load_normalized_entries(options.date)
     if not entries:
         typer.secho(f"No normalized entries for {options.date}", fg=typer.colors.RED, err=True)
         ctx.emit(event="command_failed", reason="missing_entries")
@@ -254,7 +252,7 @@ def invoke_pipeline(ctx: RunContext, prepared: DailySummaryPrepared) -> DailySum
 
 
 def persist_output(ctx: RunContext, result: DailySummaryResult) -> Path:
-    summary_path = _derived_summary_path(ctx.root, result.date)
+    summary_path = _derived_summary_path(result.date)
     artifact_meta = _build_meta("prompts/summarize_day.md", model=result.model_name)
     artifact = Artifact[DailySummary](
         kind=ArtifactKind.SUMMARY_DAILY,

@@ -76,7 +76,7 @@ def capture_pipeline_mocks(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> N
 
     monkeypatch.setattr(
         "aijournal.commands.profile.load_profile_components",
-        lambda root: (None, [object()]),
+        lambda: (None, [object()]),
     )
 
     monkeypatch.setattr(

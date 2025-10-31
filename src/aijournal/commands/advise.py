@@ -59,7 +59,7 @@ class AdviceResult:
 
 
 def prepare_inputs(ctx: RunContext, options: AdviceOptions) -> AdvicePrepared:
-    profile_model, claim_models = load_profile_components(ctx.root)
+    profile_model, claim_models = load_profile_components()
     profile = profile_to_dict(profile_model)
     claims = [claim.model_copy(deep=True) for claim in claim_models]
     if not profile and not claims:
@@ -68,9 +68,9 @@ def prepare_inputs(ctx: RunContext, options: AdviceOptions) -> AdvicePrepared:
         raise typer.Exit(1)
 
     weights = ctx.config.impact_weights.model_dump(mode="python")
-    latest_day = _latest_normalized_day(ctx.root)
-    entries = _load_normalized_entries(ctx.root, latest_day) if latest_day else []
-    pending_prompts = _collect_pending_interview_prompts(ctx.root)
+    latest_day = _latest_normalized_day()
+    entries = _load_normalized_entries(latest_day) if latest_day else []
+    pending_prompts = _collect_pending_interview_prompts()
     rankings = _compute_rankings(
         profile,
         claims,
@@ -120,7 +120,7 @@ def invoke_pipeline(ctx: RunContext, prepared: AdvicePrepared) -> AdviceResult:
 
 
 def persist_output(ctx: RunContext, result: AdviceResult) -> Path:
-    advice_path = _derived_advice_path(ctx.root, result.day, result.question)
+    advice_path = _derived_advice_path(result.day, result.question)
     artifact_meta = _build_meta("prompts/advise.md", model=result.model_name)
     save_artifact(
         advice_path,
@@ -162,8 +162,7 @@ def run_advise(question: str, workspace: Path | None = None) -> Path:
     return run_advise_command(ctx, AdviceOptions(question=question))
 
 
-def _collect_pending_interview_prompts(root: Path, limit: int = 5) -> list[str]:
-    del root  # Use WorkspacePaths instead
+def _collect_pending_interview_prompts(limit: int = 5) -> list[str]:
     directory = WorkspacePaths.derived() / "pending" / "profile_updates"
     if not directory.exists():
         return []
@@ -253,7 +252,6 @@ def _advice_payload(
     )
 
 
-def _derived_advice_path(root: Path, day: str, question: str) -> Path:
-    del root  # Use WorkspacePaths instead
+def _derived_advice_path(day: str, question: str) -> Path:
     slug = time_utils.slugify_title(question)
     return WorkspacePaths.derived() / "advice" / day / f"{slug}.yaml"

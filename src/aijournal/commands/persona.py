@@ -220,8 +220,7 @@ def _relative_to_root(path: Path, root: Path) -> str:
         return str(path)
 
 
-def _profile_yaml_paths(root: Path) -> list[Path]:
-    del root  # Use WorkspacePaths instead
+def _profile_yaml_paths() -> list[Path]:
     profile_dir = WorkspacePaths.profile()
     if not profile_dir.exists():
         return []
@@ -230,7 +229,7 @@ def _profile_yaml_paths(root: Path) -> list[Path]:
 
 def _persona_source_mtimes(root: Path) -> dict[str, float]:
     state: dict[str, float] = {}
-    for path in _profile_yaml_paths(root):
+    for path in _profile_yaml_paths():
         rel = _relative_to_root(path, root)
         state[rel] = round(path.stat().st_mtime, 6)
     return state

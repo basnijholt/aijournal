@@ -20,7 +20,7 @@ def test_run_system_doctor_happy_path(tmp_path: Path, monkeypatch: pytest.Monkey
     monkeypatch.setattr(
         system,
         "_check_index_artifacts",
-        lambda root: {
+        lambda: {
             "index_db_exists": True,
             "annoy_index_exists": True,
             "meta": {"chunk_count": 1},
@@ -28,7 +28,7 @@ def test_run_system_doctor_happy_path(tmp_path: Path, monkeypatch: pytest.Monkey
         },
     )
     monkeypatch.setattr(system, "_check_writable_paths", lambda root: (True, {}))
-    monkeypatch.setattr(system, "_check_pending_updates", lambda root: {"count": 0, "samples": []})
+    monkeypatch.setattr(system, "_check_pending_updates", lambda: {"count": 0, "samples": []})
     monkeypatch.setattr(
         system,
         "_check_ollama",

@@ -722,7 +722,7 @@ def _summarize_day_payload(
 
 
 def _latest_pending_batch(workspace: Path) -> Path | None:
-    directory = _pending_updates_dir(workspace)
+    directory = _pending_updates_dir()
     if not directory.exists():
         return None
     files = sorted(p for p in directory.glob("*.yaml") if p.is_file())
@@ -946,7 +946,7 @@ def facts(
     """Generate micro-facts from normalized entries."""
     _emit_deprecation("aijournal ops pipeline extract-facts", "aijournal capture --from/--text")
     workspace = _get_workspace()
-    _, claim_models = load_profile_components(workspace)
+    _, claim_models = load_profile_components()
     ctx = _run_context("facts", workspace=workspace)
     output = run_facts_command(
         ctx,
@@ -1126,7 +1126,7 @@ def review_updates(
             typer.echo("Hint: run `aijournal interview` to follow up on the queued prompts.")
         return
 
-    profile_model, claim_models = load_profile_components(workspace)
+    profile_model, claim_models = load_profile_components()
     profile = profile_to_dict(profile_model)
     claims_data = [claim.model_copy(deep=True) for claim in claim_models]
     timestamp = time_utils.format_timestamp(time_utils.now())
@@ -1233,7 +1233,7 @@ def persona_build(
 ) -> None:
     """Regenerate derived/persona/persona_core.yaml."""
     workspace = _get_workspace()
-    profile_model, claim_models = load_profile_components(workspace)
+    profile_model, claim_models = load_profile_components()
     profile = profile_to_dict(profile_model)
     config = _load_config(workspace)
     path, changed = run_persona_build(
@@ -1411,7 +1411,7 @@ def _preview_claim_consolidation(
 ) -> None:
     if not claim_proposals:
         return
-    _, claim_models = load_profile_components(workspace)
+    _, claim_models = load_profile_components()
     if not claim_models:
         return
     timestamp = time_utils.format_timestamp(time_utils.now())
@@ -1597,23 +1597,31 @@ def interview(
 ) -> None:
     """Surface targeted interview probes based on stale facets."""
     workspace = _get_workspace()
-    profile_model, claim_models = load_profile_components(workspace)
+
+    # Configure WorkspacePaths early so helper functions can use it
+    from aijournal.common.app_config import AppConfig
+    from aijournal.utils.paths import WorkspacePaths
+
+    config = _load_config(workspace)
+    config_model = AppConfig.model_validate(dict(config))
+    WorkspacePaths.configure(workspace=workspace, paths=config_model.paths)
+
+    profile_model, claim_models = load_profile_components()
     profile = profile_to_dict(profile_model)
     claims = [claim.model_copy(deep=True) for claim in claim_models]
     if not profile and not claims:
         typer.secho("No profile data", fg=typer.colors.RED, err=True)
         raise typer.Exit(1)
 
-    entries = _load_normalized_entries(workspace, date)
+    entries = _load_normalized_entries(date)
     if not entries:
         typer.secho(f"No normalized entries for {date}", fg=typer.colors.RED, err=True)
         raise typer.Exit(1)
 
-    config = _load_config(workspace)
     weights = config.impact_weights.model_dump(mode="python")
 
     max_questions = _coaching_max_questions(profile)
-    pending_prompts = _collect_pending_interview_prompts(workspace)
+    pending_prompts = _collect_pending_interview_prompts()
     rankings = _compute_rankings(
         profile,
         claims,
