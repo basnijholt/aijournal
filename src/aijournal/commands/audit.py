@@ -7,9 +7,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import typer
 import yaml
 from pydantic import BaseModel
 
+from aijournal.commands.ingest import _use_fake_llm
+from aijournal.common.command_runner import run_command_pipeline
+from aijournal.common.context import RunContext, create_run_context
 from aijournal.common.meta import Artifact, ArtifactKind
 from aijournal.domain.changes import ProfileUpdateProposals
 from aijournal.domain.evidence import SourceRef, redact_source_text
@@ -46,6 +50,21 @@ _AUDIT_ARTIFACT_MODELS: dict[ArtifactKind, type[BaseModel]] = {
     ArtifactKind.PROFILE_UPDATES: ProfileUpdateBatch,
     ArtifactKind.PERSONA_CORE: PersonaCore,
 }
+
+
+class AuditOptions(BaseModel):
+    fix: bool
+
+
+@dataclass(slots=True)
+class AuditPrepared:
+    fix: bool
+
+
+@dataclass(slots=True)
+class AuditResult:
+    results: list[AuditFileResult]
+    fix: bool
 
 
 def run_audit_provenance(*, root: Path, fix: bool) -> list[AuditFileResult]:
@@ -124,6 +143,75 @@ def run_audit_provenance(*, root: Path, fix: bool) -> list[AuditFileResult]:
                 )
 
     return results
+
+
+def prepare_inputs(ctx: RunContext, options: AuditOptions) -> AuditPrepared:
+    ctx.emit({"event": "prepare_summary", "fix": options.fix})
+    return AuditPrepared(fix=options.fix)
+
+
+def invoke_pipeline(ctx: RunContext, prepared: AuditPrepared) -> AuditResult:
+    findings = run_audit_provenance(root=ctx.root, fix=prepared.fix)
+    ctx.emit(
+        {
+            "event": "pipeline_complete",
+            "fix": prepared.fix,
+            "files_with_issues": len(findings),
+            "total_spans": sum(result.count for result in findings),
+        }
+    )
+    return AuditResult(results=findings, fix=prepared.fix)
+
+
+def persist_output(ctx: RunContext, result: AuditResult) -> None:
+    del ctx
+    if not result.results:
+        typer.echo("No provenance span text detected.")
+        return
+
+    if result.fix:
+        total_spans = sum(res.count for res in result.results)
+        for res in result.results:
+            typer.secho(
+                f"Redacted {res.count} span{'s' if res.count != 1 else ''} in {res.path.as_posix()}.",
+                fg=typer.colors.GREEN,
+            )
+        typer.echo(
+            f"Redacted {total_spans} span{'s' if total_spans != 1 else ''} across {len(result.results)} file{'s' if len(result.results) != 1 else ''}.",
+        )
+    else:
+        typer.secho("Found provenance span text in:", fg=typer.colors.YELLOW)
+        for res in result.results:
+            typer.echo(f"- {res.path.as_posix()}")
+            for issue in res.issues:
+                spans = ", ".join(str(idx) for idx in issue.span_indices)
+                entry_details = f" entry_id={issue.entry_id}" if issue.entry_id else ""
+                typer.echo(f"    {issue.path} spans={spans}{entry_details}")
+        typer.secho("Run with --fix to redact these spans.", fg=typer.colors.YELLOW)
+        raise typer.Exit(1)
+
+
+def run_audit_command(ctx: RunContext, options: AuditOptions) -> None:
+    run_command_pipeline(
+        ctx,
+        options,
+        prepare_inputs=prepare_inputs,
+        invoke_pipeline=invoke_pipeline,
+        persist_output=persist_output,
+    )
+
+
+def run_audit_provenance_cli(*, fix: bool) -> None:
+    root = Path.cwd()
+    ctx = create_run_context(
+        command="ops.audit.provenance",
+        root=root,
+        config={},
+        use_fake_llm=_use_fake_llm(),
+        trace=False,
+        verbose_json=False,
+    )
+    run_audit_command(ctx, AuditOptions(fix=fix))
 
 
 def _artifact_format(path: Path) -> str | None:
