@@ -5,13 +5,13 @@ from pathlib import Path
 from time import perf_counter
 from typing import TYPE_CHECKING, Any
 
-import yaml
 from pydantic import BaseModel, Field
 
 from aijournal.api.capture import CaptureInput
 from aijournal.commands.ingest import _fake_structured_entry, _load_config
 from aijournal.domain.journal import NormalizedEntry
 from aijournal.ingest_agent import IngestResult, build_ingest_agent, ingest_with_agent
+from aijournal.io.yaml_io import dump_yaml
 from aijournal.models.authoritative import ManifestEntry
 from aijournal.pipelines import normalization
 from aijournal.services.capture.utils import (
@@ -387,7 +387,7 @@ def _persist_text_entry(
     if summary_text:
         frontmatter["summary"] = summary_text
 
-    content = yaml.safe_dump(frontmatter, sort_keys=False).strip()
+    content = dump_yaml(frontmatter, sort_keys=False).strip()
     markdown_content = f"---\n{content}\n---\n"
     if body_text:
         markdown_content += f"\n{body_text}\n"

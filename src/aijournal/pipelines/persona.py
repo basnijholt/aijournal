@@ -9,10 +9,9 @@ from datetime import datetime
 from math import ceil, exp
 from typing import Any
 
-import yaml
-
 from aijournal.domain.claims import ClaimAtom
 from aijournal.domain.persona import PersonaCore
+from aijournal.io.yaml_io import dump_yaml
 from aijournal.utils.coercion import coerce_float
 
 PERSONA_PROFILE_KEYS = (
@@ -127,7 +126,7 @@ def _rank_claims_for_persona(
 
 def _estimate_persona_tokens(persona_block: dict[str, Any], char_per_token: float) -> int:
     width = max(char_per_token, 0.01)
-    text = yaml.safe_dump(persona_block, sort_keys=False)
+    text = dump_yaml(persona_block, sort_keys=False)
     return max(1, ceil(len(text) / width))
 
 

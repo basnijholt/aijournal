@@ -9,6 +9,7 @@ import yaml
 from typer.testing import CliRunner
 
 from aijournal.cli import app
+from aijournal.io.yaml_io import dump_yaml
 from tests.helpers import make_claim_atom
 
 if TYPE_CHECKING:
@@ -52,7 +53,7 @@ def _seed_claims(workspace: Path) -> None:
             ),
         ],
     }
-    path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
+    path.write_text(dump_yaml(payload, sort_keys=False), encoding="utf-8")
 
 
 def test_persona_build_generates_core(
@@ -190,7 +191,7 @@ def test_persona_status_detects_stale_profile(
             last_updated="2025-02-05T19:00:00Z",
         ),
     )
-    claims_path.write_text(yaml.safe_dump(claims_payload, sort_keys=False), encoding="utf-8")
+    claims_path.write_text(dump_yaml(claims_payload, sort_keys=False), encoding="utf-8")
 
     status_result = cli_runner.invoke(app, ["ops", "persona", "status"])
     assert status_result.exit_code != 0

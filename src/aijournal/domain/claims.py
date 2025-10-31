@@ -2,26 +2,11 @@
 
 from __future__ import annotations
 
-from typing import Literal
-
 from pydantic import Field, field_validator
 
 from aijournal.common.base import StrictModel
+from aijournal.domain.enums import ClaimMethod, ClaimStatus, ClaimType
 from aijournal.domain.evidence import SourceRef, Span
-
-ClaimType = Literal[
-    "preference",
-    "value",
-    "goal",
-    "boundary",
-    "trait",
-    "habit",
-    "aversion",
-    "skill",
-]
-
-ClaimStatus = Literal["accepted", "tentative", "rejected"]
-ClaimMethod = Literal["self_report", "inferred", "behavioral"]
 
 # Backwards-compatibility aliases for callers that still reference legacy names.
 ClaimSourceSpan = Span
@@ -56,7 +41,7 @@ class ClaimAtom(StrictModel):
     statement: str
     scope: Scope = Field(default_factory=Scope)
     strength: float = Field(default=0.5, ge=0.0, le=1.0)
-    status: ClaimStatus = "tentative"
+    status: ClaimStatus = ClaimStatus.TENTATIVE
     method: ClaimMethod
     user_verified: bool = False
     review_after_days: int = 120

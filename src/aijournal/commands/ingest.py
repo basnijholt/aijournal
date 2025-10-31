@@ -21,6 +21,7 @@ from aijournal.ingest_agent import (
     build_ingest_agent,
     ingest_with_agent,
 )
+from aijournal.io.yaml_io import dump_yaml
 from aijournal.models.authoritative import ManifestEntry
 from aijournal.pipelines import normalization
 from aijournal.schema import SchemaValidationError, validate_schema
@@ -70,7 +71,7 @@ def _load_manifest(path: Path) -> list[ManifestEntry]:
 def _write_manifest(path: Path, entries: Iterable[ManifestEntry]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = [entry.model_dump(mode="python") for entry in entries]
-    path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
+    path.write_text(dump_yaml(payload, sort_keys=False), encoding="utf-8")
 
 
 def _load_existing_yaml(path: Path) -> dict[str, Any] | None:
@@ -97,7 +98,7 @@ def _write_yaml_if_changed(
         return False
 
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+    path.write_text(dump_yaml(data, sort_keys=False), encoding="utf-8")
     return True
 
 

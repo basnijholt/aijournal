@@ -10,6 +10,7 @@ import yaml
 from pydantic import BaseModel
 
 from aijournal.common.meta import Artifact, ArtifactKind
+from aijournal.io.yaml_io import dump_yaml
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -19,12 +20,7 @@ def _ensure_trailing_newline(payload: str) -> str:
 
 
 def _dump_yaml(data: Any) -> str:
-    serialized = yaml.safe_dump(
-        data,
-        sort_keys=True,
-        default_flow_style=False,
-        allow_unicode=False,
-    )
+    serialized = dump_yaml(data, sort_keys=True)
     return _ensure_trailing_newline(serialized)
 
 

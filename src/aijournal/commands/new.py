@@ -8,8 +8,8 @@ from pathlib import Path
 from typing import Any
 
 import typer
-import yaml
 
+from aijournal.io.yaml_io import dump_yaml
 from aijournal.utils import time as time_utils
 
 FAKE_TIME_BLOCKS = [
@@ -89,7 +89,7 @@ def _journal_path(base: Path, dt: datetime, slug: str) -> Path:
 
 def _write_markdown_entry(path: Path, frontmatter: dict[str, Any], body: str = "") -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    yaml_block = yaml.safe_dump(frontmatter, sort_keys=False).strip()
+    yaml_block = dump_yaml(frontmatter, sort_keys=False).strip()
     content = f"---\n{yaml_block}\n---\n"
     if body:
         content += f"\n{body.strip()}\n"

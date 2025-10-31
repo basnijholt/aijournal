@@ -13,7 +13,6 @@
           "type": "number"
         },
         "kind": {
-          "const": "feedback",
           "default": "feedback",
           "title": "Kind",
           "type": "string"
@@ -35,6 +34,14 @@
       ],
       "title": "FeedbackAdjustmentEvent",
       "type": "object"
+    },
+    "FeedbackDirection": {
+      "enum": [
+        "up",
+        "down"
+      ],
+      "title": "FeedbackDirection",
+      "type": "string"
     }
   },
   "additionalProperties": false,
@@ -56,12 +63,7 @@
       "type": "array"
     },
     "feedback": {
-      "enum": [
-        "up",
-        "down"
-      ],
-      "title": "Feedback",
-      "type": "string"
+      "$ref": "#/$defs/FeedbackDirection"
     },
     "question": {
       "title": "Question",

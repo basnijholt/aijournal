@@ -5,13 +5,7 @@
       "description": "Normalized claim payload without identifiers or provenance.",
       "properties": {
         "method": {
-          "enum": [
-            "self_report",
-            "inferred",
-            "behavioral"
-          ],
-          "title": "Method",
-          "type": "string"
+          "$ref": "#/$defs/ClaimMethod"
         },
         "predicate": {
           "title": "Predicate",
@@ -29,13 +23,7 @@
           "type": "string"
         },
         "status": {
-          "enum": [
-            "accepted",
-            "tentative",
-            "rejected"
-          ],
-          "title": "Status",
-          "type": "string"
+          "$ref": "#/$defs/ClaimStatus"
         },
         "strength": {
           "title": "Strength",
@@ -46,18 +34,7 @@
           "type": "string"
         },
         "type": {
-          "enum": [
-            "preference",
-            "value",
-            "goal",
-            "boundary",
-            "trait",
-            "habit",
-            "aversion",
-            "skill"
-          ],
-          "title": "Type",
-          "type": "string"
+          "$ref": "#/$defs/ClaimType"
         },
         "user_verified": {
           "title": "User Verified",
@@ -83,6 +60,15 @@
       ],
       "title": "ClaimAtomInput",
       "type": "object"
+    },
+    "ClaimMethod": {
+      "enum": [
+        "self_report",
+        "inferred",
+        "behavioral"
+      ],
+      "title": "ClaimMethod",
+      "type": "string"
     },
     "ClaimProposal": {
       "additionalProperties": false,
@@ -131,6 +117,29 @@
       "title": "ClaimProposal",
       "type": "object"
     },
+    "ClaimStatus": {
+      "enum": [
+        "accepted",
+        "tentative",
+        "rejected"
+      ],
+      "title": "ClaimStatus",
+      "type": "string"
+    },
+    "ClaimType": {
+      "enum": [
+        "preference",
+        "value",
+        "goal",
+        "boundary",
+        "trait",
+        "habit",
+        "aversion",
+        "skill"
+      ],
+      "title": "ClaimType",
+      "type": "string"
+    },
     "FacetChange": {
       "additionalProperties": false,
       "description": "Facet modification proposed by characterization pipelines.",
@@ -167,13 +176,7 @@
           "title": "Method"
         },
         "operation": {
-          "enum": [
-            "set",
-            "remove",
-            "merge"
-          ],
-          "title": "Operation",
-          "type": "string"
+          "$ref": "#/$defs/FacetOperation"
         },
         "path": {
           "title": "Path",
@@ -232,6 +235,15 @@
       ],
       "title": "FacetChange",
       "type": "object"
+    },
+    "FacetOperation": {
+      "enum": [
+        "set",
+        "remove",
+        "merge"
+      ],
+      "title": "FacetOperation",
+      "type": "string"
     },
     "Scope": {
       "additionalProperties": false,

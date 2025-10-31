@@ -88,8 +88,16 @@
       "title": "Confidence"
     },
     "id": {
-      "title": "Id",
-      "type": "string"
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Id"
     },
     "next_actions": {
       "items": {
@@ -123,7 +131,6 @@
     }
   },
   "required": [
-    "id",
     "query"
   ],
   "title": "AdviceCard",

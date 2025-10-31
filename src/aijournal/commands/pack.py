@@ -6,7 +6,6 @@ import json
 from pathlib import Path
 
 import typer
-import yaml
 
 from aijournal.commands.index import _index_settings
 from aijournal.commands.ingest import (
@@ -17,6 +16,7 @@ from aijournal.commands.persona import ensure_persona_ready_for_pack
 from aijournal.common.meta import Artifact, ArtifactKind, ArtifactMeta
 from aijournal.domain.packs import PackBundle
 from aijournal.io.artifacts import save_artifact
+from aijournal.io.yaml_io import dump_yaml
 from aijournal.pipelines import index as index_pipeline
 from aijournal.pipelines import pack as pack_pipeline
 from aijournal.utils import time as time_utils
@@ -144,7 +144,7 @@ def run_pack(
     if fmt_value == "json":
         typer.echo(json.dumps(artifact_payload, indent=2))
     else:
-        typer.echo(yaml.safe_dump(artifact_payload, sort_keys=False))
+        typer.echo(dump_yaml(artifact_payload, sort_keys=False))
 
 
 def _latest_normalized_day(root: Path) -> str | None:

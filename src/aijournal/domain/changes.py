@@ -2,36 +2,28 @@
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Any
 
 from pydantic import Field, field_validator
 
 from aijournal.common.base import StrictModel
 from aijournal.domain.claims import Scope
+from aijournal.domain.enums import ClaimMethod, ClaimStatus, ClaimType, FacetOperation
 from aijournal.domain.evidence import SourceRef
 
 
 class ClaimAtomInput(StrictModel):
     """Normalized claim payload without identifiers or provenance."""
 
-    type: Literal[
-        "preference",
-        "value",
-        "goal",
-        "boundary",
-        "trait",
-        "habit",
-        "aversion",
-        "skill",
-    ]
+    type: ClaimType
     subject: str
     predicate: str
     value: str
     statement: str
     scope: Scope
     strength: float
-    status: Literal["accepted", "tentative", "rejected"]
-    method: Literal["self_report", "inferred", "behavioral"]
+    status: ClaimStatus
+    method: ClaimMethod
     user_verified: bool
     review_after_days: int
 
@@ -57,7 +49,7 @@ class FacetChange(StrictModel):
     """Facet modification proposed by characterization pipelines."""
 
     path: str
-    operation: Literal["set", "remove", "merge"]
+    operation: FacetOperation
     value: Any | None = None
     method: str | None = None
     confidence: float | None = None
@@ -70,7 +62,7 @@ class FacetChange(StrictModel):
     @classmethod
     def _validate_value(cls, value: Any | None, info: Any) -> Any | None:
         operation = info.data.get("operation")
-        if operation in {"set", "merge"} and value is None:
+        if operation in {FacetOperation.SET, FacetOperation.MERGE} and value is None:
             raise ValueError("value required for set/merge operations")
         return value
 

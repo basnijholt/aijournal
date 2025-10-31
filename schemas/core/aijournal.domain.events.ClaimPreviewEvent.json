@@ -41,6 +41,17 @@
       "title": "ClaimConflictPayload",
       "type": "object"
     },
+    "ClaimEventAction": {
+      "enum": [
+        "upsert",
+        "update",
+        "delete",
+        "conflict",
+        "strength_delta"
+      ],
+      "title": "ClaimEventAction",
+      "type": "string"
+    },
     "ClaimSignaturePayload": {
       "additionalProperties": false,
       "description": "Serialized signature describing the target slot for a claim.",
@@ -182,15 +193,7 @@
   "description": "Outcome of attempting to merge a claim proposal into existing atoms.",
   "properties": {
     "action": {
-      "enum": [
-        "upsert",
-        "update",
-        "delete",
-        "conflict",
-        "strength_delta"
-      ],
-      "title": "Action",
-      "type": "string"
+      "$ref": "#/$defs/ClaimEventAction"
     },
     "claim_id": {
       "title": "Claim Id",
@@ -220,7 +223,6 @@
       "title": "Delta Strength"
     },
     "kind": {
-      "const": "preview",
       "default": "preview",
       "title": "Kind",
       "type": "string"

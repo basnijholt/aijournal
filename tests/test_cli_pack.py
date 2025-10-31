@@ -15,6 +15,7 @@ from aijournal.domain.changes import ClaimAtomInput, ClaimProposal, ProfileUpdat
 from aijournal.domain.claims import ClaimAtom
 from aijournal.domain.evidence import SourceRef
 from aijournal.io.artifacts import save_artifact
+from aijournal.io.yaml_io import dump_yaml
 from aijournal.models.derived import (
     AdviceCard,
     AdviceRecommendation,
@@ -59,7 +60,7 @@ traits:
     }
     _write(
         tmp_path / "profile" / "claims.yaml",
-        yaml.safe_dump(claims_payload, sort_keys=False),
+        dump_yaml(claims_payload, sort_keys=False),
     )
 
 
@@ -188,7 +189,7 @@ def _seed_config(tmp_path: Path, *, char_per_token: float | None = None) -> Path
     if char_per_token is not None:
         payload["token_estimator"] = {"char_per_token": char_per_token}
     config_path = tmp_path / "config" / "config.yaml"
-    _write(config_path, yaml.safe_dump(payload, sort_keys=False))
+    _write(config_path, dump_yaml(payload, sort_keys=False))
     return config_path
 
 

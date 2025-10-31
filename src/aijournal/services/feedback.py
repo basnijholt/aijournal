@@ -5,9 +5,10 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Final, Literal
+from typing import Final
 
 from aijournal.common.meta import Artifact, ArtifactKind, ArtifactMeta
+from aijournal.domain.enums import FeedbackDirection
 from aijournal.domain.events import FeedbackAdjustmentEvent, FeedbackBatch
 from aijournal.io.artifacts import save_artifact
 from aijournal.io.yaml_io import load_yaml_model, write_yaml_model
@@ -107,7 +108,7 @@ def apply_chat_feedback(
     timestamp_slug = timestamp.replace(":", "").replace("T", "-")
     feedback_path = pending_dir / f"feedback_{slug}_{timestamp_slug}.yaml"
 
-    feedback_value: Literal["up", "down"] = "down" if delta < 0 else "up"
+    feedback_value = FeedbackDirection.DOWN if delta < 0 else FeedbackDirection.UP
 
     batch = FeedbackBatch(
         batch_id=f"{slug}-{timestamp_slug}",

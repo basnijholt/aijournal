@@ -19,6 +19,7 @@ from aijournal.domain.changes import (
 from aijournal.domain.claims import ClaimAtom
 from aijournal.domain.evidence import SourceRef
 from aijournal.io.artifacts import save_artifact
+from aijournal.io.yaml_io import dump_yaml
 from tests.helpers import make_claim_atom
 
 if TYPE_CHECKING:
@@ -40,7 +41,7 @@ def skip_if_missing() -> None:
 
 def _write_yaml(path: Path, payload: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
+    path.write_text(dump_yaml(payload, sort_keys=False), encoding="utf-8")
 
 
 def _seed_authoritative(workspace: Path) -> None:

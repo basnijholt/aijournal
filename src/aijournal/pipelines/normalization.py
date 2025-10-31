@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from collections.abc import Iterable, Sequence
 from datetime import UTC, datetime
-from typing import Any, cast
+from typing import Any
 
 from aijournal.domain.claims import (
     ClaimAtom,
@@ -15,6 +15,8 @@ from aijournal.domain.claims import (
     Provenance,
     Scope,
 )
+from aijournal.domain.enums import ClaimMethod, ClaimType
+from aijournal.domain.enums import ClaimStatus as ClaimStatusEnum
 from aijournal.domain.evidence import redact_source_text
 from aijournal.ingest_agent import IngestResult, IngestSection
 from aijournal.utils import time as time_utils
@@ -25,7 +27,7 @@ def normalize_status(value: str | None) -> ClaimStatus:
     status = (value or "tentative").strip().lower()
     if status not in {"accepted", "tentative", "rejected"}:
         status = "tentative"
-    return cast(ClaimStatus, status)
+    return ClaimStatusEnum(status)
 
 
 def _clamp_strength(value: float | None, default: float = 0.6) -> float:
@@ -234,17 +236,11 @@ def normalize_claim_atom(
         raise ValueError(msg)
 
     claim_type_raw = str(base.get("type") or "preference").strip().lower()
-    valid_types = {
-        "preference",
-        "value",
-        "goal",
-        "boundary",
-        "trait",
-        "habit",
-        "aversion",
-        "skill",
-    }
-    claim_type = claim_type_raw if claim_type_raw in valid_types else "preference"
+    valid_types = {item.value for item in ClaimType}
+    claim_type_value = (
+        claim_type_raw if claim_type_raw in valid_types else ClaimType.PREFERENCE.value
+    )
+    claim_type = ClaimType(claim_type_value)
 
     subject_candidate = (
         base.get("subject")
@@ -279,12 +275,14 @@ def normalize_claim_atom(
     strength = max(0.0, min(1.0, strength_numeric if strength_numeric is not None else 0.6))
 
     status_raw = str(base.get("status") or "tentative").strip().lower()
-    valid_status = {"accepted", "tentative", "rejected"}
-    status = status_raw if status_raw in valid_status else "tentative"
+    valid_status = {item.value for item in ClaimStatusEnum}
+    status_value = status_raw if status_raw in valid_status else ClaimStatusEnum.TENTATIVE.value
+    status = ClaimStatusEnum(status_value)
 
     method_raw = str(base.get("method") or "inferred").strip().lower()
-    valid_methods = {"self_report", "inferred", "behavioral"}
-    method = method_raw if method_raw in valid_methods else "inferred"
+    valid_methods = {item.value for item in ClaimMethod}
+    method_value = method_raw if method_raw in valid_methods else ClaimMethod.INFERRED.value
+    method = ClaimMethod(method_value)
 
     user_verified = bool(base.get("user_verified", False))
     review_after_days = coerce_int(base.get("review_after_days")) or 120
@@ -297,15 +295,15 @@ def normalize_claim_atom(
 
     return ClaimAtom(
         id=claim_id,
-        type=claim_type,  # type: ignore[arg-type]
+        type=claim_type,
         subject=subject,
         predicate=predicate,
         value=value,
         statement=statement,
         scope=scope,
         strength=strength,
-        status=status,  # type: ignore[arg-type]
-        method=method,  # type: ignore[arg-type]
+        status=status,
+        method=method,
         user_verified=user_verified,
         review_after_days=review_after_days,
         provenance=provenance,
