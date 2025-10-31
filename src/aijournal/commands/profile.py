@@ -642,9 +642,19 @@ def _build_claim_atom_from_entry(
     )
 
 
-def load_profile_components() -> tuple[SelfProfile | None, list[ClaimAtom]]:
-    profile_path = WorkspacePaths.profile() / "self_profile.yaml"
-    claims_path = WorkspacePaths.profile() / "claims.yaml"
+def load_profile_components(
+    *,
+    config: AppConfig | None = None,
+) -> tuple[SelfProfile | None, list[ClaimAtom]]:
+    if config is not None:
+        profile_dir = Path(config.paths.profile)
+        if not profile_dir.is_absolute():
+            profile_dir = WorkspacePaths.root() / profile_dir
+    else:
+        profile_dir = WorkspacePaths.profile()
+
+    profile_path = profile_dir / "self_profile.yaml"
+    claims_path = profile_dir / "claims.yaml"
 
     profile = load_yaml_model(profile_path, SelfProfile) if profile_path.exists() else None
     if claims_path.exists():

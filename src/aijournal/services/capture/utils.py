@@ -166,8 +166,10 @@ def discover_markdown_files(paths: Sequence[str]) -> list[Path]:
     return unique
 
 
-def pending_batches(root: Path) -> set[Path]:
-    directory = root / "derived" / "pending" / "profile_updates"
+def pending_batches() -> set[Path]:
+    from aijournal.utils.paths import WorkspacePaths
+
+    directory = WorkspacePaths.derived() / "pending" / "profile_updates"
     if not directory.exists():
         return set()
     return {path for path in directory.glob("*.yaml") if path.is_file()}
@@ -182,7 +184,9 @@ def noop_preview(
     return None
 
 
-def apply_profile_update_batch(root: Path, batch_path: Path) -> bool:
+def apply_profile_update_batch(batch_path: Path) -> bool:
+    from aijournal.utils.paths import WorkspacePaths
+
     batch = load_artifact_data(batch_path, ProfileUpdateBatch)
     claim_proposals: list[ClaimProposal] = [
         proposal.model_copy(deep=True) for proposal in batch.proposals.claims
@@ -213,8 +217,8 @@ def apply_profile_update_batch(root: Path, batch_path: Path) -> bool:
 
     updated_profile = SelfProfile.model_validate(profile)
     updated_claims = [claim.model_copy(deep=True) for claim in claims_data]
-    write_yaml_model(root / "profile" / "self_profile.yaml", updated_profile)
-    write_yaml_model(root / "profile" / "claims.yaml", ClaimsFile(claims=updated_claims))
+    write_yaml_model(WorkspacePaths.profile() / "self_profile.yaml", updated_profile)
+    write_yaml_model(WorkspacePaths.profile() / "claims.yaml", ClaimsFile(claims=updated_claims))
     return True
 
 
