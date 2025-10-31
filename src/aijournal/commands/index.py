@@ -109,7 +109,7 @@ def run_index_rebuild(since: str | None, *, limit: int | None) -> str:
     config = _load_config(root)
     ctx = create_run_context(
         command="index.rebuild",
-        root=root,
+        workspace=root,
         config=config,
         use_fake_llm=_use_fake_llm(),
         trace=False,
@@ -126,7 +126,7 @@ def run_index_tail(since: str | None, *, days: int, limit: int | None) -> str:
     config = _load_config(root)
     ctx = create_run_context(
         command="index.update",
-        root=root,
+        workspace=root,
         config=config,
         use_fake_llm=_use_fake_llm(),
         trace=False,
@@ -151,7 +151,7 @@ def run_index_search(
     config = _load_config(root)
     ctx = create_run_context(
         command="index.search",
-        root=root,
+        workspace=root,
         config=config,
         use_fake_llm=_use_fake_llm(),
         trace=False,

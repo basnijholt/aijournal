@@ -141,7 +141,7 @@ def test_chat_service_requires_persona_core(
 ) -> None:
     monkeypatch.chdir(tmp_path)
     cli_runner.invoke(app, ["init"], catch_exceptions=False)
-    config_dict = yaml.safe_load((tmp_path / "config" / "config.yaml").read_text(encoding="utf-8"))
+    config_dict = yaml.safe_load((tmp_path / "config.yaml").read_text(encoding="utf-8"))
     config = AppConfig.model_validate(config_dict)
     service = ChatService(tmp_path, config)
     try:

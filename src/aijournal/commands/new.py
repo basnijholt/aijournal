@@ -316,7 +316,7 @@ def run_new(
     base = Path.cwd()
     ctx = create_run_context(
         command="ops.dev.new",
-        root=base,
+        workspace=base,
         config={},
         use_fake_llm=_use_fake_llm(),
         trace=False,

@@ -77,7 +77,7 @@ def run_pack(
     config = _load_config(root)
     ctx = create_run_context(
         command="pack",
-        root=root,
+        workspace=root,
         config=config,
         use_fake_llm=_use_fake_llm(),
         trace=False,

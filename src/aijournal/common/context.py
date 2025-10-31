@@ -50,20 +50,34 @@ class RunContext:
 def create_run_context(
     *,
     command: str,
-    root: Path,
+    workspace: Path,
     config: Mapping[str, Any] | AppConfig,
     use_fake_llm: bool,
     trace: bool,
     verbose_json: bool,
     sinks: Sequence[StructuredLogSink] | None = None,
 ) -> RunContext:
-    # Normalize config to model first to access paths.workspace_root
+    """Create a runtime context for command execution.
+
+    Args:
+        command: Command name being executed
+        workspace: Workspace directory containing config.yaml
+        config: Configuration (dict or AppConfig instance)
+        use_fake_llm: Whether to use fake LLM for testing
+        trace: Whether to enable trace logging
+        verbose_json: Whether to enable verbose JSON logging
+        sinks: Optional additional log sinks
+
+    Returns:
+        Configured RunContext
+    """
+    # Normalize config to model
     config_model = (
         config if isinstance(config, AppConfig) else AppConfig.model_validate(dict(config))
     )
 
     # Configure global workspace paths for this run
-    WorkspacePaths.configure(root=root, workspace_root=config_model.paths.workspace_root)
+    WorkspacePaths.configure(workspace=workspace, paths=config_model.paths)
 
     run_id = _run_id(command)
     sink_list: list[StructuredLogSink] = list(sinks or [])
@@ -74,13 +88,13 @@ def create_run_context(
 
     logger = StructuredLogger(
         path=_trace_path(),
-        base={"run_id": run_id, "command": command, "root": str(root)},
+        base={"run_id": run_id, "command": command, "workspace": str(workspace)},
         sinks=sink_list,
         enabled=True,
     )
     return RunContext(
         command=command,
-        root=root,
+        root=workspace,  # Keep field name 'root' for backward compatibility
         config=config_model,
         use_fake_llm=use_fake_llm,
         logger=logger,

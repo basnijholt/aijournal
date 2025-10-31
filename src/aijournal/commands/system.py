@@ -247,7 +247,7 @@ def run_system_doctor_cli() -> None:
     config = _load_config(root)
     ctx = create_run_context(
         command="ops.system.doctor",
-        root=root,
+        workspace=root,
         config=config,
         use_fake_llm=_use_fake_llm(),
         trace=False,
@@ -306,7 +306,7 @@ def run_system_status_cli() -> None:
     config = _load_config(root)
     ctx = create_run_context(
         command="ops.system.status",
-        root=root,
+        workspace=root,
         config=config,
         use_fake_llm=_use_fake_llm(),
         trace=False,

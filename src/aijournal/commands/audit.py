@@ -204,7 +204,7 @@ def run_audit_provenance_cli(*, fix: bool) -> None:
     root = Path.cwd()
     ctx = create_run_context(
         command="ops.audit.provenance",
-        root=root,
+        workspace=root,
         config={},
         use_fake_llm=_use_fake_llm(),
         trace=False,

@@ -86,7 +86,7 @@ def test_run_status_summary(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
         (pending_dir / f"batch-{idx}.yaml").write_text("batch", encoding="utf-8")
 
     # Configure WorkspacePaths for the test
-    WorkspacePaths.configure(root=tmp_path, workspace_root=None)
+    WorkspacePaths.configure(workspace=tmp_path)
     summary = system.run_status_summary(tmp_path)
 
     assert summary["persona"]["status"] == "fresh"

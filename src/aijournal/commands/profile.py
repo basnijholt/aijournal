@@ -137,7 +137,7 @@ def run_profile_suggest(
     config = _load_config(root)
     ctx = create_run_context(
         command="profile.suggest",
-        root=root,
+        workspace=root,
         config=config,
         use_fake_llm=_use_fake_llm(),
         trace=False,
@@ -166,7 +166,7 @@ def run_profile_apply(
     config = _load_config(root)
     ctx = create_run_context(
         command="profile.apply",
-        root=root,
+        workspace=root,
         config=config,
         use_fake_llm=_use_fake_llm(),
         trace=False,
@@ -184,12 +184,12 @@ def run_profile_apply(
 
 def run_profile_status(*, root: Path | None = None) -> None:
     """Show ranked facets/claims requiring review."""
-    resolved_root = root or Path.cwd()
-    config_path = WorkspacePaths.config_dir() / "config.yaml"
+    workspace = root or Path.cwd()
+    config_path = workspace / "config.yaml"
     config = _load_yaml(config_path) if config_path.exists() else {}
     ctx = create_run_context(
         command="profile.status",
-        root=resolved_root,
+        workspace=workspace,
         config=config,
         use_fake_llm=_use_fake_llm(),
         trace=False,
