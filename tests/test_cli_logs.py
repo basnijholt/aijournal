@@ -26,6 +26,11 @@ def test_logs_tail_missing_file(
     cli_workspace: Path,
     cli_runner: CliRunner,
 ) -> None:
+    log_path = cli_workspace / "derived" / "logs" / "run_trace.jsonl"
+    if log_path.exists():
+        log_path.unlink()
+    if log_path.parent.exists() and not any(log_path.parent.iterdir()):
+        log_path.parent.rmdir()
     result = cli_runner.invoke(app, ["ops", "logs", "tail"])
 
     assert result.exit_code == 1
