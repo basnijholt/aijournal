@@ -37,4 +37,7 @@ def generate_advice(
         )
 
     response = request_advice()
-    return response.model_copy(deep=True)
+    advice = response.model_copy(deep=True)
+    if not advice.id:
+        advice.id = advice_identifier(question)
+    return advice
