@@ -3,12 +3,17 @@
 from __future__ import annotations
 
 import random
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 import typer
+from pydantic import BaseModel
 
+from aijournal.commands.ingest import _use_fake_llm
+from aijournal.common.command_runner import run_command_pipeline
+from aijournal.common.context import RunContext, create_run_context
 from aijournal.io.yaml_io import dump_yaml
 from aijournal.utils import time as time_utils
 
@@ -173,52 +178,153 @@ def _generate_fake_entries(
     return created, skipped
 
 
+class NewOptions(BaseModel):
+    title: str | None
+    tags: list[str] | None
+    fake: int
+    seed: int | None
+
+
+@dataclass(slots=True)
+class NewPrepared:
+    mode: str  # "fake" or "entry"
+    base: Path
+    tags: list[str] | None
+    fake_count: int
+    seed: int | None
+    title: str | None
+    entry_path: Path | None
+    frontmatter: dict[str, Any] | None
+
+
+@dataclass(slots=True)
+class NewResult:
+    message: str
+    entry_path: Path | None
+
+
+def prepare_inputs(ctx: RunContext, options: NewOptions) -> NewPrepared:
+    base = ctx.root
+    if options.fake > 0:
+        if options.title is not None:
+            typer.secho(
+                "Provide either a title or --fake, not both.",
+                fg=typer.colors.RED,
+                err=True,
+            )
+            ctx.emit({"event": "command_failed", "reason": "fake_with_title"})
+            raise typer.Exit(1)
+        ctx.emit({"event": "prepare_summary", "mode": "fake", "count": options.fake})
+        return NewPrepared(
+            mode="fake",
+            base=base,
+            tags=options.tags,
+            fake_count=options.fake,
+            seed=options.seed,
+            title=None,
+            entry_path=None,
+            frontmatter=None,
+        )
+
+    if options.seed is not None:
+        typer.secho("--seed is only valid together with --fake.", fg=typer.colors.RED, err=True)
+        ctx.emit({"event": "command_failed", "reason": "seed_without_fake"})
+        raise typer.Exit(1)
+    if not options.title:
+        typer.secho("Title is required unless --fake is provided.", fg=typer.colors.RED, err=True)
+        ctx.emit({"event": "command_failed", "reason": "missing_title"})
+        raise typer.Exit(1)
+
+    current_time = time_utils.now()
+    slug = f"{current_time.strftime('%Y-%m-%d')}-{time_utils.slugify_title(options.title)}"
+    entry_path = _journal_path(base, current_time, slug)
+    if entry_path.exists():
+        typer.echo(f"Entry exists: {entry_path}")
+        ctx.emit({"event": "command_failed", "reason": "entry_exists", "path": str(entry_path)})
+        raise typer.Exit(1)
+
+    frontmatter = {
+        "id": slug,
+        "created_at": time_utils.format_timestamp(current_time),
+        "title": options.title,
+        "tags": options.tags or [],
+    }
+    ctx.emit({"event": "prepare_summary", "mode": "entry", "title": options.title})
+    return NewPrepared(
+        mode="entry",
+        base=base,
+        tags=options.tags,
+        fake_count=0,
+        seed=None,
+        title=options.title,
+        entry_path=entry_path,
+        frontmatter=frontmatter,
+    )
+
+
+def invoke_pipeline(ctx: RunContext, prepared: NewPrepared) -> NewResult:
+    if prepared.mode == "fake":
+        created, skipped = _generate_fake_entries(
+            prepared.fake_count,
+            prepared.tags,
+            prepared.seed,
+            prepared.base,
+        )
+        summary = f"Generated {created} fake entr{'y' if created == 1 else 'ies'}"
+        if skipped:
+            summary += f" ({skipped} skipped)"
+        ctx.emit(
+            {
+                "event": "pipeline_complete",
+                "mode": "fake",
+                "created": created,
+                "skipped": skipped,
+            }
+        )
+        return NewResult(message=summary, entry_path=None)
+
+    assert prepared.entry_path is not None
+    assert prepared.frontmatter is not None
+    _write_markdown_entry(prepared.entry_path, prepared.frontmatter)
+    ctx.emit(
+        {
+            "event": "pipeline_complete",
+            "mode": "entry",
+            "path": str(prepared.entry_path),
+        }
+    )
+    return NewResult(message=str(prepared.entry_path), entry_path=prepared.entry_path)
+
+
+def persist_output(ctx: RunContext, result: NewResult) -> None:
+    del ctx
+    typer.echo(result.message)
+
+
+def run_new_command(ctx: RunContext, options: NewOptions) -> None:
+    run_command_pipeline(
+        ctx,
+        options,
+        prepare_inputs=prepare_inputs,
+        invoke_pipeline=invoke_pipeline,
+        persist_output=persist_output,
+    )
+
+
 def run_new(
     title: str | None,
     tags: list[str] | None,
     fake: int,
     seed: int | None,
 ) -> None:
-    """Create a new journal entry or synthesize fake entries."""
     base = Path.cwd()
-
-    if fake > 0:
-        if title is not None:
-            typer.secho(
-                "Provide either a title or --fake, not both.",
-                fg=typer.colors.RED,
-                err=True,
-            )
-            raise typer.Exit(1)
-        created, skipped = _generate_fake_entries(fake, tags, seed, base)
-        summary = f"Generated {created} fake entr{'y' if created == 1 else 'ies'}"
-        if skipped:
-            summary += f" ({skipped} skipped)"
-        typer.echo(summary)
-        return
-
-    if seed is not None:
-        typer.secho("--seed is only valid together with --fake.", fg=typer.colors.RED, err=True)
-        raise typer.Exit(1)
-
-    if not title:
-        typer.secho("Title is required unless --fake is provided.", fg=typer.colors.RED, err=True)
-        raise typer.Exit(1)
-
-    current_time = time_utils.now()
-    slug = f"{current_time.strftime('%Y-%m-%d')}-{time_utils.slugify_title(title)}"
-    entry_path = _journal_path(base, current_time, slug)
-
-    if entry_path.exists():
-        typer.echo(f"Entry exists: {entry_path}")
-        raise typer.Exit(1)
-
-    frontmatter = {
-        "id": slug,
-        "created_at": time_utils.format_timestamp(current_time),
-        "title": title,
-        "tags": tags or [],
-    }
-
-    _write_markdown_entry(entry_path, frontmatter)
-    typer.echo(str(entry_path))
+    ctx = create_run_context(
+        command="ops.dev.new",
+        root=base,
+        config={},
+        use_fake_llm=_use_fake_llm(),
+        trace=False,
+        verbose_json=False,
+    )
+    options = NewOptions(title=title, tags=tags, fake=fake, seed=seed)
+    run_new_command(ctx, options)
