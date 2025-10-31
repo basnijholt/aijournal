@@ -5,6 +5,8 @@ from __future__ import annotations
 from enum import StrEnum
 from typing import Generic, TypeVar
 
+from pydantic import Field
+
 from .base import StrictModel
 from .types import TimestampStr
 
@@ -60,3 +62,6 @@ class LLMResult(StrictModel, Generic[T]):
     prompt_hash: str | None = None
     created_at: TimestampStr
     payload: T
+    attempts: int = 1
+    repair_attempts: int = 0
+    coercions_applied: list[dict[str, str]] = Field(default_factory=list)

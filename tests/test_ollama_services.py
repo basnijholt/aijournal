@@ -52,6 +52,10 @@ class _FakeAgent:
         return SimpleNamespace(output=text)
 
 
+class _ListModel(BaseModel):
+    names: list[str]
+
+
 def test_run_ollama_agent_returns_payload(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.chdir(tmp_path)
     agent = _FakeAgent(['{"ok": true}'])
@@ -68,6 +72,9 @@ def test_run_ollama_agent_returns_payload(monkeypatch: pytest.MonkeyPatch, tmp_p
     assert result.payload == {"ok": True}
     assert result.prompt_path == "prompts/example.md"
     assert result.prompt_hash == "hash"
+    assert result.attempts == 1
+    assert result.repair_attempts == 0
+    assert result.coercions_applied == []
     assert agent.prompt == "prompt text"
 
 
@@ -185,6 +192,27 @@ def test_run_ollama_agent_strips_markdown_fences(
             "prompt text",
             prompt_path="prompts/test.md",
         )
+
+
+def test_run_ollama_agent_coerces_scalar_lists(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    agent = _FakeAgent(['{"names": "solo"}'])
+
+    monkeypatch.setattr("aijournal.services.ollama.build_ollama_agent", lambda *_, **__: agent)
+
+    result: LLMResult[_ListModel] = run_ollama_agent(
+        OllamaConfig(model="fake-model"),
+        "prompt",
+        output_type=_ListModel,
+        prompt_path="prompts/test.md",
+    )
+
+    assert result.payload.names == ["solo"]
+    assert result.coercions_applied
+    assert result.coercions_applied[0]["rule"] == "wrap_scalar_in_list"
+    assert "JSON_SKELETON" in (agent.prompt or "")
 
 
 def test_build_config_coerces_numeric_settings(monkeypatch: pytest.MonkeyPatch) -> None:

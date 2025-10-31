@@ -177,30 +177,25 @@ External feedback (LLM without repository access) aligned with local inspection;
 - Clarify `probing.max_questions ≤ 3`, question length ≤20 words, and require `target` references to use either a profile facet path or `claim:<id>` so downstream tooling can resolve follow-ups cleanly.
 
 ## 6. Runner-Level Enhancements
-### 6.1 Skeleton Injection
-Embed JSON skeletons directly in prompts before calling `run_ollama_agent`; the system prompt already enforces JSON-only output, and skeleton editing significantly reduces schema violations.
+### 6.1 Skeleton Injection (Implemented)
+`services/ollama.run_ollama_agent` now derives a JSON skeleton from the declared response model and appends it to the prompt automatically. Every structured call—facts, characterization, advice, chat—receives the same skeleton-edit workflow without duplicating logic in individual commands. The helper draws from shared enums and nested `StrictModel`s so the skeleton mirrors the schema exactly.
 
-### 6.2 Two-Step Repair Loop
-Implement in command modules (e.g., `commands/facts.py`, `commands/profile.py`, `commands/advise.py`):
-1. First attempt via `run_ollama_agent`.
-2. On validation failure, present the Pydantic error and original payload to the model for a single retry.
-3. If still invalid, apply deterministic formatting coercions and log them (see below) before revalidating.
+### 6.2 Two-Step Repair Loop + Deterministic Coercions
+The same runner performs a two-stage recovery: invalid JSON triggers a logged retry with explicit errors and the previous payload, and schema validation failures invoke a light coercion pass (e.g., wrapping scalars in lists, normalising nested structures). Coercions are captured alongside the validated payload, and further failures re-prompt with error summaries. Final errors raise `LLMResponseError` with the aggregated issues plus a failure log entry under `derived/logs/structured_failures/`.
 
 ### 6.3 Coercion Policy
 | Category | Example | Policy |
 | --- | --- | --- |
 | Format normalization | Trim whitespace, lowercase enums, convert `"yes"/"no"` to bool, wrap scalar as list when list expected | Allowed with logging |
-| Enum synonym mapping | `"brief" → "concise"`, `"straightforward" → "direct"` | Allowed with logging |
+| Enum synonym mapping | `"brief" → "concise"`, `"straightforward" → "direct"` | Allowed with logging (future work) |
 | Safe defaults | Missing optional field → `null`/`[]`; `id → null` | Allowed |
 | Semantic shifts | Changing `claim.type`, inventing provenance timestamps | Prohibited (fail fast) |
 | Structure invention | Parsing arbitrary dicts into typed objects | Prohibited (re-prompt) |
 
-Log all coercions in `Artifact.meta.notes["coercions"]` as `{ "field": "style.tone", "from": "brief", "to": "concise", "rule": "tone_synonym" }`.
+Coercions applied inside the runner are emitted through `LLMResult.coercions_applied` for downstream recording (e.g., into `ArtifactMeta.notes`).
 
 ### 6.4 Metrics
-- Extend `LLMResult` to include `repair_attempts` and `coercions_applied`.
-- Aggregate per-prompt metrics in `derived/logs/structured_failures/metrics.jsonl`.
-- Fail CI when repair rate >10% or coercions average >3 per artifact.
+`LLMResult` now records `attempts`, `repair_attempts`, and `coercions_applied`. The capture/CLI surfaces can aggregate these fields into `derived/logs/structured_failures/metrics.jsonl` and enforce CI thresholds (repair rate ≤10%, average coercions ≤3) in follow-up work.
 
 ## 7. Scientific Credibility & Validation Plan
 The L1→L4 memory hierarchy aligns with contemporary personality science when treated as a measurement system.
@@ -245,7 +240,7 @@ The L1→L4 memory hierarchy aligns with contemporary personality science when t
 - [x] Audit repo for legacy meta classes (`SummaryMeta`, `PersonaCoreMeta`); confirmed only historical docs mention them and no schema/code updates required.
 - [x] Update all prompts and examples to the new ClaimAtomInput/enum/`para` span requirements and align the advice flow with strict `AdviceCard` payloads (bounded style enums, placeholder ID format).
 - [x] Introduce shared `StrEnum` vocabularies in `domain/enums.py`, refactor models/prompts/tests to use them, and bless the resulting schema snapshots.
-- [ ] Add skeleton injection + two-step repair loop + coercion logging to structured runners, exposing metrics in `LLMResult` and CI.
+- [x] Add skeleton injection + two-step repair loop + coercion logging to structured runners, exposing metrics in `LLMResult` and CI (implemented in `services/ollama.run_ollama_agent`, now returning attempt/repair/coercion metadata consumed by CLI pipelines).
 - [ ] Build telemetry surfaces that aggregate validation/coercion counts and enforce thresholds in CI.
 - [ ] Ship survey/EMA ingestion + reporting commands (`ops persona calibrate`, `ops persona metrics`) to track convergent/discriminant/test–retest/calibration stats and enforce kill criteria.
 - [ ] Extend `AdviceCard` with COM-B / implementation-intention fields and ensure recommendations cite both claims and recent evidence.

@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
+import copy
 import json
 import os
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, TypeVar, cast
+from typing import Any, TypeVar, cast, get_args, get_origin
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
+from pydantic.fields import PydanticUndefined
 from pydantic_ai import Agent, ModelSettings, UnexpectedModelBehavior
 from pydantic_ai.exceptions import UserError
 from pydantic_ai.models.openai import OpenAIChatModel
@@ -167,6 +169,203 @@ def build_ollama_agent(
 _PayloadT = TypeVar("_PayloadT", bound=Any)
 
 
+def _to_json(data: Any) -> str:
+    try:
+        return json.dumps(data, indent=2, ensure_ascii=False)
+    except TypeError:
+        return str(data)
+
+
+def _clip(text: str, *, limit: int = 4000) -> str:
+    if len(text) <= limit:
+        return text
+    return f"{text[:limit]}..."
+
+
+def _unwrap_optional(annotation: Any) -> Any:
+    origin = get_origin(annotation)
+    if origin is None:
+        return annotation
+    args = get_args(annotation)
+    if not args:
+        return annotation
+    non_none = [arg for arg in args if arg is not type(None)]
+    if len(non_none) == 1 and len(non_none) < len(args):
+        return non_none[0]
+    return annotation
+
+
+def _field_skeleton(annotation: Any) -> Any:
+    annotation = _unwrap_optional(annotation)
+    origin = get_origin(annotation)
+
+    if isinstance(annotation, type) and issubclass(annotation, BaseModel):
+        return _model_skeleton(annotation)
+
+    if origin in {list, tuple, set}:
+        args = get_args(annotation)
+        element_annotation = args[0] if args else Any
+        return [_field_skeleton(element_annotation)]
+
+    if origin in {dict, Mapping}:
+        args = get_args(annotation)
+        value_annotation = args[1] if len(args) == 2 else Any
+        return {"key": _field_skeleton(value_annotation)}
+
+    if annotation in {str, bytes}:
+        return ""
+    if annotation is int:
+        return 0
+    if annotation is float:
+        return 0.0
+    if annotation is bool:
+        return False
+
+    return None
+
+
+def _model_skeleton(model: type[BaseModel]) -> dict[str, Any]:
+    skeleton: dict[str, Any] = {}
+    for name, field in model.model_fields.items():
+        if field.default is not PydanticUndefined:
+            skeleton[name] = field.default
+            continue
+        if field.default_factory is not None:
+            try:
+                factory = cast(Callable[[], Any], field.default_factory)
+                skeleton[name] = factory()
+                continue
+            except TypeError:  # pragma: no cover - defensive guard
+                skeleton[name] = None
+                continue
+        skeleton[name] = _field_skeleton(field.annotation)
+    return skeleton
+
+
+def _compose_attempt_prompt(
+    base_prompt: str,
+    *,
+    skeleton: str | None,
+    retry_message: str | None,
+    previous_payload: str | None,
+    validation_summary: str | None,
+) -> str:
+    parts: list[str] = [base_prompt.rstrip()]
+    if skeleton:
+        parts.append("\nJSON_SKELETON (fill without removing keys):\n" + skeleton.strip())
+    if retry_message:
+        parts.append(f"\nReminder: {retry_message.strip()}")
+    if previous_payload or validation_summary:
+        parts.append("\nThe prior JSON failed validation. Correct it and return only valid JSON.")
+        if previous_payload:
+            parts.append("\nPrevious JSON candidate:\n" + _clip(previous_payload))
+        if validation_summary:
+            parts.append("\nValidation errors (JSON):\n" + _clip(validation_summary))
+    return "\n".join(part for part in parts if part)
+
+
+def _coerce_value_for_type(
+    value: Any,
+    annotation: Any,
+    *,
+    field_path: str,
+) -> tuple[Any, list[dict[str, str]]]:
+    annotation = _unwrap_optional(annotation)
+    origin = get_origin(annotation)
+    changes: list[dict[str, str]] = []
+
+    if isinstance(annotation, type) and issubclass(annotation, BaseModel):
+        if hasattr(value, "model_dump"):
+            value = value.model_dump(mode="python")
+        if isinstance(value, dict):
+            coerced, nested = _coerce_payload_for_model(value, annotation)
+            changes.extend(nested)
+            return coerced, changes
+        return value, changes
+
+    if origin in {list, tuple, set}:
+        args = get_args(annotation)
+        element_annotation = args[0] if args else Any
+        if value is None:
+            value = []
+        if not isinstance(value, list):
+            coerced_value = [value]
+            changes.append(
+                {
+                    "field": field_path,
+                    "rule": "wrap_scalar_in_list",
+                    "from": repr(value),
+                    "to": repr(coerced_value),
+                }
+            )
+            value = coerced_value
+        coerced_items: list[Any] = []
+        for index, item in enumerate(value):
+            coerced_item, nested = _coerce_value_for_type(
+                item,
+                element_annotation,
+                field_path=f"{field_path}[{index}]",
+            )
+            coerced_items.append(coerced_item)
+            changes.extend(nested)
+        return coerced_items, changes
+
+    if origin in {dict, Mapping} and isinstance(value, dict):
+        args = get_args(annotation)
+        value_annotation = args[1] if len(args) == 2 else Any
+        coerced_dict: dict[str, Any] = {}
+        for key, item in value.items():
+            coerced_item, nested = _coerce_value_for_type(
+                item,
+                value_annotation,
+                field_path=f"{field_path}.{key}",
+            )
+            coerced_dict[key] = coerced_item
+            changes.extend(nested)
+        return coerced_dict, changes
+
+    return value, changes
+
+
+def _coerce_payload_for_model(
+    payload: dict[str, Any],
+    model: type[BaseModel],
+) -> tuple[dict[str, Any], list[dict[str, str]]]:
+    coerced = copy.deepcopy(payload)
+    changes: list[dict[str, str]] = []
+    for name, field in model.model_fields.items():
+        if name not in coerced:
+            continue
+        coerced_value, field_changes = _coerce_value_for_type(
+            coerced[name],
+            field.annotation,
+            field_path=name,
+        )
+        coerced[name] = coerced_value
+        changes.extend(field_changes)
+    return coerced, changes
+
+
+def _attempt_model_validation(
+    payload: dict[str, Any],
+    model: type[BaseModel],
+) -> tuple[BaseModel | None, list[dict[str, str]], list[dict[str, Any]]]:
+    try:
+        validated = model.model_validate(payload)
+        return validated, [], []
+    except ValidationError as exc:
+        errors = cast(list[dict[str, Any]], exc.errors())
+        coerced_payload, coercions = _coerce_payload_for_model(payload, model)
+        if coercions:
+            try:
+                validated = model.model_validate(coerced_payload)
+                return validated, coercions, []
+            except ValidationError as coercion_exc:
+                coerced_errors = cast(list[dict[str, Any]], coercion_exc.errors())
+                return None, coercions, coerced_errors
+        return None, [], errors
+
+
 def _failure_log_dir(label: str | None) -> Path:
     base = Path.cwd() / "derived" / "logs" / "structured_failures"
     if label:
@@ -244,7 +443,12 @@ def run_ollama_agent(
         msg = "max_attempts must be at least 1"
         raise ValueError(msg)
 
-    resolved_output: type[Any] = output_type or dict
+    target_model: type[BaseModel] | None = None
+    if isinstance(output_type, type) and issubclass(output_type, BaseModel):
+        target_model = output_type
+        resolved_output: type[Any] = dict
+    else:
+        resolved_output = output_type or dict
 
     agent = build_ollama_agent(
         config,
@@ -253,27 +457,49 @@ def run_ollama_agent(
         retries=0,
     )
 
-    attempt_prompt = prompt
+    skeleton_json: str | None = None
+    if target_model is not None:
+        skeleton_json = _to_json(_model_skeleton(target_model))
+
+    base_prompt = prompt.rstrip()
+    attempt_prompt = _compose_attempt_prompt(
+        base_prompt,
+        skeleton=skeleton_json,
+        retry_message=None,
+        previous_payload=None,
+        validation_summary=None,
+    )
+
     last_exc: Exception | None = None
+    repair_attempts = 0
+    coercions_applied: list[dict[str, str]] = []
+
     for attempt in range(1, max_attempts + 1):
         try:
             result = agent.run_sync(attempt_prompt, output_type=resolved_output)
         except UnexpectedModelBehavior as exc:
-            raw_payload = _extract_raw_payload(exc)
+            raw_payload_text = _extract_raw_payload(exc)
             _write_failure_log(
                 label=log_label or getattr(agent, "name", None),
                 prompt=attempt_prompt,
                 prompt_path=prompt_path,
                 attempt=attempt,
                 error=exc,
-                raw_payload=raw_payload,
+                raw_payload=raw_payload_text,
             )
             last_exc = exc
             if attempt == max_attempts:
                 msg = f"Model returned invalid JSON: {exc}"
                 raise LLMResponseError(msg) from exc
-            if retry_message:
-                attempt_prompt = f"{prompt.rstrip()}\n\nRetry instructions: {retry_message.strip()}"
+
+            repair_attempts += 1
+            attempt_prompt = _compose_attempt_prompt(
+                base_prompt,
+                skeleton=skeleton_json,
+                retry_message=retry_message,
+                previous_payload=raw_payload_text,
+                validation_summary=_to_json(str(exc)),
+            )
             continue
         except UserError as exc:
             msg = f"Ollama provider error: {exc}"
@@ -282,9 +508,51 @@ def run_ollama_agent(
             msg = f"Ollama request failed: {exc}"
             raise LLMResponseError(msg) from exc
 
-        payload = result.output
-        if isinstance(payload, BaseModel):
-            payload = cast(BaseModel, payload)
+        payload: Any = result.output
+
+        if target_model is not None:
+            raw_payload_dict: dict[str, Any]
+            if isinstance(payload, BaseModel):
+                raw_payload_dict = payload.model_dump(mode="python")
+            elif isinstance(payload, dict):
+                raw_payload_dict = cast(dict[str, Any], payload)
+            else:
+                try:
+                    raw_payload_dict = cast(dict[str, Any], json.loads(str(payload)))
+                except json.JSONDecodeError as exc:  # pragma: no cover - defensive
+                    msg = f"Model returned non-JSON payload: {payload!r}"
+                    raise LLMResponseError(msg) from exc
+
+            validated, coercions, errors = _attempt_model_validation(raw_payload_dict, target_model)
+            if validated is None:
+                error_display = _to_json(errors) if errors else "validation failed"
+                raw_display = _to_json(raw_payload_dict)
+                _write_failure_log(
+                    label=log_label or getattr(agent, "name", None),
+                    prompt=attempt_prompt,
+                    prompt_path=prompt_path,
+                    attempt=attempt,
+                    error=ValueError(f"Validation failed for {target_model.__name__}"),
+                    raw_payload=raw_display,
+                )
+                if attempt == max_attempts:
+                    msg = f"Model response failed validation after retries. Errors: {error_display}"
+                    raise LLMResponseError(msg)
+
+                repair_attempts += 1
+                attempt_prompt = _compose_attempt_prompt(
+                    base_prompt,
+                    skeleton=skeleton_json,
+                    retry_message=retry_message,
+                    previous_payload=raw_display,
+                    validation_summary=error_display,
+                )
+                last_exc = ValueError(error_display)
+                continue
+
+            payload = validated
+            coercions_applied.extend(coercions)
+
         created_at = time_utils.format_timestamp(time_utils.now())
         return LLMResult[_PayloadT](
             model=config.model,
@@ -292,6 +560,9 @@ def run_ollama_agent(
             prompt_hash=prompt_hash,
             created_at=created_at,
             payload=cast(_PayloadT, payload),
+            attempts=attempt,
+            repair_attempts=repair_attempts,
+            coercions_applied=coercions_applied,
         )
 
     assert last_exc is not None  # pragma: no cover - safety net
