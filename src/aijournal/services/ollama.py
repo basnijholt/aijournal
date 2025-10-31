@@ -20,7 +20,6 @@ from pydantic_ai.providers.ollama import OllamaProvider
 from aijournal.common.app_config import AppConfig
 from aijournal.common.meta import LLMResult
 from aijournal.utils import time as time_utils
-from aijournal.utils.coercion import coerce_float, coerce_int
 
 DEFAULT_OLLAMA_HOST = "http://127.0.0.1:11434"
 DEFAULT_MODEL_NAME = "gpt-oss:20b"
@@ -121,12 +120,10 @@ def build_ollama_config_from_mapping(
 
     config_host_value = str(raw_config_host) if raw_config_host else None
     resolved_host = resolve_ollama_host(host, config_host=config_host_value)
-    effective_temperature = (
-        temperature if temperature is not None else coerce_float(cfg.temperature)
-    )
-    effective_seed = seed if seed is not None else coerce_int(cfg.seed)
-    effective_max_tokens = max_tokens if max_tokens is not None else coerce_int(cfg.max_tokens)
-    effective_timeout = timeout if timeout is not None else coerce_float(cfg.timeout)
+    effective_temperature = temperature if temperature is not None else cfg.temperature
+    effective_seed = seed if seed is not None else cfg.seed
+    effective_max_tokens = max_tokens if max_tokens is not None else cfg.max_tokens
+    effective_timeout = timeout if timeout is not None else cfg.timeout
     return OllamaConfig(
         model=resolved_model,
         host=resolved_host,
