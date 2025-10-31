@@ -12,6 +12,7 @@ __pycache__/
 # Data directories (optional to track; ignored by default for privacy)
 data/
 derived/
+workspace/  # Consolidated workspace directory when workspace_root is set
 
 # OS noise
 .DS_Store

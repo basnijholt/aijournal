@@ -51,13 +51,29 @@ This builds on items 1 & 2 and pairs nicely with the resume helper. Once the det
 
 ---
 
-## 4. Workspace Directory Consolidation — ❓ Deprioritize for now
+## 4. Workspace Directory Consolidation — ✅ Completed
 
-**Pain:** The repo root currently includes multiple top-level data directories (`data/`, `derived/`, `profile/`, `config/`, `prompts/`, `logs/`, etc.). For new operators this feels noisy, and automated tooling (e.g., backups) must exclude lots of sibling paths. We want a single “workspace” folder that encapsulates all mutable artifacts and keeps the repository’s root tidy.
+**Status:** Implemented with backward-compatible global path resolver.
 
-**Proposal:** Introduce a `workspace/` (name TBD) directory that contains all runtime/stateful folders, while the root keeps only code and documentation. Existing commands should honor the new layout via a configurable base path so migrations are straightforward.
+**Implementation Summary:**
+- Added `WorkspacePaths` singleton in `utils/paths.py` with global state management
+- Extended `PathsConfig` to include optional `workspace_root` field (defaults to `None`)
+- Configured `WorkspacePaths` in `create_run_context()` to respect config setting
+- Replaced all hardcoded `root / "data"` paths with `WorkspacePaths.data()` helpers across 18 command files
+- Updated `.gitignore` to include `workspace/` pattern
+- All tests passing (207 passed)
 
-**Status:** Nice-to-have but not urgent. Current documentation, tooling, and automation assume the existing root-level layout, and refactoring paths would create churn during the ongoing prompt/schema work. Leave this item on ice until we have concrete multi-workspace or backup requirements.
+**Usage:**
+- Default behavior (backward compatible): Directories remain at root level (`data/`, `derived/`, `profile/`, etc.)
+- Workspace mode: Set `paths.workspace_root: "workspace"` in `config/config.yaml` to nest all data directories under `workspace/`
+- Migration: Existing installations continue working; new installations can opt-in by setting workspace_root
+
+**Commits:**
+1. `7f24562` - WorkspacePaths singleton infrastructure
+2. `4ac16b6` - Initialization wiring in RunContext
+3. `a14a29c` - Path replacements batch 1 (advise, facts, pack, summarize)
+4. `bc8c1b9` - Path replacements batch 2a (ingest, system + test fix)
+5. `55e3cf2` - Path replacements batch 2b (audit, characterize, index, persona, profile)
 
 **Acceptance criteria**
 
