@@ -120,3 +120,30 @@ This builds on items 1 & 2 and pairs nicely with the resume helper. Once the det
 - ✅ 2025-10-28: Deleted the unused `CaptureState` dataclass and associated imports; `run_capture` now runs on local state only. `uv run pytest` remains green.
 
 > Remember: six commits, tests green every time. Document progress in this file (append short notes under each bullet) as tasks are completed.
+
+---
+
+## 6. Structured Logging & Command Standardization — 🆕 Planned
+
+**Goal:** Make every command easier to debug (especially with AI assistance) and enforce a consistent orchestration structure without adding new behaviour.
+
+### 6.1 Structured Logging Scaffold
+- Introduce a lightweight `RunContext` object that carries `root`, `config`, fake/live flag, and a new `StructuredLogger`.
+- Logger writes NDJSON records to `derived/logs/run_trace.jsonl` with fields like `step`, `command`, `duration_ms`, `inputs_summary`, `output_path`, `llm_attempts`, `coercions`, `error`.
+- Add CLI flags (`--trace` / `--verbose-json`) to mirror log entries to stdout for manual debugging.
+- Provide `aijournal ops logs tail --last N` helper to pretty-print recent trace entries.
+- Acceptance: `advise` command uses the logger end-to-end, tests assert log file creation, documentation updated.
+
+### 6.2 Standard Command Skeleton
+- For each command module define three top-level functions: `prepare_inputs(ctx, options)`, `invoke_pipeline(ctx, prepared)`, `persist_output(ctx, result)`.
+- `CommandOptions` becomes a small Pydantic model populated by Typer parser so orchestration code receives typed input instead of raw kwargs.
+- Update one pilot command (`advise`) to this pattern, then roll out across the rest in small commits.
+- Acceptance: every command module follows the same structure; imports stay acyclic; CI/tests remain green after each migration step.
+
+### 6.3 Rollout Strategy
+1. Implement logging + context on a single command, adjust tests/docs.
+2. Adopt the standardized function names on that command, verify readability gains.
+3. Iterate across remaining commands in batches, updating modules & tests per commit.
+4. Extend docs (ARCHITECTURE + CONTRIBUTING) with the logging format and the new orchestration pattern.
+
+> Reminder: treat each stage of the rollout as its own commit with `uv run pytest` + targeted tests green before moving to the next batch.
