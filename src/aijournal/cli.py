@@ -1588,7 +1588,7 @@ def interview(
         raise typer.Exit(1)
 
     config = _load_config(root)
-    weights = config.impact_weights or {}
+    weights = config.impact_weights.model_dump(mode="python")
 
     max_questions = _coaching_max_questions(profile)
     pending_prompts = _collect_pending_interview_prompts(root)

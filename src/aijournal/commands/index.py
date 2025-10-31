@@ -614,11 +614,9 @@ def _build_embedding_backend(config: AppConfig) -> EmbeddingBackend:
 
 
 def _index_settings(config: AppConfig) -> tuple[int, float, float]:
-    index_cfg = config.index or {}
-    ann_trees = int(index_cfg.get("ann_trees") or 50)
-    search_k_factor = float(index_cfg.get("search_k_factor") or 3.0)
-    token_cfg = config.token_estimator or {}
-    char_per_token = float(token_cfg.get("char_per_token") or 4.2)
+    ann_trees = config.index.ann_trees
+    search_k_factor = config.index.search_k_factor
+    char_per_token = config.token_estimator.char_per_token
     return ann_trees, search_k_factor, char_per_token
 
 

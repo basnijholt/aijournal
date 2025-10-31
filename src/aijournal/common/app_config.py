@@ -4,35 +4,129 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
+
+
+class PathsConfig(BaseModel):
+    """Path configuration for project directories."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    data: str = "data"
+    profile: str = "profile"
+    derived: str = "derived"
+    prompts: str = "prompts"
+
+
+class ChatConfig(BaseModel):
+    """Chat service configuration."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    model: str | None = None
+    host: str | None = None
+    timeout: float | None = None
+    temperature: float | None = None
+    seed: int | None = None
+    max_tokens: int | None = None
+    max_retrieved_chunks: int | None = None
+
+
+class IndexConfig(BaseModel):
+    """Vector index configuration."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    ann_trees: int = 50
+    search_k_factor: float = 3.0
+
+
+class PersonaConfig(BaseModel):
+    """Persona generation configuration."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    token_budget: int = 1200
+    max_claims: int = 24
+    min_claims: int = 8
+
+
+class TokenEstimatorConfig(BaseModel):
+    """Token estimation configuration."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    char_per_token: float = 4.2
+
+
+class ClaimTypesWeights(BaseModel):
+    """Weights for different claim types."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    value: float = 1.4
+    goal: float = 1.4
+    boundary: float = 1.3
+    trait: float = 1.2
+    preference: float = 1.0
+    habit: float = 0.9
+    aversion: float = 1.1
+    skill: float = 1.0
+
+
+class ImpactWeightsConfig(BaseModel):
+    """Impact weights for persona characteristics."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    values_goals: float = 1.5
+    decision_style: float = 1.3
+    affect_energy: float = 1.2
+    traits: float = 1.0
+    social: float = 0.9
+    claims: float = 1.0
+    claim_types: ClaimTypesWeights = Field(default_factory=ClaimTypesWeights)
+
+
+class AdvisorConfig(BaseModel):
+    """Advisor service configuration."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    max_recos: int = 3
+    include_risks: bool = True
+
+
+class CaptureConfig(BaseModel):
+    """Capture service configuration."""
+
+    model_config = ConfigDict(extra="forbid")
 
 
 class AppConfig(BaseModel):
     """Project configuration backed by Pydantic validation."""
 
-    model_config = ConfigDict(extra="allow", arbitrary_types_allowed=True)
+    model_config = ConfigDict(extra="forbid")
 
+    # Global LLM settings
     model: str | None = None
     host: str | None = None
     temperature: float | None = None
     seed: int | None = None
     max_tokens: int | None = None
     timeout: float | None = None
-    paths: dict[str, Any] | None = None
-    impact_weights: dict[str, Any] | None = None
-    advisor: dict[str, Any] | None = None
-    token_estimator: dict[str, Any] | None = None
-    persona: dict[str, Any] | None = None
-    index: dict[str, Any] | None = None
-    chat: dict[str, Any] | None = None
-    capture: dict[str, Any] | None = None
     embedding_model: str | None = None
+
+    # Nested configurations with typed models and defaults
+    paths: PathsConfig = Field(default_factory=PathsConfig)
+    chat: ChatConfig = Field(default_factory=ChatConfig)
+    index: IndexConfig = Field(default_factory=IndexConfig)
+    persona: PersonaConfig = Field(default_factory=PersonaConfig)
+    token_estimator: TokenEstimatorConfig = Field(default_factory=TokenEstimatorConfig)
+    impact_weights: ImpactWeightsConfig = Field(default_factory=ImpactWeightsConfig)
+    advisor: AdvisorConfig = Field(default_factory=AdvisorConfig)
+    capture: CaptureConfig = Field(default_factory=CaptureConfig)
 
     def to_dict(self, *, exclude_none: bool = False) -> dict[str, Any]:
         """Return the configuration as a plain dictionary."""
-
-        base = self.model_dump(mode="python", exclude_none=exclude_none)
-        extras = getattr(self, "model_extra", None)
-        if extras:
-            base.update(extras)
-        return base
+        return self.model_dump(mode="python", exclude_none=exclude_none)

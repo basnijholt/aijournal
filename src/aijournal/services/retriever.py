@@ -76,8 +76,7 @@ class Retriever:
         self._embedder_instance: EmbeddingBackend | None = None
         self._fake_mode = os.getenv("AIJOURNAL_FAKE_OLLAMA") == "1"
 
-        index_cfg = self.config.index or {}
-        self.search_k_factor = float(index_cfg.get("search_k_factor") or 3.0)
+        self.search_k_factor = self.config.index.search_k_factor
 
     def search(
         self,
