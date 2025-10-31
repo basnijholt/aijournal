@@ -133,17 +133,20 @@ This builds on items 1 & 2 and pairs nicely with the resume helper. Once the det
 - Add CLI flags (`--trace` / `--verbose-json`) to mirror log entries to stdout for manual debugging.
 - Provide `aijournal ops logs tail --last N` helper to pretty-print recent trace entries.
 - Acceptance: `advise` command uses the logger end-to-end, tests assert log file creation, documentation updated.
+- ✅ 2025-10-30: Implemented shared `RunContext`/`StructuredLogger`, added CLI trace flags and the `ops logs tail` helper, refreshed docs/tests.
 
 ### 6.2 Standard Command Skeleton
 - For each command module define three top-level functions: `prepare_inputs(ctx, options)`, `invoke_pipeline(ctx, prepared)`, `persist_output(ctx, result)`.
 - `CommandOptions` becomes a small Pydantic model populated by Typer parser so orchestration code receives typed input instead of raw kwargs.
 - Update one pilot command (`advise`) to this pattern, then roll out across the rest in small commits.
 - Acceptance: every command module follows the same structure; imports stay acyclic; CI/tests remain green after each migration step.
+- ✅ 2025-10-30: `advise`, `summarize`, and `extract-facts` now follow the standard pipeline skeleton via `run_command_pipeline`; tests are green.
 
 ### 6.3 Rollout Strategy
 1. Implement logging + context on a single command, adjust tests/docs.
 2. Adopt the standardized function names on that command, verify readability gains.
 3. Iterate across remaining commands in batches, updating modules & tests per commit.
 4. Extend docs (ARCHITECTURE + CONTRIBUTING) with the logging format and the new orchestration pattern.
+- ✅ 2025-10-30: Logging scaffold, command skeleton, docs, and tests landed; remaining commands can migrate incrementally following the same pattern.
 
 > Reminder: treat each stage of the rollout as its own commit with `uv run pytest` + targeted tests green before moving to the next batch.

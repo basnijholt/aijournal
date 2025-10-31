@@ -197,6 +197,12 @@ Coercions applied inside the runner are emitted through `LLMResult.coercions_app
 ### 6.4 Metrics
 `LLMResult` now records `attempts`, `repair_attempts`, and `coercions_applied`. Successful calls append a telemetry row to `derived/logs/structured_metrics.jsonl`; `scripts/check_structured_metrics.py` enforces fleet-wide thresholds (repair rate ≤10%, average coercions ≤3) and is covered by dedicated tests.
 
+### 6.5 Structured Logging & Command Skeleton (Implemented)
+- **RunContext & StructuredLogger:** New shared utilities (`src/aijournal/common/context.py`, `common/logging.py`) create a per-command `RunContext` with a monotonic `run_id`, resolved config, fake/live flag, and a `StructuredLogger`. Logs append to `derived/logs/run_trace.jsonl` and can be mirrored to stdout with `--trace` (pretty) or `--verbose-json` (NDJSON) flags. Capture telemetry (`services/capture/__init__.py`) now reuses the same `StructuredLogger` to avoid duplicate writers.
+- **Standardized command pipeline:** `run_command_pipeline` (`common/command_runner.py`) wraps the three-phase pattern—`prepare_inputs`, `invoke_pipeline`, `persist_output`—and automatically emits `command_start`, `start/end/error` span events, and `command_complete`. The helper also serializes Pydantic models safely (callables are rendered by name, `Path` objects become strings).
+- **Pilot rollout:** High-complexity commands (`commands/advise.py`, `commands/summarize.py`, `commands/facts.py`) now expose `Options` models plus `prepare_inputs`/`invoke_pipeline`/`persist_output` helpers. CLI entrypoints use `_run_context(...)` to pass a typed context instead of mingling Typer options with orchestration logic. Capture stages keep calling the compatibility wrappers (`run_advise`, `run_summarize`, `run_facts`), which delegate into the new pipeline code.
+- **Trace inspection:** A follow-up CLI helper (`aijournal ops logs tail`) is recommended so users can read the latest trace entries without opening the JSONL file manually.
+
 ## 7. Scientific Credibility & Validation Plan
 The L1→L4 memory hierarchy aligns with contemporary personality science when treated as a measurement system.
 

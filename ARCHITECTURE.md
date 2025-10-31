@@ -75,8 +75,9 @@ aijournal/
 
 ### 2.2 Core Components
 
-- **CLI (`src/aijournal/cli.py`)** – Thin Typer glue that wires user-facing commands to the orchestration layer. It exposes everyday verbs (`init`, `capture`, `chat`, `advise`, `status`, `serve chat`, `export pack`) while advanced utilities are namespaced under `ops.*`.
-- **Commands (`src/aijournal/commands/`)** – Feature-specific runners that orchestrate file I/O, pipelines, and error handling for each CLI surface (capture, ops.pipeline, ops.profile, ops.index, ops.persona, ops.feedback, ops.system, ops.dev, etc.).
+- **CLI (`src/aijournal/cli.py`)** – Thin Typer glue that wires user-facing commands to the orchestration layer. It exposes everyday verbs (`init`, `capture`, `chat`, `advise`, `status`, `serve chat`, `export pack`) while advanced utilities are namespaced under `ops.*`. Global flags `--trace` and `--verbose-json` mirror structured trace events to stdout for debugging.
+- **Commands (`src/aijournal/commands/`)** – Feature-specific runners that orchestrate file I/O, pipelines, and error handling for each CLI surface (capture, ops.pipeline, ops.profile, ops.index, ops.persona, ops.feedback, ops.system, ops.dev, etc.). Complex commands now follow a standard three-phase skeleton (`prepare_inputs`, `invoke_pipeline`, `persist_output`) driven by `run_command_pipeline`.
+- **Common context (`src/aijournal/common/context.py`, `common/logging.py`, `common/command_runner.py`)** – Provides `RunContext` objects that resolve config, fake/live flags, and a shared `StructuredLogger` writing NDJSON entries to `derived/logs/run_trace.jsonl`. Additional sinks enable pretty or JSON traces when `--trace`/`--verbose-json` is used.
 - **Pipelines (`src/aijournal/pipelines/`)** – Deterministic workflows that combine services, prompts, and validation for a single use case (summaries, facts, characterization, packs, advice). Pipelines avoid Typer and file-system concerns so they remain testable.
 - **Models (`src/aijournal/models/`)** – Pydantic schemas that validate every authoritative and derived artifact before it hits disk.
 - **Services (`src/aijournal/services/`)** – Ollama client, retrieval/indexing, characterization, consolidation, chat orchestrator, advisor, capture orchestrator, and feedback handlers.
