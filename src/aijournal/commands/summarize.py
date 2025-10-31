@@ -30,7 +30,7 @@ from aijournal.services.ollama import (
     run_ollama_agent,
 )
 from aijournal.utils import time as time_utils
-from aijournal.utils.paths import resolve_prompt_path
+from aijournal.utils.paths import WorkspacePaths, resolve_prompt_path
 
 DEFAULT_PROMPTS = {
     "summarize_day.md": (
@@ -164,7 +164,8 @@ def _entries_to_payload(entries: Sequence[NormalizedEntry]) -> list[dict[str, An
 
 
 def _load_normalized_entries(root: Path, day: str) -> list[NormalizedEntry]:
-    folder = root / "data" / "normalized" / day
+    del root  # Use WorkspacePaths instead
+    folder = WorkspacePaths.data() / "normalized" / day
     if not folder.exists():
         return []
     entries: list[NormalizedEntry] = []
@@ -174,7 +175,8 @@ def _load_normalized_entries(root: Path, day: str) -> list[NormalizedEntry]:
 
 
 def _derived_summary_path(root: Path, day: str) -> Path:
-    return root / "derived" / "summaries" / f"{day}.yaml"
+    del root  # Use WorkspacePaths instead
+    return WorkspacePaths.derived() / "summaries" / f"{day}.yaml"
 
 
 def _hash_prompt(prompt_path: str) -> str | None:

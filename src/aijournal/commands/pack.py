@@ -25,6 +25,7 @@ from aijournal.io.yaml_io import dump_yaml
 from aijournal.pipelines import index as index_pipeline
 from aijournal.pipelines import pack as pack_pipeline
 from aijournal.utils import time as time_utils
+from aijournal.utils.paths import WorkspacePaths
 
 
 class PackOptions(BaseModel):
@@ -257,7 +258,8 @@ def run_pack_command(ctx: RunContext, options: PackOptions) -> None:
 
 
 def _latest_normalized_day(root: Path) -> str | None:
-    base = root / "data" / "normalized"
+    del root  # Use WorkspacePaths instead
+    base = WorkspacePaths.data() / "normalized"
     if not base.exists():
         return None
     candidates = sorted(p.name for p in base.iterdir() if p.is_dir())
