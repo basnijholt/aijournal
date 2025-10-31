@@ -340,7 +340,7 @@ def run_ingest_command(ctx: RunContext, options: IngestOptions) -> None:
 def _prepare_ingest_inputs(ctx: RunContext, options: IngestOptions) -> IngestPrepared:
     if options.limit is not None and options.limit <= 0:
         typer.secho("--limit must be positive when provided.", fg=typer.colors.RED, err=True)
-        ctx.emit({"event": "invalid_option", "option": "limit"})
+        ctx.emit(event="invalid_option", option="limit")
         raise typer.Exit(1)
 
     files = _discover_markdown_files(options.sources)
@@ -350,7 +350,7 @@ def _prepare_ingest_inputs(ctx: RunContext, options: IngestOptions) -> IngestPre
             fg=typer.colors.RED,
             err=True,
         )
-        ctx.emit({"event": "no_markdown_files"})
+        ctx.emit(event="no_markdown_files")
         raise typer.Exit(1)
     if options.limit is not None:
         files = files[: options.limit]
@@ -361,12 +361,10 @@ def _prepare_ingest_inputs(ctx: RunContext, options: IngestOptions) -> IngestPre
 
     config = dict(ctx.config)
     ctx.emit(
-        {
-            "event": "prepare_ingest",
-            "files": len(files),
-            "snapshot": options.snapshot,
-            "source_type": options.source_type,
-        }
+        event="prepare_ingest",
+        files=len(files),
+        snapshot=options.snapshot,
+        source_type=options.source_type,
     )
 
     return IngestPrepared(
@@ -395,14 +393,14 @@ def _invoke_ingest_pipeline(ctx: RunContext, prepared: IngestPrepared) -> Ingest
                 fg=typer.colors.RED,
                 err=True,
             )
-            ctx.emit({"event": "ingest_agent_error", "error": str(exc)})
+            ctx.emit(event="ingest_agent_error", error=str(exc))
             raise typer.Exit(1)
 
     logs: list[IngestLogEntry] = []
 
     def log(level: str, message: str) -> None:
         logs.append(IngestLogEntry(level=level, message=message))
-        ctx.emit({"event": "ingest_log", "level": level, "message": message})
+        ctx.emit(event="ingest_log", level=level, message=message)
 
     manifest_entries = prepared.manifest_entries
     known_hashes = dict(prepared.known_hashes)
@@ -492,14 +490,7 @@ def _invoke_ingest_pipeline(ctx: RunContext, prepared: IngestPrepared) -> Ingest
         log("info", f"Ingested {file} -> {normalized_path}")
         ingested += 1
 
-    ctx.emit(
-        {
-            "event": "ingest_complete",
-            "ingested": ingested,
-            "skipped": skipped,
-            "errors": errors,
-        }
-    )
+    ctx.emit(event="ingest_complete", ingested=ingested, skipped=skipped, errors=errors)
 
     return IngestPipelineResult(
         ingested=ingested,
@@ -527,7 +518,7 @@ def _persist_ingest_output(ctx: RunContext, result: IngestPipelineResult) -> Non
         f"Ingest summary: {result.ingested} new, {result.skipped} skipped, {result.errors} errors."
     )
     typer.echo(summary)
-    ctx.emit({"event": "persist_complete", "summary": summary})
+    ctx.emit(event="persist_complete", summary=summary)
 
     if result.errors:
         raise typer.Exit(1)

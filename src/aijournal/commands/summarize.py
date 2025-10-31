@@ -213,7 +213,7 @@ def prepare_inputs(ctx: RunContext, options: DailySummaryOptions) -> DailySummar
     entries = _load_normalized_entries(ctx.root, options.date)
     if not entries:
         typer.secho(f"No normalized entries for {options.date}", fg=typer.colors.RED, err=True)
-        ctx.emit({"event": "command_failed", "reason": "missing_entries"})
+        ctx.emit(event="command_failed", reason="missing_entries")
         raise typer.Exit(1)
 
     timeout_value = _validate_timeout(options.timeout)
@@ -223,12 +223,10 @@ def prepare_inputs(ctx: RunContext, options: DailySummaryOptions) -> DailySummar
         options.progress,
     )
     ctx.emit(
-        {
-            "event": "prepare_summary",
-            "entries": len(entries),
-            "timeout": timeout_value,
-            "retries": options.retries,
-        }
+        event="prepare_summary",
+        entries=len(entries),
+        timeout=timeout_value,
+        retries=options.retries,
     )
     return DailySummaryPrepared(
         date=options.date,
@@ -252,11 +250,9 @@ def invoke_pipeline(ctx: RunContext, prepared: DailySummaryPrepared) -> DailySum
     if not ctx.use_fake_llm:
         model_name = build_ollama_config_from_mapping(config).model
     ctx.emit(
-        {
-            "event": "pipeline_complete",
-            "bullets": len(summary.bullets),
-            "highlights": len(summary.highlights),
-        }
+        event="pipeline_complete",
+        bullets=len(summary.bullets),
+        highlights=len(summary.highlights),
     )
     return DailySummaryResult(summary=summary, date=prepared.date, model_name=model_name)
 
@@ -270,7 +266,7 @@ def persist_output(ctx: RunContext, result: DailySummaryResult) -> Path:
         data=result.summary,
     )
     save_artifact(summary_path, artifact)
-    ctx.emit({"event": "artifact_written", "path": str(summary_path)})
+    ctx.emit(event="artifact_written", path=str(summary_path))
     return summary_path
 
 
@@ -361,5 +357,5 @@ def run_summarize_command(ctx: RunContext, options: DailySummaryOptions) -> Path
         )
     except LLMResponseError as exc:
         typer.secho(f"Summarize failed: {exc}", fg=typer.colors.RED, err=True)
-        ctx.emit({"event": "command_failed", "reason": "llm_response_error", "error": str(exc)})
+        ctx.emit(event="command_failed", reason="llm_response_error", error=str(exc))
         raise typer.Exit(1) from exc

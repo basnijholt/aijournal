@@ -25,14 +25,14 @@ def run_command_pipeline(
     invoke_pipeline: Callable[[RunContext, PreparedT], ResultT],
     persist_output: Callable[[RunContext, ResultT], OutputT],
 ) -> OutputT:
-    ctx.emit({"event": "command_start", "options": _summarize(options)})
+    ctx.emit(event="command_start", options=_summarize(options))
     with ctx.span("prepare_inputs"):
         prepared = prepare_inputs(ctx, options)
     with ctx.span("invoke_pipeline"):
         result = invoke_pipeline(ctx, prepared)
     with ctx.span("persist_output"):
         output = persist_output(ctx, result)
-    ctx.emit({"event": "command_complete", "output": _summarize(output)})
+    ctx.emit(event="command_complete", output=_summarize(output))
     return output
 
 

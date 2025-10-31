@@ -66,7 +66,7 @@ def prepare_inputs(ctx: RunContext, options: PersonaBuildOptions) -> PersonaPrep
             fg=typer.colors.RED,
             err=True,
         )
-        ctx.emit({"event": "command_failed", "reason": "no_profile_data"})
+        ctx.emit(event="command_failed", reason="no_profile_data")
         raise typer.Exit(1)
 
     config_mapping = dict(ctx.config)
@@ -106,13 +106,11 @@ def prepare_inputs(ctx: RunContext, options: PersonaBuildOptions) -> PersonaPrep
     now_dt = time_utils.now()
 
     ctx.emit(
-        {
-            "event": "prepare_summary",
-            "token_budget": token_budget,
-            "max_claims": max_claims,
-            "min_claims": min_claims,
-            "claims": len(options.claims),
-        }
+        event="prepare_summary",
+        token_budget=token_budget,
+        max_claims=max_claims,
+        min_claims=min_claims,
+        claims=len(options.claims),
     )
 
     claims_copy = [claim.model_copy(deep=True) for claim in options.claims]
@@ -194,12 +192,10 @@ def invoke_pipeline(ctx: RunContext, prepared: PersonaPrepared) -> PersonaResult
         changed = True
 
     ctx.emit(
-        {
-            "event": "pipeline_complete",
-            "claim_count": len(persona_claim_models),
-            "trimmed": len(selection.trimmed_ids),
-            "changed": changed,
-        }
+        event="pipeline_complete",
+        claim_count=len(persona_claim_models),
+        trimmed=len(selection.trimmed_ids),
+        changed=changed,
     )
     return PersonaResult(artifact=artifact, path=persona_path, changed=changed)
 

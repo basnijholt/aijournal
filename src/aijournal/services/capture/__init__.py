@@ -253,7 +253,11 @@ def _make_telemetry_logger(
         sinks=sinks,
         enabled=True,
     )
-    return logger.emit, log_path
+
+    def emit_wrapper(event: dict[str, object]) -> None:
+        logger.emit(**event)
+
+    return emit_wrapper, log_path
 
 
 def _capture_result_path(root: Path, run_id: str) -> Path:

@@ -62,7 +62,7 @@ def prepare_inputs(ctx: RunContext, options: AdviceOptions) -> AdvicePrepared:
     claims = [claim.model_copy(deep=True) for claim in claim_models]
     if not profile and not claims:
         typer.secho("No profile data", fg=typer.colors.RED, err=True)
-        ctx.emit({"event": "command_failed", "reason": "no_profile"})
+        ctx.emit(event="command_failed", reason="no_profile")
         raise typer.Exit(1)
 
     weights = ctx.config.get("impact_weights", {}) if isinstance(ctx.config, dict) else {}
@@ -78,12 +78,10 @@ def prepare_inputs(ctx: RunContext, options: AdviceOptions) -> AdvicePrepared:
         pending_prompts=pending_prompts,
     )
     ctx.emit(
-        {
-            "event": "prepare_summary",
-            "claims": len(claims),
-            "rankings": len(rankings),
-            "pending_prompts": len(pending_prompts),
-        }
+        event="prepare_summary",
+        claims=len(claims),
+        rankings=len(rankings),
+        pending_prompts=len(pending_prompts),
     )
     return AdvicePrepared(
         question=options.question,
@@ -110,11 +108,9 @@ def invoke_pipeline(ctx: RunContext, prepared: AdvicePrepared) -> AdviceResult:
         model_name = build_ollama_config_from_mapping(config).model
     day = time_utils.created_date(time_utils.format_timestamp(time_utils.now()))
     ctx.emit(
-        {
-            "event": "pipeline_complete",
-            "recommendations": len(advice_card.recommendations),
-            "confidence": advice_card.confidence,
-        }
+        event="pipeline_complete",
+        recommendations=len(advice_card.recommendations),
+        confidence=advice_card.confidence,
     )
     return AdviceResult(
         card=advice_card,
@@ -135,7 +131,7 @@ def persist_output(ctx: RunContext, result: AdviceResult) -> Path:
             data=result.card,
         ),
     )
-    ctx.emit({"event": "artifact_written", "path": str(advice_path)})
+    ctx.emit(event="artifact_written", path=str(advice_path))
     return advice_path
 
 

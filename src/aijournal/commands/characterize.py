@@ -97,7 +97,7 @@ def run_characterize_command(
         entries_with_paths = _load_normalized_entries_with_paths(root, opts.date)
         if not entries_with_paths:
             typer.secho(f"No normalized entries for {opts.date}", fg=typer.colors.RED, err=True)
-            ctx.emit({"event": "command_failed", "reason": "missing_entries"})
+            ctx.emit(event="command_failed", reason="missing_entries")
             raise typer.Exit(1)
 
         timeout_value = _validate_timeout(opts.timeout)
@@ -111,11 +111,9 @@ def run_characterize_command(
         _log_entry_progress(f"Characterizing entries for {opts.date}", entries, opts.progress)
 
         ctx.emit(
-            {
-                "event": "prepare_summary",
-                "entry_count": len(entries_with_paths),
-                "claims": len(claim_models),
-            }
+            event="prepare_summary",
+            entry_count=len(entries_with_paths),
+            claims=len(claim_models),
         )
 
         # Replace timeout in options with validated value
@@ -151,7 +149,7 @@ def run_characterize_command(
             )
         except LLMResponseError as exc:
             typer.secho(f"Characterize failed: {exc}", fg=typer.colors.RED, err=True)
-            ctx.emit({"event": "command_failed", "reason": "llm_error", "error": str(exc)})
+            ctx.emit(event="command_failed", reason="llm_error", error=str(exc))
             raise typer.Exit(1)
 
         interview_prompts = facts_pipeline.merge_unique(
@@ -213,12 +211,10 @@ def run_characterize_command(
         )
 
         ctx.emit(
-            {
-                "event": "pipeline_complete",
-                "claims": len(proposals_model.claims),
-                "interview_prompts": len(interview_prompts),
-                "batch_id": batch_id,
-            }
+            event="pipeline_complete",
+            claims=len(proposals_model.claims),
+            interview_prompts=len(interview_prompts),
+            batch_id=batch_id,
         )
         return CharacterizeResult(artifact=artifact, batch_path=batch_path)
 

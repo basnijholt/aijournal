@@ -39,7 +39,7 @@ class InitResult:
 def prepare_inputs(ctx: RunContext, options: InitOptions) -> InitPrepared:
     base = options.path
     base.mkdir(parents=True, exist_ok=True)
-    ctx.emit({"event": "prepare_summary", "path": str(base)})
+    ctx.emit(event="prepare_summary", path=str(base))
     return InitPrepared(base=base)
 
 
@@ -55,11 +55,9 @@ def invoke_pipeline(ctx: RunContext, prepared: InitPrepared) -> InitResult:
     created_files, total_files = ensure_seed_files(prepared.base)
 
     ctx.emit(
-        {
-            "event": "pipeline_complete",
-            "created_dirs": created_dirs,
-            "created_files": created_files,
-        }
+        event="pipeline_complete",
+        created_dirs=created_dirs,
+        created_files=created_files,
     )
     return InitResult(
         base=prepared.base,

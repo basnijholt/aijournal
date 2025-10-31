@@ -121,7 +121,7 @@ def prepare_inputs(ctx: RunContext, options: FactsOptions) -> FactsPrepared:
     entries = _load_normalized_entries(ctx.root, options.date)
     if not entries:
         typer.secho(f"No normalized entries for {options.date}", fg=typer.colors.RED, err=True)
-        ctx.emit({"event": "command_failed", "reason": "missing_entries"})
+        ctx.emit(event="command_failed", reason="missing_entries")
         raise typer.Exit(1)
 
     timeout_value = _validate_timeout(options.timeout)
@@ -141,13 +141,11 @@ def prepare_inputs(ctx: RunContext, options: FactsOptions) -> FactsPrepared:
         ]
     preview_builder = options.preview_builder or (lambda *_args, **_kwargs: None)
     ctx.emit(
-        {
-            "event": "prepare_summary",
-            "entries": len(entries),
-            "claims": len(claim_models),
-            "timeout": timeout_value,
-            "retries": options.retries,
-        }
+        event="prepare_summary",
+        entries=len(entries),
+        claims=len(claim_models),
+        timeout=timeout_value,
+        retries=options.retries,
     )
     return FactsPrepared(
         date=options.date,
@@ -202,11 +200,9 @@ def invoke_pipeline(ctx: RunContext, prepared: FactsPrepared) -> FactsResult:
     )
     facts_data.preview = preview
     ctx.emit(
-        {
-            "event": "pipeline_complete",
-            "facts": len(facts_data.facts),
-            "claim_proposals": len(facts_data.claim_proposals),
-        }
+        event="pipeline_complete",
+        facts=len(facts_data.facts),
+        claim_proposals=len(facts_data.claim_proposals),
     )
     return FactsResult(microfacts=facts_data, preview=preview, date=prepared.date)
 
@@ -226,7 +222,7 @@ def persist_output(ctx: RunContext, result: FactsResult) -> FactsOutput:
             data=result.microfacts,
         ),
     )
-    ctx.emit({"event": "artifact_written", "path": str(facts_path)})
+    ctx.emit(event="artifact_written", path=str(facts_path))
     return FactsOutput(preview=result.preview, path=facts_path)
 
 
@@ -241,7 +237,7 @@ def run_facts_command(ctx: RunContext, options: FactsOptions) -> FactsOutput:
         )
     except LLMResponseError as exc:
         typer.secho(f"Facts extraction failed: {exc}", fg=typer.colors.RED, err=True)
-        ctx.emit({"event": "command_failed", "reason": "llm_response_error", "error": str(exc)})
+        ctx.emit(event="command_failed", reason="llm_response_error", error=str(exc))
         raise typer.Exit(1) from exc
 
 

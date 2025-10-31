@@ -256,7 +256,7 @@ def run_system_doctor_cli() -> None:
 
     def _invoke(inner_ctx: RunContext, __: SystemDoctorPrepared) -> SystemDoctorResult:
         diagnostics = run_system_doctor(inner_ctx.root)
-        inner_ctx.emit({"event": "pipeline_complete", "ok": diagnostics.get("ok", False)})
+        inner_ctx.emit(event="pipeline_complete", ok=diagnostics.get("ok", False))
         return SystemDoctorResult(diagnostics=diagnostics)
 
     def _persist(_: RunContext, result: SystemDoctorResult) -> None:
@@ -316,10 +316,8 @@ def run_system_status_cli() -> None:
     def _invoke(inner_ctx: RunContext, __: SystemStatusPrepared) -> SystemStatusResult:
         summary = run_status_summary(inner_ctx.root)
         inner_ctx.emit(
-            {
-                "event": "pipeline_complete",
-                "persona_status": summary.get("persona", {}).get("status"),
-            }
+            event="pipeline_complete",
+            persona_status=summary.get("persona", {}).get("status"),
         )
         return SystemStatusResult(summary=summary)
 

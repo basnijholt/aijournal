@@ -146,19 +146,17 @@ def run_audit_provenance(*, root: Path, fix: bool) -> list[AuditFileResult]:
 
 
 def prepare_inputs(ctx: RunContext, options: AuditOptions) -> AuditPrepared:
-    ctx.emit({"event": "prepare_summary", "fix": options.fix})
+    ctx.emit(event="prepare_summary", fix=options.fix)
     return AuditPrepared(fix=options.fix)
 
 
 def invoke_pipeline(ctx: RunContext, prepared: AuditPrepared) -> AuditResult:
     findings = run_audit_provenance(root=ctx.root, fix=prepared.fix)
     ctx.emit(
-        {
-            "event": "pipeline_complete",
-            "fix": prepared.fix,
-            "files_with_issues": len(findings),
-            "total_spans": sum(result.count for result in findings),
-        }
+        event="pipeline_complete",
+        fix=prepared.fix,
+        files_with_issues=len(findings),
+        total_spans=sum(result.count for result in findings),
     )
     return AuditResult(results=findings, fix=prepared.fix)
 
