@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import re
 from collections.abc import Iterable
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from hashlib import sha256
 from pathlib import Path
@@ -12,9 +13,11 @@ from typing import Any
 
 import typer
 import yaml
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 from pydantic_ai import Agent
 
+from aijournal.common.command_runner import run_command_pipeline
+from aijournal.common.context import RunContext, create_run_context
 from aijournal.ingest_agent import (
     IngestResult,
     IngestSection,
@@ -30,6 +33,40 @@ from aijournal.utils import time as time_utils
 from aijournal.utils.paths import normalized_entry_path
 
 MARKDOWN_SUFFIXES = {".md", ".markdown"}
+
+
+class IngestOptions(BaseModel):
+    sources: list[Path]
+    source_type: str
+    limit: int | None = None
+    snapshot: bool = False
+
+
+@dataclass(slots=True)
+class IngestPrepared:
+    files: list[Path]
+    config: dict[str, Any]
+    manifest_path: Path
+    manifest_entries: list[ManifestEntry]
+    known_hashes: dict[str, ManifestEntry]
+    source_type: str
+    snapshot: bool
+
+
+@dataclass(slots=True)
+class IngestLogEntry:
+    level: str
+    message: str
+
+
+@dataclass(slots=True)
+class IngestPipelineResult:
+    ingested: int
+    skipped: int
+    errors: int
+    manifest_entries: list[ManifestEntry]
+    logs: list[IngestLogEntry]
+    manifest_path: Path
 
 
 def _load_yaml(path: Path) -> dict[str, Any]:
@@ -268,66 +305,131 @@ def run_ingest(
     snapshot: bool,
 ) -> None:
     """Ingest Markdown files into normalized YAML entries."""
-    if limit is not None and limit <= 0:
-        typer.secho("--limit must be positive when provided.", fg=typer.colors.RED, err=True)
-        raise typer.Exit(1)
 
     root = Path.cwd()
-    files = _discover_markdown_files(sources)
+    config = _load_config(root)
+    ctx = create_run_context(
+        command="ingest",
+        root=root,
+        config=config,
+        use_fake_llm=_use_fake_llm(),
+        trace=False,
+        verbose_json=False,
+    )
+
+    options = IngestOptions(
+        sources=[Path(path) for path in sources],
+        source_type=source_type,
+        limit=limit,
+        snapshot=snapshot,
+    )
+
+    run_ingest_command(ctx, options)
+
+
+def run_ingest_command(ctx: RunContext, options: IngestOptions) -> None:
+    run_command_pipeline(
+        ctx,
+        options,
+        prepare_inputs=_prepare_ingest_inputs,
+        invoke_pipeline=_invoke_ingest_pipeline,
+        persist_output=_persist_ingest_output,
+    )
+
+
+def _prepare_ingest_inputs(ctx: RunContext, options: IngestOptions) -> IngestPrepared:
+    if options.limit is not None and options.limit <= 0:
+        typer.secho("--limit must be positive when provided.", fg=typer.colors.RED, err=True)
+        ctx.emit({"event": "invalid_option", "option": "limit"})
+        raise typer.Exit(1)
+
+    files = _discover_markdown_files(options.sources)
     if not files:
         typer.secho(
             "No Markdown files found in the provided sources.",
             fg=typer.colors.RED,
             err=True,
         )
+        ctx.emit({"event": "no_markdown_files"})
         raise typer.Exit(1)
-    if limit is not None:
-        files = files[:limit]
+    if options.limit is not None:
+        files = files[: options.limit]
 
-    config = _load_config(root)
-    llm_config = build_ollama_config_from_mapping(config)
-    model_name = llm_config.model
-    is_fake = _use_fake_llm()
+    manifest_path = _manifest_path(ctx.root)
+    manifest_entries = _load_manifest(manifest_path)
+    known_hashes = {entry.hash: entry for entry in manifest_entries if entry.hash}
+
+    config = dict(ctx.config)
+    ctx.emit(
+        {
+            "event": "prepare_ingest",
+            "files": len(files),
+            "snapshot": options.snapshot,
+            "source_type": options.source_type,
+        }
+    )
+
+    return IngestPrepared(
+        files=files,
+        config=config,
+        manifest_path=manifest_path,
+        manifest_entries=list(manifest_entries),
+        known_hashes=known_hashes,
+        source_type=options.source_type,
+        snapshot=options.snapshot,
+    )
+
+
+def _invoke_ingest_pipeline(ctx: RunContext, prepared: IngestPrepared) -> IngestPipelineResult:
+    fake_mode = ctx.use_fake_llm
+    llm_config = build_ollama_config_from_mapping(prepared.config)
+    model_name = llm_config.model or "unknown-model"
+
     agent: Agent | None = None
-    if not is_fake:
+    if not fake_mode:
         try:
-            agent = build_ingest_agent(config, model=model_name)
+            agent = build_ingest_agent(prepared.config, model=model_name)
         except Exception as exc:  # pragma: no cover - initialization errors are rare
             typer.secho(
                 f"Unable to initialize Ollama ingestion agent: {exc}",
                 fg=typer.colors.RED,
                 err=True,
             )
+            ctx.emit({"event": "ingest_agent_error", "error": str(exc)})
             raise typer.Exit(1)
 
-    manifest_path = _manifest_path(root)
-    manifest_entries = _load_manifest(manifest_path)
-    known_hashes = {entry.hash: entry for entry in manifest_entries if entry.hash}
+    logs: list[IngestLogEntry] = []
 
+    def log(level: str, message: str) -> None:
+        logs.append(IngestLogEntry(level=level, message=message))
+        ctx.emit({"event": "ingest_log", "level": level, "message": message})
+
+    manifest_entries = prepared.manifest_entries
+    known_hashes = dict(prepared.known_hashes)
     ingested = 0
     skipped = 0
     errors = 0
-    raw_dir = root / "data" / "raw"
+    raw_dir = ctx.root / "data" / "raw"
 
-    for file in files:
+    for file in prepared.files:
         try:
             raw_bytes = file.read_bytes()
         except OSError as exc:
             errors += 1
-            typer.secho(f"Failed to read {file}: {exc}", fg=typer.colors.RED, err=True)
+            log("error", f"Failed to read {file}: {exc}")
             continue
 
         digest = sha256(raw_bytes).hexdigest()
         if digest in known_hashes:
             skipped += 1
-            typer.echo(f"Skipping {file} (already ingested)")
+            log("skip", f"Skipping {file} (already ingested)")
             continue
 
         try:
             text = raw_bytes.decode("utf-8")
         except UnicodeDecodeError as exc:
             errors += 1
-            typer.secho(f"Failed to decode {file}: {exc}", fg=typer.colors.RED, err=True)
+            log("error", f"Failed to decode {file}: {exc}")
             continue
 
         try:
@@ -335,13 +437,14 @@ def run_ingest(
         except ValueError:
             frontmatter_data = {}
             fallback_sections = _scan_headings(text)
+
         fallback_tags = _extract_frontmatter_tags(frontmatter_data)
         fallback_summary = frontmatter_data.get("summary")
         if fallback_summary is not None:
             fallback_summary = str(fallback_summary)
 
         try:
-            if is_fake:
+            if fake_mode:
                 structured = _fake_structured_entry(file)
             else:
                 assert agent is not None
@@ -349,49 +452,82 @@ def run_ingest(
             normalized, date_str = _normalized_from_structured(
                 structured,
                 source_path=file,
-                root=root,
+                root=ctx.root,
                 digest=digest,
-                source_type=source_type,
+                source_type=prepared.source_type,
                 fallback_sections=fallback_sections,
                 fallback_tags=fallback_tags,
                 fallback_summary=fallback_summary,
             )
         except Exception as exc:
             errors += 1
-            typer.secho(f"Failed to ingest {file}: {exc}", fg=typer.colors.RED, err=True)
+            log("error", f"Failed to ingest {file}: {exc}")
             continue
 
-        normalized_path = normalized_entry_path(root, date_str, normalized["id"])
+        normalized_path = normalized_entry_path(ctx.root, date_str, normalized["id"])
         _write_yaml_if_changed(
             normalized_path,
             normalized,
             schema="normalized_entry",
         )
 
-        if snapshot:
+        if prepared.snapshot:
             raw_dir.mkdir(parents=True, exist_ok=True)
             (raw_dir / f"{digest}.md").write_bytes(raw_bytes)
 
         manifest_entry = ManifestEntry(
             hash=digest,
-            path=_relative_source_path(file, root),
-            normalized=_relative_source_path(normalized_path, root),
-            source_type=source_type,
+            path=_relative_source_path(file, ctx.root),
+            normalized=_relative_source_path(normalized_path, ctx.root),
+            source_type=prepared.source_type,
             ingested_at=time_utils.format_timestamp(time_utils.now()),
             created_at=str(normalized["created_at"]),
             id=str(normalized["id"]),
             tags=list(normalized.get("tags", [])),
-            model=model_name if not is_fake else "fake-ollama",
+            model="fake-ollama" if fake_mode else model_name,
         )
         manifest_entries.append(manifest_entry)
         known_hashes[digest] = manifest_entry
 
-        typer.echo(f"Ingested {file} -> {normalized_path}")
+        log("info", f"Ingested {file} -> {normalized_path}")
         ingested += 1
 
-    if ingested:
-        _write_manifest(manifest_path, manifest_entries)
+    ctx.emit(
+        {
+            "event": "ingest_complete",
+            "ingested": ingested,
+            "skipped": skipped,
+            "errors": errors,
+        }
+    )
 
-    typer.echo(f"Ingest summary: {ingested} new, {skipped} skipped, {errors} errors.")
-    if errors:
+    return IngestPipelineResult(
+        ingested=ingested,
+        skipped=skipped,
+        errors=errors,
+        manifest_entries=manifest_entries,
+        logs=logs,
+        manifest_path=prepared.manifest_path,
+    )
+
+
+def _persist_ingest_output(ctx: RunContext, result: IngestPipelineResult) -> None:
+    for entry in result.logs:
+        if entry.level == "error":
+            typer.secho(entry.message, fg=typer.colors.RED, err=True)
+        elif entry.level == "skip":
+            typer.secho(entry.message, fg=typer.colors.YELLOW)
+        else:
+            typer.echo(entry.message)
+
+    if result.ingested:
+        _write_manifest(result.manifest_path, result.manifest_entries)
+
+    summary = (
+        f"Ingest summary: {result.ingested} new, {result.skipped} skipped, {result.errors} errors."
+    )
+    typer.echo(summary)
+    ctx.emit({"event": "persist_complete", "summary": summary})
+
+    if result.errors:
         raise typer.Exit(1)

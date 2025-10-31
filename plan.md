@@ -141,6 +141,7 @@ This builds on items 1 & 2 and pairs nicely with the resume helper. Once the det
 - Update one pilot command (`advise`) to this pattern, then roll out across the rest in small commits.
 - Acceptance: every command module follows the same structure; imports stay acyclic; CI/tests remain green after each migration step.
 - ✅ 2025-10-30: `advise`, `summarize`, and `extract-facts` now follow the standard pipeline skeleton via `run_command_pipeline`; tests are green.
+- ✅ 2025-10-31: Completed rollout to remaining command surfaces including `index` and `ingest`; all CLI modules now share the standardized skeleton.
 
 ### 6.3 Rollout Strategy
 1. Implement logging + context on a single command, adjust tests/docs.
