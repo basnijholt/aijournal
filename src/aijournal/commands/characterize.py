@@ -29,7 +29,6 @@ from aijournal.commands.summarize import (
     _invoke_structured_llm,
     _json_block,
     _log_entry_progress,
-    _structured_call_with_retry,
 )
 from aijournal.common.command_runner import run_command_pipeline
 from aijournal.common.context import RunContext, create_run_context
@@ -249,7 +248,7 @@ def run_characterize(
     ],
     normalize_claims: Callable[..., list[ClaimProposal]] | None = None,
     invoke_structured_llm: Callable[..., BaseModel] = _invoke_structured_llm,
-    structured_call: Callable[..., BaseModel] = _structured_call_with_retry,
+    structured_call: Callable[..., BaseModel] | None = None,
 ) -> Path:
     """Derive pending profile updates from normalized entries."""
     if normalize_claims is None:
@@ -275,13 +274,15 @@ def run_characterize(
         progress=progress,
     )
 
+    structured = structured_call or (lambda func, *, retries, label: func())
+
     return run_characterize_command(
         ctx,
         options,
         build_claim_preview=build_claim_preview,
         normalize_claims=normalize_fn,
         invoke_structured_llm=invoke_structured_llm,
-        structured_call=structured_call,
+        structured_call=structured,
     )
 
 
