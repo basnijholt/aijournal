@@ -21,6 +21,7 @@ from aijournal.commands.summarize import (
     _log_entry_progress,
     _validate_timeout,
 )
+from aijournal.common.app_config import AppConfig
 from aijournal.common.command_runner import run_command_pipeline
 from aijournal.common.context import RunContext, create_run_context
 from aijournal.common.meta import Artifact, ArtifactKind
@@ -62,7 +63,7 @@ class ProfileSuggestPrepared:
     entries: list[NormalizedEntry]
     profile: dict[str, Any]
     claims: list[ClaimAtom]
-    config: dict[str, Any]
+    config: AppConfig
 
 
 @dataclass(slots=True)
@@ -236,7 +237,7 @@ def run_profile_suggest_command(
             entries=list(entries),
             profile=profile,
             claims=claims,
-            config=dict(ctx.config),
+            config=ctx.config,
         )
 
     def _invoke(_: RunContext, prepared: ProfileSuggestPrepared) -> ProfileSuggestResult:
@@ -357,9 +358,8 @@ def run_profile_status_command(ctx: RunContext, options: ProfileStatusOptions) -
         profile_model, claim_models = load_profile_components(ctx.root)
         profile = profile_to_dict(profile_model)
 
-        config_path = ctx.root / "config" / "config.yaml"
-        config = _load_yaml(config_path) if config_path.exists() else {}
-        weights = config.get("impact_weights", {})
+        config = _load_config(ctx.root)
+        weights = config.impact_weights or {}
 
         return ProfileStatusPrepared(
             profile=profile,
@@ -405,7 +405,7 @@ def _profile_proposals_payload(
     profile: dict[str, Any],
     claims: Sequence[ClaimAtom],
     date: str,
-    config: dict[str, Any],
+    config: AppConfig,
     *,
     timeout: float | None = None,
     retries: int = DEFAULT_PROFILE_RETRIES,

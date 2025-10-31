@@ -21,6 +21,7 @@ from aijournal.commands.ingest import (
     _relative_source_path,
     _use_fake_llm,
 )
+from aijournal.common.app_config import AppConfig
 from aijournal.common.command_runner import run_command_pipeline
 from aijournal.common.context import RunContext, create_run_context
 from aijournal.pipelines import index as index_pipeline
@@ -41,7 +42,7 @@ class IndexRebuildOptions(BaseModel):
 @dataclass(slots=True)
 class IndexRebuildPrepared:
     tasks: list[index_pipeline.IndexTask]
-    config: dict[str, Any]
+    config: AppConfig
     since_filter: str | None
     limit: int | None
     entries_considered: int
@@ -64,7 +65,7 @@ class IndexTailOptions(BaseModel):
 @dataclass(slots=True)
 class IndexTailPrepared:
     tasks: list[index_pipeline.IndexTask]
-    config: dict[str, Any]
+    config: AppConfig
     since_filter: str | None
     limit: int | None
     days: int
@@ -236,7 +237,7 @@ def _prepare_rebuild_inputs(ctx: RunContext, options: IndexRebuildOptions) -> In
     )
     return IndexRebuildPrepared(
         tasks=list(tasks),
-        config=dict(config or {}),
+        config=config,
         since_filter=since_filter,
         limit=options.limit,
         entries_considered=len(entries),
@@ -373,7 +374,7 @@ def _prepare_tail_inputs(ctx: RunContext, options: IndexTailOptions) -> IndexTai
     )
     return IndexTailPrepared(
         tasks=list(tasks),
-        config=dict(config or {}),
+        config=config,
         since_filter=since_filter,
         limit=options.limit,
         days=options.days,
@@ -487,8 +488,7 @@ def _prepare_search_inputs(ctx: RunContext, options: IndexSearchOptions) -> Inde
 
 
 def _invoke_search_pipeline(ctx: RunContext, prepared: IndexSearchPrepared) -> IndexSearchResult:
-    config_dict = dict(ctx.config)
-    retriever = Retriever(ctx.root, config_dict)
+    retriever = Retriever(ctx.root, ctx.config)
     try:
         result = retriever.search(prepared.query, k=prepared.top, filters=prepared.filters)
     except (RuntimeError, ValueError) as exc:
@@ -607,19 +607,17 @@ def _format_search_snippet(text: str, limit: int = 200) -> str:
     return collapsed[: limit - 3].rstrip() + "..."
 
 
-def _build_embedding_backend(config: dict[str, Any]) -> EmbeddingBackend:
-    model = str(config.get("embedding_model") or "embeddinggemma")
+def _build_embedding_backend(config: AppConfig) -> EmbeddingBackend:
+    model = str(config.embedding_model or "embeddinggemma")
     host = os.getenv("AIJOURNAL_OLLAMA_HOST")
     return EmbeddingBackend(model, host=host, fake_mode=_use_fake_llm())
 
 
-def _index_settings(config: dict[str, Any]) -> tuple[int, float, float]:
-    index_cfg_raw = config.get("index")
-    index_cfg = index_cfg_raw if isinstance(index_cfg_raw, dict) else {}
+def _index_settings(config: AppConfig) -> tuple[int, float, float]:
+    index_cfg = config.index or {}
     ann_trees = int(index_cfg.get("ann_trees") or 50)
     search_k_factor = float(index_cfg.get("search_k_factor") or 3.0)
-    token_cfg_raw = config.get("token_estimator")
-    token_cfg = token_cfg_raw if isinstance(token_cfg_raw, dict) else {}
+    token_cfg = config.token_estimator or {}
     char_per_token = float(token_cfg.get("char_per_token") or 4.2)
     return ann_trees, search_k_factor, char_per_token
 

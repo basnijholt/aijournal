@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from aijournal.common.app_config import AppConfig
 from aijournal.common.logging import (
     StructuredLogger,
     StructuredLogSink,
@@ -32,7 +33,7 @@ def _run_id(command: str) -> str:
 class RunContext:
     command: str
     root: Path
-    config: Mapping[str, Any]
+    config: AppConfig
     use_fake_llm: bool
     logger: StructuredLogger
     trace_enabled: bool = False
@@ -49,7 +50,7 @@ def create_run_context(
     *,
     command: str,
     root: Path,
-    config: Mapping[str, Any],
+    config: Mapping[str, Any] | AppConfig,
     use_fake_llm: bool,
     trace: bool,
     verbose_json: bool,
@@ -61,6 +62,10 @@ def create_run_context(
         sink_list.append(build_pretty_sink())
     if verbose_json:
         sink_list.append(build_json_sink())
+    config_model = (
+        config if isinstance(config, AppConfig) else AppConfig.model_validate(dict(config))
+    )
+
     logger = StructuredLogger(
         path=_trace_path(root),
         base={"run_id": run_id, "command": command, "root": str(root)},
@@ -70,7 +75,7 @@ def create_run_context(
     return RunContext(
         command=command,
         root=root,
-        config=config,
+        config=config_model,
         use_fake_llm=use_fake_llm,
         logger=logger,
         trace_enabled=trace,

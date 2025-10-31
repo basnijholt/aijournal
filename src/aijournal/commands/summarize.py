@@ -14,6 +14,7 @@ import typer
 from pydantic import BaseModel
 
 from aijournal.commands.ingest import _use_fake_llm
+from aijournal.common.app_config import AppConfig
 from aijournal.common.command_runner import run_command_pipeline
 from aijournal.common.context import RunContext
 from aijournal.common.meta import Artifact, ArtifactKind, ArtifactMeta, LLMResult
@@ -25,6 +26,7 @@ from aijournal.pipelines import summarize as summarize_pipeline
 from aijournal.services.ollama import (
     LLMResponseError,
     build_ollama_config_from_mapping,
+    resolve_model_name,
     run_ollama_agent,
 )
 from aijournal.utils import time as time_utils
@@ -91,7 +93,7 @@ def _invoke_structured_llm(
     *,
     response_model: type[BaseModel],
     agent_name: str,
-    config: dict[str, Any],
+    config: AppConfig,
     timeout: float | None = None,
     max_attempts: int = 2,
     retry_message: str | None = None,
@@ -188,18 +190,13 @@ def _build_meta(
     prompt_path: str,
     *,
     model: str | None = None,
-    config: dict[str, Any] | None = None,
+    config: AppConfig | None = None,
 ) -> ArtifactMeta:
     resolved_model: str
     if model:
         resolved_model = model
     else:
-        config_payload = config if isinstance(config, dict) else {}
-        resolved_model = (
-            "fake-ollama"
-            if _use_fake_llm()
-            else build_ollama_config_from_mapping(config_payload).model
-        )
+        resolved_model = resolve_model_name(config, use_fake_llm=_use_fake_llm())
     created_at = time_utils.format_timestamp(time_utils.now())
     return ArtifactMeta(
         created_at=created_at,
@@ -237,18 +234,15 @@ def prepare_inputs(ctx: RunContext, options: DailySummaryOptions) -> DailySummar
 
 
 def invoke_pipeline(ctx: RunContext, prepared: DailySummaryPrepared) -> DailySummaryResult:
-    config = dict(ctx.config) if isinstance(ctx.config, dict) else {}
     summary = _summarize_day_payload(
         prepared.entries,
         prepared.date,
-        config,
+        ctx.config,
         timeout=prepared.timeout,
         retries=prepared.retries,
         use_fake_llm=ctx.use_fake_llm,
     )
-    model_name = "fake-ollama"
-    if not ctx.use_fake_llm:
-        model_name = build_ollama_config_from_mapping(config).model
+    model_name = resolve_model_name(ctx.config, use_fake_llm=ctx.use_fake_llm)
     ctx.emit(
         event="pipeline_complete",
         bullets=len(summary.bullets),
@@ -273,7 +267,7 @@ def persist_output(ctx: RunContext, result: DailySummaryResult) -> Path:
 def _summarize_day_payload(
     entries: Sequence[NormalizedEntry],
     date: str,
-    config: dict[str, Any],
+    config: AppConfig,
     *,
     timeout: float | None,
     retries: int,

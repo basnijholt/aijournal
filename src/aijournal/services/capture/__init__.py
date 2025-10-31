@@ -349,7 +349,7 @@ def run_capture(
     root = root or Path.cwd()
     config_payload = _load_config(root)
     ollama_config = build_ollama_config_from_mapping(config_payload)
-    config_host = config_payload.get("host") if isinstance(config_payload, dict) else None
+    config_host = config_payload.host
     env_host = os.getenv("AIJOURNAL_OLLAMA_HOST")
     env_base_url = os.getenv("OLLAMA_BASE_URL")
     resolved_run_id = run_id or _generate_run_id()
