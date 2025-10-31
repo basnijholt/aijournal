@@ -29,7 +29,7 @@ from aijournal.commands.advise import (
     _collect_pending_interview_prompts,
     run_advise_command,
 )
-from aijournal.commands.audit import run_audit_provenance
+from aijournal.commands.audit import run_audit_provenance_cli
 from aijournal.commands.characterize import (
     _normalize_claim_proposals,
     _pending_updates_dir,
@@ -702,34 +702,7 @@ def audit_provenance_command(
     ),
 ) -> None:
     """Scan claims and derived artifacts for span.text remnants."""
-
-    root = Path.cwd()
-    results = run_audit_provenance(root=root, fix=fix)
-    if not results:
-        typer.echo("No provenance span text detected.")
-        return
-
-    if fix:
-        total_spans = sum(result.count for result in results)
-        for result in results:
-            typer.secho(
-                f"Redacted {result.count} span{'s' if result.count != 1 else ''} in {result.path.as_posix()}.",
-                fg=typer.colors.GREEN,
-            )
-        typer.echo(
-            f"Redacted {total_spans} span{'s' if total_spans != 1 else ''} across {len(results)} file{'s' if len(results) != 1 else ''}.",
-        )
-        return
-
-    typer.secho("Found provenance span text in:", fg=typer.colors.YELLOW)
-    for result in results:
-        typer.echo(f"- {result.path.as_posix()}")
-        for issue in result.issues:
-            spans = ", ".join(str(idx) for idx in issue.span_indices)
-            entry_details = f" entry_id={issue.entry_id}" if issue.entry_id else ""
-            typer.echo(f"    {issue.path} spans={spans}{entry_details}")
-    typer.secho("Run with --fix to redact these spans.", fg=typer.colors.YELLOW)
-    raise typer.Exit(1)
+    run_audit_provenance_cli(fix=fix)
 
 
 @app.callback()
