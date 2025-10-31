@@ -414,26 +414,14 @@ def _write_failure_log(
 
 
 def _extract_raw_payload(error: UnexpectedModelBehavior) -> str | None:
-    candidate = getattr(error, "response_text", None)
-    if isinstance(candidate, str) and candidate.strip():
-        return candidate
-    candidate = getattr(error, "raw_response_text", None)
-    if isinstance(candidate, str) and candidate.strip():
-        return candidate
-    candidate = getattr(error, "output", None)
-    if isinstance(candidate, str) and candidate.strip():
-        return candidate
+    for attr in ("response_text", "raw_response_text", "output"):
+        candidate = getattr(error, attr, None)
+        if isinstance(candidate, str) and candidate.strip():
+            return candidate
     if error.args:
         summary = error.args[0]
         if isinstance(summary, str) and summary.strip():
             return summary
-    cause = error.__cause__
-    while cause is not None:
-        if isinstance(cause, ValueError) and cause.args:
-            message = cause.args[0]
-            if isinstance(message, str) and message.strip():
-                return message
-        cause = cause.__cause__
     return None
 
 
@@ -462,134 +450,113 @@ def run_ollama_agent(
     else:
         resolved_output = output_type or dict
 
+    retries = max(0, max_attempts - 1)
     agent = build_ollama_agent(
         config,
         system_prompt=system_prompt,
         output_type=resolved_output,
-        retries=0,
+        retries=retries,
     )
 
     skeleton_json: str | None = None
     if target_model is not None:
         skeleton_json = _to_json(_model_skeleton(target_model))
 
-    base_prompt = prompt.rstrip()
-    attempt_prompt = _compose_attempt_prompt(
-        base_prompt,
+    base_prompt = _compose_attempt_prompt(
+        prompt.rstrip(),
         skeleton=skeleton_json,
-        retry_message=None,
+        retry_message=retry_message,
         previous_payload=None,
         validation_summary=None,
     )
 
-    last_exc: Exception | None = None
-    repair_attempts = 0
+    try:
+        result = agent.run_sync(base_prompt, output_type=resolved_output)
+    except UnexpectedModelBehavior as exc:
+        raw_payload_text = _extract_raw_payload(exc)
+        _write_failure_log(
+            label=log_label or getattr(agent, "name", None),
+            prompt=base_prompt,
+            prompt_path=prompt_path,
+            attempt=max_attempts,
+            error=exc,
+            raw_payload=raw_payload_text,
+        )
+        msg = f"Model returned invalid JSON: {exc}"
+        raise LLMResponseError(msg) from exc
+    except UserError as exc:
+        msg = f"Ollama provider error: {exc}"
+        raise LLMResponseError(msg) from exc
+    except Exception as exc:  # pragma: no cover - dependent on runtime env
+        msg = f"Ollama request failed: {exc}"
+        raise LLMResponseError(msg) from exc
+
+    payload: Any = result.output
     coercions_applied: list[dict[str, str]] = []
 
-    for attempt in range(1, max_attempts + 1):
-        try:
-            result = agent.run_sync(attempt_prompt, output_type=resolved_output)
-        except UnexpectedModelBehavior as exc:
-            raw_payload_text = _extract_raw_payload(exc)
-            _write_failure_log(
-                label=log_label or getattr(agent, "name", None),
-                prompt=attempt_prompt,
-                prompt_path=prompt_path,
-                attempt=attempt,
-                error=exc,
-                raw_payload=raw_payload_text,
-            )
-            last_exc = exc
-            if attempt == max_attempts:
-                msg = f"Model returned invalid JSON: {exc}"
+    if target_model is not None:
+        raw_payload_dict: dict[str, Any]
+        if isinstance(payload, BaseModel):
+            raw_payload_dict = payload.model_dump(mode="python")
+        elif isinstance(payload, dict):
+            raw_payload_dict = cast(dict[str, Any], payload)
+        else:
+            try:
+                raw_payload_dict = cast(dict[str, Any], json.loads(str(payload)))
+            except json.JSONDecodeError as exc:  # pragma: no cover - defensive
+                msg = f"Model returned non-JSON payload: {payload!r}"
                 raise LLMResponseError(msg) from exc
 
-            repair_attempts += 1
-            attempt_prompt = _compose_attempt_prompt(
-                base_prompt,
-                skeleton=skeleton_json,
-                retry_message=retry_message,
-                previous_payload=raw_payload_text,
-                validation_summary=_to_json(str(exc)),
+        validated, coercions, errors = _attempt_model_validation(raw_payload_dict, target_model)
+        if validated is None:
+            error_display = _to_json(errors) if errors else "validation failed"
+            raw_display = _to_json(raw_payload_dict)
+            _write_failure_log(
+                label=log_label or getattr(agent, "name", None),
+                prompt=base_prompt,
+                prompt_path=prompt_path,
+                attempt=max_attempts,
+                error=ValueError(f"Validation failed for {target_model.__name__}"),
+                raw_payload=raw_display,
             )
-            continue
-        except UserError as exc:
-            msg = f"Ollama provider error: {exc}"
-            raise LLMResponseError(msg) from exc
-        except Exception as exc:  # pragma: no cover - dependent on runtime env
-            msg = f"Ollama request failed: {exc}"
-            raise LLMResponseError(msg) from exc
+            msg = f"Model response failed validation after retries. Errors: {error_display}"
+            raise LLMResponseError(msg)
 
-        payload: Any = result.output
+        payload = validated
+        coercions_applied.extend(coercions)
 
-        if target_model is not None:
-            raw_payload_dict: dict[str, Any]
-            if isinstance(payload, BaseModel):
-                raw_payload_dict = payload.model_dump(mode="python")
-            elif isinstance(payload, dict):
-                raw_payload_dict = cast(dict[str, Any], payload)
-            else:
-                try:
-                    raw_payload_dict = cast(dict[str, Any], json.loads(str(payload)))
-                except json.JSONDecodeError as exc:  # pragma: no cover - defensive
-                    msg = f"Model returned non-JSON payload: {payload!r}"
-                    raise LLMResponseError(msg) from exc
+    created_at = time_utils.format_timestamp(time_utils.now())
 
-            validated, coercions, errors = _attempt_model_validation(raw_payload_dict, target_model)
-            if validated is None:
-                error_display = _to_json(errors) if errors else "validation failed"
-                raw_display = _to_json(raw_payload_dict)
-                _write_failure_log(
-                    label=log_label or getattr(agent, "name", None),
-                    prompt=attempt_prompt,
-                    prompt_path=prompt_path,
-                    attempt=attempt,
-                    error=ValueError(f"Validation failed for {target_model.__name__}"),
-                    raw_payload=raw_display,
-                )
-                if attempt == max_attempts:
-                    msg = f"Model response failed validation after retries. Errors: {error_display}"
-                    raise LLMResponseError(msg)
+    attempts = 1
+    if hasattr(result, "usage") and callable(result.usage):
+        try:
+            usage = result.usage()
+        except Exception:  # pragma: no cover - defensive
+            usage = None
+        if usage is not None:
+            attempts = getattr(usage, "requests", 0) or 1
+    repair_attempts = max(0, attempts - 1)
 
-                repair_attempts += 1
-                attempt_prompt = _compose_attempt_prompt(
-                    base_prompt,
-                    skeleton=skeleton_json,
-                    retry_message=retry_message,
-                    previous_payload=raw_display,
-                    validation_summary=error_display,
-                )
-                last_exc = ValueError(error_display)
-                continue
+    result_payload = LLMResult[_PayloadT](
+        model=config.model,
+        prompt_path=prompt_path or "<inline>",
+        prompt_hash=prompt_hash,
+        created_at=created_at,
+        payload=cast(_PayloadT, payload),
+        attempts=attempts,
+        repair_attempts=repair_attempts,
+        coercions_applied=coercions_applied,
+    )
 
-            payload = validated
-            coercions_applied.extend(coercions)
+    metrics_record = {
+        "prompt_path": result_payload.prompt_path,
+        "model": result_payload.model,
+        "label": log_label or getattr(agent, "name", None),
+        "attempts": result_payload.attempts,
+        "repair_attempts": result_payload.repair_attempts,
+        "coercion_count": len(result_payload.coercions_applied),
+        "created_at": result_payload.created_at,
+    }
+    _append_metrics_record(metrics_record)
 
-        created_at = time_utils.format_timestamp(time_utils.now())
-        result_payload = LLMResult[_PayloadT](
-            model=config.model,
-            prompt_path=prompt_path or "<inline>",
-            prompt_hash=prompt_hash,
-            created_at=created_at,
-            payload=cast(_PayloadT, payload),
-            attempts=attempt,
-            repair_attempts=repair_attempts,
-            coercions_applied=coercions_applied,
-        )
-
-        metrics_record = {
-            "prompt_path": result_payload.prompt_path,
-            "model": result_payload.model,
-            "label": log_label or getattr(agent, "name", None),
-            "attempts": result_payload.attempts,
-            "repair_attempts": result_payload.repair_attempts,
-            "coercion_count": len(result_payload.coercions_applied),
-            "created_at": result_payload.created_at,
-        }
-        _append_metrics_record(metrics_record)
-
-        return result_payload
-
-    assert last_exc is not None  # pragma: no cover - safety net
-    msg = f"Model returned invalid JSON: {last_exc}"
-    raise LLMResponseError(msg) from last_exc
+    return result_payload
