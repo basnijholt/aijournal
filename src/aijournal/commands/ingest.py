@@ -31,7 +31,7 @@ from aijournal.pipelines import normalization
 from aijournal.schema import SchemaValidationError, validate_schema
 from aijournal.services.ollama import build_ollama_config_from_mapping
 from aijournal.utils import time as time_utils
-from aijournal.utils.paths import normalized_entry_path
+from aijournal.utils.paths import WorkspacePaths, normalized_entry_path
 
 MARKDOWN_SUFFIXES = {".md", ".markdown"}
 
@@ -75,7 +75,8 @@ def _load_yaml(path: Path) -> dict[str, Any]:
 
 
 def _load_config(root: Path) -> AppConfig:
-    config_path = root / "config" / "config.yaml"
+    del root  # Use WorkspacePaths instead
+    config_path = WorkspacePaths.config_dir() / "config.yaml"
     if not config_path.exists():
         return AppConfig()
     data = _load_yaml(config_path)
@@ -87,7 +88,8 @@ def _use_fake_llm() -> bool:
 
 
 def _manifest_path(root: Path) -> Path:
-    return root / "data" / "manifest" / "ingested.yaml"
+    del root  # Use WorkspacePaths instead
+    return WorkspacePaths.data() / "manifest" / "ingested.yaml"
 
 
 def _load_manifest(path: Path) -> list[ManifestEntry]:
@@ -408,7 +410,7 @@ def _invoke_ingest_pipeline(ctx: RunContext, prepared: IngestPrepared) -> Ingest
     ingested = 0
     skipped = 0
     errors = 0
-    raw_dir = ctx.root / "data" / "raw"
+    raw_dir = WorkspacePaths.data() / "raw"
 
     for file in prepared.files:
         try:

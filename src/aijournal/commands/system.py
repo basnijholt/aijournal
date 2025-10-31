@@ -25,6 +25,7 @@ from aijournal.services.ollama import (
     build_ollama_config_from_mapping,
     resolve_ollama_host,
 )
+from aijournal.utils.paths import WorkspacePaths
 
 
 def _check_sqlite_fts5() -> tuple[bool, str | None]:
@@ -47,7 +48,8 @@ def _check_sqlite_fts5() -> tuple[bool, str | None]:
 
 
 def _check_index_artifacts(root: Path) -> dict[str, Any]:
-    index_dir = root / "derived" / "index"
+    del root  # Use WorkspacePaths instead
+    index_dir = WorkspacePaths.derived() / "index"
     db_path = index_dir / "index.db"
     annoy_path = index_dir / "annoy.index"
     meta_path = index_dir / "meta.json"
@@ -91,7 +93,8 @@ def _check_writable_paths(root: Path) -> tuple[bool, dict[str, Any]]:
 
 
 def _check_pending_updates(root: Path) -> dict[str, Any]:
-    pending_dir = root / "derived" / "pending" / "profile_updates"
+    del root  # Use WorkspacePaths instead
+    pending_dir = WorkspacePaths.derived() / "pending" / "profile_updates"
     files = sorted(pending_dir.glob("*.yaml")) if pending_dir.exists() else []
     return {
         "count": len(files),
@@ -178,7 +181,7 @@ def run_status_summary(root: Path) -> dict[str, Any]:
     config = _load_config(root)
     persona_status, persona_reasons = persona_state(root)
 
-    index_dir = root / "derived" / "index"
+    index_dir = WorkspacePaths.derived() / "index"
     index_info = {
         "has_index_db": (index_dir / "index.db").exists(),
         "has_annoy_index": (index_dir / "annoy.index").exists(),
