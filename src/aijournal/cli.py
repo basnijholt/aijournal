@@ -171,7 +171,10 @@ def _get_workspace() -> Path:
     return workspace
 
 
-app = typer.Typer(help="Local-first personal journal utilities.")
+app = typer.Typer(
+    help="Local-first personal journal utilities.",
+    context_settings={"help_option_names": ["-h", "--help"]},
+)
 profile_app = typer.Typer(help="Profile utilities.")
 ollama_app = typer.Typer(help="Ollama helpers.")
 index_app = typer.Typer(help="Retrieval index utilities.")
