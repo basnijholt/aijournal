@@ -297,7 +297,7 @@ def persist_output(ctx: RunContext, result: NewResult) -> None:
     typer.echo(result.message)
 
 
-def run_new_command(ctx: RunContext, options: NewOptions, workspace: Path | None = None) -> None:
+def run_new_command(ctx: RunContext, options: NewOptions) -> None:
     run_command_pipeline(
         ctx,
         options,
