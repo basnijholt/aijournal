@@ -476,78 +476,65 @@ Confidence: 0.72 (based on 5 days of consistent patterns)
 
 ---
 
-### 12. ❌ Chat with Retrieval
-**Command**: `uv run aijournal chat "What progress did I make this week?" --session test --top 3`
+### 12. ✅ Chat with Retrieval
+**Command**: `uv run aijournal chat "What progress did I make this week?" --session retry-test --top 3`
 
-**Result**: PARTIAL FAILURE
+**Result**: SUCCESS
 **LLM**: devstral:24b
-**Issue**: JSON validation errors after multiple retries
+**Duration**: ~5s
+**Fix Applied**: Added `max_attempts` parameter to use configured retry count
 
-**Error Sequence**:
+**Root Cause Found**: Chat service wasn't passing `max_attempts` to `run_ollama_agent`, defaulting to only 2 attempts instead of 5.
 
-**Attempt 1** - Citations as strings instead of objects:
-```json
-{
-  "answer": "This week you made progress on...",
-  "citations": ["2025-10-27#p0", "2025-10-28#p1"],  // ❌ Should be objects
-  "clarifying_question": null
-}
+**The Fix** (`src/aijournal/services/chat.py:267-273`):
+```python
+# Before (only 2 attempts):
+result: LLMResult[ChatResponse] = run_ollama_agent(
+    self._build_ollama_config(),
+    prompt,
+    output_type=ChatResponse,
+    # ❌ Missing: max_attempts parameter!
+)
+
+# After (5 attempts = 1 initial + 4 retries):
+max_attempts = self._config.llm.retries + 1
+result: LLMResult[ChatResponse] = run_ollama_agent(
+    self._build_ollama_config(),
+    prompt,
+    output_type=ChatResponse,
+    max_attempts=max_attempts,  # ✅ Now uses config value!
+)
 ```
 
-**Attempt 2** - LLM adding "entry:" prefix:
-```json
-{
-  "answer": "This week you made progress on...",
-  "citations": [
-    {"code": "entry:2025-10-27-deep-work-auth-system-refactor#p0"}  // ❌ Extra prefix
-  ],
-  "clarifying_question": null
-}
+**Why It Works**: Pydantic AI automatically sends validation errors back to the LLM, guiding it to fix the JSON. With 5 attempts instead of 2, `devstral:24b` has enough chances to correct citation schema issues.
+
+**Test Results**:
+```
+Chat response (live mode)
+Session: retry-test
+Question: What progress did I make this week?
+Intent: advice
+Answer:
+  This week, you made significant progress on the authentication system refactor
+  and started implementing the new dashboard analytics. You also improved test
+  coverage across the codebase [entry:2025-10-30-weekly-reflection#p0]. The
+  team dynamics were strong, with productive discussions during the sprint
+  retrospective [entry:2025-10-29-sprint-retrospective-team-sync#p0]...
+
+Telemetry: retrieval=873.2ms chunks=3 source=annoy+sqlite model=devstral:24b
+
+Citations:
+1. [entry:2025-10-30-weekly-reflection#p0] score 0.410
+2. [entry:2025-10-29-sprint-retrospective-team-sync#p0] score 0.324
+3. [entry:2025-10-26-morning-planning-session#p0] score 0.268
+
+✅ All citations validated successfully
+✅ Session transcript saved
 ```
 
-**Attempt 3** - Invalid JSON after max retries:
-```
-LLMResponseError: Model returned invalid JSON: Exceeded maximum retries (4)
-```
+**Quality**: Excellent - coherent answer, proper `[entry:...]` markers, valid citations
 
-**Fixes Attempted** (`src/aijournal/services/chat.py:347-357`):
-
-1. **Fix #1** - Concrete citation example:
-   ```python
-   '  "citations": [{"code": "2025-10-26-morning-planning-session#p0"}, {"code": "claim:abc123"}],\n'
-   ```
-
-2. **Fix #2** - Explicit prefix warning:
-   ```python
-   "Do NOT add 'entry:' or 'claim:' prefixes to the codes - those are only used in the answer text markers."
-   ```
-
-**Status**: ⚠️ PARTIAL FIX
-- Citation object format improved
-- Prefix confusion documented
-- Chat still fails with JSON validation errors
-- Index search and advise work perfectly
-
-**Workarounds**:
-1. **Use advise command** instead of chat:
-   ```bash
-   uv run aijournal advise "How should I balance deep work with collaboration?"
-   # ✅ Works perfectly, provides personalized recommendations
-   ```
-
-2. **Use index search directly**:
-   ```bash
-   uv run aijournal ops index search "authentication refactor" --top 3
-   # ✅ Returns relevant journal chunks with scores
-   ```
-
-**Recommendations**:
-1. Test with alternative models: `qwen3:14b`, `qwen2.5-coder:32b`
-2. Consider simplifying chat schema (make citations optional)
-3. Increase retries from 4 to 6 for chat specifically
-4. Add fallback parsing for common format variations
-
-**Code Reference**: `src/aijournal/services/chat.py:243-309`
+**Code Reference**: `src/aijournal/services/chat.py:267-273`
 
 ---
 
