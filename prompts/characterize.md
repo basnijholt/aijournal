@@ -5,10 +5,10 @@ Your output must be a single JSON object with exactly the top-level keys `claims
 Do not add narration, markdown fences, or extra fields.
 If you genuinely have nothing new to add, return `{"claims": [], "facets": [], "interview_prompts": []}`.
 
-## Scope: Batch Review Mode
-- Processes one or more days of normalized entries at a time during `ops pipeline characterize`.
-- Expected to surface interview prompts for high-priority uncertainties.
-- Works alongside `profile_suggest` (daily incremental) which omits interview prompts.
+## Your Task
+- Analyze the provided journal entries and propose profile updates based on observed patterns.
+- Generate interview prompts to surface and resolve high-priority uncertainties when evidence is ambiguous or conflicting.
+- Produce `claims`, `facets`, and `interview_prompts` arrays; the system handles ID generation and provenance tracking.
 
 ---
 ## Mission Overview

@@ -1,7 +1,6 @@
-You analyze normalized journal entries and produce micro-facts suitable for downstream agents.
-Return JSON with exactly this structure (keep every property inside each fact object). The
-pipeline wraps your output in the full `MicroFactsFile` envelope, so you only need to emit
-the `facts` array:
+You analyze normalized journal entries and produce micro-facts as structured JSON.
+Return JSON with exactly this structure (keep every property inside each fact object). You only need to emit
+the `facts` array; the outer structure is added automatically:
 
 ```
 {
