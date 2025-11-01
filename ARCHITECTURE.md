@@ -203,7 +203,7 @@ All structured prompts go through `run_ollama_agent`, which sanitizes JSON, retr
 
 - **Chunking:** Deterministic boundaries (700–1200 characters) with sentence awareness and section headings for context.
 - **Storage:** SQLite FTS5 database for metadata & text (`fts5` is a required compile option) and an Annoy index for vectors.
-- **Vectors:** Embeddings generated via `embeddinggemma` served by Ollama. `derived/index/meta.json` records embedding dimension, build time, ann_trees, search_k_factor, and whether fake mode ran.
+- **Vectors:** Embeddings generated via `embeddinggemma:300m` served by Ollama. `derived/index/meta.json` records embedding dimension, build time, ann_trees, search_k_factor, and whether fake mode ran.
 - **Search:** `Retriever.search` loads the Annoy neighbors with `search_k = search_k_factor * k * ann_trees`, filters by tags/date/source, then reranks using cosine similarity and recency.
 - **Inspection:** Chunk manifests mirror the indexed content for human audits or external tooling.
 - **Failure Modes:** Missing indexes result in explicit errors directing operators to run `aijournal ops index rebuild`.
@@ -217,8 +217,8 @@ All structured prompts go through `run_ollama_agent`, which sanitizes JSON, retr
   - `AIJOURNAL_MODEL`, `AIJOURNAL_EMBEDDING_MODEL`, `AIJOURNAL_OLLAMA_HOST`, `OLLAMA_BASE_URL` – run-time model/endpoint selection.
   - `AIJOURNAL_FAKE_OLLAMA=1` – deterministic fixtures for tests and CI.
 - Workspace validation: Commands validate that the workspace directory contains `config.yaml` and provide clear error messages directing users to run `aijournal init` if needed.
-- Host precedence: per-command override → `AIJOURNAL_OLLAMA_HOST` / `OLLAMA_BASE_URL` → `config.yaml` → `http://127.0.0.1:11434`. Model precedence mirrors the pattern (override → `AIJOURNAL_MODEL` → config → default). Embedding model precedence: `AIJOURNAL_EMBEDDING_MODEL` → config → `embeddinggemma`.
-- Live-mode defaults (see `agents.md`): remote Ollama at `http://192.168.1.143:11434`, chat/advice model `gpt-oss:20b`, embedding model `embeddinggemma`, commands executed via `uv run -- bash -lc '…'`.
+- Host precedence: per-command override → `AIJOURNAL_OLLAMA_HOST` / `OLLAMA_BASE_URL` → `config.yaml` → `http://127.0.0.1:11434`. Model precedence mirrors the pattern (override → `AIJOURNAL_MODEL` → config → default). Embedding model precedence: `AIJOURNAL_EMBEDDING_MODEL` → config → `embeddinggemma:300m`.
+- Live-mode defaults (see `agents.md`): remote Ollama at `http://192.168.1.143:11434`, chat/advice model `gpt-oss:20b`, embedding model `embeddinggemma:300m`, commands executed via `uv run -- bash -lc '…'`.
 - Always ensure runs start from a clean git tree; archive live artifacts under `/tmp/aijournal_live_run_*` rather than touching the repo directly.
 
 ## 9. Performance Considerations
@@ -245,7 +245,7 @@ Contributor setup, testing expectations, and linting tools are covered in [CONTR
 - Retrieval-backed chat cites claims or journal evidence ≥90% of the time on seed QA and keeps latency <150 ms on 50k+ chunks.
 - Feedback loop: thumbs up/down adjusts claim strengths immediately and queues learnings into pending updates.
 - Interview ranking blends staleness, uncertainty, and missing scopes; advisor mode leverages the same signal for assumptions and recommendations.
-- Packs (L1–L4) respect token budgets, include trimming metadata, and reuse the shared persona core.
+- Packs (L1–L4) respect token budgets (L1: 1200, L2: 2000, L3: 2600, L4: 3200 by default), include trimming metadata, and reuse the shared persona core.
 
 ## 13. Glossary
 
