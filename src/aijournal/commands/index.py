@@ -250,7 +250,7 @@ def _prepare_rebuild_inputs(ctx: RunContext, options: IndexRebuildOptions) -> In
 
 
 def _invoke_rebuild_pipeline(ctx: RunContext, prepared: IndexRebuildPrepared) -> IndexRebuildResult:
-    embedder = _build_embedding_backend(prepared.config)
+    embedder = _build_embedding_backend(prepared.config, fake_mode=ctx.use_fake_llm)
     ann_trees, search_k_factor, char_per_token = _index_settings(prepared.config)
 
     stats: dict[str, Any] = {"entries": 0, "chunks": 0, "dates": []}
@@ -295,7 +295,7 @@ def _invoke_rebuild_pipeline(ctx: RunContext, prepared: IndexRebuildPrepared) ->
         chunk_total=chunk_total,
         entry_total=entry_total,
         mode="rebuild",
-        fake_mode=use_fake_llm(),
+        fake_mode=ctx.use_fake_llm,
         ann_trees=ann_trees,
         search_k_factor=search_k_factor,
         char_per_token=char_per_token,
@@ -401,7 +401,7 @@ def _invoke_tail_pipeline(ctx: RunContext, prepared: IndexTailPrepared) -> Index
                 up_to_date=True,
             )
 
-        embedder = _build_embedding_backend(prepared.config)
+        embedder = _build_embedding_backend(prepared.config, fake_mode=ctx.use_fake_llm)
         ann_trees, search_k_factor, char_per_token = _index_settings(prepared.config)
 
         stats: dict[str, Any] = {"entries": 0, "chunks": 0, "dates": []}
@@ -432,7 +432,7 @@ def _invoke_tail_pipeline(ctx: RunContext, prepared: IndexTailPrepared) -> Index
             chunk_total=chunk_total,
             entry_total=entry_total,
             mode="tail",
-            fake_mode=use_fake_llm(),
+            fake_mode=ctx.use_fake_llm,
             ann_trees=ann_trees,
             search_k_factor=search_k_factor,
             char_per_token=char_per_token,
@@ -615,10 +615,10 @@ def _format_search_snippet(text: str, limit: int = 200) -> str:
     return collapsed[: limit - 3].rstrip() + "..."
 
 
-def _build_embedding_backend(config: AppConfig) -> EmbeddingBackend:
+def _build_embedding_backend(config: AppConfig, *, fake_mode: bool) -> EmbeddingBackend:
     model = str(config.embedding_model or "embeddinggemma")
     host = os.getenv("AIJOURNAL_OLLAMA_HOST")
-    return EmbeddingBackend(model, host=host, fake_mode=use_fake_llm())
+    return EmbeddingBackend(model, host=host, fake_mode=fake_mode)
 
 
 def _index_settings(config: AppConfig) -> tuple[int, float, float]:
