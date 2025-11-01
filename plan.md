@@ -111,6 +111,13 @@ my_journal/           ← The workspace (any name, any location)
 - ✅ Environment variable support - `AIJOURNAL_WORKSPACE` for scripting
 - ✅ No legacy code - clean, maintainable implementation
 
+**Post-PR Improvements (2025-11-01):**
+Following PR review, added two quality-of-life improvements:
+1. **Workspace Validation**: `_get_workspace()` now validates that `config.yaml` exists and provides clear error message directing users to run `aijournal init` if missing
+2. **Configurable LLM Settings**: Added `LLMConfig` model with configurable `retries` (default: 4) and `timeout` (default: 120.0) settings in `config.yaml`, replacing hardcoded `DEFAULT_LLM_RETRIES` constant
+
+All 207 tests passing, documentation updated in README.md, ARCHITECTURE.md.
+
 ---
 
 ## 5. Capture Refactor Follow-Up (Six Commit Sequence)

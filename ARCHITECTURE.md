@@ -197,7 +197,7 @@ Derived schemas (see `src/aijournal/models/derived.py`):
 - `prompts/interview.md` – Generates targeted follow-up questions using staleness and scope gaps.
 - `prompts/advise.md` – Advisor mode, requiring `why_this_fits_you` with claim/facet citations, risks, mitigations, and tone alignment.
 
-All structured prompts go through `run_ollama_agent`, which sanitizes JSON, retries validation up to `--retries`, and surfaces actionable errors when the model fails to comply. Changing a prompt invalidates the hashed metadata stored alongside derived outputs.
+All structured prompts go through `run_ollama_agent`, which sanitizes JSON, retries validation up to `--retries` (default 4, configurable via `llm.retries` in `config.yaml`), and surfaces actionable errors when the model fails to comply. Changing a prompt invalidates the hashed metadata stored alongside derived outputs.
 
 ## 7. Retrieval Architecture
 
@@ -210,11 +210,13 @@ All structured prompts go through `run_ollama_agent`, which sanitizes JSON, retr
 
 ## 8. Configuration and Environment
 
-- `config.yaml` captures model defaults, Ollama host, embedding model, temperature, token estimator, impact weights, advisor and chat settings, index parameters, and persona budgets.
+- `config.yaml` captures model defaults, Ollama host, embedding model, temperature, token estimator, LLM retry/timeout settings, impact weights, advisor and chat settings, index parameters, and persona budgets.
 - Environment overrides:
+  - `AIJOURNAL_WORKSPACE` – alternate workspace directory (defaults to `Path.cwd()`).
   - `AIJOURNAL_CONFIG` – alternate config path.
   - `AIJOURNAL_MODEL`, `AIJOURNAL_OLLAMA_HOST`, `OLLAMA_BASE_URL` – run-time model/endpoint selection.
   - `AIJOURNAL_FAKE_OLLAMA=1` – deterministic fixtures for tests and CI.
+- Workspace validation: Commands validate that the workspace directory contains `config.yaml` and provide clear error messages directing users to run `aijournal init` if needed.
 - Host precedence: per-command override → `AIJOURNAL_OLLAMA_HOST` / `OLLAMA_BASE_URL` → `config.yaml` → `http://127.0.0.1:11434`. Model precedence mirrors the pattern (override → `AIJOURNAL_MODEL` → config → default).
 - Live-mode defaults (see `agents.md`): remote Ollama at `http://192.168.1.143:11434`, chat/advice model `gpt-oss:20b`, embedding model `embeddinggemma`, commands executed via `uv run -- bash -lc '…'`.
 - Always ensure runs start from a clean git tree; archive live artifacts under `/tmp/aijournal_live_run_*` rather than touching the repo directly.

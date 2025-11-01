@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **Workspace validation**: Commands now validate that the workspace directory contains `config.yaml` and provide helpful error messages directing users to run `aijournal init` if missing.
+- **Configurable LLM settings**: Added `llm` section to `config.yaml` with configurable `retries` (default: 4) and `timeout` (default: 120.0) settings, replacing hardcoded retry constants.
 - Chat service fully migrated to strict domain models: `ChatService` now returns `ChatTurn`/`ChatTelemetry` `StrictModel`s end-to-end and CLI/API/tests no longer depend on legacy dataclasses.
 - Advice cards plus chat summaries/learnings now persist as `Artifact[T]` envelopes with dedicated domain schemas and updated fixtures/tests.
 - Added `aijournal ops audit provenance [--fix]` to report or redact any persisted `span.text` provenance and wired it into docs/workflow guidance.
