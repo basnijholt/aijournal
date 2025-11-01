@@ -43,6 +43,7 @@ from aijournal.pipelines import normalization
 from aijournal.services.consolidator import ClaimConsolidator, ClaimMergeOutcome
 from aijournal.services.ollama import LLMResponseError
 from aijournal.utils import time as time_utils
+from aijournal.utils.paths import WorkspacePaths
 
 DEFAULT_PROFILE_RETRIES = 1
 
@@ -184,7 +185,7 @@ def run_profile_apply(
 def run_profile_status(*, root: Path | None = None) -> None:
     """Show ranked facets/claims requiring review."""
     resolved_root = root or Path.cwd()
-    config_path = resolved_root / "config" / "config.yaml"
+    config_path = WorkspacePaths.config_dir() / "config.yaml"
     config = _load_yaml(config_path) if config_path.exists() else {}
     ctx = create_run_context(
         command="profile.status",
@@ -199,7 +200,8 @@ def run_profile_status(*, root: Path | None = None) -> None:
 
 
 def _derived_profile_proposals_path(root: Path, day: str) -> Path:
-    return root / "derived" / "profile_proposals" / f"{day}.yaml"
+    del root  # Use WorkspacePaths instead
+    return WorkspacePaths.derived() / "profile_proposals" / f"{day}.yaml"
 
 
 def run_profile_suggest_command(
@@ -289,7 +291,7 @@ def run_profile_apply_command(
 ) -> str:
     def _prepare(_: RunContext, opts: ProfileApplyOptions) -> ProfileApplyPrepared:
         resolved_path = opts.suggestions_path or (
-            ctx.root / "derived" / "profile_proposals" / f"{opts.date}.yaml"
+            WorkspacePaths.derived() / "profile_proposals" / f"{opts.date}.yaml"
         )
         if not resolved_path.exists():
             typer.secho(
@@ -335,9 +337,9 @@ def run_profile_apply_command(
 
         updated_profile = SelfProfile.model_validate(prepared.profile)
         updated_claims = [claim.model_copy(deep=True) for claim in prepared.claims]
-        write_yaml_model(prepared.root / "profile" / "self_profile.yaml", updated_profile)
+        write_yaml_model(WorkspacePaths.profile() / "self_profile.yaml", updated_profile)
         write_yaml_model(
-            prepared.root / "profile" / "claims.yaml", ClaimsFile(claims=updated_claims)
+            WorkspacePaths.profile() / "claims.yaml", ClaimsFile(claims=updated_claims)
         )
         return ProfileApplyResult(message="Applied 1 suggestions file", changed=True)
 
@@ -640,8 +642,9 @@ def _build_claim_atom_from_entry(
 
 
 def load_profile_components(root: Path) -> tuple[SelfProfile | None, list[ClaimAtom]]:
-    profile_path = root / "profile" / "self_profile.yaml"
-    claims_path = root / "profile" / "claims.yaml"
+    del root  # Use WorkspacePaths instead
+    profile_path = WorkspacePaths.profile() / "self_profile.yaml"
+    claims_path = WorkspacePaths.profile() / "claims.yaml"
 
     profile = load_yaml_model(profile_path, SelfProfile) if profile_path.exists() else None
     if claims_path.exists():
