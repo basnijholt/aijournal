@@ -11,9 +11,9 @@ import typer
 import yaml
 from pydantic import BaseModel
 
-from aijournal.commands.ingest import _use_fake_llm
 from aijournal.common.app_config import AppConfig
 from aijournal.common.command_runner import run_command_pipeline
+from aijournal.common.config_loader import load_config, use_fake_llm
 from aijournal.common.context import RunContext, create_run_context
 from aijournal.common.meta import Artifact, ArtifactKind
 from aijournal.domain.changes import ProfileUpdateProposals
@@ -195,9 +195,7 @@ def persist_output(ctx: RunContext, result: AuditResult) -> None:
         raise typer.Exit(1)
 
 
-def run_audit_command(
-    ctx: RunContext, options: AuditOptions, workspace: Path | None = None
-) -> None:
+def run_audit_command(ctx: RunContext, options: AuditOptions) -> None:
     run_command_pipeline(
         ctx,
         options,
@@ -209,11 +207,12 @@ def run_audit_command(
 
 def run_audit_provenance_cli(workspace: Path | None = None, *, fix: bool) -> None:
     workspace = workspace or Path.cwd()
+    config = load_config(workspace)
     ctx = create_run_context(
         command="ops.audit.provenance",
         workspace=workspace,
-        config={},
-        use_fake_llm=_use_fake_llm(),
+        config=config,
+        use_fake_llm=use_fake_llm(),
         trace=False,
         verbose_json=False,
     )
