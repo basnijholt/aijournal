@@ -213,8 +213,7 @@ def prepare_inputs(ctx: RunContext, options: ChatOptions) -> ChatPrepared:
 
 
 def invoke_pipeline(ctx: RunContext, prepared: ChatPrepared) -> ChatResult:
-    config = load_config(ctx.workspace)
-    service = ChatService(ctx.workspace, config)
+    service = ChatService(ctx.workspace, ctx.config)
     try:
         turn = service.run(
             prepared.question,

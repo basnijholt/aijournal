@@ -10,7 +10,7 @@ import typer
 from pydantic import BaseModel
 
 from aijournal.common.command_runner import run_command_pipeline
-from aijournal.common.config_loader import load_config, use_fake_llm
+from aijournal.common.config_loader import use_fake_llm
 from aijournal.common.context import RunContext, create_run_context
 from aijournal.services.chat_api import build_chat_app
 
@@ -55,8 +55,7 @@ def invoke_pipeline(ctx: RunContext, prepared: ChatdPrepared) -> ChatdResult:
         ctx.emit(event="command_failed", reason="missing_uvicorn")
         raise typer.Exit(1)
 
-    config = load_config(ctx.workspace)
-    app_instance = build_chat_app(ctx.workspace, config)
+    app_instance = build_chat_app(ctx.workspace, ctx.config)
     ctx.emit(event="pipeline_complete", host=prepared.host, port=prepared.port)
     return ChatdResult(
         host=prepared.host,
