@@ -34,6 +34,7 @@ from aijournal.models.derived import AdviceCard, ProfileUpdateBatch
 from aijournal.pipelines import advise as advise_pipeline
 from aijournal.services.ollama import resolve_model_name
 from aijournal.utils import time as time_utils
+from aijournal.utils.paths import WorkspacePaths
 
 
 class AdviceOptions(BaseModel):
@@ -162,7 +163,8 @@ def run_advise(question: str) -> Path:
 
 
 def _collect_pending_interview_prompts(root: Path, limit: int = 5) -> list[str]:
-    directory = root / "derived" / "pending" / "profile_updates"
+    del root  # Use WorkspacePaths instead
+    directory = WorkspacePaths.derived() / "pending" / "profile_updates"
     if not directory.exists():
         return []
     prompts: list[str] = []
@@ -252,5 +254,6 @@ def _advice_payload(
 
 
 def _derived_advice_path(root: Path, day: str, question: str) -> Path:
+    del root  # Use WorkspacePaths instead
     slug = time_utils.slugify_title(question)
-    return root / "derived" / "advice" / day / f"{slug}.yaml"
+    return WorkspacePaths.derived() / "advice" / day / f"{slug}.yaml"

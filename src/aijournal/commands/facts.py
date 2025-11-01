@@ -37,6 +37,7 @@ from aijournal.models.derived import ProfileUpdatePreview
 from aijournal.pipelines import facts as facts_pipeline
 from aijournal.services.ollama import LLMResponseError, resolve_model_name
 from aijournal.utils import time as time_utils
+from aijournal.utils.paths import WorkspacePaths
 
 
 def _manifest_by_id(entries: Iterable[ManifestEntry]) -> dict[str, ManifestEntry]:
@@ -70,7 +71,8 @@ def _characterization_context(
 
 
 def _derived_microfacts_path(root: Path, day: str) -> Path:
-    return root / "derived" / "microfacts" / f"{day}.yaml"
+    del root  # Use WorkspacePaths instead
+    return WorkspacePaths.derived() / "microfacts" / f"{day}.yaml"
 
 
 class FactsOptions(BaseModel):
