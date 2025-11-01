@@ -728,7 +728,7 @@ def _summarize_day_payload(
     )
 
 
-def _latest_pending_batch(workspace: Path) -> Path | None:
+def _latest_pending_batch() -> Path | None:
     directory = _pending_updates_dir()
     if not directory.exists():
         return None
@@ -1095,7 +1095,7 @@ def review_updates(
     """Review or apply pending profile update batches."""
     _emit_deprecation("aijournal ops pipeline review", "aijournal capture --apply-profile review")
     workspace = _get_workspace()
-    batch_path = file or _latest_pending_batch(workspace)
+    batch_path = file or _latest_pending_batch()
     if batch_path is None:
         typer.secho("No pending profile update batches found.", fg=typer.colors.RED, err=True)
         raise typer.Exit(1)

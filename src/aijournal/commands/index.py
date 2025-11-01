@@ -261,7 +261,7 @@ def _invoke_rebuild_pipeline(ctx: RunContext, prepared: IndexRebuildPrepared) ->
 
     index_dir = _index_dir()
     index_dir.mkdir(parents=True, exist_ok=True)
-    conn = _connect_index_db(_index_db_path(ctx.root), overwrite=True)
+    conn = _connect_index_db(_index_db_path(), overwrite=True)
     try:
         with conn:
             _prepare_index_schema(conn)
@@ -276,14 +276,14 @@ def _invoke_rebuild_pipeline(ctx: RunContext, prepared: IndexRebuildPrepared) ->
             conn,
             embedder.dim,
             ann_trees,
-            _annoy_index_path(ctx.root),
+            _annoy_index_path(),
         )
         conn.commit()
         touched_dates = sorted(stats.get("dates", []))
         if touched_dates:
             index_pipeline.write_chunk_manifests(
                 conn,
-                _chunk_manifest_dir(ctx.root),
+                _chunk_manifest_dir(),
                 touched_dates,
                 embedder,
             )
@@ -341,7 +341,7 @@ def _prepare_tail_inputs(ctx: RunContext, options: IndexTailOptions) -> IndexTai
         ctx.emit(event="invalid_option", option="limit")
         raise typer.Exit(1)
 
-    db_path = _index_db_path(ctx.root)
+    db_path = _index_db_path()
     if not db_path.exists():
         typer.secho(
             "Index database not found. Run `aijournal index rebuild` first.",
@@ -388,7 +388,7 @@ def _prepare_tail_inputs(ctx: RunContext, options: IndexTailOptions) -> IndexTai
 
 
 def _invoke_tail_pipeline(ctx: RunContext, prepared: IndexTailPrepared) -> IndexTailResult:
-    db_path = _index_db_path(ctx.root)
+    db_path = _index_db_path()
     conn = _connect_index_db(db_path)
     try:
         pending = index_pipeline.filter_tasks_for_tail(conn, prepared.tasks)
@@ -415,14 +415,14 @@ def _invoke_tail_pipeline(ctx: RunContext, prepared: IndexTailPrepared) -> Index
             conn,
             embedder.dim,
             ann_trees,
-            _annoy_index_path(ctx.root),
+            _annoy_index_path(),
         )
         conn.commit()
         touched_dates = sorted(stats.get("dates", []))
         if touched_dates:
             index_pipeline.write_chunk_manifests(
                 conn,
-                _chunk_manifest_dir(ctx.root),
+                _chunk_manifest_dir(),
                 touched_dates,
                 embedder,
             )
@@ -538,19 +538,20 @@ def _index_dir() -> Path:
     return WorkspacePaths.derived() / "index"
 
 
-def _index_db_path(root: Path) -> Path:
+def _index_db_path() -> Path:
     return _index_dir() / INDEX_DB_FILENAME
 
 
-def _annoy_index_path(root: Path) -> Path:
+def _annoy_index_path() -> Path:
     return _index_dir() / ANNOY_FILENAME
 
 
-def _chunk_manifest_dir(root: Path) -> Path:
+def _chunk_manifest_dir() -> Path:
     return _index_dir() / "chunks"
 
 
 def _index_meta_path(root: Path) -> Path:
+    del root  # Use WorkspacePaths instead
     return _index_dir() / INDEX_META_FILENAME
 
 
