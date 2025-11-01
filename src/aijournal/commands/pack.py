@@ -71,13 +71,14 @@ def run_pack(
     fmt: str,
     history_days: int,
     dry_run: bool,
+    workspace: Path | None = None,
 ) -> None:
     """Assemble a context bundle for prompting."""
-    root = Path.cwd()
-    config = _load_config(root)
+    workspace = workspace or Path.cwd()
+    config = _load_config(workspace)
     ctx = create_run_context(
         command="pack",
-        workspace=root,
+        workspace=workspace,
         config=config,
         use_fake_llm=_use_fake_llm(),
         trace=False,

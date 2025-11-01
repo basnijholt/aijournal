@@ -102,14 +102,16 @@ class IndexSearchResult:
     result: RetrievalResult
 
 
-def run_index_rebuild(since: str | None, *, limit: int | None) -> str:
+def run_index_rebuild(
+    since: str | None, *, limit: int | None, workspace: Path | None = None
+) -> str:
     """Rebuild the Annoy + SQLite retrieval index."""
 
-    root = Path.cwd()
-    config = _load_config(root)
+    workspace = workspace or Path.cwd()
+    config = _load_config(workspace)
     ctx = create_run_context(
         command="index.rebuild",
-        workspace=root,
+        workspace=workspace,
         config=config,
         use_fake_llm=_use_fake_llm(),
         trace=False,
@@ -119,14 +121,16 @@ def run_index_rebuild(since: str | None, *, limit: int | None) -> str:
     return run_index_rebuild_command(ctx, options)
 
 
-def run_index_tail(since: str | None, *, days: int, limit: int | None) -> str:
+def run_index_tail(
+    since: str | None, *, days: int, limit: int | None, workspace: Path | None = None
+) -> str:
     """Tail the retrieval index by ingesting recently normalized entries."""
 
-    root = Path.cwd()
-    config = _load_config(root)
+    workspace = workspace or Path.cwd()
+    config = _load_config(workspace)
     ctx = create_run_context(
         command="index.update",
-        workspace=root,
+        workspace=workspace,
         config=config,
         use_fake_llm=_use_fake_llm(),
         trace=False,
@@ -144,14 +148,15 @@ def run_index_search(
     source: str | None,
     date_from: str | None,
     date_to: str | None,
+    workspace: Path | None = None,
 ) -> None:
     """Search the retrieval index and display formatted results."""
 
-    root = Path.cwd()
-    config = _load_config(root)
+    workspace = workspace or Path.cwd()
+    config = _load_config(workspace)
     ctx = create_run_context(
         command="index.search",
-        workspace=root,
+        workspace=workspace,
         config=config,
         use_fake_llm=_use_fake_llm(),
         trace=False,

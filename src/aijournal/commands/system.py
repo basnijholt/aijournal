@@ -130,10 +130,10 @@ def _check_ollama(
     return True, {"host": host, "models": models}
 
 
-def run_system_doctor(root: Path) -> dict[str, Any]:
+def run_system_doctor(workspace: Path) -> dict[str, Any]:
     """Run system diagnostics and return a structured payload."""
 
-    config = _load_config(root)
+    config = _load_config(workspace)
     checks: list[dict[str, Any]] = []
     overall_ok = True
 
@@ -141,23 +141,23 @@ def run_system_doctor(root: Path) -> dict[str, Any]:
     checks.append({"name": "sqlite_fts5", "ok": fts_ok, "hint": fts_hint})
     overall_ok &= fts_ok
 
-    index_info = _check_index_artifacts(root)
+    index_info = _check_index_artifacts(workspace)
     index_ok = bool(index_info["index_db_exists"] and index_info["annoy_index_exists"])
     checks.append({"name": "index_artifacts", "ok": index_ok, "details": index_info})
     overall_ok &= index_ok
 
-    writable_ok, writable_info = _check_writable_paths(root)
+    writable_ok, writable_info = _check_writable_paths(workspace)
     checks.append({"name": "workspace_writable", "ok": writable_ok, "details": writable_info})
     overall_ok &= writable_ok
 
-    pending_info = _check_pending_updates(root)
+    pending_info = _check_pending_updates(workspace)
     checks.append({"name": "pending_profile_updates", "ok": True, "details": pending_info})
 
     ollama_ok, ollama_details = _check_ollama(config, os.getenv("AIJOURNAL_OLLAMA_HOST"))
     checks.append({"name": "ollama_reachable", "ok": ollama_ok, "details": ollama_details})
     overall_ok &= ollama_ok
 
-    persona_status, persona_reasons = persona_state(root)
+    persona_status, persona_reasons = persona_state(workspace)
     persona_ok = persona_status == "fresh"
     checks.append(
         {
@@ -170,16 +170,16 @@ def run_system_doctor(root: Path) -> dict[str, Any]:
 
     return {
         "ok": bool(overall_ok),
-        "root": str(root),
+        "root": str(workspace),
         "checks": checks,
     }
 
 
-def run_status_summary(root: Path) -> dict[str, Any]:
+def run_status_summary(workspace: Path) -> dict[str, Any]:
     """Gather high-level workspace status information."""
 
-    config = _load_config(root)
-    persona_status, persona_reasons = persona_state(root)
+    config = _load_config(workspace)
+    persona_status, persona_reasons = persona_state(workspace)
 
     index_dir = WorkspacePaths.derived() / "index"
     index_info = {
@@ -196,7 +196,7 @@ def run_status_summary(root: Path) -> dict[str, Any]:
         except Exception as exc:
             index_info["meta_error"] = str(exc)
 
-    pending_info = _check_pending_updates(root)
+    pending_info = _check_pending_updates(workspace)
     config_host = config.host
     host = resolve_ollama_host(
         os.getenv("AIJOURNAL_OLLAMA_HOST"),
@@ -242,12 +242,12 @@ class SystemStatusResult:
     summary: dict[str, Any]
 
 
-def run_system_doctor_cli() -> None:
-    root = Path.cwd()
-    config = _load_config(root)
+def run_system_doctor_cli(workspace: Path | None = None) -> None:
+    workspace = workspace or Path.cwd()
+    config = _load_config(workspace)
     ctx = create_run_context(
         command="ops.system.doctor",
-        workspace=root,
+        workspace=workspace,
         config=config,
         use_fake_llm=_use_fake_llm(),
         trace=False,
@@ -301,12 +301,12 @@ def run_system_doctor_cli() -> None:
     )
 
 
-def run_system_status_cli() -> None:
-    root = Path.cwd()
-    config = _load_config(root)
+def run_system_status_cli(workspace: Path | None = None) -> None:
+    workspace = workspace or Path.cwd()
+    config = _load_config(workspace)
     ctx = create_run_context(
         command="ops.system.status",
-        workspace=root,
+        workspace=workspace,
         config=config,
         use_fake_llm=_use_fake_llm(),
         trace=False,

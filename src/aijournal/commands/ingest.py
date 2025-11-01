@@ -311,6 +311,7 @@ def _discover_markdown_files(inputs: Iterable[Path]) -> list[Path]:
 
 def run_ingest(
     sources: list[Path],
+    workspace: Path | None = None,
     *,
     source_type: str,
     limit: int | None,
@@ -318,11 +319,11 @@ def run_ingest(
 ) -> None:
     """Ingest Markdown files into normalized YAML entries."""
 
-    root = Path.cwd()
-    config = _load_config(root)
+    workspace = workspace or Path.cwd()
+    config = _load_config(workspace)
     ctx = create_run_context(
         command="ingest",
-        workspace=root,
+        workspace=workspace,
         config=config,
         use_fake_llm=_use_fake_llm(),
         trace=False,
