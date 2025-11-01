@@ -550,8 +550,8 @@ def _chunk_manifest_dir() -> Path:
     return _index_dir() / "chunks"
 
 
-def _index_meta_path(root: Path) -> Path:
-    del root  # Use WorkspacePaths instead
+def _index_meta_path(_root: Path) -> Path:
+    """Get index meta path. Root parameter kept for callback interface compatibility."""
     return _index_dir() / INDEX_META_FILENAME
 
 
