@@ -121,7 +121,9 @@ def invoke_pipeline(ctx: RunContext, prepared: AdvicePrepared) -> AdviceResult:
 
 def persist_output(ctx: RunContext, result: AdviceResult) -> Path:
     advice_path = _derived_advice_path(ctx.workspace, ctx.config, result.day, result.question)
-    artifact_meta = _build_meta("prompts/advise.md", model=result.model_name)
+    artifact_meta = _build_meta(
+        "prompts/advise.md", model=result.model_name, use_fake_llm=ctx.use_fake_llm
+    )
     save_artifact(
         advice_path,
         Artifact[AdviceCard](

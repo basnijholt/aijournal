@@ -194,7 +194,9 @@ def run_characterize_command(
                 ),
             )
 
-        artifact_meta = _build_meta("prompts/characterize.md", config=prepared.config)
+        artifact_meta = _build_meta(
+            "prompts/characterize.md", config=prepared.config, use_fake_llm=ctx.use_fake_llm
+        )
         batch_model = ProfileUpdateBatch(
             batch_id=batch_id,
             created_at=timestamp,

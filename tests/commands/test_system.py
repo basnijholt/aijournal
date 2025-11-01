@@ -33,11 +33,11 @@ def test_run_system_doctor_happy_path(tmp_path: Path, monkeypatch: pytest.Monkey
     monkeypatch.setattr(
         system,
         "_check_ollama",
-        lambda config, host: (True, {"host": "fake://ollama"}),
+        lambda config, host, fake_mode: (True, {"host": "fake://ollama"}),
     )
     monkeypatch.setattr(system, "persona_state", lambda root, workspace, config: ("fresh", []))
 
-    result = system.run_system_doctor(tmp_path)
+    result = system.run_system_doctor(tmp_path, fake_mode=True)
 
     assert result["ok"] is True
     names = [check["name"] for check in result["checks"]]

@@ -197,12 +197,13 @@ def _build_meta(
     *,
     model: str | None = None,
     config: AppConfig | None = None,
+    use_fake_llm: bool,
 ) -> ArtifactMeta:
     resolved_model: str
     if model:
         resolved_model = model
     else:
-        resolved_model = resolve_model_name(config, use_fake_llm=use_fake_llm())
+        resolved_model = resolve_model_name(config, use_fake_llm=use_fake_llm)
     created_at = time_utils.format_timestamp(time_utils.now())
     return ArtifactMeta(
         created_at=created_at,
@@ -259,7 +260,9 @@ def invoke_pipeline(ctx: RunContext, prepared: DailySummaryPrepared) -> DailySum
 
 def persist_output(ctx: RunContext, result: DailySummaryResult) -> Path:
     summary_path = _derived_summary_path(ctx.workspace, ctx.config, result.date)
-    artifact_meta = _build_meta("prompts/summarize_day.md", model=result.model_name)
+    artifact_meta = _build_meta(
+        "prompts/summarize_day.md", model=result.model_name, use_fake_llm=ctx.use_fake_llm
+    )
     artifact = Artifact[DailySummary](
         kind=ArtifactKind.SUMMARY_DAILY,
         meta=artifact_meta,

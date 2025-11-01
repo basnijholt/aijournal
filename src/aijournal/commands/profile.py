@@ -262,7 +262,9 @@ def run_profile_suggest_command(
             raise typer.Exit(1) from exc
 
         path = _derived_profile_proposals_path(ctx.workspace, ctx.config, prepared.date)
-        artifact_meta = _build_meta("prompts/profile_suggest.md", config=prepared.config)
+        artifact_meta = _build_meta(
+            "prompts/profile_suggest.md", config=prepared.config, use_fake_llm=ctx.use_fake_llm
+        )
         artifact = Artifact[ProfileUpdateProposals](
             kind=ArtifactKind.PROFILE_PROPOSALS,
             meta=artifact_meta,
