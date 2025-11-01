@@ -4,9 +4,9 @@ This document captures follow-up items surfaced while testing the capture-first 
 
 ---
 
-## 1. Configurable Ollama Host via `config/config.yaml` — ✅ Completed
+## 1. Configurable Ollama Host via `config.yaml` — ✅ Completed
 
-**Status:** Implemented. `build_ollama_config_from_mapping` already respects a `host` value in `config/config.yaml`; precedence is CLI override → env (`AIJOURNAL_OLLAMA_HOST` / `OLLAMA_BASE_URL`) → config `host` → default `http://127.0.0.1:11434`. README/ARCHITECTURE describe the knob. No further action required.
+**Status:** Implemented. `build_ollama_config_from_mapping` already respects a `host` value in `config.yaml`; precedence is CLI override → env (`AIJOURNAL_OLLAMA_HOST` / `OLLAMA_BASE_URL`) → config `host` → default `http://127.0.0.1:11434`. README/ARCHITECTURE describe the knob. No further action required.
 
 ---
 
@@ -51,28 +51,72 @@ This builds on items 1 & 2 and pairs nicely with the resume helper. Once the det
 
 ---
 
-## 4. Workspace Directory Consolidation — ❓ Deprioritize for now
+## 4. Workspace Directory Consolidation — ✅ Completed
 
-**Pain:** The repo root currently includes multiple top-level data directories (`data/`, `derived/`, `profile/`, `config/`, `prompts/`, `logs/`, etc.). For new operators this feels noisy, and automated tooling (e.g., backups) must exclude lots of sibling paths. We want a single “workspace” folder that encapsulates all mutable artifacts and keeps the repository’s root tidy.
+**Status:** Implemented as self-contained workspace directory with config at root.
 
-**Proposal:** Introduce a `workspace/` (name TBD) directory that contains all runtime/stateful folders, while the root keeps only code and documentation. Existing commands should honor the new layout via a configurable base path so migrations are straightforward.
+**Final Design:**
+- The workspace is a single directory containing `config.yaml` at its root
+- All data directories (`data/`, `derived/`, `profile/`, `prompts/`) live directly under the workspace
+- No nesting - the workspace **is** the root for all aijournal data
+- Config location defines the workspace (no separate `workspace_root` field needed)
 
-**Status:** Nice-to-have but not urgent. Current documentation, tooling, and automation assume the existing root-level layout, and refactoring paths would create churn during the ongoing prompt/schema work. Leave this item on ice until we have concrete multi-workspace or backup requirements.
+**Implementation Summary:**
+- `WorkspacePaths` singleton manages paths within workspace directory
+- `config.yaml` moved from `config/config.yaml` to workspace root `config.yaml`
+- `_get_workspace()` CLI helper reads `AIJOURNAL_WORKSPACE` env var (defaults to cwd)
+- `_load_config(workspace: Path)` reads from `workspace/config.yaml`
+- `create_run_context(workspace: Path)` configures WorkspacePaths
+- All 18 command files updated to use `workspace=` parameter
+- All 207 tests passing
 
-**Acceptance criteria**
+**Usage:**
+```bash
+# Initialize workspace at any location
+aijournal init --path ~/my_journal
 
-- Add a config option (e.g., `paths.workspace_root`) defaulting to `workspace/`. Under this directory, materialize the existing `data/`, `derived/`, `profile/`, `prompts/`, `config/`, `logs/`, etc.
-- Update path helpers (`utils/paths.py`, normalization, pipelines, capture) to resolve everything relative to the workspace root.
-- Provide a migration command or script that moves current folders into `workspace/` without data loss (skip if already nested).
-- Documentation updates (README, ARCHITECTURE, workflow) to reference the new hierarchy and note that old layouts remain supported for a release via backward-compat lookup.
-- Ensure `.gitignore`, tests, and fake fixtures respect the new structure.
+# Use via environment variable
+export AIJOURNAL_WORKSPACE=~/my_journal
+aijournal capture "Today's entry"
 
-**Implementation sketch**
+# Or run from inside workspace
+cd ~/my_journal
+aijournal capture "Today's entry"
+```
 
-- Define `WorkspacePaths` helper exposing `workspace_root`, `data_dir`, `derived_dir`, etc., derived from config/env.
-- Adjust `aijournal init` to create `workspace/` (or the configured root) and lay out subdirectories there.
-- Capture/backfill: detect legacy layout (existing `/data/` at root) and either (a) continue using it via compatibility mode, or (b) prompt the user / run migration.
-- Update CLI commands/tests to use the helper instead of hard-coded `Path("data")` references.
+**Structure:**
+```
+my_journal/           ← The workspace (any name, any location)
+├── config.yaml       ← Config at workspace root
+├── data/
+│   ├── journal/
+│   ├── normalized/
+│   └── raw/
+├── derived/
+│   ├── summaries/
+│   ├── index/
+│   └── persona/
+├── profile/
+│   ├── self_profile.yaml
+│   └── claims.yaml
+└── prompts/
+```
+
+**Migration:** No backward compatibility - clean break. Users must reorganize or reinitialize.
+
+**Key Benefits:**
+- ✅ Single self-contained directory - easy to backup, move, or version control
+- ✅ Config location defines workspace - no ambiguity
+- ✅ Simple mental model - "workspace contains everything"
+- ✅ Environment variable support - `AIJOURNAL_WORKSPACE` for scripting
+- ✅ No legacy code - clean, maintainable implementation
+
+**Post-PR Improvements (2025-11-01):**
+Following PR review, added two quality-of-life improvements:
+1. **Workspace Validation**: `_get_workspace()` now validates that `config.yaml` exists and provides clear error message directing users to run `aijournal init` if missing
+2. **Configurable LLM Settings**: Added `LLMConfig` model with configurable `retries` (default: 4) and `timeout` (default: 120.0) settings in `config.yaml`, replacing hardcoded `DEFAULT_LLM_RETRIES` constant
+
+All 207 tests passing, documentation updated in README.md, ARCHITECTURE.md.
 
 ---
 

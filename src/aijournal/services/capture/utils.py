@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from datetime import UTC, datetime
 from hashlib import sha256
@@ -17,6 +16,8 @@ from aijournal.commands.profile import (
     load_profile_components,
     profile_to_dict,
 )
+from aijournal.common.app_config import AppConfig
+from aijournal.common.constants import MARKDOWN_SUFFIXES
 from aijournal.domain.changes import ClaimProposal, FacetChange
 from aijournal.domain.claims import ClaimAtom, ClaimSource
 from aijournal.domain.evidence import redact_source_text
@@ -29,8 +30,6 @@ from aijournal.pipelines import normalization
 from aijournal.services.capture.results import OperationResult
 from aijournal.utils import time as time_utils
 from aijournal.utils.paths import normalized_entry_path
-
-MARKDOWN_SUFFIXES = {".md", ".markdown"}
 
 
 def journal_path(root: Path, date_str: str, slug: str) -> Path:
@@ -46,8 +45,11 @@ def journal_path(root: Path, date_str: str, slug: str) -> Path:
     )
 
 
-def manifest_path(root: Path) -> Path:
-    return root / "data" / "manifest" / "ingested.yaml"
+def manifest_path(workspace: Path, config: AppConfig) -> Path:
+    """Get manifest file path for a workspace."""
+    from aijournal.utils.paths import resolve_path
+
+    return resolve_path(workspace, config, "data/manifest/ingested.yaml")
 
 
 def load_manifest(path: Path) -> list[ManifestEntry]:
@@ -69,10 +71,10 @@ def manifest_index(entries: Iterable[ManifestEntry]) -> dict[str, ManifestEntry]
     return {entry.hash: entry for entry in entries}
 
 
-def ensure_manifest(entries: list[ManifestEntry], root: Path) -> None:
+def ensure_manifest(entries: list[ManifestEntry], root: Path, config: AppConfig) -> None:
     if entries:
         return
-    entries.extend(load_manifest(manifest_path(root)))
+    entries.extend(load_manifest(manifest_path(root, config)))
 
 
 def relative_path(path: Path, root: Path) -> str:
@@ -113,10 +115,6 @@ def write_yaml_if_changed(path: Path, payload: dict[str, object]) -> bool:
         return False
     write_yaml(path, payload)
     return True
-
-
-def use_fake_llm() -> bool:
-    return os.getenv("AIJOURNAL_FAKE_OLLAMA") == "1"
 
 
 def digest_bytes(data: bytes) -> str:
@@ -164,8 +162,11 @@ def discover_markdown_files(paths: Sequence[str]) -> list[Path]:
     return unique
 
 
-def pending_batches(root: Path) -> set[Path]:
-    directory = root / "derived" / "pending" / "profile_updates"
+def pending_batches(workspace: Path, config: AppConfig) -> set[Path]:
+    """Get all pending profile update batch files."""
+    from aijournal.utils.paths import resolve_path
+
+    directory = resolve_path(workspace, config, "derived/pending/profile_updates")
     if not directory.exists():
         return set()
     return {path for path in directory.glob("*.yaml") if path.is_file()}
@@ -180,7 +181,7 @@ def noop_preview(
     return None
 
 
-def apply_profile_update_batch(root: Path, batch_path: Path) -> bool:
+def apply_profile_update_batch(root: Path, config: AppConfig, batch_path: Path) -> bool:
     batch = load_artifact_data(batch_path, ProfileUpdateBatch)
     claim_proposals: list[ClaimProposal] = [
         proposal.model_copy(deep=True) for proposal in batch.proposals.claims
@@ -189,7 +190,7 @@ def apply_profile_update_batch(root: Path, batch_path: Path) -> bool:
         proposal.model_copy(deep=True) for proposal in batch.proposals.facets
     ]
 
-    profile_model, claim_models = load_profile_components(root)
+    profile_model, claim_models = load_profile_components(root, config=config)
     profile = profile_to_dict(profile_model)
     claims_data = [claim.model_copy(deep=True) for claim in claim_models]
     timestamp = time_utils.format_timestamp(time_utils.now())
@@ -211,8 +212,11 @@ def apply_profile_update_batch(root: Path, batch_path: Path) -> bool:
 
     updated_profile = SelfProfile.model_validate(profile)
     updated_claims = [claim.model_copy(deep=True) for claim in claims_data]
-    write_yaml_model(root / "profile" / "self_profile.yaml", updated_profile)
-    write_yaml_model(root / "profile" / "claims.yaml", ClaimsFile(claims=updated_claims))
+    profile_dir = Path(config.paths.profile)
+    if not profile_dir.is_absolute():
+        profile_dir = root / profile_dir
+    write_yaml_model(profile_dir / "self_profile.yaml", updated_profile)
+    write_yaml_model(profile_dir / "claims.yaml", ClaimsFile(claims=updated_claims))
     return True
 
 
@@ -398,6 +402,7 @@ def normalize_markdown(
     markdown_path: Path,
     *,
     root: Path,
+    config: AppConfig,
     source_hash: str,
     source_type: str,
 ) -> tuple[Path, bool]:
@@ -451,7 +456,7 @@ def normalize_markdown(
         source_hash=source_hash,
         source_type=source_type,
     )
-    normalized_path = normalized_entry_path(root, date_str, entry_id)
+    normalized_path = normalized_entry_path(root, date_str, entry_id, paths=config.paths)
     changed = write_yaml_if_changed(
         normalized_path,
         normalized_entry.model_dump(mode="python"),

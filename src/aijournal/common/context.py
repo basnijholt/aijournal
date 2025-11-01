@@ -18,8 +18,12 @@ from aijournal.common.logging import (
 from aijournal.utils import time as time_utils
 
 
-def _trace_path(root: Path) -> Path:
-    return root / "derived" / "logs" / "run_trace.jsonl"
+def _trace_path(workspace: Path, config: AppConfig) -> Path:
+    """Build trace log path from workspace and config."""
+    derived = Path(config.paths.derived)
+    if not derived.is_absolute():
+        derived = workspace / derived
+    return derived / "logs" / "run_trace.jsonl"
 
 
 def _run_id(command: str) -> str:
@@ -32,7 +36,7 @@ def _run_id(command: str) -> str:
 @dataclass(slots=True)
 class RunContext:
     command: str
-    root: Path
+    workspace: Path
     config: AppConfig
     use_fake_llm: bool
     logger: StructuredLogger
@@ -49,32 +53,48 @@ class RunContext:
 def create_run_context(
     *,
     command: str,
-    root: Path,
+    workspace: Path,
     config: Mapping[str, Any] | AppConfig,
     use_fake_llm: bool,
     trace: bool,
     verbose_json: bool,
     sinks: Sequence[StructuredLogSink] | None = None,
 ) -> RunContext:
+    """Create a runtime context for command execution.
+
+    Args:
+        command: Command name being executed
+        workspace: Workspace directory containing config.yaml
+        config: Configuration (dict or AppConfig instance)
+        use_fake_llm: Whether to use fake LLM for testing
+        trace: Whether to enable trace logging
+        verbose_json: Whether to enable verbose JSON logging
+        sinks: Optional additional log sinks
+
+    Returns:
+        Configured RunContext
+    """
+    # Normalize config to model
+    config_model = (
+        config if isinstance(config, AppConfig) else AppConfig.model_validate(dict(config))
+    )
+
     run_id = _run_id(command)
     sink_list: list[StructuredLogSink] = list(sinks or [])
     if trace:
         sink_list.append(build_pretty_sink())
     if verbose_json:
         sink_list.append(build_json_sink())
-    config_model = (
-        config if isinstance(config, AppConfig) else AppConfig.model_validate(dict(config))
-    )
 
     logger = StructuredLogger(
-        path=_trace_path(root),
-        base={"run_id": run_id, "command": command, "root": str(root)},
+        path=_trace_path(workspace, config_model),
+        base={"run_id": run_id, "command": command, "workspace": str(workspace)},
         sinks=sink_list,
         enabled=True,
     )
     return RunContext(
         command=command,
-        root=root,
+        workspace=workspace,
         config=config_model,
         use_fake_llm=use_fake_llm,
         logger=logger,

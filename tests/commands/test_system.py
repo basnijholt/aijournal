@@ -19,7 +19,7 @@ def test_run_system_doctor_happy_path(tmp_path: Path, monkeypatch: pytest.Monkey
     monkeypatch.setattr(
         system,
         "_check_index_artifacts",
-        lambda root: {
+        lambda workspace, config: {
             "index_db_exists": True,
             "annoy_index_exists": True,
             "meta": {"chunk_count": 1},
@@ -27,15 +27,17 @@ def test_run_system_doctor_happy_path(tmp_path: Path, monkeypatch: pytest.Monkey
         },
     )
     monkeypatch.setattr(system, "_check_writable_paths", lambda root: (True, {}))
-    monkeypatch.setattr(system, "_check_pending_updates", lambda root: {"count": 0, "samples": []})
+    monkeypatch.setattr(
+        system, "_check_pending_updates", lambda workspace, config: {"count": 0, "samples": []}
+    )
     monkeypatch.setattr(
         system,
         "_check_ollama",
-        lambda config, host: (True, {"host": "fake://ollama"}),
+        lambda config, host, fake_mode: (True, {"host": "fake://ollama"}),
     )
-    monkeypatch.setattr(system, "persona_state", lambda root: ("fresh", []))
+    monkeypatch.setattr(system, "persona_state", lambda root, workspace, config: ("fresh", []))
 
-    result = system.run_system_doctor(tmp_path)
+    result = system.run_system_doctor(tmp_path, fake_mode=True)
 
     assert result["ok"] is True
     names = [check["name"] for check in result["checks"]]
@@ -45,7 +47,7 @@ def test_run_system_doctor_happy_path(tmp_path: Path, monkeypatch: pytest.Monkey
 
 def test_run_status_summary(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("AIJOURNAL_OLLAMA_HOST", "http://127.0.0.1:11434")
-    monkeypatch.setattr(system, "persona_state", lambda root: ("fresh", []))
+    monkeypatch.setattr(system, "persona_state", lambda root, workspace, config: ("fresh", []))
 
     index_dir = tmp_path / "derived" / "index"
     index_dir.mkdir(parents=True)
@@ -84,6 +86,7 @@ def test_run_status_summary(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
     for idx in range(3):
         (pending_dir / f"batch-{idx}.yaml").write_text("batch", encoding="utf-8")
 
+    # Configure WorkspacePaths for the test
     summary = system.run_status_summary(tmp_path)
 
     assert summary["persona"]["status"] == "fresh"

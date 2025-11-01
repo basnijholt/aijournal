@@ -12,9 +12,9 @@ from typing import Any
 import typer
 from pydantic import BaseModel
 
-from aijournal.commands.ingest import _use_fake_llm
 from aijournal.common.app_config import AppConfig
 from aijournal.common.command_runner import run_command_pipeline
+from aijournal.common.config_loader import use_fake_llm
 from aijournal.common.context import RunContext, create_run_context
 from aijournal.common.meta import Artifact, ArtifactKind, ArtifactMeta
 from aijournal.domain.claims import ClaimAtom
@@ -23,6 +23,7 @@ from aijournal.io.artifacts import load_artifact, save_artifact
 from aijournal.pipelines import persona as persona_pipeline
 from aijournal.utils import time as time_utils
 from aijournal.utils.coercion import coerce_float
+from aijournal.utils.paths import resolve_path
 
 PERSONA_DEFAULTS = {
     "token_budget": 1200,
@@ -144,15 +145,15 @@ def invoke_pipeline(ctx: RunContext, prepared: PersonaPrepared) -> PersonaResult
     ranked_claims = persona_result.ranked_claims
 
     sources: dict[str, str] = {}
-    profile_path = ctx.root / "profile" / "self_profile.yaml"
-    claims_path = ctx.root / "profile" / "claims.yaml"
+    profile_path = resolve_path(ctx.workspace, ctx.config, "profile/self_profile.yaml")
+    claims_path = resolve_path(ctx.workspace, ctx.config, "profile/claims.yaml")
     if profile_path.exists():
-        sources["profile"] = _relative_to_root(profile_path, ctx.root)
+        sources["profile"] = _relative_to_root(profile_path, ctx.workspace)
     if claims_path.exists():
-        sources["claims"] = _relative_to_root(claims_path, ctx.root)
-    source_mtimes = _persona_source_mtimes(ctx.root)
+        sources["claims"] = _relative_to_root(claims_path, ctx.workspace)
+    source_mtimes = _persona_source_mtimes(ctx.workspace, ctx.workspace, ctx.config)
 
-    persona_path = ctx.root / "derived" / "persona" / "persona_core.yaml"
+    persona_path = resolve_path(ctx.workspace, ctx.config, "derived/persona") / "persona_core.yaml"
     existing_artifact = None
     if persona_path.exists():
         try:
@@ -219,16 +220,16 @@ def _relative_to_root(path: Path, root: Path) -> str:
         return str(path)
 
 
-def _profile_yaml_paths(root: Path) -> list[Path]:
-    profile_dir = root / "profile"
+def _profile_yaml_paths(workspace: Path, config: AppConfig) -> list[Path]:
+    profile_dir = resolve_path(workspace, config, "profile")
     if not profile_dir.exists():
         return []
     return sorted(p for p in profile_dir.glob("*.yaml") if p.is_file())
 
 
-def _persona_source_mtimes(root: Path) -> dict[str, float]:
+def _persona_source_mtimes(root: Path, workspace: Path, config: AppConfig) -> dict[str, float]:
     state: dict[str, float] = {}
-    for path in _profile_yaml_paths(root):
+    for path in _profile_yaml_paths(workspace, config):
         rel = _relative_to_root(path, root)
         state[rel] = round(path.stat().st_mtime, 6)
     return state
@@ -285,8 +286,8 @@ def _persona_artifact_meta(
     )
 
 
-def persona_state(root: Path) -> tuple[str, list[str]]:
-    persona_path = root / "derived" / "persona" / "persona_core.yaml"
+def persona_state(root: Path, workspace: Path, config: AppConfig) -> tuple[str, list[str]]:
+    persona_path = resolve_path(workspace, config, "derived/persona") / "persona_core.yaml"
     if not persona_path.exists():
         rel = _relative_to_root(persona_path, root)
         return "missing", [f"Missing {rel}; run `aijournal persona build`."]
@@ -317,7 +318,7 @@ def persona_state(root: Path) -> tuple[str, list[str]]:
             ],
         )
 
-    current_state = _persona_source_mtimes(root)
+    current_state = _persona_source_mtimes(root, workspace, config)
     reasons: list[str] = []
     for rel, current_mtime in current_state.items():
         stored_value = stored_raw.get(rel)
@@ -340,8 +341,8 @@ def persona_state(root: Path) -> tuple[str, list[str]]:
     return "fresh", []
 
 
-def ensure_persona_ready_for_pack(root: Path) -> None:
-    status, reasons = persona_state(root)
+def ensure_persona_ready_for_pack(root: Path, workspace: Path, config: AppConfig) -> None:
+    status, reasons = persona_state(root, workspace, config)
     if status == "missing":
         typer.secho(
             "Persona core not found. Run `aijournal persona build` before assembling packs.",
@@ -372,9 +373,9 @@ def run_persona_build(
     root = root or Path.cwd()
     ctx = create_run_context(
         command="persona.build",
-        root=root,
+        workspace=root,
         config=config,
-        use_fake_llm=_use_fake_llm(),
+        use_fake_llm=use_fake_llm(),
         trace=False,
         verbose_json=False,
     )

@@ -40,14 +40,21 @@ def capture_pipeline_mocks(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> N
 
     monkeypatch.setattr(
         "aijournal.commands.summarize.run_summarize",
-        lambda date, *, timeout, retries, progress: _ensure_file(
+        lambda date, *, timeout, retries, progress, workspace=None: _ensure_file(
             tmp_path / "derived" / "summaries" / f"{date}.yaml", "summary"
         ),
     )
 
     monkeypatch.setattr(
         "aijournal.commands.facts.run_facts",
-        lambda date, *, timeout, retries, progress, claim_models, build_claim_preview: (
+        lambda date,
+        *,
+        timeout,
+        retries,
+        progress,
+        claim_models,
+        build_claim_preview,
+        workspace=None: (
             None,
             _ensure_file(tmp_path / "derived" / "microfacts" / f"{date}.yaml", "facts"),
         ),
@@ -55,7 +62,7 @@ def capture_pipeline_mocks(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> N
 
     monkeypatch.setattr(
         "aijournal.commands.profile.run_profile_suggest",
-        lambda date, *, timeout, retries, progress: _ensure_file(
+        lambda date, *, timeout, retries, progress, workspace=None: _ensure_file(
             tmp_path / "derived" / "profile_proposals" / f"{date}.yaml",
             "suggest",
         ),
@@ -63,12 +70,18 @@ def capture_pipeline_mocks(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> N
 
     monkeypatch.setattr(
         "aijournal.commands.profile.run_profile_apply",
-        lambda date, *, suggestions_path, auto_confirm: "applied",
+        lambda date, *, suggestions_path, auto_confirm, workspace=None: "applied",
     )
 
     monkeypatch.setattr(
         "aijournal.commands.characterize.run_characterize",
-        lambda date, *, timeout, retries, progress, build_claim_preview: _ensure_file(
+        lambda date,
+        *,
+        timeout,
+        retries,
+        progress,
+        build_claim_preview,
+        workspace=None: _ensure_file(
             tmp_path / "derived" / "pending" / "profile_updates" / f"{date}-batch.yaml",
             "batch",
         ),
@@ -76,7 +89,7 @@ def capture_pipeline_mocks(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> N
 
     monkeypatch.setattr(
         "aijournal.commands.profile.load_profile_components",
-        lambda root: (None, [object()]),
+        lambda *_, **__: (None, [object()]),
     )
 
     monkeypatch.setattr(

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from time import perf_counter
 from typing import TYPE_CHECKING
 
@@ -8,15 +9,17 @@ import typer
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from aijournal.common.app_config import AppConfig
+
     from .. import CaptureInput, PersonaStage7Outputs
 
 
 def run_persona_stage_7(
     inputs: CaptureInput,
     root: Path,
+    config: AppConfig,
     artifacts_changed: dict[str, int],
 ) -> PersonaStage7Outputs:
-    from aijournal.commands.ingest import _load_config
     from aijournal.commands.persona import (
         persona_state,
         run_persona_build,
@@ -39,22 +42,21 @@ def run_persona_stage_7(
     status_after = "unknown"
     force_rebuild = inputs.rebuild == "always"
     try:
-        status_before, _ = persona_state(root)
+        status_before, _ = persona_state(root, root, config)
         persona_stale_before = status_before != "fresh"
         should_build = (
             force_rebuild or persona_stale_before or artifacts_changed.get("profile", 0) > 0
         )
-        profile_model, claim_models = load_profile_components(root)
+        profile_model, claim_models = load_profile_components(root, config=config)
         profile_payload = profile_to_dict(profile_model)
         if should_build and (profile_payload or claim_models):
-            config = _load_config(root)
             _, persona_changed = run_persona_build(
                 profile_payload,
                 claim_models,
                 config=config,
                 root=root,
             )
-        status_after, _ = persona_state(root)
+        status_after, _ = persona_state(root, root, config)
         persona_stale_after = status_after != "fresh"
     except typer.Exit as exc:
         if exc.exit_code not in (0,):
@@ -62,11 +64,14 @@ def run_persona_stage_7(
     except Exception as exc:  # pragma: no cover - defensive
         persona_error = str(exc)
     duration_ms = (perf_counter() - stage_start) * 1000.0
-    persona_artifacts = []
+    derived_dir = Path(config.paths.derived)
+    if not derived_dir.is_absolute():
+        derived_dir = root / derived_dir
+    persona_core_path = derived_dir / "persona" / "persona_core.yaml"
+
+    persona_artifacts: list[str] = []
     if persona_changed:
-        persona_artifacts.append(
-            relative_path(root / "derived" / "persona" / "persona_core.yaml", root)
-        )
+        persona_artifacts.append(relative_path(persona_core_path, root))
     persona_details: dict[str, object] = {
         "before_fresh": not persona_stale_before,
         "after_fresh": not persona_stale_after,

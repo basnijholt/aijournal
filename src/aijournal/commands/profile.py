@@ -11,7 +11,6 @@ from typing import Any, Literal, cast
 import typer
 from pydantic import BaseModel, ValidationError
 
-from aijournal.commands.ingest import _load_config, _load_yaml, _use_fake_llm
 from aijournal.commands.summarize import (
     _build_meta,
     _entries_to_payload,
@@ -23,6 +22,7 @@ from aijournal.commands.summarize import (
 )
 from aijournal.common.app_config import AppConfig
 from aijournal.common.command_runner import run_command_pipeline
+from aijournal.common.config_loader import load_config, load_yaml, use_fake_llm
 from aijournal.common.context import RunContext, create_run_context
 from aijournal.common.meta import Artifact, ArtifactKind
 from aijournal.domain.changes import ClaimProposal, FacetChange, ProfileUpdateProposals
@@ -129,16 +129,17 @@ def run_profile_suggest(
     timeout: float,
     retries: int,
     progress: bool,
+    workspace: Path | None = None,
 ) -> Path:
     """Generate profile suggestions for a specific date."""
 
-    root = Path.cwd()
-    config = _load_config(root)
+    workspace = workspace or Path.cwd()
+    config = load_config(workspace)
     ctx = create_run_context(
         command="profile.suggest",
-        root=root,
+        workspace=workspace,
         config=config,
-        use_fake_llm=_use_fake_llm(),
+        use_fake_llm=use_fake_llm(),
         trace=False,
         verbose_json=False,
     )
@@ -158,16 +159,17 @@ def run_profile_apply(
     *,
     suggestions_path: Path | None,
     auto_confirm: bool,
+    workspace: Path | None = None,
 ) -> str:
     """Apply previously generated profile suggestions."""
 
-    root = Path.cwd()
-    config = _load_config(root)
+    workspace = workspace or Path.cwd()
+    config = load_config(workspace)
     ctx = create_run_context(
         command="profile.apply",
-        root=root,
+        workspace=workspace,
         config=config,
-        use_fake_llm=_use_fake_llm(),
+        use_fake_llm=use_fake_llm(),
         trace=False,
         verbose_json=False,
     )
@@ -181,16 +183,16 @@ def run_profile_apply(
     return run_profile_apply_command(ctx, options)
 
 
-def run_profile_status(*, root: Path | None = None) -> None:
+def run_profile_status(workspace: Path | None = None, *, root: Path | None = None) -> None:
     """Show ranked facets/claims requiring review."""
-    resolved_root = root or Path.cwd()
-    config_path = resolved_root / "config" / "config.yaml"
-    config = _load_yaml(config_path) if config_path.exists() else {}
+    workspace = workspace or Path.cwd()
+    config_path = workspace / "config.yaml"
+    config = load_yaml(config_path) if config_path.exists() else {}
     ctx = create_run_context(
         command="profile.status",
-        root=resolved_root,
+        workspace=workspace,
         config=config,
-        use_fake_llm=_use_fake_llm(),
+        use_fake_llm=use_fake_llm(),
         trace=False,
         verbose_json=False,
     )
@@ -198,8 +200,12 @@ def run_profile_status(*, root: Path | None = None) -> None:
     run_profile_status_command(ctx, ProfileStatusOptions())
 
 
-def _derived_profile_proposals_path(root: Path, day: str) -> Path:
-    return root / "derived" / "profile_proposals" / f"{day}.yaml"
+def _derived_profile_proposals_path(workspace: Path, config: AppConfig, day: str) -> Path:
+    """Build path to profile proposals file for a given day."""
+    derived = Path(config.paths.derived)
+    if not derived.is_absolute():
+        derived = workspace / derived
+    return derived / "profile_proposals" / f"{day}.yaml"
 
 
 def run_profile_suggest_command(
@@ -207,13 +213,13 @@ def run_profile_suggest_command(
     options: ProfileSuggestOptions,
 ) -> Path:
     def _prepare(_: RunContext, opts: ProfileSuggestOptions) -> ProfileSuggestPrepared:
-        entries = _load_normalized_entries(ctx.root, opts.date)
+        entries = _load_normalized_entries(ctx.workspace, ctx.config, opts.date)
         if not entries:
             typer.secho(f"No normalized entries for {opts.date}", fg=typer.colors.RED, err=True)
             raise typer.Exit(1)
 
         timeout_value = _validate_timeout(opts.timeout)
-        profile_model, claim_models = load_profile_components(ctx.root)
+        profile_model, claim_models = load_profile_components(ctx.workspace, config=ctx.config)
         profile = profile_to_dict(profile_model)
         claims = [claim.model_copy(deep=True) for claim in claim_models]
         if not profile and not claims:
@@ -255,8 +261,10 @@ def run_profile_suggest_command(
             typer.secho(f"Profile suggestions failed: {exc}", fg=typer.colors.RED, err=True)
             raise typer.Exit(1) from exc
 
-        path = _derived_profile_proposals_path(ctx.root, prepared.date)
-        artifact_meta = _build_meta("prompts/profile_suggest.md", config=prepared.config)
+        path = _derived_profile_proposals_path(ctx.workspace, ctx.config, prepared.date)
+        artifact_meta = _build_meta(
+            "prompts/profile_suggest.md", config=prepared.config, use_fake_llm=ctx.use_fake_llm
+        )
         artifact = Artifact[ProfileUpdateProposals](
             kind=ArtifactKind.PROFILE_PROPOSALS,
             meta=artifact_meta,
@@ -288,8 +296,8 @@ def run_profile_apply_command(
     options: ProfileApplyOptions,
 ) -> str:
     def _prepare(_: RunContext, opts: ProfileApplyOptions) -> ProfileApplyPrepared:
-        resolved_path = opts.suggestions_path or (
-            ctx.root / "derived" / "profile_proposals" / f"{opts.date}.yaml"
+        resolved_path = opts.suggestions_path or _derived_profile_proposals_path(
+            ctx.workspace, ctx.config, opts.date
         )
         if not resolved_path.exists():
             typer.secho(
@@ -300,7 +308,7 @@ def run_profile_apply_command(
             raise typer.Exit(1)
 
         proposals = load_artifact_data(resolved_path, ProfileUpdateProposals)
-        profile_model, claim_models = load_profile_components(ctx.root)
+        profile_model, claim_models = load_profile_components(ctx.workspace, config=ctx.config)
         profile = profile_to_dict(profile_model)
         claims = [claim.model_copy(deep=True) for claim in claim_models]
         timestamp = time_utils.format_timestamp(time_utils.now())
@@ -310,7 +318,7 @@ def run_profile_apply_command(
             facet_changes=len(proposals.facets),
         )
         return ProfileApplyPrepared(
-            root=ctx.root,
+            root=ctx.workspace,
             proposals=proposals,
             profile=profile,
             claims=claims,
@@ -335,10 +343,11 @@ def run_profile_apply_command(
 
         updated_profile = SelfProfile.model_validate(prepared.profile)
         updated_claims = [claim.model_copy(deep=True) for claim in prepared.claims]
-        write_yaml_model(prepared.root / "profile" / "self_profile.yaml", updated_profile)
-        write_yaml_model(
-            prepared.root / "profile" / "claims.yaml", ClaimsFile(claims=updated_claims)
-        )
+        profile_dir = Path(ctx.config.paths.profile)
+        if not profile_dir.is_absolute():
+            profile_dir = ctx.workspace / profile_dir
+        write_yaml_model(profile_dir / "self_profile.yaml", updated_profile)
+        write_yaml_model(profile_dir / "claims.yaml", ClaimsFile(claims=updated_claims))
         return ProfileApplyResult(message="Applied 1 suggestions file", changed=True)
 
     def _persist(_: RunContext, result: ProfileApplyResult) -> str:
@@ -355,11 +364,10 @@ def run_profile_apply_command(
 
 def run_profile_status_command(ctx: RunContext, options: ProfileStatusOptions) -> None:
     def _prepare(_: RunContext, __: ProfileStatusOptions) -> ProfileStatusPrepared:
-        profile_model, claim_models = load_profile_components(ctx.root)
+        profile_model, claim_models = load_profile_components(ctx.workspace, config=ctx.config)
         profile = profile_to_dict(profile_model)
 
-        config = _load_config(ctx.root)
-        weights = config.impact_weights.model_dump(mode="python")
+        weights = ctx.config.impact_weights.model_dump(mode="python")
 
         return ProfileStatusPrepared(
             profile=profile,
@@ -410,7 +418,7 @@ def _profile_proposals_payload(
     timeout: float | None = None,
     retries: int = DEFAULT_PROFILE_RETRIES,
 ) -> ProfileUpdateProposals:
-    if _use_fake_llm():
+    if use_fake_llm():
         proposals = fake_profile_proposals(
             entries,
             profile,
@@ -639,9 +647,24 @@ def _build_claim_atom_from_entry(
     )
 
 
-def load_profile_components(root: Path) -> tuple[SelfProfile | None, list[ClaimAtom]]:
-    profile_path = root / "profile" / "self_profile.yaml"
-    claims_path = root / "profile" / "claims.yaml"
+def load_profile_components(
+    root: Path,
+    *,
+    config: AppConfig,
+) -> tuple[SelfProfile | None, list[ClaimAtom]]:
+    """Load profile metadata and claim atoms for a workspace.
+
+    Args:
+        root: Workspace directory root.
+        config: Application configuration containing path settings.
+    """
+
+    profile_dir = Path(config.paths.profile)
+    if not profile_dir.is_absolute():
+        profile_dir = root / profile_dir
+
+    profile_path = profile_dir / "self_profile.yaml"
+    claims_path = profile_dir / "claims.yaml"
 
     profile = load_yaml_model(profile_path, SelfProfile) if profile_path.exists() else None
     if claims_path.exists():
@@ -649,7 +672,7 @@ def load_profile_components(root: Path) -> tuple[SelfProfile | None, list[ClaimA
             claims_file = load_yaml_model(claims_path, ClaimsFile)
             claim_models = list(claims_file.claims)
         except ValidationError:
-            raw = _load_yaml(claims_path).get("claims", [])
+            raw = load_yaml(claims_path).get("claims", [])
             claim_models = _claims_to_models(raw if isinstance(raw, list) else [])
     else:
         claim_models = []

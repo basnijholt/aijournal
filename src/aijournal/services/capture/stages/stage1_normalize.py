@@ -4,6 +4,8 @@ from pathlib import Path
 from time import perf_counter
 from typing import TYPE_CHECKING
 
+from aijournal.common.app_config import AppConfig
+
 from .stage0_persist import EntryResult
 
 if TYPE_CHECKING:
@@ -13,11 +15,12 @@ if TYPE_CHECKING:
 def run_normalize_stage_1(
     entry_results: list[EntryResult],
     root: Path,
+    config: AppConfig,
 ) -> NormalizeStageOutputs:
     from .. import NormalizeStageOutputs, OperationResult, normalize_entries
 
     normalize_start = perf_counter()
-    artifact_counts = normalize_entries(entry_results, root) if entry_results else {}
+    artifact_counts = normalize_entries(entry_results, root, config) if entry_results else {}
     duration_ms = (perf_counter() - normalize_start) * 1000.0
     normalized_count = int(artifact_counts.get("normalized", 0))
     normalized_paths = artifact_counts.get("paths", [])

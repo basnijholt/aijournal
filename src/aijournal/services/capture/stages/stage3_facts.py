@@ -7,6 +7,8 @@ from typing import TYPE_CHECKING
 import typer
 
 if TYPE_CHECKING:
+    from aijournal.common.app_config import AppConfig
+
     from .. import CaptureInput, FactsStage3Outputs
 
 
@@ -14,17 +16,19 @@ def run_facts_stage_3(
     changed_dates: list[str],
     inputs: CaptureInput,
     root: Path,
+    config: AppConfig,
 ) -> FactsStage3Outputs:
     from aijournal.commands.facts import run_facts
     from aijournal.commands.profile import load_profile_components
+    from aijournal.common.constants import DEFAULT_TIMEOUT_SECONDS
 
-    from .. import DEFAULT_TIMEOUT_SECONDS, FactsStage3Outputs, OperationResult
+    from .. import FactsStage3Outputs, OperationResult
     from ..utils import noop_preview, relative_path
 
     stage_start = perf_counter()
     facts_paths: list[str] = []
     facts_errors: list[str] = []
-    claim_models = load_profile_components(root)[1]
+    _, claim_models = load_profile_components(root, config=config)
     for date in changed_dates:
         try:
             _, facts_path = run_facts(
@@ -34,6 +38,7 @@ def run_facts_stage_3(
                 progress=inputs.progress,
                 claim_models=claim_models,
                 build_claim_preview=noop_preview,
+                workspace=root,
             )
         except typer.Exit as exc:
             if exc.exit_code not in (0,):

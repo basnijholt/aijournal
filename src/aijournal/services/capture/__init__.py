@@ -11,7 +11,8 @@ from typing import Any, NamedTuple
 from pydantic import BaseModel, Field
 
 from aijournal.api.capture import CaptureInput
-from aijournal.commands.ingest import _load_config
+from aijournal.common.app_config import AppConfig
+from aijournal.common.config_loader import load_config
 from aijournal.common.logging import StructuredLogger
 from aijournal.models.authoritative import ManifestEntry
 from aijournal.services.capture.results import OperationResult, StageResult
@@ -282,9 +283,6 @@ def load_capture_result(root: Path, run_id: str) -> CaptureResult:
     return CaptureResult.model_validate(data)
 
 
-DEFAULT_TIMEOUT_SECONDS = 120.0
-
-
 class CaptureResult(BaseModel):
     """Aggregate result for a capture run."""
 
@@ -347,9 +345,10 @@ def run_capture(
         raise ValueError(msg)
 
     root = root or Path.cwd()
-    config_payload = _load_config(root)
-    ollama_config = build_ollama_config_from_mapping(config_payload)
-    config_host = config_payload.host
+    config = load_config(root)
+
+    ollama_config = build_ollama_config_from_mapping(config)
+    config_host = config.host
     env_host = os.getenv("AIJOURNAL_OLLAMA_HOST")
     env_base_url = os.getenv("OLLAMA_BASE_URL")
     resolved_run_id = run_id or _generate_run_id()
@@ -445,6 +444,7 @@ def run_capture(
         persist_outputs = run_persist_stage_0(
             inputs,
             root,
+            config,
             manifest_entries,
             log_event,
         )
@@ -469,6 +469,7 @@ def run_capture(
         normalize_outputs = run_normalize_stage_1(
             entry_results,
             root,
+            config,
         )
         artifact_counts = normalize_outputs.artifacts
         normalize_result = normalize_outputs.result
@@ -534,6 +535,7 @@ def run_capture(
             changed_dates,
             inputs,
             root,
+            config,
         )
         facts_result = facts_outputs.result
         facts_duration = facts_outputs.duration_ms
@@ -568,6 +570,7 @@ def run_capture(
             changed_dates,
             inputs,
             root,
+            config,
         )
         profile_result = profile_outputs.suggest_result
         apply_result = profile_outputs.apply_result
@@ -616,7 +619,12 @@ def run_capture(
             )
 
     if changed_dates and stage_enabled(5):
-        characterize_outputs = run_characterize_stage_5(changed_dates, inputs, root)
+        characterize_outputs = run_characterize_stage_5(
+            changed_dates,
+            inputs,
+            root,
+            config,
+        )
         characterize_result = characterize_outputs.result
         review_result = characterize_outputs.review_result
         characterize_duration = characterize_outputs.duration_ms
@@ -735,7 +743,7 @@ def run_capture(
                 message="skipped by --rebuild skip",
             )
         else:
-            persona_outputs = run_persona_stage_7(inputs, root, artifacts_changed)
+            persona_outputs = run_persona_stage_7(inputs, root, config, artifacts_changed)
             persona_result = persona_outputs.result
             persona_duration = persona_outputs.duration_ms
             persona_changed = persona_outputs.persona_changed
@@ -830,7 +838,7 @@ def run_capture(
     return result
 
 
-def normalize_entries(entries: list[EntryResult], root: Path) -> dict[str, Any]:
+def normalize_entries(entries: list[EntryResult], root: Path, config: AppConfig) -> dict[str, Any]:
     """Normalize Markdown entries that changed during capture."""
 
     normalized = 0
@@ -849,6 +857,7 @@ def normalize_entries(entries: list[EntryResult], root: Path) -> dict[str, Any]:
         normalized_path, changed = normalize_markdown(
             markdown_path,
             root=root,
+            config=config,
             source_hash=source_hash,
             source_type=source_type,
         )

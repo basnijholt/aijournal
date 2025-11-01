@@ -11,8 +11,8 @@ from typing import Any
 import typer
 from pydantic import BaseModel
 
-from aijournal.commands.ingest import _use_fake_llm
 from aijournal.common.command_runner import run_command_pipeline
+from aijournal.common.config_loader import use_fake_llm
 from aijournal.common.context import RunContext, create_run_context
 from aijournal.io.yaml_io import dump_yaml
 from aijournal.utils import time as time_utils
@@ -204,7 +204,7 @@ class NewResult:
 
 
 def prepare_inputs(ctx: RunContext, options: NewOptions) -> NewPrepared:
-    base = ctx.root
+    base = ctx.workspace
     if options.fake > 0:
         if options.title is not None:
             typer.secho(
@@ -312,13 +312,14 @@ def run_new(
     tags: list[str] | None,
     fake: int,
     seed: int | None,
+    workspace: Path | None = None,
 ) -> None:
-    base = Path.cwd()
+    workspace = workspace or Path.cwd()
     ctx = create_run_context(
         command="ops.dev.new",
-        root=base,
+        workspace=workspace,
         config={},
-        use_fake_llm=_use_fake_llm(),
+        use_fake_llm=use_fake_llm(),
         trace=False,
         verbose_json=False,
     )

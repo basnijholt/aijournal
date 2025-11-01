@@ -15,19 +15,19 @@ from pydantic import BaseModel
 
 from aijournal.commands.facts import _manifest_by_id
 from aijournal.commands.ingest import (
-    _load_config,
     _load_manifest,
     _manifest_path,
     _relative_source_path,
-    _use_fake_llm,
 )
 from aijournal.common.app_config import AppConfig
 from aijournal.common.command_runner import run_command_pipeline
+from aijournal.common.config_loader import load_config, use_fake_llm
 from aijournal.common.context import RunContext, create_run_context
 from aijournal.pipelines import index as index_pipeline
 from aijournal.services.embedding import EmbeddingBackend
 from aijournal.services.retriever import RetrievalFilters, RetrievalResult, Retriever
 from aijournal.utils import time as time_utils
+from aijournal.utils.paths import resolve_path
 
 INDEX_DB_FILENAME = "index.db"
 ANNOY_FILENAME = "annoy.index"
@@ -101,16 +101,18 @@ class IndexSearchResult:
     result: RetrievalResult
 
 
-def run_index_rebuild(since: str | None, *, limit: int | None) -> str:
+def run_index_rebuild(
+    since: str | None, *, limit: int | None, workspace: Path | None = None
+) -> str:
     """Rebuild the Annoy + SQLite retrieval index."""
 
-    root = Path.cwd()
-    config = _load_config(root)
+    workspace = workspace or Path.cwd()
+    config = load_config(workspace)
     ctx = create_run_context(
         command="index.rebuild",
-        root=root,
+        workspace=workspace,
         config=config,
-        use_fake_llm=_use_fake_llm(),
+        use_fake_llm=use_fake_llm(),
         trace=False,
         verbose_json=False,
     )
@@ -118,16 +120,18 @@ def run_index_rebuild(since: str | None, *, limit: int | None) -> str:
     return run_index_rebuild_command(ctx, options)
 
 
-def run_index_tail(since: str | None, *, days: int, limit: int | None) -> str:
+def run_index_tail(
+    since: str | None, *, days: int, limit: int | None, workspace: Path | None = None
+) -> str:
     """Tail the retrieval index by ingesting recently normalized entries."""
 
-    root = Path.cwd()
-    config = _load_config(root)
+    workspace = workspace or Path.cwd()
+    config = load_config(workspace)
     ctx = create_run_context(
         command="index.update",
-        root=root,
+        workspace=workspace,
         config=config,
-        use_fake_llm=_use_fake_llm(),
+        use_fake_llm=use_fake_llm(),
         trace=False,
         verbose_json=False,
     )
@@ -143,16 +147,17 @@ def run_index_search(
     source: str | None,
     date_from: str | None,
     date_to: str | None,
+    workspace: Path | None = None,
 ) -> None:
     """Search the retrieval index and display formatted results."""
 
-    root = Path.cwd()
-    config = _load_config(root)
+    workspace = workspace or Path.cwd()
+    config = load_config(workspace)
     ctx = create_run_context(
         command="index.search",
-        root=root,
+        workspace=workspace,
         config=config,
-        use_fake_llm=_use_fake_llm(),
+        use_fake_llm=use_fake_llm(),
         trace=False,
         verbose_json=False,
     )
@@ -204,7 +209,7 @@ def _prepare_rebuild_inputs(ctx: RunContext, options: IndexRebuildOptions) -> In
         raise typer.Exit(1)
 
     since_filter = _resolve_since_filter(options.since)
-    entries = _collect_normalized_files(ctx.root, since_filter)
+    entries = _collect_normalized_files(ctx.workspace, ctx.config, since_filter)
     if options.limit is not None:
         entries = entries[: options.limit]
     if not entries:
@@ -216,19 +221,18 @@ def _prepare_rebuild_inputs(ctx: RunContext, options: IndexRebuildOptions) -> In
         ctx.emit(event="no_entries")
         raise typer.Exit(1)
 
-    manifest_index = _manifest_by_id(_load_manifest(_manifest_path(ctx.root)))
+    manifest_index = _manifest_by_id(_load_manifest(_manifest_path(ctx.workspace, ctx.config)))
     tasks = index_pipeline.prepare_index_tasks(
         entries,
-        root=ctx.root,
+        root=ctx.workspace,
         manifest_index=manifest_index,
-        relative_path=lambda entry_path: _relative_source_path(entry_path, ctx.root),
+        relative_path=lambda entry_path: _relative_source_path(entry_path, ctx.workspace),
     )
     if not tasks:
         typer.secho("No normalized entries with valid IDs found.", fg=typer.colors.RED, err=True)
         ctx.emit(event="no_tasks")
         raise typer.Exit(1)
 
-    config = _load_config(ctx.root)
     ctx.emit(
         event="prepare_index",
         entries=len(entries),
@@ -237,7 +241,7 @@ def _prepare_rebuild_inputs(ctx: RunContext, options: IndexRebuildOptions) -> In
     )
     return IndexRebuildPrepared(
         tasks=list(tasks),
-        config=config,
+        config=ctx.config,
         since_filter=since_filter,
         limit=options.limit,
         entries_considered=len(entries),
@@ -245,7 +249,7 @@ def _prepare_rebuild_inputs(ctx: RunContext, options: IndexRebuildOptions) -> In
 
 
 def _invoke_rebuild_pipeline(ctx: RunContext, prepared: IndexRebuildPrepared) -> IndexRebuildResult:
-    embedder = _build_embedding_backend(prepared.config)
+    embedder = _build_embedding_backend(prepared.config, fake_mode=ctx.use_fake_llm)
     ann_trees, search_k_factor, char_per_token = _index_settings(prepared.config)
 
     stats: dict[str, Any] = {"entries": 0, "chunks": 0, "dates": []}
@@ -253,9 +257,9 @@ def _invoke_rebuild_pipeline(ctx: RunContext, prepared: IndexRebuildPrepared) ->
     entry_total = 0
     touched_dates: list[str] = []
 
-    index_dir = _index_dir(ctx.root)
+    index_dir = _index_dir(ctx.workspace, ctx.config)
     index_dir.mkdir(parents=True, exist_ok=True)
-    conn = _connect_index_db(_index_db_path(ctx.root), overwrite=True)
+    conn = _connect_index_db(_index_db_path(ctx.workspace, ctx.config), overwrite=True)
     try:
         with conn:
             _prepare_index_schema(conn)
@@ -270,14 +274,14 @@ def _invoke_rebuild_pipeline(ctx: RunContext, prepared: IndexRebuildPrepared) ->
             conn,
             embedder.dim,
             ann_trees,
-            _annoy_index_path(ctx.root),
+            _annoy_index_path(ctx.workspace, ctx.config),
         )
         conn.commit()
         touched_dates = sorted(stats.get("dates", []))
         if touched_dates:
             index_pipeline.write_chunk_manifests(
                 conn,
-                _chunk_manifest_dir(ctx.root),
+                _chunk_manifest_dir(ctx.workspace, ctx.config),
                 touched_dates,
                 embedder,
             )
@@ -285,19 +289,19 @@ def _invoke_rebuild_pipeline(ctx: RunContext, prepared: IndexRebuildPrepared) ->
         conn.close()
 
     index_pipeline.write_index_meta(
-        ctx.root,
+        ctx.workspace,
         embedder=embedder,
         chunk_total=chunk_total,
         entry_total=entry_total,
         mode="rebuild",
-        fake_mode=_use_fake_llm(),
+        fake_mode=ctx.use_fake_llm,
         ann_trees=ann_trees,
         search_k_factor=search_k_factor,
         char_per_token=char_per_token,
         since=prepared.since_filter,
         limit=prepared.limit,
         touched_dates=touched_dates,
-        index_meta_path=_index_meta_path,
+        index_meta_path=lambda root: _index_meta_path(root, ctx.workspace, ctx.config),
     )
 
     message = f"Indexed {chunk_total} chunks across {entry_total} entries (mode: rebuild)."
@@ -335,7 +339,7 @@ def _prepare_tail_inputs(ctx: RunContext, options: IndexTailOptions) -> IndexTai
         ctx.emit(event="invalid_option", option="limit")
         raise typer.Exit(1)
 
-    db_path = _index_db_path(ctx.root)
+    db_path = _index_db_path(ctx.workspace, ctx.config)
     if not db_path.exists():
         typer.secho(
             "Index database not found. Run `aijournal index rebuild` first.",
@@ -346,7 +350,7 @@ def _prepare_tail_inputs(ctx: RunContext, options: IndexTailOptions) -> IndexTai
         raise typer.Exit(1)
 
     since_filter = _resolve_since_filter(options.since, fallback_days=options.days)
-    entries = _collect_normalized_files(ctx.root, since_filter)
+    entries = _collect_normalized_files(ctx.workspace, ctx.config, since_filter)
     if options.limit is not None:
         entries = entries[: options.limit]
     if not entries:
@@ -358,14 +362,13 @@ def _prepare_tail_inputs(ctx: RunContext, options: IndexTailOptions) -> IndexTai
         ctx.emit(event="no_entries")
         raise typer.Exit(1)
 
-    manifest_index = _manifest_by_id(_load_manifest(_manifest_path(ctx.root)))
+    manifest_index = _manifest_by_id(_load_manifest(_manifest_path(ctx.workspace, ctx.config)))
     tasks = index_pipeline.prepare_index_tasks(
         entries,
-        root=ctx.root,
+        root=ctx.workspace,
         manifest_index=manifest_index,
-        relative_path=lambda entry_path: _relative_source_path(entry_path, ctx.root),
+        relative_path=lambda entry_path: _relative_source_path(entry_path, ctx.workspace),
     )
-    config = _load_config(ctx.root)
     ctx.emit(
         event="prepare_tail",
         entries=len(entries),
@@ -374,7 +377,7 @@ def _prepare_tail_inputs(ctx: RunContext, options: IndexTailOptions) -> IndexTai
     )
     return IndexTailPrepared(
         tasks=list(tasks),
-        config=config,
+        config=ctx.config,
         since_filter=since_filter,
         limit=options.limit,
         days=options.days,
@@ -382,7 +385,7 @@ def _prepare_tail_inputs(ctx: RunContext, options: IndexTailOptions) -> IndexTai
 
 
 def _invoke_tail_pipeline(ctx: RunContext, prepared: IndexTailPrepared) -> IndexTailResult:
-    db_path = _index_db_path(ctx.root)
+    db_path = _index_db_path(ctx.workspace, ctx.config)
     conn = _connect_index_db(db_path)
     try:
         pending = index_pipeline.filter_tasks_for_tail(conn, prepared.tasks)
@@ -396,7 +399,7 @@ def _invoke_tail_pipeline(ctx: RunContext, prepared: IndexTailPrepared) -> Index
                 up_to_date=True,
             )
 
-        embedder = _build_embedding_backend(prepared.config)
+        embedder = _build_embedding_backend(prepared.config, fake_mode=ctx.use_fake_llm)
         ann_trees, search_k_factor, char_per_token = _index_settings(prepared.config)
 
         stats: dict[str, Any] = {"entries": 0, "chunks": 0, "dates": []}
@@ -409,32 +412,32 @@ def _invoke_tail_pipeline(ctx: RunContext, prepared: IndexTailPrepared) -> Index
             conn,
             embedder.dim,
             ann_trees,
-            _annoy_index_path(ctx.root),
+            _annoy_index_path(ctx.workspace, ctx.config),
         )
         conn.commit()
         touched_dates = sorted(stats.get("dates", []))
         if touched_dates:
             index_pipeline.write_chunk_manifests(
                 conn,
-                _chunk_manifest_dir(ctx.root),
+                _chunk_manifest_dir(ctx.workspace, ctx.config),
                 touched_dates,
                 embedder,
             )
 
         index_pipeline.write_index_meta(
-            ctx.root,
+            ctx.workspace,
             embedder=embedder,
             chunk_total=chunk_total,
             entry_total=entry_total,
             mode="tail",
-            fake_mode=_use_fake_llm(),
+            fake_mode=ctx.use_fake_llm,
             ann_trees=ann_trees,
             search_k_factor=search_k_factor,
             char_per_token=char_per_token,
             since=prepared.since_filter,
             limit=prepared.limit,
             touched_dates=touched_dates,
-            index_meta_path=_index_meta_path,
+            index_meta_path=lambda root: _index_meta_path(root, ctx.workspace, ctx.config),
         )
 
         message = (
@@ -488,7 +491,7 @@ def _prepare_search_inputs(ctx: RunContext, options: IndexSearchOptions) -> Inde
 
 
 def _invoke_search_pipeline(ctx: RunContext, prepared: IndexSearchPrepared) -> IndexSearchResult:
-    retriever = Retriever(ctx.root, ctx.config)
+    retriever = Retriever(ctx.workspace, ctx.config)
     try:
         result = retriever.search(prepared.query, k=prepared.top, filters=prepared.filters)
     except (RuntimeError, ValueError) as exc:
@@ -528,28 +531,31 @@ def _persist_search_output(ctx: RunContext, search_result: IndexSearchResult) ->
             typer.echo("")
 
 
-def _index_dir(root: Path) -> Path:
-    return root / "derived" / "index"
+def _index_dir(workspace: Path, config: AppConfig) -> Path:
+    return resolve_path(workspace, config, "derived/index")
 
 
-def _index_db_path(root: Path) -> Path:
-    return _index_dir(root) / INDEX_DB_FILENAME
+def _index_db_path(workspace: Path, config: AppConfig) -> Path:
+    return _index_dir(workspace, config) / INDEX_DB_FILENAME
 
 
-def _annoy_index_path(root: Path) -> Path:
-    return _index_dir(root) / ANNOY_FILENAME
+def _annoy_index_path(workspace: Path, config: AppConfig) -> Path:
+    return _index_dir(workspace, config) / ANNOY_FILENAME
 
 
-def _chunk_manifest_dir(root: Path) -> Path:
-    return _index_dir(root) / "chunks"
+def _chunk_manifest_dir(workspace: Path, config: AppConfig) -> Path:
+    return _index_dir(workspace, config) / "chunks"
 
 
-def _index_meta_path(root: Path) -> Path:
-    return _index_dir(root) / INDEX_META_FILENAME
+def _index_meta_path(_root: Path, workspace: Path, config: AppConfig) -> Path:
+    """Get index meta path. Root parameter kept for callback interface compatibility."""
+    return _index_dir(workspace, config) / INDEX_META_FILENAME
 
 
-def _collect_normalized_files(root: Path, since: str | None) -> list[tuple[str, Path]]:
-    normalized_root = root / "data" / "normalized"
+def _collect_normalized_files(
+    workspace: Path, config: AppConfig, since: str | None
+) -> list[tuple[str, Path]]:
+    normalized_root = resolve_path(workspace, config, "data/normalized")
     if not normalized_root.exists():
         return []
     entries: list[tuple[str, Path]] = []
@@ -607,10 +613,10 @@ def _format_search_snippet(text: str, limit: int = 200) -> str:
     return collapsed[: limit - 3].rstrip() + "..."
 
 
-def _build_embedding_backend(config: AppConfig) -> EmbeddingBackend:
+def _build_embedding_backend(config: AppConfig, *, fake_mode: bool) -> EmbeddingBackend:
     model = str(config.embedding_model or "embeddinggemma")
     host = os.getenv("AIJOURNAL_OLLAMA_HOST")
-    return EmbeddingBackend(model, host=host, fake_mode=_use_fake_llm())
+    return EmbeddingBackend(model, host=host, fake_mode=fake_mode)
 
 
 def _index_settings(config: AppConfig) -> tuple[int, float, float]:

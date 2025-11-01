@@ -68,7 +68,7 @@ def test_retriever_parity_with_fixture(
     assert meta_path.exists()
 
     spec = json.loads((workspace / "expected_retrieval.json").read_text(encoding="utf-8"))
-    config_dict = yaml.safe_load((workspace / "config" / "config.yaml").read_text(encoding="utf-8"))
+    config_dict = yaml.safe_load((workspace / "config.yaml").read_text(encoding="utf-8"))
     config = AppConfig.model_validate(config_dict)
 
     retriever = Retriever(workspace, config)
@@ -98,7 +98,7 @@ def test_retriever_annoy_mode_returns_chunks(
         summary="Protected two focus blocks",
     )
 
-    config_dict = yaml.safe_load((tmp_path / "config" / "config.yaml").read_text(encoding="utf-8"))
+    config_dict = yaml.safe_load((tmp_path / "config.yaml").read_text(encoding="utf-8"))
     config = AppConfig.model_validate(config_dict)
     retriever = Retriever(tmp_path, config)
     result = retriever.search("focus blocks", k=3)
@@ -129,7 +129,7 @@ def test_retriever_errors_when_index_missing(
     (index_dir / "index.db").unlink()
     (index_dir / "annoy.index").unlink()
 
-    config_dict = yaml.safe_load((tmp_path / "config" / "config.yaml").read_text(encoding="utf-8"))
+    config_dict = yaml.safe_load((tmp_path / "config.yaml").read_text(encoding="utf-8"))
     config = AppConfig.model_validate(config_dict)
     retriever = Retriever(tmp_path, config)
     filters = RetrievalFilters(tags=frozenset({"focus"}))
@@ -157,7 +157,7 @@ def test_retriever_close_from_different_thread(
         summary="Captured focus rituals",
     )
 
-    config_dict = yaml.safe_load((tmp_path / "config" / "config.yaml").read_text(encoding="utf-8"))
+    config_dict = yaml.safe_load((tmp_path / "config.yaml").read_text(encoding="utf-8"))
     config = AppConfig.model_validate(config_dict)
     retriever = Retriever(tmp_path, config)
 

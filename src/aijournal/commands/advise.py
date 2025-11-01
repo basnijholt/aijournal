@@ -34,6 +34,7 @@ from aijournal.models.derived import AdviceCard, ProfileUpdateBatch
 from aijournal.pipelines import advise as advise_pipeline
 from aijournal.services.ollama import resolve_model_name
 from aijournal.utils import time as time_utils
+from aijournal.utils.paths import resolve_path
 
 
 class AdviceOptions(BaseModel):
@@ -58,7 +59,7 @@ class AdviceResult:
 
 
 def prepare_inputs(ctx: RunContext, options: AdviceOptions) -> AdvicePrepared:
-    profile_model, claim_models = load_profile_components(ctx.root)
+    profile_model, claim_models = load_profile_components(ctx.workspace, config=ctx.config)
     profile = profile_to_dict(profile_model)
     claims = [claim.model_copy(deep=True) for claim in claim_models]
     if not profile and not claims:
@@ -67,9 +68,9 @@ def prepare_inputs(ctx: RunContext, options: AdviceOptions) -> AdvicePrepared:
         raise typer.Exit(1)
 
     weights = ctx.config.impact_weights.model_dump(mode="python")
-    latest_day = _latest_normalized_day(ctx.root)
-    entries = _load_normalized_entries(ctx.root, latest_day) if latest_day else []
-    pending_prompts = _collect_pending_interview_prompts(ctx.root)
+    latest_day = _latest_normalized_day(ctx.workspace, ctx.config)
+    entries = _load_normalized_entries(ctx.workspace, ctx.config, latest_day) if latest_day else []
+    pending_prompts = _collect_pending_interview_prompts(ctx.workspace, ctx.config)
     rankings = _compute_rankings(
         profile,
         claims,
@@ -119,8 +120,10 @@ def invoke_pipeline(ctx: RunContext, prepared: AdvicePrepared) -> AdviceResult:
 
 
 def persist_output(ctx: RunContext, result: AdviceResult) -> Path:
-    advice_path = _derived_advice_path(ctx.root, result.day, result.question)
-    artifact_meta = _build_meta("prompts/advise.md", model=result.model_name)
+    advice_path = _derived_advice_path(ctx.workspace, ctx.config, result.day, result.question)
+    artifact_meta = _build_meta(
+        "prompts/advise.md", model=result.model_name, use_fake_llm=ctx.use_fake_llm
+    )
     save_artifact(
         advice_path,
         Artifact[AdviceCard](
@@ -143,26 +146,28 @@ def run_advise_command(ctx: RunContext, options: AdviceOptions) -> Path:
     )
 
 
-def run_advise(question: str) -> Path:
+def run_advise(question: str, workspace: Path | None = None) -> Path:
     """Backward-compatible entrypoint using the current working directory."""
-    from aijournal.commands.ingest import _load_config, _use_fake_llm
+    from aijournal.common.config_loader import load_config, use_fake_llm
     from aijournal.common.context import create_run_context
 
-    root = Path.cwd()
-    config = _load_config(root)
+    workspace = workspace or Path.cwd()
+    config = load_config(workspace)
     ctx = create_run_context(
         command="advise",
-        root=root,
+        workspace=workspace,
         config=config,
-        use_fake_llm=_use_fake_llm(),
+        use_fake_llm=use_fake_llm(),
         trace=False,
         verbose_json=False,
     )
     return run_advise_command(ctx, AdviceOptions(question=question))
 
 
-def _collect_pending_interview_prompts(root: Path, limit: int = 5) -> list[str]:
-    directory = root / "derived" / "pending" / "profile_updates"
+def _collect_pending_interview_prompts(
+    workspace: Path, config: AppConfig, limit: int = 5
+) -> list[str]:
+    directory = resolve_path(workspace, config, "derived/pending") / "profile_updates"
     if not directory.exists():
         return []
     prompts: list[str] = []
@@ -251,6 +256,6 @@ def _advice_payload(
     )
 
 
-def _derived_advice_path(root: Path, day: str, question: str) -> Path:
+def _derived_advice_path(workspace: Path, config: AppConfig, day: str, question: str) -> Path:
     slug = time_utils.slugify_title(question)
-    return root / "derived" / "advice" / day / f"{slug}.yaml"
+    return resolve_path(workspace, config, "derived/advice") / day / f"{slug}.yaml"

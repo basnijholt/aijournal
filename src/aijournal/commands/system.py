@@ -13,10 +13,10 @@ import httpx
 import typer
 from pydantic import BaseModel
 
-from aijournal.commands.ingest import _load_config, _use_fake_llm
 from aijournal.commands.persona import persona_state
 from aijournal.common.app_config import AppConfig
 from aijournal.common.command_runner import run_command_pipeline
+from aijournal.common.config_loader import load_config, use_fake_llm
 from aijournal.common.context import RunContext, create_run_context
 from aijournal.domain.index import IndexMeta
 from aijournal.io.artifacts import load_artifact_data
@@ -25,6 +25,7 @@ from aijournal.services.ollama import (
     build_ollama_config_from_mapping,
     resolve_ollama_host,
 )
+from aijournal.utils.paths import resolve_path
 
 
 def _check_sqlite_fts5() -> tuple[bool, str | None]:
@@ -46,8 +47,8 @@ def _check_sqlite_fts5() -> tuple[bool, str | None]:
     return True, None
 
 
-def _check_index_artifacts(root: Path) -> dict[str, Any]:
-    index_dir = root / "derived" / "index"
+def _check_index_artifacts(workspace: Path, config: AppConfig) -> dict[str, Any]:
+    index_dir = resolve_path(workspace, config, "derived/index")
     db_path = index_dir / "index.db"
     annoy_path = index_dir / "annoy.index"
     meta_path = index_dir / "meta.json"
@@ -90,8 +91,8 @@ def _check_writable_paths(root: Path) -> tuple[bool, dict[str, Any]]:
     return all_ok, status
 
 
-def _check_pending_updates(root: Path) -> dict[str, Any]:
-    pending_dir = root / "derived" / "pending" / "profile_updates"
+def _check_pending_updates(workspace: Path, config: AppConfig) -> dict[str, Any]:
+    pending_dir = resolve_path(workspace, config, "derived/pending") / "profile_updates"
     files = sorted(pending_dir.glob("*.yaml")) if pending_dir.exists() else []
     return {
         "count": len(files),
@@ -102,8 +103,10 @@ def _check_pending_updates(root: Path) -> dict[str, Any]:
 def _check_ollama(
     config: AppConfig,
     host_override: str | None = None,
+    *,
+    fake_mode: bool,
 ) -> tuple[bool, dict[str, Any]]:
-    if _use_fake_llm():
+    if fake_mode:
         return True, {"host": "fake://ollama"}
 
     ollama_config = build_ollama_config_from_mapping(config, host=host_override)
@@ -127,10 +130,10 @@ def _check_ollama(
     return True, {"host": host, "models": models}
 
 
-def run_system_doctor(root: Path) -> dict[str, Any]:
+def run_system_doctor(workspace: Path, *, fake_mode: bool) -> dict[str, Any]:
     """Run system diagnostics and return a structured payload."""
 
-    config = _load_config(root)
+    config = load_config(workspace)
     checks: list[dict[str, Any]] = []
     overall_ok = True
 
@@ -138,23 +141,25 @@ def run_system_doctor(root: Path) -> dict[str, Any]:
     checks.append({"name": "sqlite_fts5", "ok": fts_ok, "hint": fts_hint})
     overall_ok &= fts_ok
 
-    index_info = _check_index_artifacts(root)
+    index_info = _check_index_artifacts(workspace, config)
     index_ok = bool(index_info["index_db_exists"] and index_info["annoy_index_exists"])
     checks.append({"name": "index_artifacts", "ok": index_ok, "details": index_info})
     overall_ok &= index_ok
 
-    writable_ok, writable_info = _check_writable_paths(root)
+    writable_ok, writable_info = _check_writable_paths(workspace)
     checks.append({"name": "workspace_writable", "ok": writable_ok, "details": writable_info})
     overall_ok &= writable_ok
 
-    pending_info = _check_pending_updates(root)
+    pending_info = _check_pending_updates(workspace, config)
     checks.append({"name": "pending_profile_updates", "ok": True, "details": pending_info})
 
-    ollama_ok, ollama_details = _check_ollama(config, os.getenv("AIJOURNAL_OLLAMA_HOST"))
+    ollama_ok, ollama_details = _check_ollama(
+        config, os.getenv("AIJOURNAL_OLLAMA_HOST"), fake_mode=fake_mode
+    )
     checks.append({"name": "ollama_reachable", "ok": ollama_ok, "details": ollama_details})
     overall_ok &= ollama_ok
 
-    persona_status, persona_reasons = persona_state(root)
+    persona_status, persona_reasons = persona_state(workspace, workspace, config)
     persona_ok = persona_status == "fresh"
     checks.append(
         {
@@ -167,18 +172,18 @@ def run_system_doctor(root: Path) -> dict[str, Any]:
 
     return {
         "ok": bool(overall_ok),
-        "root": str(root),
+        "root": str(workspace),
         "checks": checks,
     }
 
 
-def run_status_summary(root: Path) -> dict[str, Any]:
+def run_status_summary(workspace: Path) -> dict[str, Any]:
     """Gather high-level workspace status information."""
 
-    config = _load_config(root)
-    persona_status, persona_reasons = persona_state(root)
+    config = load_config(workspace)
+    persona_status, persona_reasons = persona_state(workspace, workspace, config)
 
-    index_dir = root / "derived" / "index"
+    index_dir = resolve_path(workspace, config, "derived/index")
     index_info = {
         "has_index_db": (index_dir / "index.db").exists(),
         "has_annoy_index": (index_dir / "annoy.index").exists(),
@@ -193,7 +198,7 @@ def run_status_summary(root: Path) -> dict[str, Any]:
         except Exception as exc:
             index_info["meta_error"] = str(exc)
 
-    pending_info = _check_pending_updates(root)
+    pending_info = _check_pending_updates(workspace, config)
     config_host = config.host
     host = resolve_ollama_host(
         os.getenv("AIJOURNAL_OLLAMA_HOST"),
@@ -239,14 +244,14 @@ class SystemStatusResult:
     summary: dict[str, Any]
 
 
-def run_system_doctor_cli() -> None:
-    root = Path.cwd()
-    config = _load_config(root)
+def run_system_doctor_cli(workspace: Path | None = None) -> None:
+    workspace = workspace or Path.cwd()
+    config = load_config(workspace)
     ctx = create_run_context(
         command="ops.system.doctor",
-        root=root,
+        workspace=workspace,
         config=config,
-        use_fake_llm=_use_fake_llm(),
+        use_fake_llm=use_fake_llm(),
         trace=False,
         verbose_json=False,
     )
@@ -255,7 +260,7 @@ def run_system_doctor_cli() -> None:
         return SystemDoctorPrepared()
 
     def _invoke(inner_ctx: RunContext, __: SystemDoctorPrepared) -> SystemDoctorResult:
-        diagnostics = run_system_doctor(inner_ctx.root)
+        diagnostics = run_system_doctor(inner_ctx.workspace, fake_mode=inner_ctx.use_fake_llm)
         inner_ctx.emit(event="pipeline_complete", ok=diagnostics.get("ok", False))
         return SystemDoctorResult(diagnostics=diagnostics)
 
@@ -298,14 +303,14 @@ def run_system_doctor_cli() -> None:
     )
 
 
-def run_system_status_cli() -> None:
-    root = Path.cwd()
-    config = _load_config(root)
+def run_system_status_cli(workspace: Path | None = None) -> None:
+    workspace = workspace or Path.cwd()
+    config = load_config(workspace)
     ctx = create_run_context(
         command="ops.system.status",
-        root=root,
+        workspace=workspace,
         config=config,
-        use_fake_llm=_use_fake_llm(),
+        use_fake_llm=use_fake_llm(),
         trace=False,
         verbose_json=False,
     )
@@ -314,14 +319,14 @@ def run_system_status_cli() -> None:
         return SystemStatusPrepared()
 
     def _invoke(inner_ctx: RunContext, __: SystemStatusPrepared) -> SystemStatusResult:
-        summary = run_status_summary(inner_ctx.root)
+        summary = run_status_summary(inner_ctx.workspace)
         inner_ctx.emit(
             event="pipeline_complete",
             persona_status=summary.get("persona", {}).get("status"),
         )
         return SystemStatusResult(summary=summary)
 
-    def _persist(_: RunContext, result: SystemStatusResult) -> None:
+    def _persist(persist_ctx: RunContext, result: SystemStatusResult) -> None:
         summary = result.summary
         persona = summary.get("persona", {})
         persona_status = persona.get("status")
@@ -377,7 +382,8 @@ def run_system_status_cli() -> None:
             typer.secho("Pending profile updates: none", fg=typer.colors.GREEN)
 
         typer.echo(
-            f"Ollama host: {ollama.get('host')}" + (" (fake mode)" if _use_fake_llm() else "")
+            f"Ollama host: {ollama.get('host')}"
+            + (" (fake mode)" if persist_ctx.use_fake_llm else "")
         )
         typer.echo("Run `aijournal ops system doctor` for detailed diagnostics.")
 

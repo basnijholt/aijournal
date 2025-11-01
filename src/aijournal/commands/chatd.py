@@ -9,8 +9,8 @@ from typing import Any
 import typer
 from pydantic import BaseModel
 
-from aijournal.commands.ingest import _load_config, _use_fake_llm
 from aijournal.common.command_runner import run_command_pipeline
+from aijournal.common.config_loader import use_fake_llm
 from aijournal.common.context import RunContext, create_run_context
 from aijournal.services.chat_api import build_chat_app
 
@@ -55,8 +55,7 @@ def invoke_pipeline(ctx: RunContext, prepared: ChatdPrepared) -> ChatdResult:
         ctx.emit(event="command_failed", reason="missing_uvicorn")
         raise typer.Exit(1)
 
-    config = _load_config(ctx.root)
-    app_instance = build_chat_app(ctx.root, config)
+    app_instance = build_chat_app(ctx.workspace, ctx.config)
     ctx.emit(event="pipeline_complete", host=prepared.host, port=prepared.port)
     return ChatdResult(
         host=prepared.host,
@@ -90,9 +89,9 @@ def run_chatd_command(ctx: RunContext, options: ChatdOptions) -> None:
 def run_chatd(host: str, port: int) -> None:
     ctx = create_run_context(
         command="chatd",
-        root=Path.cwd(),
+        workspace=Path.cwd(),
         config={},
-        use_fake_llm=_use_fake_llm(),
+        use_fake_llm=use_fake_llm(),
         trace=False,
         verbose_json=False,
     )

@@ -8,7 +8,10 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class PathsConfig(BaseModel):
-    """Path configuration for project directories."""
+    """Path configuration for workspace subdirectories.
+
+    All paths are relative to the workspace root directory.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -103,6 +106,25 @@ class CaptureConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class LLMConfig(BaseModel):
+    """LLM runtime configuration."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    retries: int = Field(
+        default=4,
+        ge=1,
+        le=10,
+        description="Number of retry attempts for failed LLM requests",
+    )
+    timeout: float = Field(
+        default=120.0,
+        ge=10.0,
+        le=600.0,
+        description="Maximum seconds to wait for LLM response before timeout",
+    )
+
+
 class AppConfig(BaseModel):
     """Project configuration backed by Pydantic validation."""
 
@@ -126,6 +148,7 @@ class AppConfig(BaseModel):
     impact_weights: ImpactWeightsConfig = Field(default_factory=ImpactWeightsConfig)
     advisor: AdvisorConfig = Field(default_factory=AdvisorConfig)
     capture: CaptureConfig = Field(default_factory=CaptureConfig)
+    llm: LLMConfig = Field(default_factory=LLMConfig)
 
     def to_dict(self, *, exclude_none: bool = False) -> dict[str, Any]:
         """Return the configuration as a plain dictionary."""
