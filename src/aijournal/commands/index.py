@@ -614,7 +614,10 @@ def _format_search_snippet(text: str, limit: int = 200) -> str:
 
 
 def _build_embedding_backend(config: AppConfig, *, fake_mode: bool) -> EmbeddingBackend:
-    model = str(config.embedding_model or "embeddinggemma")
+    from aijournal.common.constants import DEFAULT_EMBEDDING_MODEL
+
+    env_model = os.getenv("AIJOURNAL_EMBEDDING_MODEL")
+    model = str(env_model or config.embedding_model or DEFAULT_EMBEDDING_MODEL)
     host = os.getenv("AIJOURNAL_OLLAMA_HOST")
     return EmbeddingBackend(model, host=host, fake_mode=fake_mode)
 
