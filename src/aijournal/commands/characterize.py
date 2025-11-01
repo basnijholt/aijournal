@@ -104,7 +104,7 @@ def run_characterize_command(
         timeout_value = _validate_timeout(opts.timeout)
         manifest_entries = _load_manifest(_manifest_path())
         manifest_index = _manifest_by_id(manifest_entries)
-        profile_model, claim_models = load_profile_components()
+        profile_model, claim_models = load_profile_components(ctx.root, config=ctx.config)
         profile = profile_to_dict(profile_model)
 
         entries = [entry for entry, _ in entries_with_paths]

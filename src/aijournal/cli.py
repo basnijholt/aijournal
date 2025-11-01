@@ -955,7 +955,7 @@ def facts(
     workspace = _get_workspace()
     config = _load_config(workspace)
     WorkspacePaths.configure(workspace=workspace, paths=config.paths)
-    _, claim_models = load_profile_components(config=config)
+    _, claim_models = load_profile_components(workspace, config=config)
     ctx = _run_context("facts", workspace=workspace, config=config)
     output = run_facts_command(
         ctx,
@@ -1132,12 +1132,12 @@ def review_updates(
         if batch.preview and batch.preview.claim_events:
             _print_claim_preview(batch.preview)
         else:
-            _preview_claim_consolidation(claim_proposals, config=config)
+            _preview_claim_consolidation(workspace, claim_proposals, config=config)
         if batch.preview and batch.preview.interview_prompts:
             typer.echo("Hint: run `aijournal interview` to follow up on the queued prompts.")
         return
 
-    profile_model, claim_models = load_profile_components(config=config)
+    profile_model, claim_models = load_profile_components(workspace, config=config)
     profile = profile_to_dict(profile_model)
     claims_data = [claim.model_copy(deep=True) for claim in claim_models]
     timestamp = time_utils.format_timestamp(time_utils.now())
@@ -1247,7 +1247,7 @@ def persona_build(
     workspace = _get_workspace()
     config = _load_config(workspace)
     WorkspacePaths.configure(workspace=workspace, paths=config.paths)
-    profile_model, claim_models = load_profile_components(config=config)
+    profile_model, claim_models = load_profile_components(workspace, config=config)
     profile = profile_to_dict(profile_model)
     path, changed = run_persona_build(
         profile,
@@ -1421,13 +1421,14 @@ def _emit_claim_merge_events(events: list[ClaimMergeOutcome], heading: str) -> N
 
 
 def _preview_claim_consolidation(
+    workspace: Path,
     claim_proposals: Sequence[Any],
     *,
-    config: AppConfig | None = None,
+    config: AppConfig,
 ) -> None:
     if not claim_proposals:
         return
-    _, claim_models = load_profile_components(config=config)
+    _, claim_models = load_profile_components(workspace, config=config)
     if not claim_models:
         return
     timestamp = time_utils.format_timestamp(time_utils.now())
@@ -1617,7 +1618,7 @@ def interview(
     config = _load_config(workspace)
     WorkspacePaths.configure(workspace=workspace, paths=config.paths)
 
-    profile_model, claim_models = load_profile_components(config=config)
+    profile_model, claim_models = load_profile_components(workspace, config=config)
     profile = profile_to_dict(profile_model)
     claims = [claim.model_copy(deep=True) for claim in claim_models]
     if not profile and not claims:

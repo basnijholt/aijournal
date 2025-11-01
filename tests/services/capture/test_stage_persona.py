@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from aijournal.common.app_config import AppConfig
 from aijournal.services.capture import CaptureInput
 from aijournal.services.capture.stages import stage7_persona
 
@@ -44,9 +45,11 @@ def test_stage7_persona_triggers_build(tmp_path: Path, monkeypatch) -> None:
 
     monkeypatch.setattr("aijournal.commands.persona.run_persona_build", fake_build)
 
+    config = AppConfig()
     outputs = stage7_persona.run_persona_stage_7(
         _make_inputs(),
         tmp_path,
+        config,
         {"profile": 1},
     )
 
@@ -66,9 +69,11 @@ def test_stage7_persona_noop_when_fresh(tmp_path: Path, monkeypatch) -> None:
         lambda *_, **__: (None, []),
     )
 
+    config = AppConfig()
     outputs = stage7_persona.run_persona_stage_7(
         _make_inputs(),
         tmp_path,
+        config,
         {},
     )
 

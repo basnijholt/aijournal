@@ -288,7 +288,8 @@ def test_run_capture_records_telemetry(tmp_path: Path, monkeypatch: pytest.Monke
             date,
         )
 
-    def fake_apply_batch(batch_path: Path) -> bool:
+    def fake_apply_batch(root: Path, config, batch_path: Path) -> bool:
+        del root, config
         review_calls.append(batch_path)
         return True
 
@@ -491,7 +492,7 @@ def test_run_capture_rebuild_skip_skips_refresh(
     )
     monkeypatch.setattr(
         "aijournal.services.capture.utils.apply_profile_update_batch",
-        lambda root, batch_path: True,
+        lambda root, config, batch_path: True,
     )
 
     monkeypatch.setattr(
@@ -577,7 +578,7 @@ def test_run_capture_rebuild_always_forces_refresh(
     )
     monkeypatch.setattr(
         "aijournal.services.capture.utils.apply_profile_update_batch",
-        lambda root, batch_path: True,
+        lambda root, config, batch_path: True,
     )
 
     index_rebuild_calls: list[tuple[str | None, int | None]] = []

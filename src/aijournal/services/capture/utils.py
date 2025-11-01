@@ -17,6 +17,7 @@ from aijournal.commands.profile import (
     load_profile_components,
     profile_to_dict,
 )
+from aijournal.common.app_config import AppConfig
 from aijournal.common.constants import MARKDOWN_SUFFIXES
 from aijournal.domain.changes import ClaimProposal, FacetChange
 from aijournal.domain.claims import ClaimAtom, ClaimSource
@@ -183,9 +184,7 @@ def noop_preview(
     return None
 
 
-def apply_profile_update_batch(batch_path: Path) -> bool:
-    from aijournal.utils.paths import WorkspacePaths
-
+def apply_profile_update_batch(root: Path, config: AppConfig, batch_path: Path) -> bool:
     batch = load_artifact_data(batch_path, ProfileUpdateBatch)
     claim_proposals: list[ClaimProposal] = [
         proposal.model_copy(deep=True) for proposal in batch.proposals.claims
@@ -194,7 +193,7 @@ def apply_profile_update_batch(batch_path: Path) -> bool:
         proposal.model_copy(deep=True) for proposal in batch.proposals.facets
     ]
 
-    profile_model, claim_models = load_profile_components()
+    profile_model, claim_models = load_profile_components(root, config=config)
     profile = profile_to_dict(profile_model)
     claims_data = [claim.model_copy(deep=True) for claim in claim_models]
     timestamp = time_utils.format_timestamp(time_utils.now())
@@ -216,8 +215,11 @@ def apply_profile_update_batch(batch_path: Path) -> bool:
 
     updated_profile = SelfProfile.model_validate(profile)
     updated_claims = [claim.model_copy(deep=True) for claim in claims_data]
-    write_yaml_model(WorkspacePaths.profile() / "self_profile.yaml", updated_profile)
-    write_yaml_model(WorkspacePaths.profile() / "claims.yaml", ClaimsFile(claims=updated_claims))
+    profile_dir = Path(config.paths.profile)
+    if not profile_dir.is_absolute():
+        profile_dir = root / profile_dir
+    write_yaml_model(profile_dir / "self_profile.yaml", updated_profile)
+    write_yaml_model(profile_dir / "claims.yaml", ClaimsFile(claims=updated_claims))
     return True
 
 
