@@ -188,7 +188,7 @@ def _seed_config(tmp_path: Path, *, char_per_token: float | None = None) -> Path
     }
     if char_per_token is not None:
         payload["token_estimator"] = {"char_per_token": char_per_token}
-    config_path = tmp_path / "config" / "config.yaml"
+    config_path = tmp_path / "config.yaml"
     _write(config_path, dump_yaml(payload, sort_keys=False))
     return config_path
 

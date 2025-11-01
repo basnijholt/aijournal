@@ -257,7 +257,7 @@ def run_facts(
     config = _load_config(root)
     ctx = create_run_context(
         command="facts",
-        root=root,
+        workspace=root,
         config=config,
         use_fake_llm=_use_fake_llm(),
         trace=False,

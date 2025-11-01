@@ -16,7 +16,6 @@ if TYPE_CHECKING:
 
 
 AUTHORITATIVE_DIRS = {
-    "config",
     "profile",
     "data/journal",
     "data/normalized",
@@ -33,7 +32,7 @@ DERIVED_DIRS = {
 }
 
 SEED_FILES = {
-    "config/config.yaml",
+    "config.yaml",
     "profile/self_profile.yaml",
     "profile/claims.yaml",
 }

@@ -89,15 +89,23 @@ def run_init_command(ctx: RunContext, options: InitOptions) -> str:
 
 
 def run_init(path: Path | None = None) -> str:
-    base = path or Path.cwd()
-    base.mkdir(parents=True, exist_ok=True)
+    """Initialize an aijournal workspace.
+
+    Args:
+        path: Workspace directory (defaults to current directory)
+
+    Returns:
+        Status message describing what was created
+    """
+    workspace = path or Path.cwd()
+    workspace.mkdir(parents=True, exist_ok=True)
     ctx = create_run_context(
         command="init",
-        root=base,
+        workspace=workspace,
         config={},
         use_fake_llm=_use_fake_llm(),
         trace=False,
         verbose_json=False,
     )
-    options = InitOptions(path=base)
+    options = InitOptions(path=workspace)
     return run_init_command(ctx, options)

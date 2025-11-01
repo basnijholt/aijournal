@@ -74,11 +74,16 @@ def _load_yaml(path: Path) -> dict[str, Any]:
     return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
 
 
-CONFIG_FILENAME = "config.yaml"
+def _load_config(workspace: Path) -> AppConfig:
+    """Load configuration from workspace/config.yaml.
 
+    Args:
+        workspace: The workspace directory containing config.yaml
 
-def _load_config(root: Path) -> AppConfig:
-    config_path = root / "config" / CONFIG_FILENAME
+    Returns:
+        Parsed AppConfig or defaults if config.yaml doesn't exist
+    """
+    config_path = workspace / "config.yaml"
     if not config_path.exists():
         return AppConfig()
 
@@ -317,7 +322,7 @@ def run_ingest(
     config = _load_config(root)
     ctx = create_run_context(
         command="ingest",
-        root=root,
+        workspace=root,
         config=config,
         use_fake_llm=_use_fake_llm(),
         trace=False,

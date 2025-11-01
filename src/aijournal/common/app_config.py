@@ -8,11 +8,13 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class PathsConfig(BaseModel):
-    """Path configuration for project directories."""
+    """Path configuration for workspace subdirectories.
+
+    All paths are relative to the workspace root directory.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
-    workspace_root: str | None = None  # When set, all paths nest under this subdirectory
     data: str = "data"
     profile: str = "profile"
     derived: str = "derived"

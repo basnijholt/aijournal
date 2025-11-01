@@ -6,73 +6,72 @@ from collections.abc import Iterable, Mapping
 from pathlib import Path
 from textwrap import dedent
 
+from aijournal.common.app_config import PathsConfig
+
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
 
 class WorkspacePaths:
-    """Global workspace path resolver with configurable root.
+    """Global workspace path resolver.
 
-    This singleton manages workspace paths with optional workspace_root support.
-    When workspace_root is set (e.g., "workspace"), all data directories nest
-    under it. When None, uses backward-compatible root-level layout.
+    Manages paths within a self-contained workspace directory.
+    The workspace contains config.yaml at its root plus subdirectories
+    defined by PathsConfig.
 
     Usage:
-        WorkspacePaths.configure(root=Path.cwd(), workspace_root="workspace")
-        data_dir = WorkspacePaths.data()  # Returns Path.cwd() / "workspace" / "data"
+        WorkspacePaths.configure(workspace=Path("/path/to/workspace"), paths=PathsConfig())
+        data_dir = WorkspacePaths.data()  # Returns /path/to/workspace/data
     """
 
-    _root: Path | None = None
-    _workspace_root: str | None = None
+    _workspace: Path | None = None
+    _paths: PathsConfig | None = None
 
     @classmethod
-    def configure(cls, root: Path, workspace_root: str | None = None) -> None:
-        """Set the workspace root and optional workspace subdirectory.
+    def configure(cls, workspace: Path, paths: PathsConfig | None = None) -> None:
+        """Configure with workspace directory and path configuration.
 
         Args:
-            root: Base directory (typically Path.cwd() or init target)
-            workspace_root: Optional subdirectory name (e.g., "workspace")
+            workspace: The workspace directory containing config.yaml
+            paths: Path configuration (defaults to PathsConfig() if None)
         """
-        cls._root = root
-        cls._workspace_root = workspace_root
+        cls._workspace = workspace
+        cls._paths = paths or PathsConfig()
 
     @classmethod
     def reset(cls) -> None:
         """Reset to default state (primarily for testing)."""
-        cls._root = None
-        cls._workspace_root = None
+        cls._workspace = None
+        cls._paths = None
+
+    @classmethod
+    def _get_paths(cls) -> PathsConfig:
+        """Get paths config, defaulting if not configured."""
+        return cls._paths or PathsConfig()
 
     @classmethod
     def root(cls) -> Path:
-        """Get the effective workspace root directory."""
-        base = cls._root or Path.cwd()
-        if cls._workspace_root:
-            return base / cls._workspace_root
-        return base
+        """Get the workspace root directory."""
+        return cls._workspace or Path.cwd()
 
     @classmethod
     def data(cls) -> Path:
         """Get data directory path."""
-        return cls.root() / "data"
+        return cls.root() / cls._get_paths().data
 
     @classmethod
     def derived(cls) -> Path:
         """Get derived artifacts directory path."""
-        return cls.root() / "derived"
+        return cls.root() / cls._get_paths().derived
 
     @classmethod
     def profile(cls) -> Path:
         """Get profile directory path."""
-        return cls.root() / "profile"
+        return cls.root() / cls._get_paths().profile
 
     @classmethod
     def prompts(cls) -> Path:
         """Get prompts directory path."""
-        return cls.root() / "prompts"
-
-    @classmethod
-    def config_dir(cls) -> Path:
-        """Get config directory path."""
-        return cls.root() / "config"
+        return cls.root() / cls._get_paths().prompts
 
     @classmethod
     def logs(cls) -> Path:
@@ -81,7 +80,6 @@ class WorkspacePaths:
 
 
 AUTHORITATIVE_DIRS: tuple[str, ...] = (
-    "config",
     "profile",
     "data",
     "data/journal",
@@ -106,14 +104,13 @@ DERIVED_DIRS: tuple[str, ...] = (
 )
 
 SEED_FILES: Mapping[str, str] = {
-    "config/config.yaml": dedent(
+    "config.yaml": dedent(
         """
         model: "llama3.1:8b-instruct"
         host: "http://127.0.0.1:11434"
         temperature: 0.2
         seed: 42
         paths:
-          workspace_root: null  # Set to "workspace" to nest all data under workspace/
           data: "data"
           profile: "profile"
           derived: "derived"
@@ -256,9 +253,12 @@ def find_data_root(entry: Path) -> Path:
     return Path.cwd()
 
 
-def normalized_entry_path(root: Path, date_str: str, entry_id: str) -> Path:
+def normalized_entry_path(workspace: Path, date_str: str, entry_id: str) -> Path:
     """Return the normalized entry path for a given day/id."""
-    return root / "data" / "normalized" / date_str / f"{entry_id}.yaml"
+    # Note: This function receives workspace directly, not using WorkspacePaths
+    # to avoid circular dependency during initialization
+    paths_config = PathsConfig()
+    return workspace / paths_config.data / "normalized" / date_str / f"{entry_id}.yaml"
 
 
 def resolve_prompt_path(prompt_path: str) -> Path:

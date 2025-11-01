@@ -294,7 +294,7 @@ def run_chat(
     config = _load_config(root)
     ctx = create_run_context(
         command="chat",
-        root=root,
+        workspace=root,
         config=config,
         use_fake_llm=_use_fake_llm(),
         trace=False,

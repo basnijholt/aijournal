@@ -374,7 +374,7 @@ def run_persona_build(
     root = root or Path.cwd()
     ctx = create_run_context(
         command="persona.build",
-        root=root,
+        workspace=root,
         config=config,
         use_fake_llm=_use_fake_llm(),
         trace=False,

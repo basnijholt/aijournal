@@ -124,6 +124,18 @@ from aijournal.utils.paths import (
     normalized_entry_path,
 )
 
+
+def _get_workspace() -> Path:
+    """Get workspace directory from environment or default to current directory.
+
+    Checks AIJOURNAL_WORKSPACE environment variable first, falls back to cwd.
+    """
+    workspace_env = os.getenv("AIJOURNAL_WORKSPACE")
+    if workspace_env:
+        return Path(workspace_env)
+    return Path.cwd()
+
+
 app = typer.Typer(help="Local-first personal journal utilities.")
 profile_app = typer.Typer(help="Profile utilities.")
 ollama_app = typer.Typer(help="Ollama helpers.")
@@ -197,13 +209,22 @@ def _cli_settings() -> CLISettings:
     return settings
 
 
-def _run_context(command: str, *, root: Path | None = None) -> RunContext:
+def _run_context(command: str, *, workspace: Path | None = None) -> RunContext:
+    """Create a run context for command execution.
+
+    Args:
+        command: Command name
+        workspace: Workspace directory (defaults to _get_workspace())
+
+    Returns:
+        Configured RunContext
+    """
     settings = _cli_settings()
-    actual_root = root or Path.cwd()
-    config = _load_config(actual_root)
+    actual_workspace = workspace or _get_workspace()
+    config = _load_config(actual_workspace)
     return create_run_context(
         command=command,
-        root=actual_root,
+        workspace=actual_workspace,
         config=config,
         use_fake_llm=_use_fake_llm(),
         trace=settings.trace,
@@ -284,8 +305,8 @@ def logs_tail(
 ) -> None:
     """Show the most recent structured trace events."""
 
-    root = Path.cwd()
-    log_path = path or root / "derived" / "logs" / "run_trace.jsonl"
+    workspace = _get_workspace()
+    log_path = path or workspace / "derived" / "logs" / "run_trace.jsonl"
     if not log_path.exists():
         typer.secho(f"No run trace log found at {log_path}", fg=typer.colors.YELLOW, err=True)
         raise typer.Exit(1)
@@ -700,8 +721,8 @@ def _summarize_day_payload(
     )
 
 
-def _latest_pending_batch(root: Path) -> Path | None:
-    directory = _pending_updates_dir(root)
+def _latest_pending_batch(workspace: Path) -> Path | None:
+    directory = _pending_updates_dir(workspace)
     if not directory.exists():
         return None
     files = sorted(p for p in directory.glob("*.yaml") if p.is_file())
@@ -825,17 +846,17 @@ def normalize(
     title = str(title_value)
     created_str = _normalize_created_at(created_value)
     date_str = time_utils.created_date(created_str)
-    root = find_data_root(entry)
+    workspace = find_data_root(entry)
     normalized_data = {
         "id": entry_id,
         "created_at": created_str,
-        "source_path": _relative_source_path(entry, root),
+        "source_path": _relative_source_path(entry, workspace),
         "title": title,
         "tags": tags,
         "sections": sections,
     }
 
-    output_path = normalized_entry_path(root, date_str, entry_id)
+    output_path = normalized_entry_path(workspace, date_str, entry_id)
     _write_yaml_if_changed(
         output_path,
         normalized_data,
@@ -923,9 +944,9 @@ def facts(
 ) -> None:
     """Generate micro-facts from normalized entries."""
     _emit_deprecation("aijournal ops pipeline extract-facts", "aijournal capture --from/--text")
-    root = Path.cwd()
-    _, claim_models = load_profile_components(root)
-    ctx = _run_context("facts", root=root)
+    workspace = _get_workspace()
+    _, claim_models = load_profile_components(workspace)
+    ctx = _run_context("facts", workspace=workspace)
     output = run_facts_command(
         ctx,
         FactsOptions(
@@ -1061,8 +1082,8 @@ def review_updates(
 ) -> None:
     """Review or apply pending profile update batches."""
     _emit_deprecation("aijournal ops pipeline review", "aijournal capture --apply-profile review")
-    root = Path.cwd()
-    batch_path = file or _latest_pending_batch(root)
+    workspace = _get_workspace()
+    batch_path = file or _latest_pending_batch(workspace)
     if batch_path is None:
         typer.secho("No pending profile update batches found.", fg=typer.colors.RED, err=True)
         raise typer.Exit(1)
@@ -1099,12 +1120,12 @@ def review_updates(
         if batch.preview and batch.preview.claim_events:
             _print_claim_preview(batch.preview)
         else:
-            _preview_claim_consolidation(root, claim_proposals)
+            _preview_claim_consolidation(workspace, claim_proposals)
         if batch.preview and batch.preview.interview_prompts:
             typer.echo("Hint: run `aijournal interview` to follow up on the queued prompts.")
         return
 
-    profile_model, claim_models = load_profile_components(root)
+    profile_model, claim_models = load_profile_components(workspace)
     profile = profile_to_dict(profile_model)
     claims_data = [claim.model_copy(deep=True) for claim in claim_models]
     timestamp = time_utils.format_timestamp(time_utils.now())
@@ -1128,8 +1149,8 @@ def review_updates(
 
     updated_profile = SelfProfile.model_validate(profile)
     updated_claims = [claim.model_copy(deep=True) for claim in claims_data]
-    write_yaml_model(root / "profile" / "self_profile.yaml", updated_profile)
-    write_yaml_model(root / "profile" / "claims.yaml", ClaimsFile(claims=updated_claims))
+    write_yaml_model(workspace / "profile" / "self_profile.yaml", updated_profile)
+    write_yaml_model(workspace / "profile" / "claims.yaml", ClaimsFile(claims=updated_claims))
     _emit_claim_merge_events(merge_events, "Applied claim consolidations:")
     typer.echo(f"Applied {applied} updates from {batch_path}")
 
@@ -1184,8 +1205,8 @@ def ollama_health() -> None:
                 },
             )
 
-    root = Path.cwd()
-    config = _load_config(root)
+    workspace = _get_workspace()
+    config = _load_config(workspace)
     payload = {
         "endpoint": base,
         "default": build_ollama_config_from_mapping(config).model,
@@ -1210,15 +1231,15 @@ def persona_build(
     ),
 ) -> None:
     """Regenerate derived/persona/persona_core.yaml."""
-    root = Path.cwd()
-    profile_model, claim_models = load_profile_components(root)
+    workspace = _get_workspace()
+    profile_model, claim_models = load_profile_components(workspace)
     profile = profile_to_dict(profile_model)
-    config = _load_config(root)
+    config = _load_config(workspace)
     path, changed = run_persona_build(
         profile,
         claim_models,
         config=config,
-        root=root,
+        root=workspace,
         token_budget_override=token_budget,
         max_claims_override=max_claims,
         min_claims_override=min_claims,
@@ -1230,8 +1251,8 @@ def persona_build(
 @persona_app.command("status")
 def persona_status() -> None:
     """Check whether persona_core.yaml matches the latest profile edits."""
-    root = Path.cwd()
-    status, reasons = persona_state(root)
+    workspace = _get_workspace()
+    status, reasons = persona_state(workspace)
     if status == "fresh":
         typer.echo("Persona core is up to date (profile files unchanged).")
         return
@@ -1384,12 +1405,12 @@ def _emit_claim_merge_events(events: list[ClaimMergeOutcome], heading: str) -> N
 
 
 def _preview_claim_consolidation(
-    root: Path,
+    workspace: Path,
     claim_proposals: Sequence[Any],
 ) -> None:
     if not claim_proposals:
         return
-    _, claim_models = load_profile_components(root)
+    _, claim_models = load_profile_components(workspace)
     if not claim_models:
         return
     timestamp = time_utils.format_timestamp(time_utils.now())
@@ -1574,24 +1595,24 @@ def interview(
     date: str = typer.Option(..., "--date", "-d", help="Date (YYYY-MM-DD) to review."),
 ) -> None:
     """Surface targeted interview probes based on stale facets."""
-    root = Path.cwd()
-    profile_model, claim_models = load_profile_components(root)
+    workspace = _get_workspace()
+    profile_model, claim_models = load_profile_components(workspace)
     profile = profile_to_dict(profile_model)
     claims = [claim.model_copy(deep=True) for claim in claim_models]
     if not profile and not claims:
         typer.secho("No profile data", fg=typer.colors.RED, err=True)
         raise typer.Exit(1)
 
-    entries = _load_normalized_entries(root, date)
+    entries = _load_normalized_entries(workspace, date)
     if not entries:
         typer.secho(f"No normalized entries for {date}", fg=typer.colors.RED, err=True)
         raise typer.Exit(1)
 
-    config = _load_config(root)
+    config = _load_config(workspace)
     weights = config.impact_weights.model_dump(mode="python")
 
     max_questions = _coaching_max_questions(profile)
-    pending_prompts = _collect_pending_interview_prompts(root)
+    pending_prompts = _collect_pending_interview_prompts(workspace)
     rankings = _compute_rankings(
         profile,
         claims,
@@ -1906,8 +1927,8 @@ def feedback_apply(
 ) -> None:
     """Apply and clear pending chat feedback batches."""
 
-    root = Path.cwd()
-    pending_dir = root / "derived" / "pending" / "profile_updates"
+    workspace = _get_workspace()
+    pending_dir = workspace / "derived" / "pending" / "profile_updates"
     if not pending_dir.exists():
         typer.secho(
             "No pending feedback batches were found (derived/pending/profile_updates missing).",
@@ -1921,7 +1942,7 @@ def feedback_apply(
         typer.secho("No feedback batches to apply.", fg=typer.colors.YELLOW, err=True)
         raise typer.Exit(1)
 
-    claims_path = root / "profile" / "claims.yaml"
+    claims_path = workspace / "profile" / "claims.yaml"
     if not claims_path.exists():
         typer.secho(
             "Claims file not found at profile/claims.yaml; run `aijournal ops profile status` first.",

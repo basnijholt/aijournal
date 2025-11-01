@@ -53,42 +53,63 @@ This builds on items 1 & 2 and pairs nicely with the resume helper. Once the det
 
 ## 4. Workspace Directory Consolidation — ✅ Completed
 
-**Status:** Implemented with backward-compatible global path resolver.
+**Status:** Implemented as self-contained workspace directory with config at root.
+
+**Final Design:**
+- The workspace is a single directory containing `config.yaml` at its root
+- All data directories (`data/`, `derived/`, `profile/`, `prompts/`) live directly under the workspace
+- No nesting - the workspace **is** the root for all aijournal data
+- Config location defines the workspace (no separate `workspace_root` field needed)
 
 **Implementation Summary:**
-- Added `WorkspacePaths` singleton in `utils/paths.py` with global state management
-- Extended `PathsConfig` to include optional `workspace_root` field (defaults to `None`)
-- Configured `WorkspacePaths` in `create_run_context()` to respect config setting
-- Replaced all hardcoded `root / "data"` paths with `WorkspacePaths.data()` helpers across 18 command files
-- Updated `.gitignore` to include `workspace/` pattern
-- All tests passing (207 passed)
+- `WorkspacePaths` singleton manages paths within workspace directory
+- `config.yaml` moved from `config/config.yaml` to workspace root `config.yaml`
+- `_get_workspace()` CLI helper reads `AIJOURNAL_WORKSPACE` env var (defaults to cwd)
+- `_load_config(workspace: Path)` reads from `workspace/config.yaml`
+- `create_run_context(workspace: Path)` configures WorkspacePaths
+- All 18 command files updated to use `workspace=` parameter
+- All 207 tests passing
 
 **Usage:**
-- Default behavior (backward compatible): Directories remain at root level (`data/`, `derived/`, `profile/`, etc.)
-- Workspace mode: Set `paths.workspace_root: "workspace"` in `config/config.yaml` to nest all data directories under `workspace/`
-- Migration: Existing installations continue working; new installations can opt-in by setting workspace_root
+```bash
+# Initialize workspace at any location
+aijournal init --path ~/my_journal
 
-**Commits:**
-1. `7f24562` - WorkspacePaths singleton infrastructure
-2. `4ac16b6` - Initialization wiring in RunContext
-3. `a14a29c` - Path replacements batch 1 (advise, facts, pack, summarize)
-4. `bc8c1b9` - Path replacements batch 2a (ingest, system + test fix)
-5. `55e3cf2` - Path replacements batch 2b (audit, characterize, index, persona, profile)
+# Use via environment variable
+export AIJOURNAL_WORKSPACE=~/my_journal
+aijournal capture "Today's entry"
 
-**Acceptance criteria**
+# Or run from inside workspace
+cd ~/my_journal
+aijournal capture "Today's entry"
+```
 
-- Add a config option (e.g., `paths.workspace_root`) defaulting to `workspace/`. Under this directory, materialize the existing `data/`, `derived/`, `profile/`, `prompts/`, `config/`, `logs/`, etc.
-- Update path helpers (`utils/paths.py`, normalization, pipelines, capture) to resolve everything relative to the workspace root.
-- Provide a migration command or script that moves current folders into `workspace/` without data loss (skip if already nested).
-- Documentation updates (README, ARCHITECTURE, workflow) to reference the new hierarchy and note that old layouts remain supported for a release via backward-compat lookup.
-- Ensure `.gitignore`, tests, and fake fixtures respect the new structure.
+**Structure:**
+```
+my_journal/           ← The workspace (any name, any location)
+├── config.yaml       ← Config at workspace root
+├── data/
+│   ├── journal/
+│   ├── normalized/
+│   └── raw/
+├── derived/
+│   ├── summaries/
+│   ├── index/
+│   └── persona/
+├── profile/
+│   ├── self_profile.yaml
+│   └── claims.yaml
+└── prompts/
+```
 
-**Implementation sketch**
+**Migration:** No backward compatibility - clean break. Users must reorganize or reinitialize.
 
-- Define `WorkspacePaths` helper exposing `workspace_root`, `data_dir`, `derived_dir`, etc., derived from config/env.
-- Adjust `aijournal init` to create `workspace/` (or the configured root) and lay out subdirectories there.
-- Capture/backfill: detect legacy layout (existing `/data/` at root) and either (a) continue using it via compatibility mode, or (b) prompt the user / run migration.
-- Update CLI commands/tests to use the helper instead of hard-coded `Path("data")` references.
+**Key Benefits:**
+- ✅ Single self-contained directory - easy to backup, move, or version control
+- ✅ Config location defines workspace - no ambiguity
+- ✅ Simple mental model - "workspace contains everything"
+- ✅ Environment variable support - `AIJOURNAL_WORKSPACE` for scripting
+- ✅ No legacy code - clean, maintainable implementation
 
 ---
 
