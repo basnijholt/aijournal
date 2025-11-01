@@ -65,10 +65,11 @@ Run `aijournal init` inside a fresh directory to materialize `data/`, `derived/`
   (`AIJOURNAL_OLLAMA_HOST` or `OLLAMA_BASE_URL`) → config `host` → the
   built-in `http://127.0.0.1:11434`. Model selection follows the same ordering:
   explicit override → `AIJOURNAL_MODEL` → config → default.
-  Commands retry schema issues once (`--retries`) and then fail loudly with an error.
+  Commands retry schema issues (default 4 attempts via `llm.retries` in `config.yaml` or `--retries` flag) and then fail loudly with an error.
 - **Workspace selection:** set `AIJOURNAL_WORKSPACE=/path/to/workspace` (or pass `--workspace` on
   any command) to run against a workspace outside the current directory. The default workspace is
-  `Path.cwd()`.
+  `Path.cwd()`. Commands validate that the workspace contains a `config.yaml` file and provide helpful
+  error messages if initialization is needed.
 - **Fake mode (tests/CI):** `export AIJOURNAL_FAKE_OLLAMA=1` to route every agent call through
   deterministic fixtures. This mode must be set explicitly; the CLI never auto-falls back from live mode.
 
@@ -485,6 +486,7 @@ aijournal ops index update
 `config.yaml` ships with defaults for the chat/advice model, temperature, seed, impact weights, token estimator, and persona budgets. You can optionally add:
 
 - `embedding_model: "<model-name>"` to change the embedding model (defaults to `embeddinggemma` when omitted).
+- `llm: {retries: 4, timeout: 120.0}` to customize LLM retry behavior and request timeouts.
 - `index: {ann_trees: 50, search_k_factor: 3.0}` to tweak ANN settings.
 - `chat: {max_retrieved_chunks: 12, max_claims: 16, follow_up_enabled: true, write_back_facts: true}` for retrieval/chat behaviour.
 - Custom `impact_weights.claim_types` if certain claim types should rank higher.
