@@ -81,6 +81,7 @@ from aijournal.commands.summarize import (
 )
 from aijournal.commands.system import run_system_doctor_cli, run_system_status_cli
 from aijournal.common.app_config import AppConfig
+from aijournal.common.constants import DEFAULT_LLM_RETRIES
 from aijournal.common.context import RunContext, create_run_context
 from aijournal.domain.changes import ClaimProposal, FacetChange
 from aijournal.domain.claims import ClaimAtom, ClaimSource, Scope
@@ -657,7 +658,6 @@ HIGH_IMPACT_PROBES = [
 
 
 DEFAULT_TIMEOUT_SECONDS = 120.0
-DEFAULT_LLM_RETRIES = 1
 
 
 def _normalize_created_at(value: Any) -> str:
