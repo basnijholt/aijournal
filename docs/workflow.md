@@ -122,7 +122,8 @@ With the profile, index, and packs up to date you can use the interactive comman
 - `uv run aijournal ops pipeline ingest <path>` — run the legacy ingestion agent without invoking capture.
 - `uv run aijournal ops profile status` — detailed review priorities after applying updates.
 - `uv run aijournal ops profile interview --date YYYY-MM-DD` — generate follow-up questions for that day’s entries.
-- `uv run aijournal export pack --level L4 --date YYYY-MM-DD --history-days N --format json` — build a long-horizon pack for external assistants.
+- `uv run aijournal export pack --level L4 --date YYYY-MM-DD --history-days N --format json` — build a long-horizon pack for external assistants (default 3200 tokens).
+- `uv run aijournal export pack --level L4 --max-tokens 20000 --format yaml` — full context export with minimal trimming for sharing with external LLMs.
 - `uv run aijournal ops system ollama health` — verify available models on the Ollama host.
 - `uv run aijournal ops audit provenance [--fix]` — report (or redact with `--fix`) any persisted provenance spans that still carry raw text.
 
