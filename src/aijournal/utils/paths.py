@@ -76,7 +76,7 @@ SEED_FILES: Mapping[str, str] = {
     "config.yaml": dedent(
         """
         model: "llama3.1:8b-instruct"
-        embedding_model: "embeddinggemma"
+        embedding_model: "embeddinggemma:300m"
         host: "http://127.0.0.1:11434"
         temperature: 0.2
         seed: 42
