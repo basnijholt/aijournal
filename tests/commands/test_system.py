@@ -10,7 +10,6 @@ from aijournal.commands import system
 from aijournal.common.meta import Artifact, ArtifactKind, ArtifactMeta
 from aijournal.domain.index import IndexMeta
 from aijournal.io.artifacts import save_artifact
-from aijournal.utils.paths import WorkspacePaths
 
 
 def test_run_system_doctor_happy_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -20,7 +19,7 @@ def test_run_system_doctor_happy_path(tmp_path: Path, monkeypatch: pytest.Monkey
     monkeypatch.setattr(
         system,
         "_check_index_artifacts",
-        lambda: {
+        lambda workspace, config: {
             "index_db_exists": True,
             "annoy_index_exists": True,
             "meta": {"chunk_count": 1},
@@ -28,7 +27,9 @@ def test_run_system_doctor_happy_path(tmp_path: Path, monkeypatch: pytest.Monkey
         },
     )
     monkeypatch.setattr(system, "_check_writable_paths", lambda root: (True, {}))
-    monkeypatch.setattr(system, "_check_pending_updates", lambda: {"count": 0, "samples": []})
+    monkeypatch.setattr(
+        system, "_check_pending_updates", lambda workspace, config: {"count": 0, "samples": []}
+    )
     monkeypatch.setattr(
         system,
         "_check_ollama",
@@ -86,7 +87,6 @@ def test_run_status_summary(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
         (pending_dir / f"batch-{idx}.yaml").write_text("batch", encoding="utf-8")
 
     # Configure WorkspacePaths for the test
-    WorkspacePaths.configure(workspace=tmp_path)
     summary = system.run_status_summary(tmp_path)
 
     assert summary["persona"]["status"] == "fresh"

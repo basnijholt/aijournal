@@ -28,7 +28,7 @@ from aijournal.pipelines import index as index_pipeline
 from aijournal.services.embedding import EmbeddingBackend
 from aijournal.services.retriever import RetrievalFilters, RetrievalResult, Retriever
 from aijournal.utils import time as time_utils
-from aijournal.utils.paths import WorkspacePaths
+from aijournal.utils.paths import resolve_path
 
 INDEX_DB_FILENAME = "index.db"
 ANNOY_FILENAME = "annoy.index"
@@ -225,16 +225,16 @@ def _prepare_rebuild_inputs(ctx: RunContext, options: IndexRebuildOptions) -> In
     manifest_index = _manifest_by_id(_load_manifest(_manifest_path()))
     tasks = index_pipeline.prepare_index_tasks(
         entries,
-        root=ctx.root,
+        root=ctx.workspace,
         manifest_index=manifest_index,
-        relative_path=lambda entry_path: _relative_source_path(entry_path, ctx.root),
+        relative_path=lambda entry_path: _relative_source_path(entry_path, ctx.workspace),
     )
     if not tasks:
         typer.secho("No normalized entries with valid IDs found.", fg=typer.colors.RED, err=True)
         ctx.emit(event="no_tasks")
         raise typer.Exit(1)
 
-    config = _load_config(ctx.root)
+    config = _load_config(ctx.workspace)
     ctx.emit(
         event="prepare_index",
         entries=len(entries),
@@ -291,7 +291,7 @@ def _invoke_rebuild_pipeline(ctx: RunContext, prepared: IndexRebuildPrepared) ->
         conn.close()
 
     index_pipeline.write_index_meta(
-        ctx.root,
+        ctx.workspace,
         embedder=embedder,
         chunk_total=chunk_total,
         entry_total=entry_total,
@@ -367,11 +367,11 @@ def _prepare_tail_inputs(ctx: RunContext, options: IndexTailOptions) -> IndexTai
     manifest_index = _manifest_by_id(_load_manifest(_manifest_path()))
     tasks = index_pipeline.prepare_index_tasks(
         entries,
-        root=ctx.root,
+        root=ctx.workspace,
         manifest_index=manifest_index,
-        relative_path=lambda entry_path: _relative_source_path(entry_path, ctx.root),
+        relative_path=lambda entry_path: _relative_source_path(entry_path, ctx.workspace),
     )
-    config = _load_config(ctx.root)
+    config = _load_config(ctx.workspace)
     ctx.emit(
         event="prepare_tail",
         entries=len(entries),
@@ -428,7 +428,7 @@ def _invoke_tail_pipeline(ctx: RunContext, prepared: IndexTailPrepared) -> Index
             )
 
         index_pipeline.write_index_meta(
-            ctx.root,
+            ctx.workspace,
             embedder=embedder,
             chunk_total=chunk_total,
             entry_total=entry_total,
@@ -494,7 +494,7 @@ def _prepare_search_inputs(ctx: RunContext, options: IndexSearchOptions) -> Inde
 
 
 def _invoke_search_pipeline(ctx: RunContext, prepared: IndexSearchPrepared) -> IndexSearchResult:
-    retriever = Retriever(ctx.root, ctx.config)
+    retriever = Retriever(ctx.workspace, ctx.config)
     try:
         result = retriever.search(prepared.query, k=prepared.top, filters=prepared.filters)
     except (RuntimeError, ValueError) as exc:
@@ -535,7 +535,7 @@ def _persist_search_output(ctx: RunContext, search_result: IndexSearchResult) ->
 
 
 def _index_dir() -> Path:
-    return WorkspacePaths.derived() / "index"
+    return resolve_path(ctx.workspace, ctx.config, "derived/index")
 
 
 def _index_db_path() -> Path:
@@ -556,7 +556,7 @@ def _index_meta_path(_root: Path) -> Path:
 
 
 def _collect_normalized_files(since: str | None) -> list[tuple[str, Path]]:
-    normalized_root = WorkspacePaths.data() / "normalized"
+    normalized_root = resolve_path(ctx.workspace, ctx.config, "data/normalized")
     if not normalized_root.exists():
         return []
     entries: list[tuple[str, Path]] = []

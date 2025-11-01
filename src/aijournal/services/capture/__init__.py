@@ -19,7 +19,6 @@ from aijournal.services.capture.stages.stage0_persist import EntryResult
 from aijournal.services.capture.utils import normalize_markdown
 from aijournal.services.ollama import build_ollama_config_from_mapping
 from aijournal.utils import time as time_utils
-from aijournal.utils.paths import WorkspacePaths
 
 from .stages.stage0_persist import run_persist_stage_0
 from .stages.stage1_normalize import run_normalize_stage_1
@@ -346,9 +345,6 @@ def run_capture(
 
     root = root or Path.cwd()
     config = _load_config(root)
-
-    # Configure WorkspacePaths for this capture run
-    WorkspacePaths.configure(workspace=root, paths=config.paths)
 
     ollama_config = build_ollama_config_from_mapping(config)
     config_host = config.host

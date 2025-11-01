@@ -52,7 +52,6 @@ from aijournal.pipelines import characterize as characterize_pipeline
 from aijournal.pipelines import facts as facts_pipeline
 from aijournal.services.ollama import LLMResponseError
 from aijournal.utils import time as time_utils
-from aijournal.utils.paths import WorkspacePaths
 
 
 class CharacterizeOptions(BaseModel):
@@ -104,7 +103,7 @@ def run_characterize_command(
         timeout_value = _validate_timeout(opts.timeout)
         manifest_entries = _load_manifest(_manifest_path())
         manifest_index = _manifest_by_id(manifest_entries)
-        profile_model, claim_models = load_profile_components(ctx.root, config=ctx.config)
+        profile_model, claim_models = load_profile_components(ctx.workspace, config=ctx.config)
         profile = profile_to_dict(profile_model)
 
         entries = [entry for entry, _ in entries_with_paths]
@@ -187,7 +186,7 @@ def run_characterize_command(
             inputs.append(
                 ProfileUpdateInput(
                     id=entry_id,
-                    normalized_path=_relative_source_path(path, ctx.root),
+                    normalized_path=_relative_source_path(path, ctx.workspace),
                     source_hash=data.source_hash or manifest_hash,
                     manifest_hash=manifest_hash,
                     tags=list(data.tags or []),
@@ -291,7 +290,10 @@ def _validate_timeout(value: float) -> float:
 
 
 def _load_normalized_entries_with_paths(day: str) -> list[tuple[NormalizedEntry, Path]]:
-    folder = WorkspacePaths.data() / "normalized" / day
+    data_dir = Path(config.paths.data)
+    if not data_dir.is_absolute():
+        data_dir = workspace / data_dir
+    folder = data_dir / "normalized" / day
     if not folder.exists():
         return []
     entries: list[tuple[NormalizedEntry, Path]] = []
@@ -300,13 +302,16 @@ def _load_normalized_entries_with_paths(day: str) -> list[tuple[NormalizedEntry,
     return entries
 
 
-def _pending_updates_dir() -> Path:
-    return WorkspacePaths.derived() / "pending" / "profile_updates"
+def _pending_updates_dir(workspace: Path, config: AppConfig) -> Path:
+    derived = Path(config.paths.derived)
+    if not derived.is_absolute():
+        derived = workspace / derived
+    return derived / "pending" / "profile_updates"
 
 
 def _pending_updates_path(batch_id: str) -> Path:
     safe_id = batch_id.replace(":", "-")
-    return _pending_updates_dir() / f"{safe_id}.yaml"
+    return _pending_updates_dir(ctx.workspace, ctx.config) / f"{safe_id}.yaml"
 
 
 def _characterize_payload(

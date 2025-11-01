@@ -25,7 +25,7 @@ from aijournal.io.yaml_io import dump_yaml
 from aijournal.pipelines import index as index_pipeline
 from aijournal.pipelines import pack as pack_pipeline
 from aijournal.utils import time as time_utils
-from aijournal.utils.paths import WorkspacePaths
+from aijournal.utils.paths import resolve_path
 
 
 class PackOptions(BaseModel):
@@ -111,8 +111,8 @@ def prepare_inputs(ctx: RunContext, options: PackOptions) -> PackPrepared:
 
     default_budget = {"L1": 1200, "L2": 2000, "L3": 2600, "L4": 3200}
     budget = options.max_tokens or default_budget.get(normalized_level, 2000)
-    ensure_persona_ready_for_pack(ctx.root)
-    resolved_date = _resolve_pack_date(normalized_level, options.date, ctx.root)
+    ensure_persona_ready_for_pack(ctx.workspace)
+    resolved_date = _resolve_pack_date(normalized_level, options.date, ctx.workspace)
 
     _, _, char_per_token = _index_settings(ctx.config)
 
@@ -138,7 +138,7 @@ def prepare_inputs(ctx: RunContext, options: PackOptions) -> PackPrepared:
 def invoke_pipeline(ctx: RunContext, prepared: PackPrepared) -> PackResult:
     try:
         entries_info = pack_pipeline.collect_pack_entries(
-            ctx.root,
+            ctx.workspace,
             prepared.normalized_level,
             prepared.resolved_date,
             prepared.history_days if prepared.normalized_level == "L4" else 0,
@@ -150,7 +150,7 @@ def invoke_pipeline(ctx: RunContext, prepared: PackPrepared) -> PackResult:
     entries_payload: list[pack_pipeline.PackEntry] = []
     for role, path in entries_info:
         text = path.read_text(encoding="utf-8")
-        rel = _relative_source_path(path, ctx.root)
+        rel = _relative_source_path(path, ctx.workspace)
         tokens = index_pipeline.token_estimate(text, prepared.char_per_token)
         entries_payload.append(
             pack_pipeline.PackEntry(
@@ -259,7 +259,7 @@ def run_pack_command(ctx: RunContext, options: PackOptions) -> None:
 
 
 def _latest_normalized_day() -> str | None:
-    base = WorkspacePaths.data() / "normalized"
+    base = resolve_path(ctx.workspace, ctx.config, "data/normalized")
     if not base.exists():
         return None
     candidates = sorted(p.name for p in base.iterdir() if p.is_dir())

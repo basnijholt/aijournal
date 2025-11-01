@@ -6,83 +6,46 @@ from collections.abc import Iterable, Mapping
 from pathlib import Path
 from textwrap import dedent
 
-from aijournal.common.app_config import PathsConfig
+from aijournal.common.app_config import AppConfig, PathsConfig
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
 
-class WorkspacePaths:
-    """Global workspace path resolver.
+def resolve_path(workspace: Path, config: AppConfig, rel_path: str) -> Path:
+    """Resolve a relative path within a workspace using PathsConfig.
 
-    Manages paths within a self-contained workspace directory.
-    The workspace contains config.yaml at its root plus subdirectories
-    defined by PathsConfig.
+    Args:
+        workspace: Workspace directory
+        config: App configuration containing paths
+        rel_path: Relative path like 'derived/index' or 'profile/claims.yaml'
 
-    Usage:
-        WorkspacePaths.configure(workspace=Path("/path/to/workspace"), paths=PathsConfig())
-        data_dir = WorkspacePaths.data()  # Returns /path/to/workspace/data
+    Returns:
+        Absolute path resolved from workspace and config
     """
+    # Split into base and remaining path
+    parts = rel_path.split("/", 1)
+    base = parts[0]
+    rest = parts[1] if len(parts) > 1 else ""
 
-    _workspace: Path | None = None
-    _paths: PathsConfig | None = None
+    # Map base to config path
+    if base == "data":
+        base_path = Path(config.paths.data)
+    elif base == "derived":
+        base_path = Path(config.paths.derived)
+    elif base == "profile":
+        base_path = Path(config.paths.profile)
+    elif base == "prompts":
+        base_path = Path(config.paths.prompts)
+    else:
+        # Unknown base, treat as literal
+        return workspace / rel_path
 
-    @classmethod
-    def configure(cls, workspace: Path, paths: PathsConfig | None = None) -> None:
-        """Configure with workspace directory and path configuration.
+    # Make absolute if needed
+    if not base_path.is_absolute():
+        base_path = workspace / base_path
 
-        Args:
-            workspace: The workspace directory containing config.yaml
-            paths: Path configuration (defaults to PathsConfig() if None)
-        """
-        cls._workspace = workspace
-        cls._paths = paths or PathsConfig()
-
-    @classmethod
-    def reset(cls) -> None:
-        """Reset to default state (primarily for testing)."""
-        cls._workspace = None
-        cls._paths = None
-
-    @classmethod
-    def _get_paths(cls) -> PathsConfig:
-        """Get paths config, defaulting if not configured."""
-        return cls._paths or PathsConfig()
-
-    @classmethod
-    def paths(cls) -> PathsConfig:
-        """Public accessor for the active PathsConfig."""
-
-        return cls._get_paths()
-
-    @classmethod
-    def root(cls) -> Path:
-        """Get the workspace root directory."""
-        return cls._workspace or Path.cwd()
-
-    @classmethod
-    def data(cls) -> Path:
-        """Get data directory path."""
-        return cls.root() / cls._get_paths().data
-
-    @classmethod
-    def derived(cls) -> Path:
-        """Get derived artifacts directory path."""
-        return cls.root() / cls._get_paths().derived
-
-    @classmethod
-    def profile(cls) -> Path:
-        """Get profile directory path."""
-        return cls.root() / cls._get_paths().profile
-
-    @classmethod
-    def prompts(cls) -> Path:
-        """Get prompts directory path."""
-        return cls.root() / cls._get_paths().prompts
-
-    @classmethod
-    def logs(cls) -> Path:
-        """Get logs directory path."""
-        return cls.derived() / "logs"
+    # Append remaining path
+    return base_path / rest if rest else base_path
 
 
 AUTHORITATIVE_DIRS: tuple[str, ...] = (
@@ -264,7 +227,7 @@ def normalized_entry_path(
     date_str: str,
     entry_id: str,
     *,
-    paths: PathsConfig | None = None,
+    paths: PathsConfig,
 ) -> Path:
     """Return the normalized entry path for a given day/id.
 
@@ -272,18 +235,14 @@ def normalized_entry_path(
         workspace: Workspace directory.
         date_str: Date string in YYYY-MM-DD format.
         entry_id: Entry identifier.
-        paths: Optional PathsConfig to resolve custom data directory names.
+        paths: PathsConfig to resolve custom data directory names.
 
     Returns:
         Path to the normalized entry YAML file.
     """
-
-    if paths is not None:
-        data_dir = Path(paths.data)
-        if not data_dir.is_absolute():
-            data_dir = workspace / data_dir
-    else:
-        data_dir = WorkspacePaths.data()
+    data_dir = Path(paths.data)
+    if not data_dir.is_absolute():
+        data_dir = workspace / data_dir
     return data_dir / "normalized" / date_str / f"{entry_id}.yaml"
 
 

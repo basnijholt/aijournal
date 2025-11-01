@@ -37,7 +37,6 @@ from aijournal.models.derived import ProfileUpdatePreview
 from aijournal.pipelines import facts as facts_pipeline
 from aijournal.services.ollama import LLMResponseError, resolve_model_name
 from aijournal.utils import time as time_utils
-from aijournal.utils.paths import WorkspacePaths
 
 
 def _manifest_by_id(entries: Iterable[ManifestEntry]) -> dict[str, ManifestEntry]:
@@ -70,8 +69,11 @@ def _characterization_context(
     return normalized_ids, sorted(manifest_hashes), default_sources
 
 
-def _derived_microfacts_path(day: str) -> Path:
-    return WorkspacePaths.derived() / "microfacts" / f"{day}.yaml"
+def _derived_microfacts_path(workspace: Path, config: AppConfig, day: str) -> Path:
+    derived = Path(config.paths.derived)
+    if not derived.is_absolute():
+        derived = workspace / derived
+    return derived / "microfacts" / f"{day}.yaml"
 
 
 class FactsOptions(BaseModel):
@@ -119,7 +121,7 @@ class FactsOutput:
 
 
 def prepare_inputs(ctx: RunContext, options: FactsOptions) -> FactsPrepared:
-    entries = _load_normalized_entries(options.date)
+    entries = _load_normalized_entries(ctx.workspace, ctx.config, options.date)
     if not entries:
         typer.secho(f"No normalized entries for {options.date}", fg=typer.colors.RED, err=True)
         ctx.emit(event="command_failed", reason="missing_entries")
@@ -139,7 +141,7 @@ def prepare_inputs(ctx: RunContext, options: FactsOptions) -> FactsPrepared:
     else:
         claim_models = [
             claim.model_copy(deep=True)
-            for claim in load_profile_components(ctx.root, config=ctx.config)[1]
+            for claim in load_profile_components(ctx.workspace, config=ctx.config)[1]
         ]
     preview_builder = options.preview_builder or (lambda *_args, **_kwargs: None)
     ctx.emit(
@@ -209,7 +211,7 @@ def invoke_pipeline(ctx: RunContext, prepared: FactsPrepared) -> FactsResult:
 
 
 def persist_output(ctx: RunContext, result: FactsResult) -> FactsOutput:
-    facts_path = _derived_microfacts_path(result.date)
+    facts_path = _derived_microfacts_path(ctx.workspace, ctx.config, result.date)
     model_name = resolve_model_name(ctx.config, use_fake_llm=ctx.use_fake_llm)
     artifact_meta = _build_meta("prompts/extract_facts.md", model=model_name)
     save_artifact(

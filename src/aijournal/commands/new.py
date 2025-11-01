@@ -204,7 +204,7 @@ class NewResult:
 
 
 def prepare_inputs(ctx: RunContext, options: NewOptions) -> NewPrepared:
-    base = ctx.root
+    base = ctx.workspace
     if options.fake > 0:
         if options.title is not None:
             typer.secho(

@@ -213,8 +213,8 @@ def prepare_inputs(ctx: RunContext, options: ChatOptions) -> ChatPrepared:
 
 
 def invoke_pipeline(ctx: RunContext, prepared: ChatPrepared) -> ChatResult:
-    config = _load_config(ctx.root)
-    service = ChatService(ctx.root, config)
+    config = _load_config(ctx.workspace)
+    service = ChatService(ctx.workspace, config)
     try:
         turn = service.run(
             prepared.question,
@@ -243,7 +243,7 @@ def persist_output(ctx: RunContext, result: ChatResult) -> None:
     saved_dir: Path | None = None
 
     if prepared.save:
-        recorder = ChatSessionRecorder(ctx.root, session_id)
+        recorder = ChatSessionRecorder(ctx.workspace, session_id)
         recorder.append(turn, feedback=prepared.feedback)
         saved_dir = recorder.session_dir
 
@@ -258,7 +258,7 @@ def persist_output(ctx: RunContext, result: ChatResult) -> None:
 
     if prepared.feedback:
         adjustments, feedback_path = apply_chat_feedback(
-            ctx.root,
+            ctx.workspace,
             turn_answer=turn.answer,
             question=turn.question,
             session_id=session_id,

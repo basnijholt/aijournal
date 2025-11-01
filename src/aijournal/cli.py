@@ -124,7 +124,6 @@ from aijournal.services.ollama import (
 from aijournal.utils import time as time_utils
 from aijournal.utils.coercion import coerce_int
 from aijournal.utils.paths import (
-    WorkspacePaths,
     find_data_root,
     normalized_entry_path,
 )
@@ -232,7 +231,6 @@ def _run_context(
     settings = _cli_settings()
     actual_workspace = workspace or _get_workspace()
     config_model = config or _load_config(actual_workspace)
-    WorkspacePaths.configure(workspace=actual_workspace, paths=config_model.paths)
     return create_run_context(
         command=command,
         workspace=actual_workspace,
@@ -854,7 +852,6 @@ def normalize(
     date_str = time_utils.created_date(created_str)
     workspace = find_data_root(entry)
     config = _load_config(workspace)
-    WorkspacePaths.configure(workspace=workspace, paths=config.paths)
     normalized_data = {
         "id": entry_id,
         "created_at": created_str,
@@ -954,7 +951,6 @@ def facts(
     _emit_deprecation("aijournal ops pipeline extract-facts", "aijournal capture --from/--text")
     workspace = _get_workspace()
     config = _load_config(workspace)
-    WorkspacePaths.configure(workspace=workspace, paths=config.paths)
     _, claim_models = load_profile_components(workspace, config=config)
     ctx = _run_context("facts", workspace=workspace, config=config)
     output = run_facts_command(
@@ -1103,7 +1099,6 @@ def review_updates(
 
     batch = load_artifact_data(batch_path, ProfileUpdateBatch)
     config = _load_config(workspace)
-    WorkspacePaths.configure(workspace=workspace, paths=config.paths)
     claim_proposals: list[ClaimProposal] = [
         proposal.model_copy(deep=True) for proposal in batch.proposals.claims
     ]
@@ -1161,7 +1156,9 @@ def review_updates(
 
     updated_profile = SelfProfile.model_validate(profile)
     updated_claims = [claim.model_copy(deep=True) for claim in claims_data]
-    profile_dir = WorkspacePaths.profile()
+    profile_dir = Path(config.paths.profile)
+    if not profile_dir.is_absolute():
+        profile_dir = workspace / profile_dir
     write_yaml_model(profile_dir / "self_profile.yaml", updated_profile)
     write_yaml_model(profile_dir / "claims.yaml", ClaimsFile(claims=updated_claims))
     _emit_claim_merge_events(merge_events, "Applied claim consolidations:")
@@ -1246,7 +1243,6 @@ def persona_build(
     """Regenerate derived/persona/persona_core.yaml."""
     workspace = _get_workspace()
     config = _load_config(workspace)
-    WorkspacePaths.configure(workspace=workspace, paths=config.paths)
     profile_model, claim_models = load_profile_components(workspace, config=config)
     profile = profile_to_dict(profile_model)
     path, changed = run_persona_build(
@@ -1267,7 +1263,6 @@ def persona_status() -> None:
     """Check whether persona_core.yaml matches the latest profile edits."""
     workspace = _get_workspace()
     config = _load_config(workspace)
-    WorkspacePaths.configure(workspace=workspace, paths=config.paths)
     status, reasons = persona_state(workspace)
     if status == "fresh":
         typer.echo("Persona core is up to date (profile files unchanged).")
@@ -1616,7 +1611,6 @@ def interview(
     workspace = _get_workspace()
 
     config = _load_config(workspace)
-    WorkspacePaths.configure(workspace=workspace, paths=config.paths)
 
     profile_model, claim_models = load_profile_components(workspace, config=config)
     profile = profile_to_dict(profile_model)

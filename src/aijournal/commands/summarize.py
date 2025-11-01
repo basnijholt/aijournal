@@ -30,7 +30,7 @@ from aijournal.services.ollama import (
     run_ollama_agent,
 )
 from aijournal.utils import time as time_utils
-from aijournal.utils.paths import WorkspacePaths, resolve_prompt_path
+from aijournal.utils.paths import resolve_prompt_path
 
 DEFAULT_PROMPTS = {
     "summarize_day.md": (
@@ -163,8 +163,11 @@ def _entries_to_payload(entries: Sequence[NormalizedEntry]) -> list[dict[str, An
     return [entry.model_dump(mode="python") for entry in entries]
 
 
-def _load_normalized_entries(day: str) -> list[NormalizedEntry]:
-    folder = WorkspacePaths.data() / "normalized" / day
+def _load_normalized_entries(workspace: Path, config: AppConfig, day: str) -> list[NormalizedEntry]:
+    data_dir = Path(config.paths.data)
+    if not data_dir.is_absolute():
+        data_dir = workspace / data_dir
+    folder = data_dir / "normalized" / day
     if not folder.exists():
         return []
     entries: list[NormalizedEntry] = []
@@ -173,8 +176,11 @@ def _load_normalized_entries(day: str) -> list[NormalizedEntry]:
     return entries
 
 
-def _derived_summary_path(day: str) -> Path:
-    return WorkspacePaths.derived() / "summaries" / f"{day}.yaml"
+def _derived_summary_path(workspace: Path, config: AppConfig, day: str) -> Path:
+    derived = Path(config.paths.derived)
+    if not derived.is_absolute():
+        derived = workspace / derived
+    return derived / "summaries" / f"{day}.yaml"
 
 
 def _hash_prompt(prompt_path: str) -> str | None:
@@ -207,7 +213,7 @@ def _build_meta(
 
 
 def prepare_inputs(ctx: RunContext, options: DailySummaryOptions) -> DailySummaryPrepared:
-    entries = _load_normalized_entries(options.date)
+    entries = _load_normalized_entries(ctx.workspace, ctx.config, options.date)
     if not entries:
         typer.secho(f"No normalized entries for {options.date}", fg=typer.colors.RED, err=True)
         ctx.emit(event="command_failed", reason="missing_entries")
@@ -252,7 +258,7 @@ def invoke_pipeline(ctx: RunContext, prepared: DailySummaryPrepared) -> DailySum
 
 
 def persist_output(ctx: RunContext, result: DailySummaryResult) -> Path:
-    summary_path = _derived_summary_path(result.date)
+    summary_path = _derived_summary_path(ctx.workspace, ctx.config, result.date)
     artifact_meta = _build_meta("prompts/summarize_day.md", model=result.model_name)
     artifact = Artifact[DailySummary](
         kind=ArtifactKind.SUMMARY_DAILY,
