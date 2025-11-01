@@ -751,7 +751,7 @@ def _summarize_day_payload(
         retries=retries,
         invoke_structured_llm=_invoke_structured_llm,
         structured_call=_structured_call_with_retry,
-        use_fake_llm=use_fake_llm(),
+        use_fake_llm_override=use_fake_llm(),
     )
 
 

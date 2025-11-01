@@ -11,8 +11,8 @@ from typing import Any
 import typer
 from pydantic import BaseModel
 
-from aijournal.commands.ingest import _use_fake_llm
 from aijournal.common.command_runner import run_command_pipeline
+from aijournal.common.config_loader import use_fake_llm
 from aijournal.common.context import RunContext, create_run_context
 from aijournal.io.yaml_io import dump_yaml
 from aijournal.utils import time as time_utils
@@ -319,7 +319,7 @@ def run_new(
         command="ops.dev.new",
         workspace=workspace,
         config={},
-        use_fake_llm=_use_fake_llm(),
+        use_fake_llm=use_fake_llm(),
         trace=False,
         verbose_json=False,
     )

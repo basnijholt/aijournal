@@ -15,8 +15,8 @@ from aijournal.commands.index import (
     _split_filter_values,
     _validate_date_option,
 )
-from aijournal.commands.ingest import _load_config, _use_fake_llm
 from aijournal.common.command_runner import run_command_pipeline
+from aijournal.common.config_loader import load_config, use_fake_llm
 from aijournal.common.context import RunContext, create_run_context
 from aijournal.io.chat_sessions import ChatSessionRecorder
 from aijournal.services.chat import ChatService, ChatTurn
@@ -213,7 +213,7 @@ def prepare_inputs(ctx: RunContext, options: ChatOptions) -> ChatPrepared:
 
 
 def invoke_pipeline(ctx: RunContext, prepared: ChatPrepared) -> ChatResult:
-    config = _load_config(ctx.workspace)
+    config = load_config(ctx.workspace)
     service = ChatService(ctx.workspace, config)
     try:
         turn = service.run(
@@ -292,12 +292,12 @@ def run_chat(
     feedback: str | None,
 ) -> None:
     workspace = workspace or Path.cwd()
-    config = _load_config(workspace)
+    config = load_config(workspace)
     ctx = create_run_context(
         command="chat",
         workspace=workspace,
         config=config,
-        use_fake_llm=_use_fake_llm(),
+        use_fake_llm=use_fake_llm(),
         trace=False,
         verbose_json=False,
     )

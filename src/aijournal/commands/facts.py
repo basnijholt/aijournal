@@ -254,16 +254,16 @@ def run_facts(
     ],
     workspace: Path | None = None,
 ) -> tuple[ProfileUpdatePreview | None, Path]:
-    from aijournal.commands.ingest import _load_config, _use_fake_llm
+    from aijournal.common.config_loader import load_config, use_fake_llm
     from aijournal.common.context import create_run_context
 
     workspace = workspace or Path.cwd()
-    config = _load_config(workspace)
+    config = load_config(workspace)
     ctx = create_run_context(
         command="facts",
         workspace=workspace,
         config=config,
-        use_fake_llm=_use_fake_llm(),
+        use_fake_llm=use_fake_llm(),
         trace=False,
         verbose_json=False,
     )

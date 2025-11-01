@@ -15,14 +15,13 @@ from pydantic import BaseModel
 
 from aijournal.commands.facts import _manifest_by_id
 from aijournal.commands.ingest import (
-    _load_config,
     _load_manifest,
     _manifest_path,
     _relative_source_path,
-    _use_fake_llm,
 )
 from aijournal.common.app_config import AppConfig
 from aijournal.common.command_runner import run_command_pipeline
+from aijournal.common.config_loader import load_config, use_fake_llm
 from aijournal.common.context import RunContext, create_run_context
 from aijournal.pipelines import index as index_pipeline
 from aijournal.services.embedding import EmbeddingBackend
@@ -108,12 +107,12 @@ def run_index_rebuild(
     """Rebuild the Annoy + SQLite retrieval index."""
 
     workspace = workspace or Path.cwd()
-    config = _load_config(workspace)
+    config = load_config(workspace)
     ctx = create_run_context(
         command="index.rebuild",
         workspace=workspace,
         config=config,
-        use_fake_llm=_use_fake_llm(),
+        use_fake_llm=use_fake_llm(),
         trace=False,
         verbose_json=False,
     )
@@ -127,12 +126,12 @@ def run_index_tail(
     """Tail the retrieval index by ingesting recently normalized entries."""
 
     workspace = workspace or Path.cwd()
-    config = _load_config(workspace)
+    config = load_config(workspace)
     ctx = create_run_context(
         command="index.update",
         workspace=workspace,
         config=config,
-        use_fake_llm=_use_fake_llm(),
+        use_fake_llm=use_fake_llm(),
         trace=False,
         verbose_json=False,
     )
@@ -153,12 +152,12 @@ def run_index_search(
     """Search the retrieval index and display formatted results."""
 
     workspace = workspace or Path.cwd()
-    config = _load_config(workspace)
+    config = load_config(workspace)
     ctx = create_run_context(
         command="index.search",
         workspace=workspace,
         config=config,
-        use_fake_llm=_use_fake_llm(),
+        use_fake_llm=use_fake_llm(),
         trace=False,
         verbose_json=False,
     )
@@ -234,7 +233,7 @@ def _prepare_rebuild_inputs(ctx: RunContext, options: IndexRebuildOptions) -> In
         ctx.emit(event="no_tasks")
         raise typer.Exit(1)
 
-    config = _load_config(ctx.workspace)
+    config = load_config(ctx.workspace)
     ctx.emit(
         event="prepare_index",
         entries=len(entries),
@@ -296,7 +295,7 @@ def _invoke_rebuild_pipeline(ctx: RunContext, prepared: IndexRebuildPrepared) ->
         chunk_total=chunk_total,
         entry_total=entry_total,
         mode="rebuild",
-        fake_mode=_use_fake_llm(),
+        fake_mode=use_fake_llm(),
         ann_trees=ann_trees,
         search_k_factor=search_k_factor,
         char_per_token=char_per_token,
@@ -371,7 +370,7 @@ def _prepare_tail_inputs(ctx: RunContext, options: IndexTailOptions) -> IndexTai
         manifest_index=manifest_index,
         relative_path=lambda entry_path: _relative_source_path(entry_path, ctx.workspace),
     )
-    config = _load_config(ctx.workspace)
+    config = load_config(ctx.workspace)
     ctx.emit(
         event="prepare_tail",
         entries=len(entries),
@@ -433,7 +432,7 @@ def _invoke_tail_pipeline(ctx: RunContext, prepared: IndexTailPrepared) -> Index
             chunk_total=chunk_total,
             entry_total=entry_total,
             mode="tail",
-            fake_mode=_use_fake_llm(),
+            fake_mode=use_fake_llm(),
             ann_trees=ann_trees,
             search_k_factor=search_k_factor,
             char_per_token=char_per_token,
@@ -619,7 +618,7 @@ def _format_search_snippet(text: str, limit: int = 200) -> str:
 def _build_embedding_backend(config: AppConfig) -> EmbeddingBackend:
     model = str(config.embedding_model or "embeddinggemma")
     host = os.getenv("AIJOURNAL_OLLAMA_HOST")
-    return EmbeddingBackend(model, host=host, fake_mode=_use_fake_llm())
+    return EmbeddingBackend(model, host=host, fake_mode=use_fake_llm())
 
 
 def _index_settings(config: AppConfig) -> tuple[int, float, float]:

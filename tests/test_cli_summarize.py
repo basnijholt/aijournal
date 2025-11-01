@@ -8,7 +8,9 @@ import pytest
 import yaml
 from typer.testing import CliRunner
 
+from aijournal import cli
 from aijournal.cli import app
+from aijournal.common import config_loader
 from aijournal.common.meta import LLMResult
 from aijournal.domain.facts import DailySummary
 from aijournal.domain.journal import NormalizedEntry
@@ -128,8 +130,6 @@ def test_summarize_rejects_zero_timeout(
 
 
 def test_summarize_structured_success(monkeypatch: pytest.MonkeyPatch) -> None:
-    from aijournal import cli
-
     entry = NormalizedEntry(
         id="entry-1",
         created_at=f"{DATE}T09:00:00Z",
@@ -154,7 +154,7 @@ def test_summarize_structured_success(monkeypatch: pytest.MonkeyPatch) -> None:
     def fake_invoke(*_args, **_kwargs) -> DailySummary:
         return fake_response
 
-    monkeypatch.setattr(cli, "_use_fake_llm", lambda: False)
+    monkeypatch.setattr(config_loader, "use_fake_llm", lambda: False)
     monkeypatch.setattr(cli, "_structured_call_with_retry", fake_retry)
     monkeypatch.setattr(cli, "_invoke_structured_llm", fake_invoke)
 
@@ -167,8 +167,6 @@ def test_summarize_structured_success(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_summarize_structured_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
-    from aijournal import cli
-
     entry = NormalizedEntry(
         id="entry-1",
         created_at=f"{DATE}T09:00:00Z",
@@ -182,7 +180,7 @@ def test_summarize_structured_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
     def fake_retry(func, *, retries: int, label: str) -> DailySummary:
         raise LLMResponseError("bad schema")
 
-    monkeypatch.setattr(cli, "_use_fake_llm", lambda: False)
+    monkeypatch.setattr(config_loader, "use_fake_llm", lambda: False)
     monkeypatch.setattr(cli, "_structured_call_with_retry", fake_retry)
 
     with pytest.raises(LLMResponseError):
@@ -190,8 +188,6 @@ def test_summarize_structured_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_invoke_structured_llm_uses_shared_builder(monkeypatch: pytest.MonkeyPatch) -> None:
-    from aijournal import cli
-
     captured: dict[str, object] = {}
 
     def fake_builder(

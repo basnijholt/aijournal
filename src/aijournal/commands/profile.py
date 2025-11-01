@@ -11,7 +11,6 @@ from typing import Any, Literal, cast
 import typer
 from pydantic import BaseModel, ValidationError
 
-from aijournal.commands.ingest import _load_config, _load_yaml, _use_fake_llm
 from aijournal.commands.summarize import (
     _build_meta,
     _entries_to_payload,
@@ -23,6 +22,7 @@ from aijournal.commands.summarize import (
 )
 from aijournal.common.app_config import AppConfig
 from aijournal.common.command_runner import run_command_pipeline
+from aijournal.common.config_loader import load_config, load_yaml, use_fake_llm
 from aijournal.common.context import RunContext, create_run_context
 from aijournal.common.meta import Artifact, ArtifactKind
 from aijournal.domain.changes import ClaimProposal, FacetChange, ProfileUpdateProposals
@@ -134,12 +134,12 @@ def run_profile_suggest(
     """Generate profile suggestions for a specific date."""
 
     workspace = workspace or Path.cwd()
-    config = _load_config(workspace)
+    config = load_config(workspace)
     ctx = create_run_context(
         command="profile.suggest",
         workspace=workspace,
         config=config,
-        use_fake_llm=_use_fake_llm(),
+        use_fake_llm=use_fake_llm(),
         trace=False,
         verbose_json=False,
     )
@@ -164,12 +164,12 @@ def run_profile_apply(
     """Apply previously generated profile suggestions."""
 
     workspace = workspace or Path.cwd()
-    config = _load_config(workspace)
+    config = load_config(workspace)
     ctx = create_run_context(
         command="profile.apply",
         workspace=workspace,
         config=config,
-        use_fake_llm=_use_fake_llm(),
+        use_fake_llm=use_fake_llm(),
         trace=False,
         verbose_json=False,
     )
@@ -187,12 +187,12 @@ def run_profile_status(workspace: Path | None = None, *, root: Path | None = Non
     """Show ranked facets/claims requiring review."""
     workspace = workspace or Path.cwd()
     config_path = workspace / "config.yaml"
-    config = _load_yaml(config_path) if config_path.exists() else {}
+    config = load_yaml(config_path) if config_path.exists() else {}
     ctx = create_run_context(
         command="profile.status",
         workspace=workspace,
         config=config,
-        use_fake_llm=_use_fake_llm(),
+        use_fake_llm=use_fake_llm(),
         trace=False,
         verbose_json=False,
     )
@@ -416,7 +416,7 @@ def _profile_proposals_payload(
     timeout: float | None = None,
     retries: int = DEFAULT_PROFILE_RETRIES,
 ) -> ProfileUpdateProposals:
-    if _use_fake_llm():
+    if use_fake_llm():
         proposals = fake_profile_proposals(
             entries,
             profile,
@@ -670,7 +670,7 @@ def load_profile_components(
             claims_file = load_yaml_model(claims_path, ClaimsFile)
             claim_models = list(claims_file.claims)
         except ValidationError:
-            raw = _load_yaml(claims_path).get("claims", [])
+            raw = load_yaml(claims_path).get("claims", [])
             claim_models = _claims_to_models(raw if isinstance(raw, list) else [])
     else:
         claim_models = []

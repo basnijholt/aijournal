@@ -33,7 +33,7 @@ def test_stage7_persona_triggers_build(tmp_path: Path, monkeypatch) -> None:
     )
 
     monkeypatch.setattr(
-        "aijournal.commands.ingest._load_config",
+        "aijournal.common.config_loader.load_config",
         lambda root: {},
     )
 

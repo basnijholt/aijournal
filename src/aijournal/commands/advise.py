@@ -146,16 +146,16 @@ def run_advise_command(ctx: RunContext, options: AdviceOptions) -> Path:
 
 def run_advise(question: str, workspace: Path | None = None) -> Path:
     """Backward-compatible entrypoint using the current working directory."""
-    from aijournal.commands.ingest import _load_config, _use_fake_llm
+    from aijournal.common.config_loader import load_config, use_fake_llm
     from aijournal.common.context import create_run_context
 
     workspace = workspace or Path.cwd()
-    config = _load_config(workspace)
+    config = load_config(workspace)
     ctx = create_run_context(
         command="advise",
         workspace=workspace,
         config=config,
-        use_fake_llm=_use_fake_llm(),
+        use_fake_llm=use_fake_llm(),
         trace=False,
         verbose_json=False,
     )

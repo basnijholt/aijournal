@@ -13,9 +13,9 @@ from typing import Any, cast
 import typer
 from pydantic import BaseModel
 
-from aijournal.commands.ingest import _use_fake_llm
 from aijournal.common.app_config import AppConfig
 from aijournal.common.command_runner import run_command_pipeline
+from aijournal.common.config_loader import load_config, use_fake_llm
 from aijournal.common.context import RunContext
 from aijournal.common.meta import Artifact, ArtifactKind, ArtifactMeta, LLMResult
 from aijournal.domain.facts import DailySummary
@@ -202,7 +202,7 @@ def _build_meta(
     if model:
         resolved_model = model
     else:
-        resolved_model = resolve_model_name(config, use_fake_llm=_use_fake_llm())
+        resolved_model = resolve_model_name(config, use_fake_llm=use_fake_llm())
     created_at = time_utils.format_timestamp(time_utils.now())
     return ArtifactMeta(
         created_at=created_at,
@@ -246,7 +246,7 @@ def invoke_pipeline(ctx: RunContext, prepared: DailySummaryPrepared) -> DailySum
         ctx.config,
         timeout=prepared.timeout,
         retries=prepared.retries,
-        use_fake_llm=ctx.use_fake_llm,
+        use_fake_llm_override=ctx.use_fake_llm,
     )
     model_name = resolve_model_name(ctx.config, use_fake_llm=ctx.use_fake_llm)
     ctx.emit(
@@ -279,11 +279,11 @@ def _summarize_day_payload(
     retries: int,
     invoke_structured_llm: Callable[..., BaseModel] | None = None,
     structured_call: Callable[..., BaseModel] | None = None,
-    use_fake_llm: bool | None = None,
+    use_fake_llm_override: bool | None = None,
 ) -> DailySummary:
     invoke = invoke_structured_llm or _invoke_structured_llm
     structured = structured_call or (lambda func, *, retries, label: func())
-    fake_mode = use_fake_llm if use_fake_llm is not None else _use_fake_llm()
+    fake_mode = use_fake_llm_override if use_fake_llm_override is not None else use_fake_llm()
 
     def request_summary() -> DailySummary:
         return cast(
@@ -320,16 +320,15 @@ def run_summarize(
     date: str, *, timeout: float, retries: int, progress: bool, workspace: Path | None = None
 ) -> Path:
     """Backward-compatible entrypoint using current working directory."""
-    from aijournal.commands.ingest import _load_config, _use_fake_llm
     from aijournal.common.context import create_run_context
 
     workspace = workspace or Path.cwd()
-    config = _load_config(workspace)
+    config = load_config(workspace)
     ctx = create_run_context(
         command="summarize",
         workspace=workspace,
         config=config,
-        use_fake_llm=_use_fake_llm(),
+        use_fake_llm=use_fake_llm(),
         trace=False,
         verbose_json=False,
     )
