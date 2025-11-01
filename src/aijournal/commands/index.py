@@ -233,7 +233,6 @@ def _prepare_rebuild_inputs(ctx: RunContext, options: IndexRebuildOptions) -> In
         ctx.emit(event="no_tasks")
         raise typer.Exit(1)
 
-    config = load_config(ctx.workspace)
     ctx.emit(
         event="prepare_index",
         entries=len(entries),
@@ -242,7 +241,7 @@ def _prepare_rebuild_inputs(ctx: RunContext, options: IndexRebuildOptions) -> In
     )
     return IndexRebuildPrepared(
         tasks=list(tasks),
-        config=config,
+        config=ctx.config,
         since_filter=since_filter,
         limit=options.limit,
         entries_considered=len(entries),
@@ -370,7 +369,6 @@ def _prepare_tail_inputs(ctx: RunContext, options: IndexTailOptions) -> IndexTai
         manifest_index=manifest_index,
         relative_path=lambda entry_path: _relative_source_path(entry_path, ctx.workspace),
     )
-    config = load_config(ctx.workspace)
     ctx.emit(
         event="prepare_tail",
         entries=len(entries),
@@ -379,7 +377,7 @@ def _prepare_tail_inputs(ctx: RunContext, options: IndexTailOptions) -> IndexTai
     )
     return IndexTailPrepared(
         tasks=list(tasks),
-        config=config,
+        config=ctx.config,
         since_filter=since_filter,
         limit=options.limit,
         days=options.days,
