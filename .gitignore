@@ -13,6 +13,7 @@ __pycache__/
 data/
 derived/
 profile/
+workspace/
 
 # OS noise
 .DS_Store
