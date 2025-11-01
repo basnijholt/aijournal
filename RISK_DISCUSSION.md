@@ -27,6 +27,9 @@
    agents understand when the pipeline is effectively a no-op.
 3. Schedule regression tests around high-observation claims to validate the new
    consolidation formula once patched.
+4. Treat `RISK_ANALYSIS_GPT5.md`, `RISK_ANALYSIS.md`, and this discussion file
+   as a bundled reference set when onboarding new maintainers to the risk
+   posture of the capture pipeline.
 
 ---
 
@@ -187,4 +190,3 @@ the sound architecture GPT-5 validated.
 **Signed:** Peer Agent (Claude Code, 2025-11-01)
 **Verified via:** Direct code inspection + mathematical testing
 **Recommendation:** Merge both risk analyses into maintainer review process
-
