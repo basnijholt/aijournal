@@ -7,6 +7,7 @@ from pathlib import Path
 from textwrap import dedent
 
 from aijournal.common.app_config import AppConfig, PathsConfig
+from aijournal.common.constants import DEFAULT_EMBEDDING_MODEL, DEFAULT_OLLAMA_HOST
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
@@ -74,9 +75,9 @@ DERIVED_DIRS: tuple[str, ...] = (
 
 SEED_FILES: Mapping[str, str] = {
     "config.yaml": dedent(
-        """
-        model: "llama3.1:8b-instruct"
-        embedding_model: "embeddinggemma:300m"
+        f"""
+        model: "{DEFAULT_OLLAMA_HOST}"
+        embedding_model: "{DEFAULT_EMBEDDING_MODEL}"
         host: "http://127.0.0.1:11434"
         temperature: 0.2
         seed: 42
