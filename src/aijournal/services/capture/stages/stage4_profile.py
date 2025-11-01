@@ -16,8 +16,9 @@ def run_profile_stage_4(
     root: Path,
 ) -> ProfileStage4Outputs:
     from aijournal.commands.profile import run_profile_apply, run_profile_suggest
+    from aijournal.common.constants import DEFAULT_TIMEOUT_SECONDS
 
-    from .. import DEFAULT_TIMEOUT_SECONDS, OperationResult, ProfileStage4Outputs
+    from .. import OperationResult, ProfileStage4Outputs
     from ..utils import relative_path
 
     stage_start = perf_counter()
@@ -33,6 +34,7 @@ def run_profile_stage_4(
                 timeout=DEFAULT_TIMEOUT_SECONDS,
                 retries=inputs.retries,
                 progress=inputs.progress,
+                workspace=root,
             )
         except typer.Exit as exc:
             if exc.exit_code not in (0,):
@@ -49,6 +51,7 @@ def run_profile_stage_4(
                     date,
                     suggestions_path=suggestions_path,
                     auto_confirm=True,
+                    workspace=root,
                 )
             except typer.Exit as exc:
                 if exc.exit_code not in (0,):

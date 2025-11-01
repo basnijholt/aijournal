@@ -16,8 +16,9 @@ def run_characterize_stage_5(
     root: Path,
 ) -> CharacterizeStage5Outputs:
     from aijournal.commands.characterize import run_characterize
+    from aijournal.common.constants import DEFAULT_TIMEOUT_SECONDS
 
-    from .. import DEFAULT_TIMEOUT_SECONDS, CharacterizeStage5Outputs, OperationResult
+    from .. import CharacterizeStage5Outputs, OperationResult
     from ..utils import (
         apply_profile_update_batch,
         noop_preview,
@@ -41,6 +42,7 @@ def run_characterize_stage_5(
                 retries=inputs.retries,
                 progress=inputs.progress,
                 build_claim_preview=noop_preview,
+                workspace=root,
             )
         except typer.Exit as exc:
             if exc.exit_code not in (0,):

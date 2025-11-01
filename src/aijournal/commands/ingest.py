@@ -18,6 +18,7 @@ from pydantic_ai import Agent
 
 from aijournal.common.app_config import AppConfig
 from aijournal.common.command_runner import run_command_pipeline
+from aijournal.common.constants import MARKDOWN_SUFFIXES
 from aijournal.common.context import RunContext, create_run_context
 from aijournal.ingest_agent import (
     IngestResult,
@@ -32,8 +33,6 @@ from aijournal.schema import SchemaValidationError, validate_schema
 from aijournal.services.ollama import build_ollama_config_from_mapping
 from aijournal.utils import time as time_utils
 from aijournal.utils.paths import WorkspacePaths, normalized_entry_path
-
-MARKDOWN_SUFFIXES = {".md", ".markdown"}
 
 
 class IngestOptions(BaseModel):

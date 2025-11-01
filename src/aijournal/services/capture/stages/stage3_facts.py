@@ -17,8 +17,9 @@ def run_facts_stage_3(
 ) -> FactsStage3Outputs:
     from aijournal.commands.facts import run_facts
     from aijournal.commands.profile import load_profile_components
+    from aijournal.common.constants import DEFAULT_TIMEOUT_SECONDS
 
-    from .. import DEFAULT_TIMEOUT_SECONDS, FactsStage3Outputs, OperationResult
+    from .. import FactsStage3Outputs, OperationResult
     from ..utils import noop_preview, relative_path
 
     stage_start = perf_counter()
@@ -34,6 +35,7 @@ def run_facts_stage_3(
                 progress=inputs.progress,
                 claim_models=claim_models,
                 build_claim_preview=noop_preview,
+                workspace=root,
             )
         except typer.Exit as exc:
             if exc.exit_code not in (0,):

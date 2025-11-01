@@ -17,6 +17,7 @@ from aijournal.commands.profile import (
     load_profile_components,
     profile_to_dict,
 )
+from aijournal.common.constants import MARKDOWN_SUFFIXES
 from aijournal.domain.changes import ClaimProposal, FacetChange
 from aijournal.domain.claims import ClaimAtom, ClaimSource
 from aijournal.domain.evidence import redact_source_text
@@ -29,8 +30,6 @@ from aijournal.pipelines import normalization
 from aijournal.services.capture.results import OperationResult
 from aijournal.utils import time as time_utils
 from aijournal.utils.paths import normalized_entry_path
-
-MARKDOWN_SUFFIXES = {".md", ".markdown"}
 
 
 def journal_path(root: Path, date_str: str, slug: str) -> Path:

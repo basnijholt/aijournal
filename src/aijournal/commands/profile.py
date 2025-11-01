@@ -643,13 +643,19 @@ def _build_claim_atom_from_entry(
 
 
 def load_profile_components(
+    root: Path | None = None,
     *,
     config: AppConfig | None = None,
 ) -> tuple[SelfProfile | None, list[ClaimAtom]]:
-    if config is not None:
-        profile_dir = Path(config.paths.profile)
+    resolved_config = config
+    if resolved_config is None and root is not None:
+        resolved_config = _load_config(root)
+
+    if resolved_config is not None:
+        profile_dir = Path(resolved_config.paths.profile)
         if not profile_dir.is_absolute():
-            profile_dir = WorkspacePaths.root() / profile_dir
+            base = root or WorkspacePaths.root()
+            profile_dir = base / profile_dir
     else:
         profile_dir = WorkspacePaths.profile()
 

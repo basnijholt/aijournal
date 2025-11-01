@@ -81,7 +81,10 @@ from aijournal.commands.summarize import (
 )
 from aijournal.commands.system import run_system_doctor_cli, run_system_status_cli
 from aijournal.common.app_config import AppConfig
-from aijournal.common.constants import DEFAULT_LLM_RETRIES
+from aijournal.common.constants import (
+    DEFAULT_LLM_RETRIES,
+    DEFAULT_TIMEOUT_SECONDS,
+)
 from aijournal.common.context import RunContext, create_run_context
 from aijournal.domain.changes import ClaimProposal, FacetChange
 from aijournal.domain.claims import ClaimAtom, ClaimSource, Scope
@@ -437,7 +440,7 @@ def capture(
         rich_help_panel="STAGE CONTROL",
     ),
     retries: int = typer.Option(
-        1,
+        DEFAULT_LLM_RETRIES,
         "--retries",
         min=0,
         help="Structured-output retry attempts per stage.",
@@ -643,8 +646,6 @@ def main() -> None:
     return
 
 
-PENDING_UPDATES_SUBDIR = "derived/pending/profile_updates"
-
 HIGH_IMPACT_PROBES = [
     "- Top 3 values you refuse to trade off—rank them.",
     "- One long-term goal that matters most this year—and why now?",
@@ -655,9 +656,6 @@ HIGH_IMPACT_PROBES = [
     "- Feedback style you prefer when you’re wrong?",
     "- Three coping strategies that reliably help under stress.",
 ]
-
-
-DEFAULT_TIMEOUT_SECONDS = 120.0
 
 
 def _normalize_created_at(value: Any) -> str:

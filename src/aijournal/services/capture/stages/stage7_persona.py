@@ -44,7 +44,7 @@ def run_persona_stage_7(
         should_build = (
             force_rebuild or persona_stale_before or artifacts_changed.get("profile", 0) > 0
         )
-        profile_model, claim_models = load_profile_components()
+        profile_model, claim_models = load_profile_components(root=root)
         profile_payload = profile_to_dict(profile_model)
         if should_build and (profile_payload or claim_models):
             config = _load_config(root)
