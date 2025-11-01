@@ -84,6 +84,9 @@ SEED_FILES: Mapping[str, str] = {
           profile: "profile"
           derived: "derived"
           prompts: "prompts"
+        llm:
+          retries: 4
+          timeout: 120.0
         impact_weights:
           values_goals: 1.5
           decision_style: 1.3

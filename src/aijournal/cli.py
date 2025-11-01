@@ -133,11 +133,22 @@ def _get_workspace() -> Path:
     """Get workspace directory from environment or default to current directory.
 
     Checks AIJOURNAL_WORKSPACE environment variable first, falls back to cwd.
+    Validates that the directory contains a config.yaml file.
+
+    Raises:
+        RuntimeError: If the workspace directory doesn't contain config.yaml
     """
     workspace_env = os.getenv("AIJOURNAL_WORKSPACE")
-    if workspace_env:
-        return Path(workspace_env)
-    return Path.cwd()
+    workspace = Path(workspace_env) if workspace_env else Path.cwd()
+
+    if not (workspace / "config.yaml").exists():
+        msg = (
+            f"Not an aijournal workspace: {workspace}\n"
+            f"Run 'aijournal init --path {workspace}' first"
+        )
+        raise RuntimeError(msg)
+
+    return workspace
 
 
 app = typer.Typer(help="Local-first personal journal utilities.")
