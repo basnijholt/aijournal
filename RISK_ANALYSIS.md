@@ -4,6 +4,9 @@
 **Status:** ⚠️ **CRITICAL RISKS IDENTIFIED**
 **Reviewed Components:** Capture pipeline, consolidation logic, LLM prompts, profile mutation paths
 
+_Related documents: consult `RISK_ANALYSIS_GPT5.md` for complementary
+architecture-focused findings and `RISK_DISCUSSION.md` for the joint review._
+
 ---
 
 ## Executive Summary
