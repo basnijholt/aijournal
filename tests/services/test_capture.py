@@ -213,8 +213,15 @@ def test_run_capture_records_telemetry(tmp_path: Path, monkeypatch: pytest.Monke
         save_artifact(path, artifact)
         return path
 
-    def fake_run_summarize(date: str, *, timeout: float, retries: int, progress: bool) -> Path:
-        del timeout, retries, progress
+    def fake_run_summarize(
+        date: str,
+        *,
+        timeout: float,
+        retries: int,
+        progress: bool,
+        workspace: Path | None = None,
+    ) -> Path:
+        del timeout, retries, progress, workspace
         stage_calls.append(("summarize", date))
         return _write_summary_artifact(
             tmp_path / "derived" / "summaries" / f"{date}.yaml",
@@ -229,8 +236,9 @@ def test_run_capture_records_telemetry(tmp_path: Path, monkeypatch: pytest.Monke
         progress: bool,
         claim_models,
         build_claim_preview,
+        workspace: Path | None = None,
     ) -> tuple[None, Path]:
-        del timeout, retries, progress, claim_models, build_claim_preview
+        del timeout, retries, progress, claim_models, build_claim_preview, workspace
         stage_calls.append(("facts", date))
         path = _write_microfacts_artifact(
             tmp_path / "derived" / "microfacts" / f"{date}.yaml",
@@ -239,9 +247,14 @@ def test_run_capture_records_telemetry(tmp_path: Path, monkeypatch: pytest.Monke
         return None, path
 
     def fake_run_profile_suggest(
-        date: str, *, timeout: float, retries: int, progress: bool
+        date: str,
+        *,
+        timeout: float,
+        retries: int,
+        progress: bool,
+        workspace: Path | None = None,
     ) -> Path:
-        del timeout, retries, progress
+        del timeout, retries, progress, workspace
         stage_calls.append(("profile_suggest", date))
         return _write_profile_proposals_artifact(
             tmp_path / "derived" / "profile_proposals" / f"{date}.yaml",
@@ -253,8 +266,9 @@ def test_run_capture_records_telemetry(tmp_path: Path, monkeypatch: pytest.Monke
         *,
         suggestions_path: Path | None,
         auto_confirm: bool,
+        workspace: Path | None = None,
     ) -> str:
-        del suggestions_path, auto_confirm
+        del suggestions_path, auto_confirm, workspace
         profile_apply_calls.append(date)
         return "Applied"
 
@@ -265,8 +279,9 @@ def test_run_capture_records_telemetry(tmp_path: Path, monkeypatch: pytest.Monke
         retries: int,
         progress: bool,
         build_claim_preview,
+        workspace: Path | None = None,
     ) -> Path:
-        del timeout, retries, progress, build_claim_preview
+        del timeout, retries, progress, build_claim_preview, workspace
         stage_calls.append(("characterize", date))
         return _write_profile_update_batch_artifact(
             tmp_path / "derived" / "pending" / "profile_updates" / f"{date}-batch.yaml",
@@ -294,7 +309,7 @@ def test_run_capture_records_telemetry(tmp_path: Path, monkeypatch: pytest.Monke
     dummy_claim = object()
     monkeypatch.setattr(
         "aijournal.commands.profile.load_profile_components",
-        lambda: (None, [dummy_claim]),
+        lambda *_, **__: (None, [dummy_claim]),
     )
     monkeypatch.setattr(
         "aijournal.commands.index.run_index_rebuild",
@@ -463,7 +478,13 @@ def test_run_capture_rebuild_skip_skips_refresh(
     )
     monkeypatch.setattr(
         "aijournal.commands.characterize.run_characterize",
-        lambda date, *, timeout, retries, progress, build_claim_preview: _ensure_file(
+        lambda date,
+        *,
+        timeout,
+        retries,
+        progress,
+        build_claim_preview,
+        workspace=None: _ensure_file(
             tmp_path / "derived" / "pending" / "profile_updates" / f"{date}-batch.yaml",
             "batch",
         ),
@@ -543,7 +564,13 @@ def test_run_capture_rebuild_always_forces_refresh(
     )
     monkeypatch.setattr(
         "aijournal.commands.characterize.run_characterize",
-        lambda date, *, timeout, retries, progress, build_claim_preview: _ensure_file(
+        lambda date,
+        *,
+        timeout,
+        retries,
+        progress,
+        build_claim_preview,
+        workspace=None: _ensure_file(
             tmp_path / "derived" / "pending" / "profile_updates" / f"{date}-batch.yaml",
             "batch",
         ),
@@ -602,7 +629,7 @@ def test_run_capture_rebuild_always_forces_refresh(
     monkeypatch.setattr("aijournal.commands.persona.run_persona_build", fake_run_persona_build)
     monkeypatch.setattr(
         "aijournal.commands.profile.load_profile_components",
-        lambda: ({"name": "Test"}, [object()]),
+        lambda *_, **__: ({"name": "Test"}, [object()]),
     )
     monkeypatch.setattr(
         "aijournal.commands.profile.profile_to_dict",
@@ -659,14 +686,21 @@ def test_run_capture_review_mode_skips_apply(
 
     monkeypatch.setattr(
         "aijournal.commands.summarize.run_summarize",
-        lambda date, *, timeout, retries, progress: _ensure_file(
+        lambda date, *, timeout, retries, progress, workspace=None: _ensure_file(
             tmp_path / "derived" / "summaries" / f"{date}.yaml", "summary"
         ),
     )
 
     monkeypatch.setattr(
         "aijournal.commands.facts.run_facts",
-        lambda date, *, timeout, retries, progress, claim_models, build_claim_preview: (
+        lambda date,
+        *,
+        timeout,
+        retries,
+        progress,
+        claim_models,
+        build_claim_preview,
+        workspace=None: (
             None,
             _ensure_file(tmp_path / "derived" / "microfacts" / f"{date}.yaml", "facts"),
         ),
@@ -674,7 +708,7 @@ def test_run_capture_review_mode_skips_apply(
 
     monkeypatch.setattr(
         "aijournal.commands.profile.run_profile_suggest",
-        lambda date, *, timeout, retries, progress: _ensure_file(
+        lambda date, *, timeout, retries, progress, workspace=None: _ensure_file(
             tmp_path / "derived" / "profile_proposals" / f"{date}.yaml",
             "suggest",
         ),
@@ -682,7 +716,13 @@ def test_run_capture_review_mode_skips_apply(
 
     monkeypatch.setattr(
         "aijournal.commands.characterize.run_characterize",
-        lambda date, *, timeout, retries, progress, build_claim_preview: _ensure_file(
+        lambda date,
+        *,
+        timeout,
+        retries,
+        progress,
+        build_claim_preview,
+        workspace=None: _ensure_file(
             tmp_path / "derived" / "pending" / "profile_updates" / f"{date}-batch.yaml",
             "batch",
         ),
@@ -698,7 +738,7 @@ def test_run_capture_review_mode_skips_apply(
 
     monkeypatch.setattr(
         "aijournal.commands.profile.load_profile_components",
-        lambda: (None, []),
+        lambda *_, **__: (None, []),
     )
     index_rebuild_calls: list[tuple[str | None, int | None]] = []
     monkeypatch.setattr(

@@ -282,9 +282,6 @@ def load_capture_result(root: Path, run_id: str) -> CaptureResult:
     return CaptureResult.model_validate(data)
 
 
-DEFAULT_TIMEOUT_SECONDS = 120.0
-
-
 class CaptureResult(BaseModel):
     """Aggregate result for a capture run."""
 
