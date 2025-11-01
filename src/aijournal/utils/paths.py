@@ -8,6 +8,78 @@ from textwrap import dedent
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
+
+class WorkspacePaths:
+    """Global workspace path resolver with configurable root.
+
+    This singleton manages workspace paths with optional workspace_root support.
+    When workspace_root is set (e.g., "workspace"), all data directories nest
+    under it. When None, uses backward-compatible root-level layout.
+
+    Usage:
+        WorkspacePaths.configure(root=Path.cwd(), workspace_root="workspace")
+        data_dir = WorkspacePaths.data()  # Returns Path.cwd() / "workspace" / "data"
+    """
+
+    _root: Path | None = None
+    _workspace_root: str | None = None
+
+    @classmethod
+    def configure(cls, root: Path, workspace_root: str | None = None) -> None:
+        """Set the workspace root and optional workspace subdirectory.
+
+        Args:
+            root: Base directory (typically Path.cwd() or init target)
+            workspace_root: Optional subdirectory name (e.g., "workspace")
+        """
+        cls._root = root
+        cls._workspace_root = workspace_root
+
+    @classmethod
+    def reset(cls) -> None:
+        """Reset to default state (primarily for testing)."""
+        cls._root = None
+        cls._workspace_root = None
+
+    @classmethod
+    def root(cls) -> Path:
+        """Get the effective workspace root directory."""
+        base = cls._root or Path.cwd()
+        if cls._workspace_root:
+            return base / cls._workspace_root
+        return base
+
+    @classmethod
+    def data(cls) -> Path:
+        """Get data directory path."""
+        return cls.root() / "data"
+
+    @classmethod
+    def derived(cls) -> Path:
+        """Get derived artifacts directory path."""
+        return cls.root() / "derived"
+
+    @classmethod
+    def profile(cls) -> Path:
+        """Get profile directory path."""
+        return cls.root() / "profile"
+
+    @classmethod
+    def prompts(cls) -> Path:
+        """Get prompts directory path."""
+        return cls.root() / "prompts"
+
+    @classmethod
+    def config_dir(cls) -> Path:
+        """Get config directory path."""
+        return cls.root() / "config"
+
+    @classmethod
+    def logs(cls) -> Path:
+        """Get logs directory path."""
+        return cls.derived() / "logs"
+
+
 AUTHORITATIVE_DIRS: tuple[str, ...] = (
     "config",
     "profile",
@@ -41,6 +113,7 @@ SEED_FILES: Mapping[str, str] = {
         temperature: 0.2
         seed: 42
         paths:
+          workspace_root: null  # Set to "workspace" to nest all data under workspace/
           data: "data"
           profile: "profile"
           derived: "derived"
