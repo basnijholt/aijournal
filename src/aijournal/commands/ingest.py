@@ -94,8 +94,8 @@ def _use_fake_llm() -> bool:
     return os.getenv("AIJOURNAL_FAKE_OLLAMA") == "1"
 
 
-def _manifest_path() -> Path:
-    return resolve_path(ctx.workspace, ctx.config, "data/manifest") / "ingested.yaml"
+def _manifest_path(workspace: Path, config: AppConfig) -> Path:
+    return resolve_path(workspace, config, "data/manifest") / "ingested.yaml"
 
 
 def _load_manifest(path: Path) -> list[ManifestEntry]:
@@ -366,7 +366,7 @@ def _prepare_ingest_inputs(ctx: RunContext, options: IngestOptions) -> IngestPre
     if options.limit is not None:
         files = files[: options.limit]
 
-    manifest_path = _manifest_path()
+    manifest_path = _manifest_path(ctx.workspace, ctx.config)
     manifest_entries = _load_manifest(manifest_path)
     known_hashes = {entry.hash: entry for entry in manifest_entries if entry.hash}
 

@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 
 from aijournal.api.capture import CaptureInput
 from aijournal.commands.ingest import _fake_structured_entry, _load_config
+from aijournal.common.app_config import AppConfig
 from aijournal.domain.journal import NormalizedEntry
 from aijournal.ingest_agent import IngestResult, build_ingest_agent, ingest_with_agent
 from aijournal.io.yaml_io import dump_yaml
@@ -167,6 +168,7 @@ class EntryResult(BaseModel):
 def _persist_file_entry(
     inputs: CaptureInput,
     root: Path,
+    config: AppConfig,
     manifest_entries: list[ManifestEntry],
     *,
     source_path: Path | None = None,
@@ -180,8 +182,8 @@ def _persist_file_entry(
     else:
         source_path = source_path.expanduser().resolve()
 
-    ensure_manifest(manifest_entries, root)
-    manifest_path = _manifest_path()
+    ensure_manifest(manifest_entries, root, config)
+    manifest_path = _manifest_path(root, config)
     local_index = (
         manifest_index_cache
         if manifest_index_cache is not None
@@ -291,7 +293,7 @@ def _persist_file_entry(
 
     write_markdown_entry(markdown_path, frontmatter_out, body)
 
-    normalized_path = normalized_entry_path(root, date_str, slug)
+    normalized_path = normalized_entry_path(root, date_str, slug, paths=config.paths)
     if normalized_seed is not None:
         normalized_seed.id = slug
         normalized_seed.created_at = time_utils.format_timestamp(created_dt)
@@ -307,6 +309,7 @@ def _persist_file_entry(
         normalized_path, normalized_changed = normalize_markdown(
             markdown_path,
             root=root,
+            config=config,
             source_hash=digest,
             source_type=inputs.source_type,
         )
@@ -344,10 +347,11 @@ def _persist_file_entry(
 def _persist_text_entry(
     inputs: CaptureInput,
     root: Path,
+    config: AppConfig,
     manifest_entries: list[ManifestEntry],
 ) -> EntryResult:
-    ensure_manifest(manifest_entries, root)
-    manifest_path = _manifest_path()
+    ensure_manifest(manifest_entries, root, config)
+    manifest_path = _manifest_path(root, config)
     manifest_index = _manifest_index(manifest_entries)
 
     now_dt = time_utils.now()
@@ -412,6 +416,7 @@ def _persist_text_entry(
     normalized_path, normalized_changed = normalize_markdown(
         markdown_path,
         root=root,
+        config=config,
         source_hash=digest,
         source_type=inputs.source_type,
     )
@@ -448,6 +453,7 @@ def _persist_text_entry(
 def run_persist_stage_0(
     inputs: CaptureInput,
     root: Path,
+    config: AppConfig,
     manifest_entries: list[ManifestEntry],
     log_event: Callable[[dict[str, object]], None],
 ) -> PersistStage0Outputs:
@@ -472,7 +478,7 @@ def run_persist_stage_0(
             msg = "capture text input requires non-empty text"
             log_event({"event": "persist", "status": "error", "error": msg})
             raise ValueError(msg)
-        entry = _persist_text_entry(inputs, root, manifest_entries)
+        entry = _persist_text_entry(inputs, root, config, manifest_entries)
         stage_entry_warnings.extend(entry.warnings)
         entry_results.append(entry)
     else:
@@ -485,12 +491,13 @@ def run_persist_stage_0(
             msg = "capture --from found no Markdown files"
             log_event({"event": "persist", "status": "error", "error": msg})
             raise ValueError(msg)
-        ensure_manifest(manifest_entries, root)
+        ensure_manifest(manifest_entries, root, config)
         manifest_idx = _manifest_index(manifest_entries)
         for file_path in files:
             entry = _persist_file_entry(
                 inputs,
                 root,
+                config,
                 manifest_entries,
                 source_path=file_path,
                 snapshot=inputs.snapshot,

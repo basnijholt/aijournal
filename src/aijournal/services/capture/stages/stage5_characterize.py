@@ -37,7 +37,7 @@ def run_characterize_stage_5(
     review_candidates: list[str] = []
     review_errors: list[str] = []
     for date in changed_dates:
-        pending_before = pending_batches()
+        pending_before = pending_batches(root, config)
         try:
             batch_path = run_characterize(
                 date,
@@ -58,7 +58,7 @@ def run_characterize_stage_5(
             rel_batch = relative_path(batch_path, root)
             characterize_paths.append(rel_batch)
 
-        pending_after = pending_batches()
+        pending_after = pending_batches(root, config)
         new_batches = sorted(pending_after - pending_before)
         if batch_path not in new_batches:
             new_batches.append(batch_path)

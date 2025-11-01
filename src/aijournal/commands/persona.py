@@ -151,7 +151,7 @@ def invoke_pipeline(ctx: RunContext, prepared: PersonaPrepared) -> PersonaResult
         sources["profile"] = _relative_to_root(profile_path, ctx.workspace)
     if claims_path.exists():
         sources["claims"] = _relative_to_root(claims_path, ctx.workspace)
-    source_mtimes = _persona_source_mtimes(ctx.workspace)
+    source_mtimes = _persona_source_mtimes(ctx.workspace, ctx.workspace, ctx.config)
 
     persona_path = resolve_path(ctx.workspace, ctx.config, "derived/persona") / "persona_core.yaml"
     existing_artifact = None
@@ -220,16 +220,16 @@ def _relative_to_root(path: Path, root: Path) -> str:
         return str(path)
 
 
-def _profile_yaml_paths() -> list[Path]:
-    profile_dir = resolve_path(ctx.workspace, ctx.config, "profile")
+def _profile_yaml_paths(workspace: Path, config: AppConfig) -> list[Path]:
+    profile_dir = resolve_path(workspace, config, "profile")
     if not profile_dir.exists():
         return []
     return sorted(p for p in profile_dir.glob("*.yaml") if p.is_file())
 
 
-def _persona_source_mtimes(root: Path) -> dict[str, float]:
+def _persona_source_mtimes(root: Path, workspace: Path, config: AppConfig) -> dict[str, float]:
     state: dict[str, float] = {}
-    for path in _profile_yaml_paths():
+    for path in _profile_yaml_paths(workspace, config):
         rel = _relative_to_root(path, root)
         state[rel] = round(path.stat().st_mtime, 6)
     return state
@@ -286,8 +286,8 @@ def _persona_artifact_meta(
     )
 
 
-def persona_state(root: Path) -> tuple[str, list[str]]:
-    persona_path = resolve_path(ctx.workspace, ctx.config, "derived/persona") / "persona_core.yaml"
+def persona_state(root: Path, workspace: Path, config: AppConfig) -> tuple[str, list[str]]:
+    persona_path = resolve_path(workspace, config, "derived/persona") / "persona_core.yaml"
     if not persona_path.exists():
         rel = _relative_to_root(persona_path, root)
         return "missing", [f"Missing {rel}; run `aijournal persona build`."]
@@ -318,7 +318,7 @@ def persona_state(root: Path) -> tuple[str, list[str]]:
             ],
         )
 
-    current_state = _persona_source_mtimes(root)
+    current_state = _persona_source_mtimes(root, workspace, config)
     reasons: list[str] = []
     for rel, current_mtime in current_state.items():
         stored_value = stored_raw.get(rel)
@@ -341,8 +341,8 @@ def persona_state(root: Path) -> tuple[str, list[str]]:
     return "fresh", []
 
 
-def ensure_persona_ready_for_pack(root: Path) -> None:
-    status, reasons = persona_state(root)
+def ensure_persona_ready_for_pack(root: Path, workspace: Path, config: AppConfig) -> None:
+    status, reasons = persona_state(root, workspace, config)
     if status == "missing":
         typer.secho(
             "Persona core not found. Run `aijournal persona build` before assembling packs.",

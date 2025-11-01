@@ -724,8 +724,8 @@ def _summarize_day_payload(
     )
 
 
-def _latest_pending_batch() -> Path | None:
-    directory = _pending_updates_dir()
+def _latest_pending_batch(workspace: Path, config: AppConfig) -> Path | None:
+    directory = _pending_updates_dir(workspace, config)
     if not directory.exists():
         return None
     files = sorted(p for p in directory.glob("*.yaml") if p.is_file())
@@ -1089,7 +1089,8 @@ def review_updates(
     """Review or apply pending profile update batches."""
     _emit_deprecation("aijournal ops pipeline review", "aijournal capture --apply-profile review")
     workspace = _get_workspace()
-    batch_path = file or _latest_pending_batch()
+    config = _load_config(workspace)
+    batch_path = file or _latest_pending_batch(workspace, config)
     if batch_path is None:
         typer.secho("No pending profile update batches found.", fg=typer.colors.RED, err=True)
         raise typer.Exit(1)
@@ -1098,7 +1099,6 @@ def review_updates(
         raise typer.Exit(1)
 
     batch = load_artifact_data(batch_path, ProfileUpdateBatch)
-    config = _load_config(workspace)
     claim_proposals: list[ClaimProposal] = [
         proposal.model_copy(deep=True) for proposal in batch.proposals.claims
     ]
@@ -1263,7 +1263,7 @@ def persona_status() -> None:
     """Check whether persona_core.yaml matches the latest profile edits."""
     workspace = _get_workspace()
     config = _load_config(workspace)
-    status, reasons = persona_state(workspace)
+    status, reasons = persona_state(workspace, workspace, config)
     if status == "fresh":
         typer.echo("Persona core is up to date (profile files unchanged).")
         return
@@ -1619,7 +1619,7 @@ def interview(
         typer.secho("No profile data", fg=typer.colors.RED, err=True)
         raise typer.Exit(1)
 
-    entries = _load_normalized_entries(date)
+    entries = _load_normalized_entries(workspace, config, date)
     if not entries:
         typer.secho(f"No normalized entries for {date}", fg=typer.colors.RED, err=True)
         raise typer.Exit(1)
@@ -1627,7 +1627,7 @@ def interview(
     weights = config.impact_weights.model_dump(mode="python")
 
     max_questions = _coaching_max_questions(profile)
-    pending_prompts = _collect_pending_interview_prompts()
+    pending_prompts = _collect_pending_interview_prompts(workspace, config)
     rankings = _compute_rankings(
         profile,
         claims,

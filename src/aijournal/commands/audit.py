@@ -12,6 +12,7 @@ import yaml
 from pydantic import BaseModel
 
 from aijournal.commands.ingest import _use_fake_llm
+from aijournal.common.app_config import AppConfig
 from aijournal.common.command_runner import run_command_pipeline
 from aijournal.common.context import RunContext, create_run_context
 from aijournal.common.meta import Artifact, ArtifactKind
@@ -68,12 +69,14 @@ class AuditResult:
     fix: bool
 
 
-def run_audit_provenance(*, root: Path, fix: bool) -> list[AuditFileResult]:
+def run_audit_provenance(
+    *, root: Path, workspace: Path, config: AppConfig, fix: bool
+) -> list[AuditFileResult]:
     """Scan claims and derived artifacts for provenance span text."""
 
     results: list[AuditFileResult] = []
 
-    claims_path = resolve_path(ctx.workspace, ctx.config, "profile/claims.yaml")
+    claims_path = resolve_path(workspace, config, "profile/claims.yaml")
     if claims_path.exists():
         try:
             raw_claims = yaml.safe_load(claims_path.read_text(encoding="utf-8")) or {}
@@ -120,7 +123,7 @@ def run_audit_provenance(*, root: Path, fix: bool) -> list[AuditFileResult]:
                 ),
             )
 
-    persona_path = resolve_path(ctx.workspace, ctx.config, "derived/persona") / "persona_core.yaml"
+    persona_path = resolve_path(workspace, config, "derived/persona") / "persona_core.yaml"
     if persona_path.exists():
         artifact_entry = _load_auditable_artifact(persona_path)
         if artifact_entry is not None:
@@ -152,7 +155,9 @@ def prepare_inputs(ctx: RunContext, options: AuditOptions) -> AuditPrepared:
 
 
 def invoke_pipeline(ctx: RunContext, prepared: AuditPrepared) -> AuditResult:
-    findings = run_audit_provenance(root=ctx.workspace, fix=prepared.fix)
+    findings = run_audit_provenance(
+        root=ctx.workspace, workspace=ctx.workspace, config=ctx.config, fix=prepared.fix
+    )
     ctx.emit(
         event="pipeline_complete",
         fix=prepared.fix,

@@ -155,7 +155,7 @@ def run_system_doctor(workspace: Path) -> dict[str, Any]:
     checks.append({"name": "ollama_reachable", "ok": ollama_ok, "details": ollama_details})
     overall_ok &= ollama_ok
 
-    persona_status, persona_reasons = persona_state(workspace)
+    persona_status, persona_reasons = persona_state(workspace, workspace, config)
     persona_ok = persona_status == "fresh"
     checks.append(
         {
@@ -177,7 +177,7 @@ def run_status_summary(workspace: Path) -> dict[str, Any]:
     """Gather high-level workspace status information."""
 
     config = _load_config(workspace)
-    persona_status, persona_reasons = persona_state(workspace)
+    persona_status, persona_reasons = persona_state(workspace, workspace, config)
 
     index_dir = resolve_path(workspace, config, "derived/index")
     index_info = {

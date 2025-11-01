@@ -42,7 +42,7 @@ def run_persona_stage_7(
     status_after = "unknown"
     force_rebuild = inputs.rebuild == "always"
     try:
-        status_before, _ = persona_state(root)
+        status_before, _ = persona_state(root, root, config)
         persona_stale_before = status_before != "fresh"
         should_build = (
             force_rebuild or persona_stale_before or artifacts_changed.get("profile", 0) > 0
@@ -56,7 +56,7 @@ def run_persona_stage_7(
                 config=config,
                 root=root,
             )
-        status_after, _ = persona_state(root)
+        status_after, _ = persona_state(root, root, config)
         persona_stale_after = status_after != "fresh"
     except typer.Exit as exc:
         if exc.exit_code not in (0,):

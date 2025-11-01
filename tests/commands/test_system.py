@@ -35,7 +35,7 @@ def test_run_system_doctor_happy_path(tmp_path: Path, monkeypatch: pytest.Monkey
         "_check_ollama",
         lambda config, host: (True, {"host": "fake://ollama"}),
     )
-    monkeypatch.setattr(system, "persona_state", lambda root: ("fresh", []))
+    monkeypatch.setattr(system, "persona_state", lambda root, workspace, config: ("fresh", []))
 
     result = system.run_system_doctor(tmp_path)
 
@@ -47,7 +47,7 @@ def test_run_system_doctor_happy_path(tmp_path: Path, monkeypatch: pytest.Monkey
 
 def test_run_status_summary(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("AIJOURNAL_OLLAMA_HOST", "http://127.0.0.1:11434")
-    monkeypatch.setattr(system, "persona_state", lambda root: ("fresh", []))
+    monkeypatch.setattr(system, "persona_state", lambda root, workspace, config: ("fresh", []))
 
     index_dir = tmp_path / "derived" / "index"
     index_dir.mkdir(parents=True)

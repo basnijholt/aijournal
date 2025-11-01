@@ -24,6 +24,7 @@ from aijournal.commands.summarize import (
     _log_entry_progress,
     _validate_timeout,
 )
+from aijournal.common.app_config import AppConfig
 from aijournal.common.command_runner import run_command_pipeline
 from aijournal.common.context import RunContext
 from aijournal.common.meta import Artifact, ArtifactKind
@@ -134,7 +135,7 @@ def prepare_inputs(ctx: RunContext, options: FactsOptions) -> FactsPrepared:
         options.progress,
     )
 
-    manifest_entries = _load_manifest(_manifest_path())
+    manifest_entries = _load_manifest(_manifest_path(ctx.workspace, ctx.config))
     manifest_index = _manifest_by_id(manifest_entries)
     if options.claim_models is not None:
         claim_models = [claim.model_copy(deep=True) for claim in options.claim_models]
