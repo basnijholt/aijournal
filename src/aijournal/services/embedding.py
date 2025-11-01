@@ -9,13 +9,11 @@ from typing import TYPE_CHECKING
 
 import httpx
 
+from aijournal.common.constants import DEFAULT_EMBED_DIM, EMBED_TIMEOUT
 from aijournal.services.ollama import resolve_ollama_host
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
-
-DEFAULT_EMBED_DIM = 384
-_EMBED_TIMEOUT = 60.0
 
 
 @dataclass
@@ -40,7 +38,7 @@ class EmbeddingBackend:
 
         endpoint = f"{self._base_host}/api/embeddings"
         try:
-            with httpx.Client(timeout=_EMBED_TIMEOUT) as session:
+            with httpx.Client(timeout=EMBED_TIMEOUT) as session:
                 for text in texts:
                     response = session.post(
                         endpoint,

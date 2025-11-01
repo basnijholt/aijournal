@@ -182,7 +182,7 @@ def collect_pack_entries(
     if level == "L4":
         prompts_dir = root / "prompts"
         _add_dir(entries, "prompt", prompts_dir, pattern="*.md", recursive=True)
-        _add_path(entries, "config", root / "config" / "config.yaml")
+        _add_path(entries, "config", root / "config.yaml")
 
     return _sorted_entries(entries)
 

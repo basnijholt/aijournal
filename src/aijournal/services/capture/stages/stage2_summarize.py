@@ -16,9 +16,9 @@ def run_summarize_stage_2(
     root: Path,
 ) -> SummarizeStage2Outputs:
     from aijournal.commands.summarize import run_summarize
+    from aijournal.common.constants import DEFAULT_TIMEOUT_SECONDS
 
     from .. import (
-        DEFAULT_TIMEOUT_SECONDS,
         OperationResult,
         SummarizeStage2Outputs,
     )
@@ -34,6 +34,7 @@ def run_summarize_stage_2(
                 timeout=DEFAULT_TIMEOUT_SECONDS,
                 retries=inputs.retries,
                 progress=inputs.progress,
+                workspace=root,
             )
         except typer.Exit as exc:
             if exc.exit_code not in (0,):

@@ -12,6 +12,8 @@ __pycache__/
 # Data directories (optional to track; ignored by default for privacy)
 data/
 derived/
+profile/
+workspace/
 
 # OS noise
 .DS_Store

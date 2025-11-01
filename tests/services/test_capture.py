@@ -11,6 +11,7 @@ import pytest
 import yaml
 from tests.helpers import make_claim_atom
 
+from aijournal.common.app_config import AppConfig
 from aijournal.common.meta import Artifact, ArtifactKind, ArtifactMeta
 from aijournal.domain.changes import (
     ClaimAtomInput,
@@ -79,7 +80,7 @@ def test_run_capture_records_telemetry(tmp_path: Path, monkeypatch: pytest.Monke
     index_rebuild_calls: list[tuple[str | None, int | None]] = []
     index_tail_calls: list[tuple[str | None, int, int | None]] = []
     persona_build_calls: list[tuple[dict[str, object], list[object]]] = []
-    persona_state_calls: list[Path] = []
+    persona_state_calls: list[tuple[Path, Path, object]] = []
     pack_calls: list[tuple[str, Path]] = []
 
     def _ensure_file(path: Path, content: str) -> Path:
@@ -213,8 +214,15 @@ def test_run_capture_records_telemetry(tmp_path: Path, monkeypatch: pytest.Monke
         save_artifact(path, artifact)
         return path
 
-    def fake_run_summarize(date: str, *, timeout: float, retries: int, progress: bool) -> Path:
-        del timeout, retries, progress
+    def fake_run_summarize(
+        date: str,
+        *,
+        timeout: float,
+        retries: int,
+        progress: bool,
+        workspace: Path | None = None,
+    ) -> Path:
+        del timeout, retries, progress, workspace
         stage_calls.append(("summarize", date))
         return _write_summary_artifact(
             tmp_path / "derived" / "summaries" / f"{date}.yaml",
@@ -229,8 +237,9 @@ def test_run_capture_records_telemetry(tmp_path: Path, monkeypatch: pytest.Monke
         progress: bool,
         claim_models,
         build_claim_preview,
+        workspace: Path | None = None,
     ) -> tuple[None, Path]:
-        del timeout, retries, progress, claim_models, build_claim_preview
+        del timeout, retries, progress, claim_models, build_claim_preview, workspace
         stage_calls.append(("facts", date))
         path = _write_microfacts_artifact(
             tmp_path / "derived" / "microfacts" / f"{date}.yaml",
@@ -239,9 +248,14 @@ def test_run_capture_records_telemetry(tmp_path: Path, monkeypatch: pytest.Monke
         return None, path
 
     def fake_run_profile_suggest(
-        date: str, *, timeout: float, retries: int, progress: bool
+        date: str,
+        *,
+        timeout: float,
+        retries: int,
+        progress: bool,
+        workspace: Path | None = None,
     ) -> Path:
-        del timeout, retries, progress
+        del timeout, retries, progress, workspace
         stage_calls.append(("profile_suggest", date))
         return _write_profile_proposals_artifact(
             tmp_path / "derived" / "profile_proposals" / f"{date}.yaml",
@@ -253,8 +267,9 @@ def test_run_capture_records_telemetry(tmp_path: Path, monkeypatch: pytest.Monke
         *,
         suggestions_path: Path | None,
         auto_confirm: bool,
+        workspace: Path | None = None,
     ) -> str:
-        del suggestions_path, auto_confirm
+        del suggestions_path, auto_confirm, workspace
         profile_apply_calls.append(date)
         return "Applied"
 
@@ -265,16 +280,17 @@ def test_run_capture_records_telemetry(tmp_path: Path, monkeypatch: pytest.Monke
         retries: int,
         progress: bool,
         build_claim_preview,
+        workspace: Path | None = None,
     ) -> Path:
-        del timeout, retries, progress, build_claim_preview
+        del timeout, retries, progress, build_claim_preview, workspace
         stage_calls.append(("characterize", date))
         return _write_profile_update_batch_artifact(
             tmp_path / "derived" / "pending" / "profile_updates" / f"{date}-batch.yaml",
             date,
         )
 
-    def fake_apply_batch(root: Path, batch_path: Path) -> bool:
-        del root
+    def fake_apply_batch(root: Path, config, batch_path: Path) -> bool:
+        del root, config
         review_calls.append(batch_path)
         return True
 
@@ -295,7 +311,7 @@ def test_run_capture_records_telemetry(tmp_path: Path, monkeypatch: pytest.Monke
     dummy_claim = object()
     monkeypatch.setattr(
         "aijournal.commands.profile.load_profile_components",
-        lambda root: (None, [dummy_claim]),
+        lambda *_, **__: (None, [dummy_claim]),
     )
     monkeypatch.setattr(
         "aijournal.commands.index.run_index_rebuild",
@@ -315,8 +331,8 @@ def test_run_capture_records_telemetry(tmp_path: Path, monkeypatch: pytest.Monke
         ("fresh", []),
     ]
 
-    def fake_persona_state(root: Path) -> tuple[str, list[str]]:
-        persona_state_calls.append(root)
+    def fake_persona_state(root: Path, workspace: Path, config: object) -> tuple[str, list[str]]:
+        persona_state_calls.append((root, workspace, config))
         return persona_states.pop(0) if persona_states else ("fresh", [])
 
     def fake_run_persona_build(
@@ -464,14 +480,20 @@ def test_run_capture_rebuild_skip_skips_refresh(
     )
     monkeypatch.setattr(
         "aijournal.commands.characterize.run_characterize",
-        lambda date, *, timeout, retries, progress, build_claim_preview: _ensure_file(
+        lambda date,
+        *,
+        timeout,
+        retries,
+        progress,
+        build_claim_preview,
+        workspace=None: _ensure_file(
             tmp_path / "derived" / "pending" / "profile_updates" / f"{date}-batch.yaml",
             "batch",
         ),
     )
     monkeypatch.setattr(
         "aijournal.services.capture.utils.apply_profile_update_batch",
-        lambda root, batch_path: True,
+        lambda root, config, batch_path: True,
     )
 
     monkeypatch.setattr(
@@ -544,14 +566,20 @@ def test_run_capture_rebuild_always_forces_refresh(
     )
     monkeypatch.setattr(
         "aijournal.commands.characterize.run_characterize",
-        lambda date, *, timeout, retries, progress, build_claim_preview: _ensure_file(
+        lambda date,
+        *,
+        timeout,
+        retries,
+        progress,
+        build_claim_preview,
+        workspace=None: _ensure_file(
             tmp_path / "derived" / "pending" / "profile_updates" / f"{date}-batch.yaml",
             "batch",
         ),
     )
     monkeypatch.setattr(
         "aijournal.services.capture.utils.apply_profile_update_batch",
-        lambda root, batch_path: True,
+        lambda root, config, batch_path: True,
     )
 
     index_rebuild_calls: list[tuple[str | None, int | None]] = []
@@ -582,7 +610,7 @@ def test_run_capture_rebuild_always_forces_refresh(
     ]
     persona_build_calls: list[tuple[dict[str, object], list[object]]] = []
 
-    def fake_persona_state(root: Path) -> tuple[str, list[str]]:
+    def fake_persona_state(root: Path, workspace: Path, config: object) -> tuple[str, list[str]]:
         return persona_states.pop(0)
 
     def fake_run_persona_build(
@@ -603,7 +631,7 @@ def test_run_capture_rebuild_always_forces_refresh(
     monkeypatch.setattr("aijournal.commands.persona.run_persona_build", fake_run_persona_build)
     monkeypatch.setattr(
         "aijournal.commands.profile.load_profile_components",
-        lambda root: ({"name": "Test"}, [object()]),
+        lambda *_, **__: ({"name": "Test"}, [object()]),
     )
     monkeypatch.setattr(
         "aijournal.commands.profile.profile_to_dict",
@@ -660,14 +688,21 @@ def test_run_capture_review_mode_skips_apply(
 
     monkeypatch.setattr(
         "aijournal.commands.summarize.run_summarize",
-        lambda date, *, timeout, retries, progress: _ensure_file(
+        lambda date, *, timeout, retries, progress, workspace=None: _ensure_file(
             tmp_path / "derived" / "summaries" / f"{date}.yaml", "summary"
         ),
     )
 
     monkeypatch.setattr(
         "aijournal.commands.facts.run_facts",
-        lambda date, *, timeout, retries, progress, claim_models, build_claim_preview: (
+        lambda date,
+        *,
+        timeout,
+        retries,
+        progress,
+        claim_models,
+        build_claim_preview,
+        workspace=None: (
             None,
             _ensure_file(tmp_path / "derived" / "microfacts" / f"{date}.yaml", "facts"),
         ),
@@ -675,7 +710,7 @@ def test_run_capture_review_mode_skips_apply(
 
     monkeypatch.setattr(
         "aijournal.commands.profile.run_profile_suggest",
-        lambda date, *, timeout, retries, progress: _ensure_file(
+        lambda date, *, timeout, retries, progress, workspace=None: _ensure_file(
             tmp_path / "derived" / "profile_proposals" / f"{date}.yaml",
             "suggest",
         ),
@@ -683,7 +718,13 @@ def test_run_capture_review_mode_skips_apply(
 
     monkeypatch.setattr(
         "aijournal.commands.characterize.run_characterize",
-        lambda date, *, timeout, retries, progress, build_claim_preview: _ensure_file(
+        lambda date,
+        *,
+        timeout,
+        retries,
+        progress,
+        build_claim_preview,
+        workspace=None: _ensure_file(
             tmp_path / "derived" / "pending" / "profile_updates" / f"{date}-batch.yaml",
             "batch",
         ),
@@ -699,7 +740,7 @@ def test_run_capture_review_mode_skips_apply(
 
     monkeypatch.setattr(
         "aijournal.commands.profile.load_profile_components",
-        lambda root: (None, []),
+        lambda *_, **__: (None, []),
     )
     index_rebuild_calls: list[tuple[str | None, int | None]] = []
     monkeypatch.setattr(
@@ -716,7 +757,7 @@ def test_run_capture_review_mode_skips_apply(
     ]
     monkeypatch.setattr(
         "aijournal.commands.persona.persona_state",
-        lambda root: persona_states.pop(0),
+        lambda root, workspace, config: persona_states.pop(0),
     )
     monkeypatch.setattr(
         "aijournal.commands.persona.run_persona_build",
@@ -756,7 +797,8 @@ def test_persist_text_writes_markdown_and_normalized(
     )
     inputs = CaptureInput(source="stdin", text="Hello capture", title="My Entry")
     manifest: list[ManifestEntry] = []
-    result = _persist_text_entry(inputs, tmp_path, manifest)
+    config = AppConfig()
+    result = _persist_text_entry(inputs, tmp_path, config, manifest)
 
     assert result.slug.startswith("2025-10-28")
     assert result.markdown_path
@@ -773,7 +815,7 @@ def test_persist_text_writes_markdown_and_normalized(
     normalized_path = tmp_path / result.normalized_path
     normalized_path.unlink()
     copy = result.model_copy(update={"changed": True})
-    counts = normalize_entries([copy], tmp_path)
+    counts = normalize_entries([copy], tmp_path, config)
     assert counts["normalized"] == 1
     assert normalized_path.exists()
 
@@ -790,12 +832,13 @@ def test_persist_file_skips_duplicate(tmp_path: Path, monkeypatch: pytest.Monkey
 
     inputs = CaptureInput(source="file", paths=[str(entry_path)])
     manifest: list[ManifestEntry] = []
-    first = _persist_file_entry(inputs, tmp_path, manifest)
+    config = AppConfig()
+    first = _persist_file_entry(inputs, tmp_path, config, manifest)
     assert first.changed is True
-    second = _persist_file_entry(inputs, tmp_path, manifest)
+    second = _persist_file_entry(inputs, tmp_path, config, manifest)
     assert second.deduped is True
 
-    counts = normalize_entries([second], tmp_path)
+    counts = normalize_entries([second], tmp_path, config)
     # Already normalized via first persist; second should trigger no rewrite.
     assert counts["normalized"] == 0
 
@@ -834,7 +877,10 @@ def test_persist_file_records_snapshot_and_manifest_fields(
         projects=["proj"],
     )
     manifest: list[ManifestEntry] = []
-    result = _persist_file_entry(inputs, tmp_path, manifest, source_path=entry_path, snapshot=True)
+    config = AppConfig()
+    result = _persist_file_entry(
+        inputs, tmp_path, config, manifest, source_path=entry_path, snapshot=True
+    )
 
     assert result.changed is True
     manifest_entry = manifest[-1]
@@ -871,12 +917,13 @@ def test_persist_file_slug_collision_logs_alias(
     )
 
     manifest: list[ManifestEntry] = []
+    config = AppConfig()
     inputs = CaptureInput(source="file", paths=[str(entry_one)])
-    _persist_file_entry(inputs, tmp_path, manifest, source_path=entry_one, snapshot=False)
+    _persist_file_entry(inputs, tmp_path, config, manifest, source_path=entry_one, snapshot=False)
 
     inputs_two = CaptureInput(source="file", paths=[str(entry_two)])
     result_two = _persist_file_entry(
-        inputs_two, tmp_path, manifest, source_path=entry_two, snapshot=False
+        inputs_two, tmp_path, config, manifest, source_path=entry_two, snapshot=False
     )
 
     assert result_two.slug.endswith("-2")

@@ -15,8 +15,8 @@ from aijournal.commands.index import (
     _split_filter_values,
     _validate_date_option,
 )
-from aijournal.commands.ingest import _load_config, _use_fake_llm
 from aijournal.common.command_runner import run_command_pipeline
+from aijournal.common.config_loader import load_config, use_fake_llm
 from aijournal.common.context import RunContext, create_run_context
 from aijournal.io.chat_sessions import ChatSessionRecorder
 from aijournal.services.chat import ChatService, ChatTurn
@@ -213,8 +213,7 @@ def prepare_inputs(ctx: RunContext, options: ChatOptions) -> ChatPrepared:
 
 
 def invoke_pipeline(ctx: RunContext, prepared: ChatPrepared) -> ChatResult:
-    config = _load_config(ctx.root)
-    service = ChatService(ctx.root, config)
+    service = ChatService(ctx.workspace, ctx.config)
     try:
         turn = service.run(
             prepared.question,
@@ -243,7 +242,7 @@ def persist_output(ctx: RunContext, result: ChatResult) -> None:
     saved_dir: Path | None = None
 
     if prepared.save:
-        recorder = ChatSessionRecorder(ctx.root, session_id)
+        recorder = ChatSessionRecorder(ctx.workspace, session_id)
         recorder.append(turn, feedback=prepared.feedback)
         saved_dir = recorder.session_dir
 
@@ -258,7 +257,7 @@ def persist_output(ctx: RunContext, result: ChatResult) -> None:
 
     if prepared.feedback:
         adjustments, feedback_path = apply_chat_feedback(
-            ctx.root,
+            ctx.workspace,
             turn_answer=turn.answer,
             question=turn.question,
             session_id=session_id,
@@ -280,6 +279,7 @@ def run_chat_command(ctx: RunContext, options: ChatOptions) -> None:
 
 def run_chat(
     question: str,
+    workspace: Path | None = None,
     *,
     top: int,
     tags: str | None,
@@ -290,13 +290,13 @@ def run_chat(
     save: bool,
     feedback: str | None,
 ) -> None:
-    root = Path.cwd()
-    config = _load_config(root)
+    workspace = workspace or Path.cwd()
+    config = load_config(workspace)
     ctx = create_run_context(
         command="chat",
-        root=root,
+        workspace=workspace,
         config=config,
-        use_fake_llm=_use_fake_llm(),
+        use_fake_llm=use_fake_llm(),
         trace=False,
         verbose_json=False,
     )

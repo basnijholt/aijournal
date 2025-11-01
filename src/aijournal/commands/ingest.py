@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 import re
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -18,6 +17,8 @@ from pydantic_ai import Agent
 
 from aijournal.common.app_config import AppConfig
 from aijournal.common.command_runner import run_command_pipeline
+from aijournal.common.config_loader import load_config, use_fake_llm
+from aijournal.common.constants import MARKDOWN_SUFFIXES
 from aijournal.common.context import RunContext, create_run_context
 from aijournal.ingest_agent import (
     IngestResult,
@@ -31,9 +32,7 @@ from aijournal.pipelines import normalization
 from aijournal.schema import SchemaValidationError, validate_schema
 from aijournal.services.ollama import build_ollama_config_from_mapping
 from aijournal.utils import time as time_utils
-from aijournal.utils.paths import normalized_entry_path
-
-MARKDOWN_SUFFIXES = {".md", ".markdown"}
+from aijournal.utils.paths import normalized_entry_path, resolve_path
 
 
 class IngestOptions(BaseModel):
@@ -70,24 +69,8 @@ class IngestPipelineResult:
     manifest_path: Path
 
 
-def _load_yaml(path: Path) -> dict[str, Any]:
-    return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-
-
-def _load_config(root: Path) -> AppConfig:
-    config_path = root / "config" / "config.yaml"
-    if not config_path.exists():
-        return AppConfig()
-    data = _load_yaml(config_path)
-    return AppConfig.model_validate(data)
-
-
-def _use_fake_llm() -> bool:
-    return os.getenv("AIJOURNAL_FAKE_OLLAMA") == "1"
-
-
-def _manifest_path(root: Path) -> Path:
-    return root / "data" / "manifest" / "ingested.yaml"
+def _manifest_path(workspace: Path, config: AppConfig) -> Path:
+    return resolve_path(workspace, config, "data/manifest") / "ingested.yaml"
 
 
 def _load_manifest(path: Path) -> list[ManifestEntry]:
@@ -301,6 +284,7 @@ def _discover_markdown_files(inputs: Iterable[Path]) -> list[Path]:
 
 def run_ingest(
     sources: list[Path],
+    workspace: Path | None = None,
     *,
     source_type: str,
     limit: int | None,
@@ -308,13 +292,13 @@ def run_ingest(
 ) -> None:
     """Ingest Markdown files into normalized YAML entries."""
 
-    root = Path.cwd()
-    config = _load_config(root)
+    workspace = workspace or Path.cwd()
+    config = load_config(workspace)
     ctx = create_run_context(
         command="ingest",
-        root=root,
+        workspace=workspace,
         config=config,
-        use_fake_llm=_use_fake_llm(),
+        use_fake_llm=use_fake_llm(),
         trace=False,
         verbose_json=False,
     )
@@ -357,7 +341,7 @@ def _prepare_ingest_inputs(ctx: RunContext, options: IngestOptions) -> IngestPre
     if options.limit is not None:
         files = files[: options.limit]
 
-    manifest_path = _manifest_path(ctx.root)
+    manifest_path = _manifest_path(ctx.workspace, ctx.config)
     manifest_entries = _load_manifest(manifest_path)
     known_hashes = {entry.hash: entry for entry in manifest_entries if entry.hash}
 
@@ -408,7 +392,7 @@ def _invoke_ingest_pipeline(ctx: RunContext, prepared: IngestPrepared) -> Ingest
     ingested = 0
     skipped = 0
     errors = 0
-    raw_dir = ctx.root / "data" / "raw"
+    raw_dir = resolve_path(ctx.workspace, ctx.config, "data/raw")
 
     for file in prepared.files:
         try:
@@ -451,7 +435,7 @@ def _invoke_ingest_pipeline(ctx: RunContext, prepared: IngestPrepared) -> Ingest
             normalized, date_str = _normalized_from_structured(
                 structured,
                 source_path=file,
-                root=ctx.root,
+                root=ctx.workspace,
                 digest=digest,
                 source_type=prepared.source_type,
                 fallback_sections=fallback_sections,
@@ -463,7 +447,12 @@ def _invoke_ingest_pipeline(ctx: RunContext, prepared: IngestPrepared) -> Ingest
             log("error", f"Failed to ingest {file}: {exc}")
             continue
 
-        normalized_path = normalized_entry_path(ctx.root, date_str, normalized["id"])
+        normalized_path = normalized_entry_path(
+            ctx.workspace,
+            date_str,
+            normalized["id"],
+            paths=ctx.config.paths,
+        )
         _write_yaml_if_changed(
             normalized_path,
             normalized,
@@ -476,8 +465,8 @@ def _invoke_ingest_pipeline(ctx: RunContext, prepared: IngestPrepared) -> Ingest
 
         manifest_entry = ManifestEntry(
             hash=digest,
-            path=_relative_source_path(file, ctx.root),
-            normalized=_relative_source_path(normalized_path, ctx.root),
+            path=_relative_source_path(file, ctx.workspace),
+            normalized=_relative_source_path(normalized_path, ctx.workspace),
             source_type=prepared.source_type,
             ingested_at=time_utils.format_timestamp(time_utils.now()),
             created_at=str(normalized["created_at"]),

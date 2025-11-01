@@ -18,11 +18,10 @@ from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.ollama import OllamaProvider
 
 from aijournal.common.app_config import AppConfig
+from aijournal.common.constants import DEFAULT_MODEL_NAME, DEFAULT_OLLAMA_HOST
 from aijournal.common.meta import LLMResult
 from aijournal.utils import time as time_utils
 
-DEFAULT_OLLAMA_HOST = "http://127.0.0.1:11434"
-DEFAULT_MODEL_NAME = "gpt-oss:20b"
 _JSON_SYSTEM_PROMPT = (
     "You are part of the aijournal CLI. "
     "Respond with valid JSON only—no markdown fences, explanations, or trailing text."

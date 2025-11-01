@@ -13,9 +13,9 @@ from typing import Any, cast
 import typer
 from pydantic import BaseModel
 
-from aijournal.commands.ingest import _use_fake_llm
 from aijournal.common.app_config import AppConfig
 from aijournal.common.command_runner import run_command_pipeline
+from aijournal.common.config_loader import load_config, use_fake_llm
 from aijournal.common.context import RunContext
 from aijournal.common.meta import Artifact, ArtifactKind, ArtifactMeta, LLMResult
 from aijournal.domain.facts import DailySummary
@@ -163,8 +163,11 @@ def _entries_to_payload(entries: Sequence[NormalizedEntry]) -> list[dict[str, An
     return [entry.model_dump(mode="python") for entry in entries]
 
 
-def _load_normalized_entries(root: Path, day: str) -> list[NormalizedEntry]:
-    folder = root / "data" / "normalized" / day
+def _load_normalized_entries(workspace: Path, config: AppConfig, day: str) -> list[NormalizedEntry]:
+    data_dir = Path(config.paths.data)
+    if not data_dir.is_absolute():
+        data_dir = workspace / data_dir
+    folder = data_dir / "normalized" / day
     if not folder.exists():
         return []
     entries: list[NormalizedEntry] = []
@@ -173,8 +176,11 @@ def _load_normalized_entries(root: Path, day: str) -> list[NormalizedEntry]:
     return entries
 
 
-def _derived_summary_path(root: Path, day: str) -> Path:
-    return root / "derived" / "summaries" / f"{day}.yaml"
+def _derived_summary_path(workspace: Path, config: AppConfig, day: str) -> Path:
+    derived = Path(config.paths.derived)
+    if not derived.is_absolute():
+        derived = workspace / derived
+    return derived / "summaries" / f"{day}.yaml"
 
 
 def _hash_prompt(prompt_path: str) -> str | None:
@@ -191,12 +197,13 @@ def _build_meta(
     *,
     model: str | None = None,
     config: AppConfig | None = None,
+    use_fake_llm: bool,
 ) -> ArtifactMeta:
     resolved_model: str
     if model:
         resolved_model = model
     else:
-        resolved_model = resolve_model_name(config, use_fake_llm=_use_fake_llm())
+        resolved_model = resolve_model_name(config, use_fake_llm=use_fake_llm)
     created_at = time_utils.format_timestamp(time_utils.now())
     return ArtifactMeta(
         created_at=created_at,
@@ -207,7 +214,7 @@ def _build_meta(
 
 
 def prepare_inputs(ctx: RunContext, options: DailySummaryOptions) -> DailySummaryPrepared:
-    entries = _load_normalized_entries(ctx.root, options.date)
+    entries = _load_normalized_entries(ctx.workspace, ctx.config, options.date)
     if not entries:
         typer.secho(f"No normalized entries for {options.date}", fg=typer.colors.RED, err=True)
         ctx.emit(event="command_failed", reason="missing_entries")
@@ -240,7 +247,7 @@ def invoke_pipeline(ctx: RunContext, prepared: DailySummaryPrepared) -> DailySum
         ctx.config,
         timeout=prepared.timeout,
         retries=prepared.retries,
-        use_fake_llm=ctx.use_fake_llm,
+        use_fake_llm_override=ctx.use_fake_llm,
     )
     model_name = resolve_model_name(ctx.config, use_fake_llm=ctx.use_fake_llm)
     ctx.emit(
@@ -252,8 +259,10 @@ def invoke_pipeline(ctx: RunContext, prepared: DailySummaryPrepared) -> DailySum
 
 
 def persist_output(ctx: RunContext, result: DailySummaryResult) -> Path:
-    summary_path = _derived_summary_path(ctx.root, result.date)
-    artifact_meta = _build_meta("prompts/summarize_day.md", model=result.model_name)
+    summary_path = _derived_summary_path(ctx.workspace, ctx.config, result.date)
+    artifact_meta = _build_meta(
+        "prompts/summarize_day.md", model=result.model_name, use_fake_llm=ctx.use_fake_llm
+    )
     artifact = Artifact[DailySummary](
         kind=ArtifactKind.SUMMARY_DAILY,
         meta=artifact_meta,
@@ -273,11 +282,11 @@ def _summarize_day_payload(
     retries: int,
     invoke_structured_llm: Callable[..., BaseModel] | None = None,
     structured_call: Callable[..., BaseModel] | None = None,
-    use_fake_llm: bool | None = None,
+    use_fake_llm_override: bool | None = None,
 ) -> DailySummary:
     invoke = invoke_structured_llm or _invoke_structured_llm
     structured = structured_call or (lambda func, *, retries, label: func())
-    fake_mode = use_fake_llm if use_fake_llm is not None else _use_fake_llm()
+    fake_mode = use_fake_llm_override if use_fake_llm_override is not None else use_fake_llm()
 
     def request_summary() -> DailySummary:
         return cast(
@@ -311,23 +320,18 @@ def _summarize_day_payload(
 
 
 def run_summarize(
-    date: str,
-    *,
-    timeout: float,
-    retries: int,
-    progress: bool,
+    date: str, *, timeout: float, retries: int, progress: bool, workspace: Path | None = None
 ) -> Path:
     """Backward-compatible entrypoint using current working directory."""
-    from aijournal.commands.ingest import _load_config, _use_fake_llm
     from aijournal.common.context import create_run_context
 
-    root = Path.cwd()
-    config = _load_config(root)
+    workspace = workspace or Path.cwd()
+    config = load_config(workspace)
     ctx = create_run_context(
         command="summarize",
-        root=root,
+        workspace=workspace,
         config=config,
-        use_fake_llm=_use_fake_llm(),
+        use_fake_llm=use_fake_llm(),
         trace=False,
         verbose_json=False,
     )

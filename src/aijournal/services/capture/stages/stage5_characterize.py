@@ -7,6 +7,8 @@ from typing import TYPE_CHECKING
 import typer
 
 if TYPE_CHECKING:
+    from aijournal.common.app_config import AppConfig
+
     from .. import CaptureInput, CharacterizeStage5Outputs
 
 
@@ -14,10 +16,12 @@ def run_characterize_stage_5(
     changed_dates: list[str],
     inputs: CaptureInput,
     root: Path,
+    config: AppConfig,
 ) -> CharacterizeStage5Outputs:
     from aijournal.commands.characterize import run_characterize
+    from aijournal.common.constants import DEFAULT_TIMEOUT_SECONDS
 
-    from .. import DEFAULT_TIMEOUT_SECONDS, CharacterizeStage5Outputs, OperationResult
+    from .. import CharacterizeStage5Outputs, OperationResult
     from ..utils import (
         apply_profile_update_batch,
         noop_preview,
@@ -33,7 +37,7 @@ def run_characterize_stage_5(
     review_candidates: list[str] = []
     review_errors: list[str] = []
     for date in changed_dates:
-        pending_before = pending_batches(root)
+        pending_before = pending_batches(root, config)
         try:
             batch_path = run_characterize(
                 date,
@@ -41,6 +45,7 @@ def run_characterize_stage_5(
                 retries=inputs.retries,
                 progress=inputs.progress,
                 build_claim_preview=noop_preview,
+                workspace=root,
             )
         except typer.Exit as exc:
             if exc.exit_code not in (0,):
@@ -53,7 +58,7 @@ def run_characterize_stage_5(
             rel_batch = relative_path(batch_path, root)
             characterize_paths.append(rel_batch)
 
-        pending_after = pending_batches(root)
+        pending_after = pending_batches(root, config)
         new_batches = sorted(pending_after - pending_before)
         if batch_path not in new_batches:
             new_batches.append(batch_path)
@@ -65,7 +70,7 @@ def run_characterize_stage_5(
         if inputs.apply_profile == "auto":
             for pending_path in new_batches:
                 try:
-                    if apply_profile_update_batch(root, pending_path):
+                    if apply_profile_update_batch(root, config, pending_path):
                         review_applied.append(relative_path(pending_path, root))
                     else:
                         review_pending.append(relative_path(pending_path, root))

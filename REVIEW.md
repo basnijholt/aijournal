@@ -5,7 +5,7 @@ Comprehensive technical and scientific review of the `aijournal` repository as i
 ## 1. Repository Baseline
 - **Branch/Status:** Local branch `data-models` with upstream `origin/data-models`. Working tree is clean aside from this document (`git status -sb` shows `?? REVIEW.md`).
 - **Toolchain:** Python 3.11+, `uv` for dependency & env management, Typer CLI (`src/aijournal/cli.py`). All runtime commands should be executed via `uv run ...` per `CONTRIBUTING.md`. Pre-commit hooks (Ruff, mypy, schema checks) are wired through `.githooks/pre-push` and `scripts/check_schemas.py`.
-- **LLM runtime:** `src/aijournal/services/ollama.py` wraps Pydantic AI’s Ollama provider. Default config targets `gpt-oss:20b` at `http://127.0.0.1:11434` unless overridden by `AIJOURNAL_MODEL` / `AIJOURNAL_OLLAMA_HOST` env vars or `config/config.yaml`.
+- **LLM runtime:** `src/aijournal/services/ollama.py` wraps Pydantic AI’s Ollama provider. Default config targets `gpt-oss:20b` at `http://127.0.0.1:11434` unless overridden by `AIJOURNAL_MODEL` / `AIJOURNAL_OLLAMA_HOST` env vars or `config.yaml`.
 
 ## 2. System Architecture (Grounded in Code)
 ### 2.1 Directory Layout
@@ -124,7 +124,7 @@ Stage handlers live in `services/capture/stages/` and return `OperationResult`/`
 - Retrieval helpers now return `StrictModel` instances (`RetrievalFilters`, `RetrievalMeta`, `RetrievalResult`, `RetrievedChunk`). Keep all structs crossing CLI/API boundaries as `StrictModel`s; reserve plain dataclasses for internal helpers only.
 
 ### 4.4 Persona Builder (`src/aijournal/pipelines/persona.py`)
-- Ranks claim atoms via `effective_strength × impact_weight` using weights in `config/config.yaml`.
+- Ranks claim atoms via `effective_strength × impact_weight` using weights in `config.yaml`.
 - Emits `derived/persona/persona_core.yaml`, recording source mtimes to detect staleness. `aijournal ops persona status` reports when rebuilds are required; packs refuse to run against stale persona cores.
 
 ## 5. Prompt Surfaces – Findings & Actions

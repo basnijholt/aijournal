@@ -6,10 +6,49 @@ from collections.abc import Iterable, Mapping
 from pathlib import Path
 from textwrap import dedent
 
+from aijournal.common.app_config import AppConfig, PathsConfig
+
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
+
+def resolve_path(workspace: Path, config: AppConfig, rel_path: str) -> Path:
+    """Resolve a relative path within a workspace using PathsConfig.
+
+    Args:
+        workspace: Workspace directory
+        config: App configuration containing paths
+        rel_path: Relative path like 'derived/index' or 'profile/claims.yaml'
+
+    Returns:
+        Absolute path resolved from workspace and config
+    """
+    # Split into base and remaining path
+    parts = rel_path.split("/", 1)
+    base = parts[0]
+    rest = parts[1] if len(parts) > 1 else ""
+
+    # Map base to config path
+    if base == "data":
+        base_path = Path(config.paths.data)
+    elif base == "derived":
+        base_path = Path(config.paths.derived)
+    elif base == "profile":
+        base_path = Path(config.paths.profile)
+    elif base == "prompts":
+        base_path = Path(config.paths.prompts)
+    else:
+        # Unknown base, treat as literal
+        return workspace / rel_path
+
+    # Make absolute if needed
+    if not base_path.is_absolute():
+        base_path = workspace / base_path
+
+    # Append remaining path
+    return base_path / rest if rest else base_path
+
+
 AUTHORITATIVE_DIRS: tuple[str, ...] = (
-    "config",
     "profile",
     "data",
     "data/journal",
@@ -34,7 +73,7 @@ DERIVED_DIRS: tuple[str, ...] = (
 )
 
 SEED_FILES: Mapping[str, str] = {
-    "config/config.yaml": dedent(
+    "config.yaml": dedent(
         """
         model: "llama3.1:8b-instruct"
         host: "http://127.0.0.1:11434"
@@ -45,6 +84,9 @@ SEED_FILES: Mapping[str, str] = {
           profile: "profile"
           derived: "derived"
           prompts: "prompts"
+        llm:
+          retries: 4
+          timeout: 120.0
         impact_weights:
           values_goals: 1.5
           decision_style: 1.3
@@ -183,9 +225,28 @@ def find_data_root(entry: Path) -> Path:
     return Path.cwd()
 
 
-def normalized_entry_path(root: Path, date_str: str, entry_id: str) -> Path:
-    """Return the normalized entry path for a given day/id."""
-    return root / "data" / "normalized" / date_str / f"{entry_id}.yaml"
+def normalized_entry_path(
+    workspace: Path,
+    date_str: str,
+    entry_id: str,
+    *,
+    paths: PathsConfig,
+) -> Path:
+    """Return the normalized entry path for a given day/id.
+
+    Args:
+        workspace: Workspace directory.
+        date_str: Date string in YYYY-MM-DD format.
+        entry_id: Entry identifier.
+        paths: PathsConfig to resolve custom data directory names.
+
+    Returns:
+        Path to the normalized entry YAML file.
+    """
+    data_dir = Path(paths.data)
+    if not data_dir.is_absolute():
+        data_dir = workspace / data_dir
+    return data_dir / "normalized" / date_str / f"{entry_id}.yaml"
 
 
 def resolve_prompt_path(prompt_path: str) -> Path:

@@ -24,6 +24,7 @@ from aijournal.commands.summarize import (
     _log_entry_progress,
     _validate_timeout,
 )
+from aijournal.common.app_config import AppConfig
 from aijournal.common.command_runner import run_command_pipeline
 from aijournal.common.context import RunContext
 from aijournal.common.meta import Artifact, ArtifactKind
@@ -69,8 +70,11 @@ def _characterization_context(
     return normalized_ids, sorted(manifest_hashes), default_sources
 
 
-def _derived_microfacts_path(root: Path, day: str) -> Path:
-    return root / "derived" / "microfacts" / f"{day}.yaml"
+def _derived_microfacts_path(workspace: Path, config: AppConfig, day: str) -> Path:
+    derived = Path(config.paths.derived)
+    if not derived.is_absolute():
+        derived = workspace / derived
+    return derived / "microfacts" / f"{day}.yaml"
 
 
 class FactsOptions(BaseModel):
@@ -118,7 +122,7 @@ class FactsOutput:
 
 
 def prepare_inputs(ctx: RunContext, options: FactsOptions) -> FactsPrepared:
-    entries = _load_normalized_entries(ctx.root, options.date)
+    entries = _load_normalized_entries(ctx.workspace, ctx.config, options.date)
     if not entries:
         typer.secho(f"No normalized entries for {options.date}", fg=typer.colors.RED, err=True)
         ctx.emit(event="command_failed", reason="missing_entries")
@@ -131,13 +135,14 @@ def prepare_inputs(ctx: RunContext, options: FactsOptions) -> FactsPrepared:
         options.progress,
     )
 
-    manifest_entries = _load_manifest(_manifest_path(ctx.root))
+    manifest_entries = _load_manifest(_manifest_path(ctx.workspace, ctx.config))
     manifest_index = _manifest_by_id(manifest_entries)
     if options.claim_models is not None:
         claim_models = [claim.model_copy(deep=True) for claim in options.claim_models]
     else:
         claim_models = [
-            claim.model_copy(deep=True) for claim in load_profile_components(ctx.root)[1]
+            claim.model_copy(deep=True)
+            for claim in load_profile_components(ctx.workspace, config=ctx.config)[1]
         ]
     preview_builder = options.preview_builder or (lambda *_args, **_kwargs: None)
     ctx.emit(
@@ -207,9 +212,11 @@ def invoke_pipeline(ctx: RunContext, prepared: FactsPrepared) -> FactsResult:
 
 
 def persist_output(ctx: RunContext, result: FactsResult) -> FactsOutput:
-    facts_path = _derived_microfacts_path(ctx.root, result.date)
+    facts_path = _derived_microfacts_path(ctx.workspace, ctx.config, result.date)
     model_name = resolve_model_name(ctx.config, use_fake_llm=ctx.use_fake_llm)
-    artifact_meta = _build_meta("prompts/extract_facts.md", model=model_name)
+    artifact_meta = _build_meta(
+        "prompts/extract_facts.md", model=model_name, use_fake_llm=ctx.use_fake_llm
+    )
     save_artifact(
         facts_path,
         Artifact[MicroFactsFile](
@@ -247,17 +254,18 @@ def run_facts(
     build_claim_preview: Callable[
         [Sequence[ClaimProposal], Sequence[ClaimAtom], str], ProfileUpdatePreview | None
     ],
+    workspace: Path | None = None,
 ) -> tuple[ProfileUpdatePreview | None, Path]:
-    from aijournal.commands.ingest import _load_config, _use_fake_llm
+    from aijournal.common.config_loader import load_config, use_fake_llm
     from aijournal.common.context import create_run_context
 
-    root = Path.cwd()
-    config = _load_config(root)
+    workspace = workspace or Path.cwd()
+    config = load_config(workspace)
     ctx = create_run_context(
         command="facts",
-        root=root,
+        workspace=workspace,
         config=config,
-        use_fake_llm=_use_fake_llm(),
+        use_fake_llm=use_fake_llm(),
         trace=False,
         verbose_json=False,
     )

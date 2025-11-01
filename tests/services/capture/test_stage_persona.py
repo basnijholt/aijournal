@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from aijournal.common.app_config import AppConfig
 from aijournal.services.capture import CaptureInput
 from aijournal.services.capture.stages import stage7_persona
 
@@ -18,12 +19,12 @@ def test_stage7_persona_triggers_build(tmp_path: Path, monkeypatch) -> None:
 
     monkeypatch.setattr(
         "aijournal.commands.persona.persona_state",
-        lambda root: states.pop(0),
+        lambda root, workspace, config: states.pop(0),
     )
 
     monkeypatch.setattr(
         "aijournal.commands.profile.load_profile_components",
-        lambda root: (object(), []),
+        lambda *_, **__: (object(), []),
     )
 
     monkeypatch.setattr(
@@ -32,7 +33,7 @@ def test_stage7_persona_triggers_build(tmp_path: Path, monkeypatch) -> None:
     )
 
     monkeypatch.setattr(
-        "aijournal.commands.ingest._load_config",
+        "aijournal.common.config_loader.load_config",
         lambda root: {},
     )
 
@@ -44,9 +45,11 @@ def test_stage7_persona_triggers_build(tmp_path: Path, monkeypatch) -> None:
 
     monkeypatch.setattr("aijournal.commands.persona.run_persona_build", fake_build)
 
+    config = AppConfig()
     outputs = stage7_persona.run_persona_stage_7(
         _make_inputs(),
         tmp_path,
+        config,
         {"profile": 1},
     )
 
@@ -59,12 +62,18 @@ def test_stage7_persona_triggers_build(tmp_path: Path, monkeypatch) -> None:
 def test_stage7_persona_noop_when_fresh(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(
         "aijournal.commands.persona.persona_state",
-        lambda root: ("fresh", []),
+        lambda root, workspace, config: ("fresh", []),
+    )
+    monkeypatch.setattr(
+        "aijournal.commands.profile.load_profile_components",
+        lambda *_, **__: (None, []),
     )
 
+    config = AppConfig()
     outputs = stage7_persona.run_persona_stage_7(
         _make_inputs(),
         tmp_path,
+        config,
         {},
     )
 

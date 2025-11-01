@@ -18,7 +18,14 @@ def test_stage2_summarize_success(tmp_path: Path, monkeypatch) -> None:
 
     called: list[str] = []
 
-    def fake_run(date: str, *, timeout: float, retries: int, progress: bool) -> Path:
+    def fake_run(
+        date: str,
+        *,
+        timeout: float,
+        retries: int,
+        progress: bool,
+        workspace: Path | None = None,
+    ) -> Path:
         called.append(date)
         summary_path.write_text("summary", encoding="utf-8")
         return summary_path

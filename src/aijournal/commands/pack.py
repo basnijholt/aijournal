@@ -10,13 +10,11 @@ import typer
 from pydantic import BaseModel
 
 from aijournal.commands.index import _index_settings
-from aijournal.commands.ingest import (
-    _load_config,
-    _relative_source_path,
-    _use_fake_llm,
-)
+from aijournal.commands.ingest import _relative_source_path
 from aijournal.commands.persona import ensure_persona_ready_for_pack
+from aijournal.common.app_config import AppConfig
 from aijournal.common.command_runner import run_command_pipeline
+from aijournal.common.config_loader import load_config, use_fake_llm
 from aijournal.common.context import RunContext, create_run_context
 from aijournal.common.meta import Artifact, ArtifactKind, ArtifactMeta
 from aijournal.domain.packs import PackBundle
@@ -25,6 +23,7 @@ from aijournal.io.yaml_io import dump_yaml
 from aijournal.pipelines import index as index_pipeline
 from aijournal.pipelines import pack as pack_pipeline
 from aijournal.utils import time as time_utils
+from aijournal.utils.paths import resolve_path
 
 
 class PackOptions(BaseModel):
@@ -70,15 +69,16 @@ def run_pack(
     fmt: str,
     history_days: int,
     dry_run: bool,
+    workspace: Path | None = None,
 ) -> None:
     """Assemble a context bundle for prompting."""
-    root = Path.cwd()
-    config = _load_config(root)
+    workspace = workspace or Path.cwd()
+    config = load_config(workspace)
     ctx = create_run_context(
         command="pack",
-        root=root,
+        workspace=workspace,
         config=config,
-        use_fake_llm=_use_fake_llm(),
+        use_fake_llm=use_fake_llm(),
         trace=False,
         verbose_json=False,
     )
@@ -109,8 +109,8 @@ def prepare_inputs(ctx: RunContext, options: PackOptions) -> PackPrepared:
 
     default_budget = {"L1": 1200, "L2": 2000, "L3": 2600, "L4": 3200}
     budget = options.max_tokens or default_budget.get(normalized_level, 2000)
-    ensure_persona_ready_for_pack(ctx.root)
-    resolved_date = _resolve_pack_date(normalized_level, options.date, ctx.root)
+    ensure_persona_ready_for_pack(ctx.workspace, ctx.workspace, ctx.config)
+    resolved_date = _resolve_pack_date(normalized_level, options.date, ctx.workspace, ctx.config)
 
     _, _, char_per_token = _index_settings(ctx.config)
 
@@ -136,7 +136,7 @@ def prepare_inputs(ctx: RunContext, options: PackOptions) -> PackPrepared:
 def invoke_pipeline(ctx: RunContext, prepared: PackPrepared) -> PackResult:
     try:
         entries_info = pack_pipeline.collect_pack_entries(
-            ctx.root,
+            ctx.workspace,
             prepared.normalized_level,
             prepared.resolved_date,
             prepared.history_days if prepared.normalized_level == "L4" else 0,
@@ -148,7 +148,7 @@ def invoke_pipeline(ctx: RunContext, prepared: PackPrepared) -> PackResult:
     entries_payload: list[pack_pipeline.PackEntry] = []
     for role, path in entries_info:
         text = path.read_text(encoding="utf-8")
-        rel = _relative_source_path(path, ctx.root)
+        rel = _relative_source_path(path, ctx.workspace)
         tokens = index_pipeline.token_estimate(text, prepared.char_per_token)
         entries_payload.append(
             pack_pipeline.PackEntry(
@@ -256,20 +256,20 @@ def run_pack_command(ctx: RunContext, options: PackOptions) -> None:
     )
 
 
-def _latest_normalized_day(root: Path) -> str | None:
-    base = root / "data" / "normalized"
+def _latest_normalized_day(workspace: Path, config: AppConfig) -> str | None:
+    base = resolve_path(workspace, config, "data/normalized")
     if not base.exists():
         return None
     candidates = sorted(p.name for p in base.iterdir() if p.is_dir())
     return candidates[-1] if candidates else None
 
 
-def _resolve_pack_date(level: str, requested: str | None, root: Path) -> str:
+def _resolve_pack_date(level: str, requested: str | None, root: Path, config: AppConfig) -> str:
     if requested:
         return requested
     if level == "L1":
         return time_utils.now().strftime("%Y-%m-%d")
-    latest = _latest_normalized_day(root)
+    latest = _latest_normalized_day(root, config)
     if latest:
         return latest
     typer.secho("No normalized entries available; provide --date.", fg=typer.colors.RED, err=True)

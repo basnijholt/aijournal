@@ -43,9 +43,9 @@ uv run pytest -q
 ```
 
 - Runtime deps beyond Typer/PyYAML/httpx/pydantic/dateutil: `numpy`, `annoy`, `fastapi`, `uvicorn`, `orjson`. Install once via `uv add ...`; everything stays local-first.
-- Retrieval uses Ollama’s `embeddinggemma` embeddings by default. Override it by setting `embedding_model` in `config/config.yaml`; the `AIJOURNAL_MODEL` env var only affects chat/advice, not embeddings.
+- Retrieval uses Ollama’s `embeddinggemma` embeddings by default. Override it by setting `embedding_model` in `config.yaml`; the `AIJOURNAL_MODEL` env var only affects chat/advice, not embeddings.
 
-- `config/config.yaml` stores runtime defaults (model, host, temperature, advisor settings).
+- `config.yaml` stores runtime defaults (model, host, temperature, advisor settings).
 - `src/aijournal/commands/` contains orchestration logic for each Typer command (I/O, retries, progress logging). Most CLI work happens here now; `cli.py` is intentionally thin glue.
 - `src/aijournal/pipelines/` hosts deterministic workflows that combine services, prompts, and normalization for a single feature (summaries, facts, persona, packs, characterize, advise).
 - `src/aijournal/models/` defines the Pydantic schemas the CLI enforces on every write.
@@ -58,14 +58,18 @@ Run `aijournal init` inside a fresh directory to materialize `data/`, `derived/`
 ### LLM runtime modes
 
 - **Live mode (default):** uses Pydantic AI's Ollama provider via the shared `run_ollama_agent`
-  helper. `build_ollama_config_from_mapping` fuses `config/config.yaml`, environment overrides, and
+ helper. `build_ollama_config_from_mapping` fuses `config.yaml`, environment overrides, and
   per-command tweaks so every CLI surface hits the same configuration pipeline. Populate
-  `host: http://192.168.1.143:11434` (or your own endpoint) in `config/config.yaml` for a
+  `host: http://192.168.1.143:11434` (or your own endpoint) in `config.yaml` for a
   workspace default; precedence is per-command override → environment
   (`AIJOURNAL_OLLAMA_HOST` or `OLLAMA_BASE_URL`) → config `host` → the
   built-in `http://127.0.0.1:11434`. Model selection follows the same ordering:
   explicit override → `AIJOURNAL_MODEL` → config → default.
-  Commands retry schema issues once (`--retries`) and then fail loudly with an error.
+  Commands retry schema issues (default 4 attempts via `llm.retries` in `config.yaml` or `--retries` flag) and then fail loudly with an error.
+- **Workspace selection:** set `AIJOURNAL_WORKSPACE=/path/to/workspace` (or pass `--workspace` on
+  any command) to run against a workspace outside the current directory. The default workspace is
+  `Path.cwd()`. Commands validate that the workspace contains a `config.yaml` file and provide helpful
+  error messages if initialization is needed.
 - **Fake mode (tests/CI):** `export AIJOURNAL_FAKE_OLLAMA=1` to route every agent call through
   deterministic fixtures. This mode must be set explicitly; the CLI never auto-falls back from live mode.
 
@@ -270,7 +274,7 @@ aijournal ops profile status
 
 The everyday `status` command prints persona/index freshness plus pending updates, while the
 `ops profile status` variant dives into facet/claim rankings using the impact weights defined in
-`config/config.yaml`.
+`config.yaml`.
 
 ### Advisor mode
 
@@ -382,7 +386,7 @@ budget. The persona block keeps the most important facets from
 `profile/self_profile.yaml` (values/goals/boundaries/coaching prefs, etc.) plus
 the highest ranking claims, and records trimming metadata in
 `meta.trimmed`. Override the defaults with `--token-budget`, `--max-claims`, or
-`--min-claims` (all mirrored under `config/config.yaml` → `persona.*`). Token
+`--min-claims` (all mirrored under `config.yaml` → `persona.*`). Token
 estimates respect `token_estimator.char_per_token` (default 4.2). The generated
 file is always included in packs/chat as the canonical L1 persona core and can
 be regenerated safely anytime.
@@ -462,7 +466,7 @@ aijournal export pack --level L4 --date 2025-02-03 --history-days 1 --format jso
 - **L3 (Extended Profile):** complete claims + extended self_profile facets + optional advice/suggestions for the day.
 - **L4 (Background):** prompts, config, raw journals for base day ± `--history-days`.
 
-All packs log `meta.token_estimator` (default `char/4.2`), `planned_tokens`, and any trimmed files (`role`, `path`, `reason`). Token counts reuse the shared `_token_estimate` helper so changes to `token_estimator.char_per_token` in `config/config.yaml` stay consistent across persona, index, and pack budgets.
+All packs log `meta.token_estimator` (default `char/4.2`), `planned_tokens`, and any trimmed files (`role`, `path`, `reason`). Token counts reuse the shared `_token_estimate` helper so changes to `token_estimator.char_per_token` in `config.yaml` stay consistent across persona, index, and pack budgets.
 `aijournal export pack` now refuses to run until `derived/persona/persona_core.yaml` exists and injects that file at every level (even L2–L4) before layering profile history. If profile/claims files change, the command prints a yellow reminder to re-run `aijournal ops persona build` so your exported bundles always reflect the latest persona snapshot.
 
 ### Retrieval index & filters
@@ -479,9 +483,10 @@ aijournal ops index update
 
 ### Configuration quick reference
 
-`config/config.yaml` ships with defaults for the chat/advice model, temperature, seed, impact weights, token estimator, and persona budgets. You can optionally add:
+`config.yaml` ships with defaults for the chat/advice model, temperature, seed, impact weights, token estimator, and persona budgets. You can optionally add:
 
 - `embedding_model: "<model-name>"` to change the embedding model (defaults to `embeddinggemma` when omitted).
+- `llm: {retries: 4, timeout: 120.0}` to customize LLM retry behavior and request timeouts.
 - `index: {ann_trees: 50, search_k_factor: 3.0}` to tweak ANN settings.
 - `chat: {max_retrieved_chunks: 12, max_claims: 16, follow_up_enabled: true, write_back_facts: true}` for retrieval/chat behaviour.
 - Custom `impact_weights.claim_types` if certain claim types should rank higher.

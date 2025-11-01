@@ -12,11 +12,9 @@ from pydantic import BaseModel
 
 from aijournal.commands.facts import _characterization_context, _manifest_by_id
 from aijournal.commands.ingest import (
-    _load_config,
     _load_manifest,
     _manifest_path,
     _relative_source_path,
-    _use_fake_llm,
 )
 from aijournal.commands.profile import (
     _build_claim_atom_from_entry,
@@ -32,6 +30,7 @@ from aijournal.commands.summarize import (
 )
 from aijournal.common.app_config import AppConfig
 from aijournal.common.command_runner import run_command_pipeline
+from aijournal.common.config_loader import load_config, use_fake_llm
 from aijournal.common.context import RunContext, create_run_context
 from aijournal.common.meta import Artifact, ArtifactKind
 from aijournal.domain.changes import (
@@ -94,17 +93,18 @@ def run_characterize_command(
     normalize_fn = normalize_claims if normalize_claims is not None else _normalize_claim_proposals
 
     def _prepare_inputs(ctx: RunContext, opts: CharacterizeOptions) -> CharacterizePrepared:
-        root = ctx.root
-        entries_with_paths = _load_normalized_entries_with_paths(root, opts.date)
+        entries_with_paths = _load_normalized_entries_with_paths(
+            ctx.workspace, ctx.config, opts.date
+        )
         if not entries_with_paths:
             typer.secho(f"No normalized entries for {opts.date}", fg=typer.colors.RED, err=True)
             ctx.emit(event="command_failed", reason="missing_entries")
             raise typer.Exit(1)
 
         timeout_value = _validate_timeout(opts.timeout)
-        manifest_entries = _load_manifest(_manifest_path(root))
+        manifest_entries = _load_manifest(_manifest_path(ctx.workspace, ctx.config))
         manifest_index = _manifest_by_id(manifest_entries)
-        profile_model, claim_models = load_profile_components(root)
+        profile_model, claim_models = load_profile_components(ctx.workspace, config=ctx.config)
         profile = profile_to_dict(profile_model)
 
         entries = [entry for entry, _ in entries_with_paths]
@@ -143,6 +143,7 @@ def run_characterize_command(
                 prepared.config,
                 timeout=prepared.timeout,
                 retries=prepared.retries,
+                use_fake_llm=ctx.use_fake_llm,
                 normalize_claims=normalize_fn,
                 invoke_structured_llm=invoke_structured_llm,
                 structured_call=structured_call,
@@ -187,14 +188,16 @@ def run_characterize_command(
             inputs.append(
                 ProfileUpdateInput(
                     id=entry_id,
-                    normalized_path=_relative_source_path(path, ctx.root),
+                    normalized_path=_relative_source_path(path, ctx.workspace),
                     source_hash=data.source_hash or manifest_hash,
                     manifest_hash=manifest_hash,
                     tags=list(data.tags or []),
                 ),
             )
 
-        artifact_meta = _build_meta("prompts/characterize.md", config=prepared.config)
+        artifact_meta = _build_meta(
+            "prompts/characterize.md", config=prepared.config, use_fake_llm=ctx.use_fake_llm
+        )
         batch_model = ProfileUpdateBatch(
             batch_id=batch_id,
             created_at=timestamp,
@@ -203,7 +206,7 @@ def run_characterize_command(
             proposals=proposals_model,
             preview=preview_model,
         )
-        batch_path = _pending_updates_path(ctx.root, batch_id)
+        batch_path = _pending_updates_path(ctx.workspace, ctx.config, batch_id)
         artifact = Artifact[ProfileUpdateBatch](
             kind=ArtifactKind.PROFILE_UPDATES,
             meta=artifact_meta,
@@ -235,6 +238,7 @@ def run_characterize_command(
 
 def run_characterize(
     date: str,
+    workspace: Path | None = None,
     *,
     timeout: float,
     retries: int,
@@ -252,13 +256,13 @@ def run_characterize(
     else:
         normalize_fn = normalize_claims
 
-    root = Path.cwd()
-    config = _load_config(root)
+    workspace = workspace or Path.cwd()
+    config = load_config(workspace)
     ctx = create_run_context(
         command="characterize",
-        root=root,
+        workspace=workspace,
         config=config,
-        use_fake_llm=_use_fake_llm(),
+        use_fake_llm=use_fake_llm(),
         trace=False,
         verbose_json=False,
     )
@@ -289,8 +293,13 @@ def _validate_timeout(value: float) -> float:
     return value
 
 
-def _load_normalized_entries_with_paths(root: Path, day: str) -> list[tuple[NormalizedEntry, Path]]:
-    folder = root / "data" / "normalized" / day
+def _load_normalized_entries_with_paths(
+    workspace: Path, config: AppConfig, day: str
+) -> list[tuple[NormalizedEntry, Path]]:
+    data_dir = Path(config.paths.data)
+    if not data_dir.is_absolute():
+        data_dir = workspace / data_dir
+    folder = data_dir / "normalized" / day
     if not folder.exists():
         return []
     entries: list[tuple[NormalizedEntry, Path]] = []
@@ -299,13 +308,16 @@ def _load_normalized_entries_with_paths(root: Path, day: str) -> list[tuple[Norm
     return entries
 
 
-def _pending_updates_dir(root: Path) -> Path:
-    return root / "derived" / "pending" / "profile_updates"
+def _pending_updates_dir(workspace: Path, config: AppConfig) -> Path:
+    derived = Path(config.paths.derived)
+    if not derived.is_absolute():
+        derived = workspace / derived
+    return derived / "pending" / "profile_updates"
 
 
-def _pending_updates_path(root: Path, batch_id: str) -> Path:
+def _pending_updates_path(workspace: Path, config: AppConfig, batch_id: str) -> Path:
     safe_id = batch_id.replace(":", "-")
-    return _pending_updates_dir(root) / f"{safe_id}.yaml"
+    return _pending_updates_dir(workspace, config) / f"{safe_id}.yaml"
 
 
 def _characterize_payload(
@@ -318,6 +330,7 @@ def _characterize_payload(
     *,
     timeout: float | None = None,
     retries: int,
+    use_fake_llm: bool,
     normalize_claims: Callable[..., list[ClaimProposal]],
     invoke_structured_llm: Callable[..., BaseModel],
     structured_call: Callable[..., BaseModel],
@@ -359,7 +372,7 @@ def _characterize_payload(
         entries,
         profile,
         claims,
-        use_fake_llm=_use_fake_llm(),
+        use_fake_llm=use_fake_llm,
         structured_call=structured_call,
         request_factory=request_characterize,
         retries=retries,
