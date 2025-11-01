@@ -106,6 +106,15 @@ class CaptureConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class LLMConfig(BaseModel):
+    """LLM runtime configuration."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    retries: int = 4
+    timeout: float = 120.0
+
+
 class AppConfig(BaseModel):
     """Project configuration backed by Pydantic validation."""
 
@@ -129,6 +138,7 @@ class AppConfig(BaseModel):
     impact_weights: ImpactWeightsConfig = Field(default_factory=ImpactWeightsConfig)
     advisor: AdvisorConfig = Field(default_factory=AdvisorConfig)
     capture: CaptureConfig = Field(default_factory=CaptureConfig)
+    llm: LLMConfig = Field(default_factory=LLMConfig)
 
     def to_dict(self, *, exclude_none: bool = False) -> dict[str, Any]:
         """Return the configuration as a plain dictionary."""
