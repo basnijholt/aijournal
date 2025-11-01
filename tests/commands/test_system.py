@@ -10,6 +10,7 @@ from aijournal.commands import system
 from aijournal.common.meta import Artifact, ArtifactKind, ArtifactMeta
 from aijournal.domain.index import IndexMeta
 from aijournal.io.artifacts import save_artifact
+from aijournal.utils.paths import WorkspacePaths
 
 
 def test_run_system_doctor_happy_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -84,6 +85,8 @@ def test_run_status_summary(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
     for idx in range(3):
         (pending_dir / f"batch-{idx}.yaml").write_text("batch", encoding="utf-8")
 
+    # Configure WorkspacePaths for the test
+    WorkspacePaths.configure(root=tmp_path, workspace_root=None)
     summary = system.run_status_summary(tmp_path)
 
     assert summary["persona"]["status"] == "fresh"
