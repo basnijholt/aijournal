@@ -12,11 +12,9 @@ from pydantic import BaseModel
 
 from aijournal.commands.facts import _characterization_context, _manifest_by_id
 from aijournal.commands.ingest import (
-    _load_config,
     _load_manifest,
     _manifest_path,
     _relative_source_path,
-    _use_fake_llm,
 )
 from aijournal.commands.profile import (
     _build_claim_atom_from_entry,
@@ -32,6 +30,7 @@ from aijournal.commands.summarize import (
 )
 from aijournal.common.app_config import AppConfig
 from aijournal.common.command_runner import run_command_pipeline
+from aijournal.common.config_loader import load_config, use_fake_llm
 from aijournal.common.context import RunContext, create_run_context
 from aijournal.common.meta import Artifact, ArtifactKind
 from aijournal.domain.changes import (
@@ -255,12 +254,12 @@ def run_characterize(
         normalize_fn = normalize_claims
 
     workspace = workspace or Path.cwd()
-    config = _load_config(workspace)
+    config = load_config(workspace)
     ctx = create_run_context(
         command="characterize",
         workspace=workspace,
         config=config,
-        use_fake_llm=_use_fake_llm(),
+        use_fake_llm=use_fake_llm(),
         trace=False,
         verbose_json=False,
     )
@@ -369,7 +368,7 @@ def _characterize_payload(
         entries,
         profile,
         claims,
-        use_fake_llm=_use_fake_llm(),
+        use_fake_llm=use_fake_llm(),
         structured_call=structured_call,
         request_factory=request_characterize,
         retries=retries,

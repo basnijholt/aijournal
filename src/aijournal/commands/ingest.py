@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 import re
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -18,6 +17,7 @@ from pydantic_ai import Agent
 
 from aijournal.common.app_config import AppConfig
 from aijournal.common.command_runner import run_command_pipeline
+from aijournal.common.config_loader import load_config, load_yaml, use_fake_llm
 from aijournal.common.constants import MARKDOWN_SUFFIXES
 from aijournal.common.context import RunContext, create_run_context
 from aijournal.ingest_agent import (
@@ -69,29 +69,9 @@ class IngestPipelineResult:
     manifest_path: Path
 
 
-def _load_yaml(path: Path) -> dict[str, Any]:
-    return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-
-
-def _load_config(workspace: Path) -> AppConfig:
-    """Load configuration from workspace/config.yaml.
-
-    Args:
-        workspace: The workspace directory containing config.yaml
-
-    Returns:
-        Parsed AppConfig or defaults if config.yaml doesn't exist
-    """
-    config_path = workspace / "config.yaml"
-    if not config_path.exists():
-        return AppConfig()
-
-    data = _load_yaml(config_path)
-    return AppConfig.model_validate(data)
-
-
-def _use_fake_llm() -> bool:
-    return os.getenv("AIJOURNAL_FAKE_OLLAMA") == "1"
+_load_yaml = load_yaml
+_load_config = load_config
+_use_fake_llm = use_fake_llm
 
 
 def _manifest_path(workspace: Path, config: AppConfig) -> Path:
@@ -318,12 +298,12 @@ def run_ingest(
     """Ingest Markdown files into normalized YAML entries."""
 
     workspace = workspace or Path.cwd()
-    config = _load_config(workspace)
+    config = load_config(workspace)
     ctx = create_run_context(
         command="ingest",
         workspace=workspace,
         config=config,
-        use_fake_llm=_use_fake_llm(),
+        use_fake_llm=use_fake_llm(),
         trace=False,
         verbose_json=False,
     )

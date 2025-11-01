@@ -13,10 +13,10 @@ import httpx
 import typer
 from pydantic import BaseModel
 
-from aijournal.commands.ingest import _load_config, _use_fake_llm
 from aijournal.commands.persona import persona_state
 from aijournal.common.app_config import AppConfig
 from aijournal.common.command_runner import run_command_pipeline
+from aijournal.common.config_loader import load_config, use_fake_llm
 from aijournal.common.context import RunContext, create_run_context
 from aijournal.domain.index import IndexMeta
 from aijournal.io.artifacts import load_artifact_data
@@ -104,7 +104,7 @@ def _check_ollama(
     config: AppConfig,
     host_override: str | None = None,
 ) -> tuple[bool, dict[str, Any]]:
-    if _use_fake_llm():
+    if use_fake_llm():
         return True, {"host": "fake://ollama"}
 
     ollama_config = build_ollama_config_from_mapping(config, host=host_override)
@@ -131,7 +131,7 @@ def _check_ollama(
 def run_system_doctor(workspace: Path) -> dict[str, Any]:
     """Run system diagnostics and return a structured payload."""
 
-    config = _load_config(workspace)
+    config = load_config(workspace)
     checks: list[dict[str, Any]] = []
     overall_ok = True
 
@@ -176,7 +176,7 @@ def run_system_doctor(workspace: Path) -> dict[str, Any]:
 def run_status_summary(workspace: Path) -> dict[str, Any]:
     """Gather high-level workspace status information."""
 
-    config = _load_config(workspace)
+    config = load_config(workspace)
     persona_status, persona_reasons = persona_state(workspace, workspace, config)
 
     index_dir = resolve_path(workspace, config, "derived/index")
@@ -242,12 +242,12 @@ class SystemStatusResult:
 
 def run_system_doctor_cli(workspace: Path | None = None) -> None:
     workspace = workspace or Path.cwd()
-    config = _load_config(workspace)
+    config = load_config(workspace)
     ctx = create_run_context(
         command="ops.system.doctor",
         workspace=workspace,
         config=config,
-        use_fake_llm=_use_fake_llm(),
+        use_fake_llm=use_fake_llm(),
         trace=False,
         verbose_json=False,
     )
@@ -301,12 +301,12 @@ def run_system_doctor_cli(workspace: Path | None = None) -> None:
 
 def run_system_status_cli(workspace: Path | None = None) -> None:
     workspace = workspace or Path.cwd()
-    config = _load_config(workspace)
+    config = load_config(workspace)
     ctx = create_run_context(
         command="ops.system.status",
         workspace=workspace,
         config=config,
-        use_fake_llm=_use_fake_llm(),
+        use_fake_llm=use_fake_llm(),
         trace=False,
         verbose_json=False,
     )
@@ -378,7 +378,7 @@ def run_system_status_cli(workspace: Path | None = None) -> None:
             typer.secho("Pending profile updates: none", fg=typer.colors.GREEN)
 
         typer.echo(
-            f"Ollama host: {ollama.get('host')}" + (" (fake mode)" if _use_fake_llm() else "")
+            f"Ollama host: {ollama.get('host')}" + (" (fake mode)" if use_fake_llm() else "")
         )
         typer.echo("Run `aijournal ops system doctor` for detailed diagnostics.")
 

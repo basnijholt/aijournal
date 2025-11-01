@@ -47,10 +47,8 @@ from aijournal.commands.index import (
     run_index_tail,
 )
 from aijournal.commands.ingest import (
-    _load_config,
     _parse_entry,
     _relative_source_path,
-    _use_fake_llm,
     _write_yaml_if_changed,
     run_ingest,
 )
@@ -81,6 +79,8 @@ from aijournal.commands.summarize import (
 )
 from aijournal.commands.system import run_system_doctor_cli, run_system_status_cli
 from aijournal.common.app_config import AppConfig
+from aijournal.common.config_loader import load_config as _load_config
+from aijournal.common.config_loader import use_fake_llm as _use_fake_llm
 from aijournal.common.constants import (
     DEFAULT_LLM_RETRIES,
     DEFAULT_TIMEOUT_SECONDS,
