@@ -95,8 +95,7 @@ def _use_fake_llm() -> bool:
     return os.getenv("AIJOURNAL_FAKE_OLLAMA") == "1"
 
 
-def _manifest_path(root: Path) -> Path:
-    del root  # Use WorkspacePaths instead
+def _manifest_path() -> Path:
     return WorkspacePaths.data() / "manifest" / "ingested.yaml"
 
 
@@ -368,7 +367,7 @@ def _prepare_ingest_inputs(ctx: RunContext, options: IngestOptions) -> IngestPre
     if options.limit is not None:
         files = files[: options.limit]
 
-    manifest_path = _manifest_path(ctx.root)
+    manifest_path = _manifest_path()
     manifest_entries = _load_manifest(manifest_path)
     known_hashes = {entry.hash: entry for entry in manifest_entries if entry.hash}
 

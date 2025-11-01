@@ -258,8 +258,7 @@ def run_pack_command(ctx: RunContext, options: PackOptions) -> None:
     )
 
 
-def _latest_normalized_day(root: Path) -> str | None:
-    del root  # Use WorkspacePaths instead
+def _latest_normalized_day() -> str | None:
     base = WorkspacePaths.data() / "normalized"
     if not base.exists():
         return None
@@ -272,7 +271,7 @@ def _resolve_pack_date(level: str, requested: str | None, root: Path) -> str:
         return requested
     if level == "L1":
         return time_utils.now().strftime("%Y-%m-%d")
-    latest = _latest_normalized_day(root)
+    latest = _latest_normalized_day()
     if latest:
         return latest
     typer.secho("No normalized entries available; provide --date.", fg=typer.colors.RED, err=True)

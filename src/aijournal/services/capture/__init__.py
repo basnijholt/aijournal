@@ -348,6 +348,14 @@ def run_capture(
 
     root = root or Path.cwd()
     config_payload = _load_config(root)
+
+    # Configure WorkspacePaths for this capture run
+    from aijournal.common.app_config import AppConfig
+    from aijournal.utils.paths import WorkspacePaths
+
+    config_model = AppConfig.model_validate(dict(config_payload))
+    WorkspacePaths.configure(workspace=root, paths=config_model.paths)
+
     ollama_config = build_ollama_config_from_mapping(config_payload)
     config_host = config_payload.host
     env_host = os.getenv("AIJOURNAL_OLLAMA_HOST")

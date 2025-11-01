@@ -46,8 +46,10 @@ def journal_path(root: Path, date_str: str, slug: str) -> Path:
     )
 
 
-def manifest_path(root: Path) -> Path:
-    return root / "data" / "manifest" / "ingested.yaml"
+def manifest_path() -> Path:
+    from aijournal.utils.paths import WorkspacePaths
+
+    return WorkspacePaths.data() / "manifest" / "ingested.yaml"
 
 
 def load_manifest(path: Path) -> list[ManifestEntry]:
@@ -72,7 +74,7 @@ def manifest_index(entries: Iterable[ManifestEntry]) -> dict[str, ManifestEntry]
 def ensure_manifest(entries: list[ManifestEntry], root: Path) -> None:
     if entries:
         return
-    entries.extend(load_manifest(manifest_path(root)))
+    entries.extend(load_manifest(manifest_path()))
 
 
 def relative_path(path: Path, root: Path) -> str:
@@ -189,7 +191,7 @@ def apply_profile_update_batch(root: Path, batch_path: Path) -> bool:
         proposal.model_copy(deep=True) for proposal in batch.proposals.facets
     ]
 
-    profile_model, claim_models = load_profile_components(root)
+    profile_model, claim_models = load_profile_components()
     profile = profile_to_dict(profile_model)
     claims_data = [claim.model_copy(deep=True) for claim in claim_models]
     timestamp = time_utils.format_timestamp(time_utils.now())

@@ -70,8 +70,7 @@ def _characterization_context(
     return normalized_ids, sorted(manifest_hashes), default_sources
 
 
-def _derived_microfacts_path(root: Path, day: str) -> Path:
-    del root  # Use WorkspacePaths instead
+def _derived_microfacts_path(day: str) -> Path:
     return WorkspacePaths.derived() / "microfacts" / f"{day}.yaml"
 
 
@@ -120,7 +119,7 @@ class FactsOutput:
 
 
 def prepare_inputs(ctx: RunContext, options: FactsOptions) -> FactsPrepared:
-    entries = _load_normalized_entries(ctx.root, options.date)
+    entries = _load_normalized_entries(options.date)
     if not entries:
         typer.secho(f"No normalized entries for {options.date}", fg=typer.colors.RED, err=True)
         ctx.emit(event="command_failed", reason="missing_entries")
@@ -133,14 +132,12 @@ def prepare_inputs(ctx: RunContext, options: FactsOptions) -> FactsPrepared:
         options.progress,
     )
 
-    manifest_entries = _load_manifest(_manifest_path(ctx.root))
+    manifest_entries = _load_manifest(_manifest_path())
     manifest_index = _manifest_by_id(manifest_entries)
     if options.claim_models is not None:
         claim_models = [claim.model_copy(deep=True) for claim in options.claim_models]
     else:
-        claim_models = [
-            claim.model_copy(deep=True) for claim in load_profile_components(ctx.root)[1]
-        ]
+        claim_models = [claim.model_copy(deep=True) for claim in load_profile_components()[1]]
     preview_builder = options.preview_builder or (lambda *_args, **_kwargs: None)
     ctx.emit(
         event="prepare_summary",
@@ -209,7 +206,7 @@ def invoke_pipeline(ctx: RunContext, prepared: FactsPrepared) -> FactsResult:
 
 
 def persist_output(ctx: RunContext, result: FactsResult) -> FactsOutput:
-    facts_path = _derived_microfacts_path(ctx.root, result.date)
+    facts_path = _derived_microfacts_path(result.date)
     model_name = resolve_model_name(ctx.config, use_fake_llm=ctx.use_fake_llm)
     artifact_meta = _build_meta("prompts/extract_facts.md", model=model_name)
     save_artifact(

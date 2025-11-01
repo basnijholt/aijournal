@@ -24,7 +24,7 @@ def run_facts_stage_3(
     stage_start = perf_counter()
     facts_paths: list[str] = []
     facts_errors: list[str] = []
-    claim_models = load_profile_components(root)[1]
+    claim_models = load_profile_components()[1]
     for date in changed_dates:
         try:
             _, facts_path = run_facts(

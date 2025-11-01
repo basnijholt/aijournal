@@ -95,17 +95,16 @@ def run_characterize_command(
     normalize_fn = normalize_claims if normalize_claims is not None else _normalize_claim_proposals
 
     def _prepare_inputs(ctx: RunContext, opts: CharacterizeOptions) -> CharacterizePrepared:
-        root = ctx.root
-        entries_with_paths = _load_normalized_entries_with_paths(root, opts.date)
+        entries_with_paths = _load_normalized_entries_with_paths(opts.date)
         if not entries_with_paths:
             typer.secho(f"No normalized entries for {opts.date}", fg=typer.colors.RED, err=True)
             ctx.emit(event="command_failed", reason="missing_entries")
             raise typer.Exit(1)
 
         timeout_value = _validate_timeout(opts.timeout)
-        manifest_entries = _load_manifest(_manifest_path(root))
+        manifest_entries = _load_manifest(_manifest_path())
         manifest_index = _manifest_by_id(manifest_entries)
-        profile_model, claim_models = load_profile_components(root)
+        profile_model, claim_models = load_profile_components()
         profile = profile_to_dict(profile_model)
 
         entries = [entry for entry, _ in entries_with_paths]
@@ -204,7 +203,7 @@ def run_characterize_command(
             proposals=proposals_model,
             preview=preview_model,
         )
-        batch_path = _pending_updates_path(ctx.root, batch_id)
+        batch_path = _pending_updates_path(batch_id)
         artifact = Artifact[ProfileUpdateBatch](
             kind=ArtifactKind.PROFILE_UPDATES,
             meta=artifact_meta,
@@ -291,8 +290,7 @@ def _validate_timeout(value: float) -> float:
     return value
 
 
-def _load_normalized_entries_with_paths(root: Path, day: str) -> list[tuple[NormalizedEntry, Path]]:
-    del root  # Use WorkspacePaths instead
+def _load_normalized_entries_with_paths(day: str) -> list[tuple[NormalizedEntry, Path]]:
     folder = WorkspacePaths.data() / "normalized" / day
     if not folder.exists():
         return []
@@ -302,14 +300,13 @@ def _load_normalized_entries_with_paths(root: Path, day: str) -> list[tuple[Norm
     return entries
 
 
-def _pending_updates_dir(root: Path) -> Path:
-    del root  # Use WorkspacePaths instead
+def _pending_updates_dir() -> Path:
     return WorkspacePaths.derived() / "pending" / "profile_updates"
 
 
-def _pending_updates_path(root: Path, batch_id: str) -> Path:
+def _pending_updates_path(batch_id: str) -> Path:
     safe_id = batch_id.replace(":", "-")
-    return _pending_updates_dir(root) / f"{safe_id}.yaml"
+    return _pending_updates_dir() / f"{safe_id}.yaml"
 
 
 def _characterize_payload(

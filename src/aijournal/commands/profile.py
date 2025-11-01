@@ -201,8 +201,7 @@ def run_profile_status(workspace: Path | None = None, *, root: Path | None = Non
     run_profile_status_command(ctx, ProfileStatusOptions())
 
 
-def _derived_profile_proposals_path(root: Path, day: str) -> Path:
-    del root  # Use WorkspacePaths instead
+def _derived_profile_proposals_path(day: str) -> Path:
     return WorkspacePaths.derived() / "profile_proposals" / f"{day}.yaml"
 
 
@@ -211,13 +210,13 @@ def run_profile_suggest_command(
     options: ProfileSuggestOptions,
 ) -> Path:
     def _prepare(_: RunContext, opts: ProfileSuggestOptions) -> ProfileSuggestPrepared:
-        entries = _load_normalized_entries(ctx.root, opts.date)
+        entries = _load_normalized_entries(opts.date)
         if not entries:
             typer.secho(f"No normalized entries for {opts.date}", fg=typer.colors.RED, err=True)
             raise typer.Exit(1)
 
         timeout_value = _validate_timeout(opts.timeout)
-        profile_model, claim_models = load_profile_components(ctx.root)
+        profile_model, claim_models = load_profile_components()
         profile = profile_to_dict(profile_model)
         claims = [claim.model_copy(deep=True) for claim in claim_models]
         if not profile and not claims:
@@ -259,7 +258,7 @@ def run_profile_suggest_command(
             typer.secho(f"Profile suggestions failed: {exc}", fg=typer.colors.RED, err=True)
             raise typer.Exit(1) from exc
 
-        path = _derived_profile_proposals_path(ctx.root, prepared.date)
+        path = _derived_profile_proposals_path(prepared.date)
         artifact_meta = _build_meta("prompts/profile_suggest.md", config=prepared.config)
         artifact = Artifact[ProfileUpdateProposals](
             kind=ArtifactKind.PROFILE_PROPOSALS,
@@ -304,7 +303,7 @@ def run_profile_apply_command(
             raise typer.Exit(1)
 
         proposals = load_artifact_data(resolved_path, ProfileUpdateProposals)
-        profile_model, claim_models = load_profile_components(ctx.root)
+        profile_model, claim_models = load_profile_components()
         profile = profile_to_dict(profile_model)
         claims = [claim.model_copy(deep=True) for claim in claim_models]
         timestamp = time_utils.format_timestamp(time_utils.now())
@@ -359,7 +358,7 @@ def run_profile_apply_command(
 
 def run_profile_status_command(ctx: RunContext, options: ProfileStatusOptions) -> None:
     def _prepare(_: RunContext, __: ProfileStatusOptions) -> ProfileStatusPrepared:
-        profile_model, claim_models = load_profile_components(ctx.root)
+        profile_model, claim_models = load_profile_components()
         profile = profile_to_dict(profile_model)
 
         config = _load_config(ctx.root)
@@ -643,8 +642,7 @@ def _build_claim_atom_from_entry(
     )
 
 
-def load_profile_components(root: Path) -> tuple[SelfProfile | None, list[ClaimAtom]]:
-    del root  # Use WorkspacePaths instead
+def load_profile_components() -> tuple[SelfProfile | None, list[ClaimAtom]]:
     profile_path = WorkspacePaths.profile() / "self_profile.yaml"
     claims_path = WorkspacePaths.profile() / "claims.yaml"
 

@@ -181,7 +181,7 @@ def _persist_file_entry(
         source_path = source_path.expanduser().resolve()
 
     ensure_manifest(manifest_entries, root)
-    manifest_path = _manifest_path(root)
+    manifest_path = _manifest_path()
     local_index = (
         manifest_index_cache
         if manifest_index_cache is not None
@@ -347,7 +347,7 @@ def _persist_text_entry(
     manifest_entries: list[ManifestEntry],
 ) -> EntryResult:
     ensure_manifest(manifest_entries, root)
-    manifest_path = _manifest_path(root)
+    manifest_path = _manifest_path()
     manifest_index = _manifest_index(manifest_entries)
 
     now_dt = time_utils.now()
