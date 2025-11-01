@@ -7,6 +7,8 @@ from typing import TYPE_CHECKING
 import typer
 
 if TYPE_CHECKING:
+    from aijournal.common.app_config import AppConfig
+
     from .. import CaptureInput, CharacterizeStage5Outputs
 
 
@@ -14,6 +16,7 @@ def run_characterize_stage_5(
     changed_dates: list[str],
     inputs: CaptureInput,
     root: Path,
+    config: AppConfig,
 ) -> CharacterizeStage5Outputs:
     from aijournal.commands.characterize import run_characterize
     from aijournal.common.constants import DEFAULT_TIMEOUT_SECONDS
@@ -67,7 +70,7 @@ def run_characterize_stage_5(
         if inputs.apply_profile == "auto":
             for pending_path in new_batches:
                 try:
-                    if apply_profile_update_batch(pending_path):
+                    if apply_profile_update_batch(root, config, pending_path):
                         review_applied.append(relative_path(pending_path, root))
                     else:
                         review_pending.append(relative_path(pending_path, root))

@@ -59,7 +59,7 @@ class AdviceResult:
 
 
 def prepare_inputs(ctx: RunContext, options: AdviceOptions) -> AdvicePrepared:
-    profile_model, claim_models = load_profile_components()
+    profile_model, claim_models = load_profile_components(ctx.root, config=ctx.config)
     profile = profile_to_dict(profile_model)
     claims = [claim.model_copy(deep=True) for claim in claim_models]
     if not profile and not claims:

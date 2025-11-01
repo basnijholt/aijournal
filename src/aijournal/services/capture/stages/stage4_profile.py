@@ -7,6 +7,8 @@ from typing import TYPE_CHECKING
 import typer
 
 if TYPE_CHECKING:
+    from aijournal.common.app_config import AppConfig
+
     from .. import CaptureInput, ProfileStage4Outputs
 
 
@@ -14,12 +16,15 @@ def run_profile_stage_4(
     changed_dates: list[str],
     inputs: CaptureInput,
     root: Path,
+    config: AppConfig,
 ) -> ProfileStage4Outputs:
     from aijournal.commands.profile import run_profile_apply, run_profile_suggest
     from aijournal.common.constants import DEFAULT_TIMEOUT_SECONDS
 
     from .. import OperationResult, ProfileStage4Outputs
     from ..utils import relative_path
+
+    del config  # Stage loads config internally via workspace
 
     stage_start = perf_counter()
     suggestion_paths: list[str] = []

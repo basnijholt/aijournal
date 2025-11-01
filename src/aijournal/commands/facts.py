@@ -137,7 +137,10 @@ def prepare_inputs(ctx: RunContext, options: FactsOptions) -> FactsPrepared:
     if options.claim_models is not None:
         claim_models = [claim.model_copy(deep=True) for claim in options.claim_models]
     else:
-        claim_models = [claim.model_copy(deep=True) for claim in load_profile_components()[1]]
+        claim_models = [
+            claim.model_copy(deep=True)
+            for claim in load_profile_components(ctx.root, config=ctx.config)[1]
+        ]
     preview_builder = options.preview_builder or (lambda *_args, **_kwargs: None)
     ctx.emit(
         event="prepare_summary",

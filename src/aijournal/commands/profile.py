@@ -216,7 +216,7 @@ def run_profile_suggest_command(
             raise typer.Exit(1)
 
         timeout_value = _validate_timeout(opts.timeout)
-        profile_model, claim_models = load_profile_components()
+        profile_model, claim_models = load_profile_components(ctx.root, config=ctx.config)
         profile = profile_to_dict(profile_model)
         claims = [claim.model_copy(deep=True) for claim in claim_models]
         if not profile and not claims:
@@ -303,7 +303,7 @@ def run_profile_apply_command(
             raise typer.Exit(1)
 
         proposals = load_artifact_data(resolved_path, ProfileUpdateProposals)
-        profile_model, claim_models = load_profile_components()
+        profile_model, claim_models = load_profile_components(ctx.root, config=ctx.config)
         profile = profile_to_dict(profile_model)
         claims = [claim.model_copy(deep=True) for claim in claim_models]
         timestamp = time_utils.format_timestamp(time_utils.now())
@@ -338,10 +338,11 @@ def run_profile_apply_command(
 
         updated_profile = SelfProfile.model_validate(prepared.profile)
         updated_claims = [claim.model_copy(deep=True) for claim in prepared.claims]
-        write_yaml_model(WorkspacePaths.profile() / "self_profile.yaml", updated_profile)
-        write_yaml_model(
-            WorkspacePaths.profile() / "claims.yaml", ClaimsFile(claims=updated_claims)
-        )
+        profile_dir = Path(ctx.config.paths.profile)
+        if not profile_dir.is_absolute():
+            profile_dir = ctx.root / profile_dir
+        write_yaml_model(profile_dir / "self_profile.yaml", updated_profile)
+        write_yaml_model(profile_dir / "claims.yaml", ClaimsFile(claims=updated_claims))
         return ProfileApplyResult(message="Applied 1 suggestions file", changed=True)
 
     def _persist(_: RunContext, result: ProfileApplyResult) -> str:
@@ -358,11 +359,10 @@ def run_profile_apply_command(
 
 def run_profile_status_command(ctx: RunContext, options: ProfileStatusOptions) -> None:
     def _prepare(_: RunContext, __: ProfileStatusOptions) -> ProfileStatusPrepared:
-        profile_model, claim_models = load_profile_components()
+        profile_model, claim_models = load_profile_components(ctx.root, config=ctx.config)
         profile = profile_to_dict(profile_model)
 
-        config = _load_config(ctx.root)
-        weights = config.impact_weights.model_dump(mode="python")
+        weights = ctx.config.impact_weights.model_dump(mode="python")
 
         return ProfileStatusPrepared(
             profile=profile,
@@ -643,21 +643,20 @@ def _build_claim_atom_from_entry(
 
 
 def load_profile_components(
-    root: Path | None = None,
+    root: Path,
     *,
-    config: AppConfig | None = None,
+    config: AppConfig,
 ) -> tuple[SelfProfile | None, list[ClaimAtom]]:
-    resolved_config = config
-    if resolved_config is None and root is not None:
-        resolved_config = _load_config(root)
+    """Load profile metadata and claim atoms for a workspace.
 
-    if resolved_config is not None:
-        profile_dir = Path(resolved_config.paths.profile)
-        if not profile_dir.is_absolute():
-            base = root or WorkspacePaths.root()
-            profile_dir = base / profile_dir
-    else:
-        profile_dir = WorkspacePaths.profile()
+    Args:
+        root: Workspace directory root.
+        config: Application configuration containing path settings.
+    """
+
+    profile_dir = Path(config.paths.profile)
+    if not profile_dir.is_absolute():
+        profile_dir = root / profile_dir
 
     profile_path = profile_dir / "self_profile.yaml"
     claims_path = profile_dir / "claims.yaml"

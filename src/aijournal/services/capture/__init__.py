@@ -19,6 +19,7 @@ from aijournal.services.capture.stages.stage0_persist import EntryResult
 from aijournal.services.capture.utils import normalize_markdown
 from aijournal.services.ollama import build_ollama_config_from_mapping
 from aijournal.utils import time as time_utils
+from aijournal.utils.paths import WorkspacePaths
 
 from .stages.stage0_persist import run_persist_stage_0
 from .stages.stage1_normalize import run_normalize_stage_1
@@ -344,17 +345,13 @@ def run_capture(
         raise ValueError(msg)
 
     root = root or Path.cwd()
-    config_payload = _load_config(root)
+    config = _load_config(root)
 
     # Configure WorkspacePaths for this capture run
-    from aijournal.common.app_config import AppConfig
-    from aijournal.utils.paths import WorkspacePaths
+    WorkspacePaths.configure(workspace=root, paths=config.paths)
 
-    config_model = AppConfig.model_validate(dict(config_payload))
-    WorkspacePaths.configure(workspace=root, paths=config_model.paths)
-
-    ollama_config = build_ollama_config_from_mapping(config_payload)
-    config_host = config_payload.host
+    ollama_config = build_ollama_config_from_mapping(config)
+    config_host = config.host
     env_host = os.getenv("AIJOURNAL_OLLAMA_HOST")
     env_base_url = os.getenv("OLLAMA_BASE_URL")
     resolved_run_id = run_id or _generate_run_id()
@@ -539,6 +536,7 @@ def run_capture(
             changed_dates,
             inputs,
             root,
+            config,
         )
         facts_result = facts_outputs.result
         facts_duration = facts_outputs.duration_ms
@@ -573,6 +571,7 @@ def run_capture(
             changed_dates,
             inputs,
             root,
+            config,
         )
         profile_result = profile_outputs.suggest_result
         apply_result = profile_outputs.apply_result
@@ -621,7 +620,12 @@ def run_capture(
             )
 
     if changed_dates and stage_enabled(5):
-        characterize_outputs = run_characterize_stage_5(changed_dates, inputs, root)
+        characterize_outputs = run_characterize_stage_5(
+            changed_dates,
+            inputs,
+            root,
+            config,
+        )
         characterize_result = characterize_outputs.result
         review_result = characterize_outputs.review_result
         characterize_duration = characterize_outputs.duration_ms
@@ -740,7 +744,7 @@ def run_capture(
                 message="skipped by --rebuild skip",
             )
         else:
-            persona_outputs = run_persona_stage_7(inputs, root, artifacts_changed)
+            persona_outputs = run_persona_stage_7(inputs, root, config, artifacts_changed)
             persona_result = persona_outputs.result
             persona_duration = persona_outputs.duration_ms
             persona_changed = persona_outputs.persona_changed

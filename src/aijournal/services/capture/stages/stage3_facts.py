@@ -7,6 +7,8 @@ from typing import TYPE_CHECKING
 import typer
 
 if TYPE_CHECKING:
+    from aijournal.common.app_config import AppConfig
+
     from .. import CaptureInput, FactsStage3Outputs
 
 
@@ -14,6 +16,7 @@ def run_facts_stage_3(
     changed_dates: list[str],
     inputs: CaptureInput,
     root: Path,
+    config: AppConfig,
 ) -> FactsStage3Outputs:
     from aijournal.commands.facts import run_facts
     from aijournal.commands.profile import load_profile_components
@@ -25,7 +28,7 @@ def run_facts_stage_3(
     stage_start = perf_counter()
     facts_paths: list[str] = []
     facts_errors: list[str] = []
-    claim_models = load_profile_components()[1]
+    _, claim_models = load_profile_components(root, config=config)
     for date in changed_dates:
         try:
             _, facts_path = run_facts(
