@@ -16,10 +16,11 @@ from aijournal.common.logging import (
     build_pretty_sink,
 )
 from aijournal.utils import time as time_utils
+from aijournal.utils.paths import WorkspacePaths
 
 
-def _trace_path(root: Path) -> Path:
-    return root / "derived" / "logs" / "run_trace.jsonl"
+def _trace_path() -> Path:
+    return WorkspacePaths.logs() / "run_trace.jsonl"
 
 
 def _run_id(command: str) -> str:
@@ -56,18 +57,23 @@ def create_run_context(
     verbose_json: bool,
     sinks: Sequence[StructuredLogSink] | None = None,
 ) -> RunContext:
+    # Normalize config to model first to access paths.workspace_root
+    config_model = (
+        config if isinstance(config, AppConfig) else AppConfig.model_validate(dict(config))
+    )
+
+    # Configure global workspace paths for this run
+    WorkspacePaths.configure(root=root, workspace_root=config_model.paths.workspace_root)
+
     run_id = _run_id(command)
     sink_list: list[StructuredLogSink] = list(sinks or [])
     if trace:
         sink_list.append(build_pretty_sink())
     if verbose_json:
         sink_list.append(build_json_sink())
-    config_model = (
-        config if isinstance(config, AppConfig) else AppConfig.model_validate(dict(config))
-    )
 
     logger = StructuredLogger(
-        path=_trace_path(root),
+        path=_trace_path(),
         base={"run_id": run_id, "command": command, "root": str(root)},
         sinks=sink_list,
         enabled=True,
