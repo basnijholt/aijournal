@@ -14,11 +14,11 @@ Rules:
 - Use the provided date verbatim for `day`.
 - Summaries must stay grounded in the supplied entries; never invent people or events.
 - `bullets` should be sentence fragments (≤18 words) that capture outcomes, moods, or insights.
-- `highlights` are celebratory or noteworthy points distinct from `bullets`.
-- `todo_candidates` should be concrete next steps implied by the entries.
+- `highlights` are celebratory or noteworthy points distinct from `bullets` (≤18 words each).
+- `todo_candidates` should be concrete next steps implied by the entries (≤18 words each).
 - Return **only** valid JSON.
 
-If you cannot produce a valid payload matching this schema, respond with `{"error":"schema_validation_failed"}` as the entire output.
+If you cannot produce a valid payload matching this schema, respond with `{"day": "$date", "bullets": [], "highlights": [], "todo_candidates": []}` as the entire output.
 See `prompts/examples/summarize.json` for a minimal valid response.
 
 DATE: $date
