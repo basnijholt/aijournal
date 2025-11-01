@@ -133,18 +133,39 @@ def _get_workspace() -> Path:
     """Get workspace directory from environment or default to current directory.
 
     Checks AIJOURNAL_WORKSPACE environment variable first, falls back to cwd.
-    Validates that the directory contains a config.yaml file.
+    Expands ~ and resolves relative paths, then validates that the directory
+    exists and contains a config.yaml file.
 
     Raises:
-        RuntimeError: If the workspace directory doesn't contain config.yaml
+        RuntimeError: If the workspace directory doesn't exist, is not a directory,
+                     or doesn't contain config.yaml
     """
     workspace_env = os.getenv("AIJOURNAL_WORKSPACE")
-    workspace = Path(workspace_env) if workspace_env else Path.cwd()
+    if workspace_env:
+        # Expand ~ and make path absolute for better error messages
+        workspace = Path(workspace_env).expanduser().resolve()
+    else:
+        workspace = Path.cwd()
 
-    if not (workspace / "config.yaml").exists():
+    # Check workspace directory exists
+    if not workspace.exists():
+        msg = (
+            f"Workspace directory does not exist: {workspace}\n"
+            f"Run 'aijournal init --path {workspace}' to create it"
+        )
+        raise RuntimeError(msg)
+
+    # Check it's actually a directory
+    if not workspace.is_dir():
+        msg = f"Workspace path is not a directory: {workspace}"
+        raise RuntimeError(msg)
+
+    # Check for config.yaml
+    config_path = workspace / "config.yaml"
+    if not config_path.exists():
         msg = (
             f"Not an aijournal workspace: {workspace}\n"
-            f"Run 'aijournal init --path {workspace}' first"
+            f"Missing config.yaml - run 'aijournal init --path {workspace}' first"
         )
         raise RuntimeError(msg)
 

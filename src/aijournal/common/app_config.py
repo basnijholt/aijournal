@@ -111,8 +111,18 @@ class LLMConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    retries: int = 4
-    timeout: float = 120.0
+    retries: int = Field(
+        default=4,
+        ge=1,
+        le=10,
+        description="Number of retry attempts for failed LLM requests",
+    )
+    timeout: float = Field(
+        default=120.0,
+        ge=10.0,
+        le=600.0,
+        description="Maximum seconds to wait for LLM response before timeout",
+    )
 
 
 class AppConfig(BaseModel):
