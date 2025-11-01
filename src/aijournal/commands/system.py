@@ -25,7 +25,7 @@ from aijournal.services.ollama import (
     build_ollama_config_from_mapping,
     resolve_ollama_host,
 )
-from aijournal.utils.paths import WorkspacePaths
+from aijournal.utils.paths import resolve_path
 
 
 def _check_sqlite_fts5() -> tuple[bool, str | None]:
@@ -47,8 +47,8 @@ def _check_sqlite_fts5() -> tuple[bool, str | None]:
     return True, None
 
 
-def _check_index_artifacts() -> dict[str, Any]:
-    index_dir = WorkspacePaths.derived() / "index"
+def _check_index_artifacts(workspace: Path, config: AppConfig) -> dict[str, Any]:
+    index_dir = resolve_path(workspace, config, "derived/index")
     db_path = index_dir / "index.db"
     annoy_path = index_dir / "annoy.index"
     meta_path = index_dir / "meta.json"
@@ -91,8 +91,8 @@ def _check_writable_paths(root: Path) -> tuple[bool, dict[str, Any]]:
     return all_ok, status
 
 
-def _check_pending_updates() -> dict[str, Any]:
-    pending_dir = WorkspacePaths.derived() / "pending" / "profile_updates"
+def _check_pending_updates(workspace: Path, config: AppConfig) -> dict[str, Any]:
+    pending_dir = resolve_path(workspace, config, "derived/pending") / "profile_updates"
     files = sorted(pending_dir.glob("*.yaml")) if pending_dir.exists() else []
     return {
         "count": len(files),
@@ -139,7 +139,7 @@ def run_system_doctor(workspace: Path) -> dict[str, Any]:
     checks.append({"name": "sqlite_fts5", "ok": fts_ok, "hint": fts_hint})
     overall_ok &= fts_ok
 
-    index_info = _check_index_artifacts()
+    index_info = _check_index_artifacts(workspace, config)
     index_ok = bool(index_info["index_db_exists"] and index_info["annoy_index_exists"])
     checks.append({"name": "index_artifacts", "ok": index_ok, "details": index_info})
     overall_ok &= index_ok
@@ -148,7 +148,7 @@ def run_system_doctor(workspace: Path) -> dict[str, Any]:
     checks.append({"name": "workspace_writable", "ok": writable_ok, "details": writable_info})
     overall_ok &= writable_ok
 
-    pending_info = _check_pending_updates()
+    pending_info = _check_pending_updates(workspace, config)
     checks.append({"name": "pending_profile_updates", "ok": True, "details": pending_info})
 
     ollama_ok, ollama_details = _check_ollama(config, os.getenv("AIJOURNAL_OLLAMA_HOST"))
@@ -179,7 +179,7 @@ def run_status_summary(workspace: Path) -> dict[str, Any]:
     config = _load_config(workspace)
     persona_status, persona_reasons = persona_state(workspace)
 
-    index_dir = WorkspacePaths.derived() / "index"
+    index_dir = resolve_path(workspace, config, "derived/index")
     index_info = {
         "has_index_db": (index_dir / "index.db").exists(),
         "has_annoy_index": (index_dir / "annoy.index").exists(),
@@ -194,7 +194,7 @@ def run_status_summary(workspace: Path) -> dict[str, Any]:
         except Exception as exc:
             index_info["meta_error"] = str(exc)
 
-    pending_info = _check_pending_updates()
+    pending_info = _check_pending_updates(workspace, config)
     config_host = config.host
     host = resolve_ollama_host(
         os.getenv("AIJOURNAL_OLLAMA_HOST"),
@@ -256,7 +256,7 @@ def run_system_doctor_cli(workspace: Path | None = None) -> None:
         return SystemDoctorPrepared()
 
     def _invoke(inner_ctx: RunContext, __: SystemDoctorPrepared) -> SystemDoctorResult:
-        diagnostics = run_system_doctor(inner_ctx.root)
+        diagnostics = run_system_doctor(inner_ctx.workspace)
         inner_ctx.emit(event="pipeline_complete", ok=diagnostics.get("ok", False))
         return SystemDoctorResult(diagnostics=diagnostics)
 
@@ -315,7 +315,7 @@ def run_system_status_cli(workspace: Path | None = None) -> None:
         return SystemStatusPrepared()
 
     def _invoke(inner_ctx: RunContext, __: SystemStatusPrepared) -> SystemStatusResult:
-        summary = run_status_summary(inner_ctx.root)
+        summary = run_status_summary(inner_ctx.workspace)
         inner_ctx.emit(
             event="pipeline_complete",
             persona_status=summary.get("persona", {}).get("status"),

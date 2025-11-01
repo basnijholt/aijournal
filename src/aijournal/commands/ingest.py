@@ -32,7 +32,7 @@ from aijournal.pipelines import normalization
 from aijournal.schema import SchemaValidationError, validate_schema
 from aijournal.services.ollama import build_ollama_config_from_mapping
 from aijournal.utils import time as time_utils
-from aijournal.utils.paths import WorkspacePaths, normalized_entry_path
+from aijournal.utils.paths import normalized_entry_path, resolve_path
 
 
 class IngestOptions(BaseModel):
@@ -95,7 +95,7 @@ def _use_fake_llm() -> bool:
 
 
 def _manifest_path() -> Path:
-    return WorkspacePaths.data() / "manifest" / "ingested.yaml"
+    return resolve_path(ctx.workspace, ctx.config, "data/manifest") / "ingested.yaml"
 
 
 def _load_manifest(path: Path) -> list[ManifestEntry]:
@@ -417,7 +417,7 @@ def _invoke_ingest_pipeline(ctx: RunContext, prepared: IngestPrepared) -> Ingest
     ingested = 0
     skipped = 0
     errors = 0
-    raw_dir = WorkspacePaths.data() / "raw"
+    raw_dir = resolve_path(ctx.workspace, ctx.config, "data/raw")
 
     for file in prepared.files:
         try:
@@ -460,7 +460,7 @@ def _invoke_ingest_pipeline(ctx: RunContext, prepared: IngestPrepared) -> Ingest
             normalized, date_str = _normalized_from_structured(
                 structured,
                 source_path=file,
-                root=ctx.root,
+                root=ctx.workspace,
                 digest=digest,
                 source_type=prepared.source_type,
                 fallback_sections=fallback_sections,
@@ -473,7 +473,7 @@ def _invoke_ingest_pipeline(ctx: RunContext, prepared: IngestPrepared) -> Ingest
             continue
 
         normalized_path = normalized_entry_path(
-            ctx.root,
+            ctx.workspace,
             date_str,
             normalized["id"],
             paths=ctx.config.paths,
@@ -490,8 +490,8 @@ def _invoke_ingest_pipeline(ctx: RunContext, prepared: IngestPrepared) -> Ingest
 
         manifest_entry = ManifestEntry(
             hash=digest,
-            path=_relative_source_path(file, ctx.root),
-            normalized=_relative_source_path(normalized_path, ctx.root),
+            path=_relative_source_path(file, ctx.workspace),
+            normalized=_relative_source_path(normalized_path, ctx.workspace),
             source_type=prepared.source_type,
             ingested_at=time_utils.format_timestamp(time_utils.now()),
             created_at=str(normalized["created_at"]),

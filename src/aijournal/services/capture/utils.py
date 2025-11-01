@@ -46,10 +46,11 @@ def journal_path(root: Path, date_str: str, slug: str) -> Path:
     )
 
 
-def manifest_path() -> Path:
-    from aijournal.utils.paths import WorkspacePaths
+def manifest_path(workspace: Path, config: AppConfig) -> Path:
+    """Get manifest file path for a workspace."""
+    from aijournal.utils.paths import resolve_path
 
-    return WorkspacePaths.data() / "manifest" / "ingested.yaml"
+    return resolve_path(workspace, config, "data/manifest/ingested.yaml")
 
 
 def load_manifest(path: Path) -> list[ManifestEntry]:
@@ -166,10 +167,11 @@ def discover_markdown_files(paths: Sequence[str]) -> list[Path]:
     return unique
 
 
-def pending_batches() -> set[Path]:
-    from aijournal.utils.paths import WorkspacePaths
+def pending_batches(workspace: Path, config: AppConfig) -> set[Path]:
+    """Get all pending profile update batch files."""
+    from aijournal.utils.paths import resolve_path
 
-    directory = WorkspacePaths.derived() / "pending" / "profile_updates"
+    directory = resolve_path(workspace, config, "derived/pending/profile_updates")
     if not directory.exists():
         return set()
     return {path for path in directory.glob("*.yaml") if path.is_file()}

@@ -34,7 +34,7 @@ from aijournal.models.derived import AdviceCard, ProfileUpdateBatch
 from aijournal.pipelines import advise as advise_pipeline
 from aijournal.services.ollama import resolve_model_name
 from aijournal.utils import time as time_utils
-from aijournal.utils.paths import WorkspacePaths
+from aijournal.utils.paths import resolve_path
 
 
 class AdviceOptions(BaseModel):
@@ -59,7 +59,7 @@ class AdviceResult:
 
 
 def prepare_inputs(ctx: RunContext, options: AdviceOptions) -> AdvicePrepared:
-    profile_model, claim_models = load_profile_components(ctx.root, config=ctx.config)
+    profile_model, claim_models = load_profile_components(ctx.workspace, config=ctx.config)
     profile = profile_to_dict(profile_model)
     claims = [claim.model_copy(deep=True) for claim in claim_models]
     if not profile and not claims:
@@ -69,7 +69,7 @@ def prepare_inputs(ctx: RunContext, options: AdviceOptions) -> AdvicePrepared:
 
     weights = ctx.config.impact_weights.model_dump(mode="python")
     latest_day = _latest_normalized_day()
-    entries = _load_normalized_entries(latest_day) if latest_day else []
+    entries = _load_normalized_entries(ctx.workspace, ctx.config, latest_day) if latest_day else []
     pending_prompts = _collect_pending_interview_prompts()
     rankings = _compute_rankings(
         profile,
@@ -163,7 +163,7 @@ def run_advise(question: str, workspace: Path | None = None) -> Path:
 
 
 def _collect_pending_interview_prompts(limit: int = 5) -> list[str]:
-    directory = WorkspacePaths.derived() / "pending" / "profile_updates"
+    directory = resolve_path(ctx.workspace, ctx.config, "derived/pending") / "profile_updates"
     if not directory.exists():
         return []
     prompts: list[str] = []
@@ -254,4 +254,4 @@ def _advice_payload(
 
 def _derived_advice_path(day: str, question: str) -> Path:
     slug = time_utils.slugify_title(question)
-    return WorkspacePaths.derived() / "advice" / day / f"{slug}.yaml"
+    return resolve_path(ctx.workspace, ctx.config, "derived/advice") / day / f"{slug}.yaml"

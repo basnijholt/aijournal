@@ -23,7 +23,7 @@ from aijournal.io.artifacts import load_artifact, save_artifact
 from aijournal.pipelines import persona as persona_pipeline
 from aijournal.utils import time as time_utils
 from aijournal.utils.coercion import coerce_float
-from aijournal.utils.paths import WorkspacePaths
+from aijournal.utils.paths import resolve_path
 
 PERSONA_DEFAULTS = {
     "token_budget": 1200,
@@ -145,15 +145,15 @@ def invoke_pipeline(ctx: RunContext, prepared: PersonaPrepared) -> PersonaResult
     ranked_claims = persona_result.ranked_claims
 
     sources: dict[str, str] = {}
-    profile_path = WorkspacePaths.profile() / "self_profile.yaml"
-    claims_path = WorkspacePaths.profile() / "claims.yaml"
+    profile_path = resolve_path(ctx.workspace, ctx.config, "profile/self_profile.yaml")
+    claims_path = resolve_path(ctx.workspace, ctx.config, "profile/claims.yaml")
     if profile_path.exists():
-        sources["profile"] = _relative_to_root(profile_path, ctx.root)
+        sources["profile"] = _relative_to_root(profile_path, ctx.workspace)
     if claims_path.exists():
-        sources["claims"] = _relative_to_root(claims_path, ctx.root)
-    source_mtimes = _persona_source_mtimes(ctx.root)
+        sources["claims"] = _relative_to_root(claims_path, ctx.workspace)
+    source_mtimes = _persona_source_mtimes(ctx.workspace)
 
-    persona_path = WorkspacePaths.derived() / "persona" / "persona_core.yaml"
+    persona_path = resolve_path(ctx.workspace, ctx.config, "derived/persona") / "persona_core.yaml"
     existing_artifact = None
     if persona_path.exists():
         try:
@@ -221,7 +221,7 @@ def _relative_to_root(path: Path, root: Path) -> str:
 
 
 def _profile_yaml_paths() -> list[Path]:
-    profile_dir = WorkspacePaths.profile()
+    profile_dir = resolve_path(ctx.workspace, ctx.config, "profile")
     if not profile_dir.exists():
         return []
     return sorted(p for p in profile_dir.glob("*.yaml") if p.is_file())
@@ -287,7 +287,7 @@ def _persona_artifact_meta(
 
 
 def persona_state(root: Path) -> tuple[str, list[str]]:
-    persona_path = WorkspacePaths.derived() / "persona" / "persona_core.yaml"
+    persona_path = resolve_path(ctx.workspace, ctx.config, "derived/persona") / "persona_core.yaml"
     if not persona_path.exists():
         rel = _relative_to_root(persona_path, root)
         return "missing", [f"Missing {rel}; run `aijournal persona build`."]
