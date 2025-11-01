@@ -72,10 +72,10 @@ def manifest_index(entries: Iterable[ManifestEntry]) -> dict[str, ManifestEntry]
     return {entry.hash: entry for entry in entries}
 
 
-def ensure_manifest(entries: list[ManifestEntry], root: Path) -> None:
+def ensure_manifest(entries: list[ManifestEntry], root: Path, config: AppConfig) -> None:
     if entries:
         return
-    entries.extend(load_manifest(manifest_path()))
+    entries.extend(load_manifest(manifest_path(root, config)))
 
 
 def relative_path(path: Path, root: Path) -> str:
@@ -407,6 +407,7 @@ def normalize_markdown(
     markdown_path: Path,
     *,
     root: Path,
+    config: AppConfig,
     source_hash: str,
     source_type: str,
 ) -> tuple[Path, bool]:
@@ -460,7 +461,7 @@ def normalize_markdown(
         source_hash=source_hash,
         source_type=source_type,
     )
-    normalized_path = normalized_entry_path(root, date_str, entry_id)
+    normalized_path = normalized_entry_path(root, date_str, entry_id, paths=config.paths)
     changed = write_yaml_if_changed(
         normalized_path,
         normalized_entry.model_dump(mode="python"),

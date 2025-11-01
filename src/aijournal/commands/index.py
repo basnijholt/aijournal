@@ -210,7 +210,7 @@ def _prepare_rebuild_inputs(ctx: RunContext, options: IndexRebuildOptions) -> In
         raise typer.Exit(1)
 
     since_filter = _resolve_since_filter(options.since)
-    entries = _collect_normalized_files(since_filter)
+    entries = _collect_normalized_files(ctx.workspace, ctx.config, since_filter)
     if options.limit is not None:
         entries = entries[: options.limit]
     if not entries:
@@ -222,7 +222,7 @@ def _prepare_rebuild_inputs(ctx: RunContext, options: IndexRebuildOptions) -> In
         ctx.emit(event="no_entries")
         raise typer.Exit(1)
 
-    manifest_index = _manifest_by_id(_load_manifest(_manifest_path()))
+    manifest_index = _manifest_by_id(_load_manifest(_manifest_path(ctx.workspace, ctx.config)))
     tasks = index_pipeline.prepare_index_tasks(
         entries,
         root=ctx.workspace,
@@ -259,9 +259,9 @@ def _invoke_rebuild_pipeline(ctx: RunContext, prepared: IndexRebuildPrepared) ->
     entry_total = 0
     touched_dates: list[str] = []
 
-    index_dir = _index_dir()
+    index_dir = _index_dir(ctx.workspace, ctx.config)
     index_dir.mkdir(parents=True, exist_ok=True)
-    conn = _connect_index_db(_index_db_path(), overwrite=True)
+    conn = _connect_index_db(_index_db_path(ctx.workspace, ctx.config), overwrite=True)
     try:
         with conn:
             _prepare_index_schema(conn)
@@ -276,14 +276,14 @@ def _invoke_rebuild_pipeline(ctx: RunContext, prepared: IndexRebuildPrepared) ->
             conn,
             embedder.dim,
             ann_trees,
-            _annoy_index_path(),
+            _annoy_index_path(ctx.workspace, ctx.config),
         )
         conn.commit()
         touched_dates = sorted(stats.get("dates", []))
         if touched_dates:
             index_pipeline.write_chunk_manifests(
                 conn,
-                _chunk_manifest_dir(),
+                _chunk_manifest_dir(ctx.workspace, ctx.config),
                 touched_dates,
                 embedder,
             )
@@ -303,7 +303,7 @@ def _invoke_rebuild_pipeline(ctx: RunContext, prepared: IndexRebuildPrepared) ->
         since=prepared.since_filter,
         limit=prepared.limit,
         touched_dates=touched_dates,
-        index_meta_path=_index_meta_path,
+        index_meta_path=lambda root: _index_meta_path(root, ctx.workspace, ctx.config),
     )
 
     message = f"Indexed {chunk_total} chunks across {entry_total} entries (mode: rebuild)."
@@ -341,7 +341,7 @@ def _prepare_tail_inputs(ctx: RunContext, options: IndexTailOptions) -> IndexTai
         ctx.emit(event="invalid_option", option="limit")
         raise typer.Exit(1)
 
-    db_path = _index_db_path()
+    db_path = _index_db_path(ctx.workspace, ctx.config)
     if not db_path.exists():
         typer.secho(
             "Index database not found. Run `aijournal index rebuild` first.",
@@ -352,7 +352,7 @@ def _prepare_tail_inputs(ctx: RunContext, options: IndexTailOptions) -> IndexTai
         raise typer.Exit(1)
 
     since_filter = _resolve_since_filter(options.since, fallback_days=options.days)
-    entries = _collect_normalized_files(since_filter)
+    entries = _collect_normalized_files(ctx.workspace, ctx.config, since_filter)
     if options.limit is not None:
         entries = entries[: options.limit]
     if not entries:
@@ -364,7 +364,7 @@ def _prepare_tail_inputs(ctx: RunContext, options: IndexTailOptions) -> IndexTai
         ctx.emit(event="no_entries")
         raise typer.Exit(1)
 
-    manifest_index = _manifest_by_id(_load_manifest(_manifest_path()))
+    manifest_index = _manifest_by_id(_load_manifest(_manifest_path(ctx.workspace, ctx.config)))
     tasks = index_pipeline.prepare_index_tasks(
         entries,
         root=ctx.workspace,
@@ -388,7 +388,7 @@ def _prepare_tail_inputs(ctx: RunContext, options: IndexTailOptions) -> IndexTai
 
 
 def _invoke_tail_pipeline(ctx: RunContext, prepared: IndexTailPrepared) -> IndexTailResult:
-    db_path = _index_db_path()
+    db_path = _index_db_path(ctx.workspace, ctx.config)
     conn = _connect_index_db(db_path)
     try:
         pending = index_pipeline.filter_tasks_for_tail(conn, prepared.tasks)
@@ -415,14 +415,14 @@ def _invoke_tail_pipeline(ctx: RunContext, prepared: IndexTailPrepared) -> Index
             conn,
             embedder.dim,
             ann_trees,
-            _annoy_index_path(),
+            _annoy_index_path(ctx.workspace, ctx.config),
         )
         conn.commit()
         touched_dates = sorted(stats.get("dates", []))
         if touched_dates:
             index_pipeline.write_chunk_manifests(
                 conn,
-                _chunk_manifest_dir(),
+                _chunk_manifest_dir(ctx.workspace, ctx.config),
                 touched_dates,
                 embedder,
             )
@@ -440,7 +440,7 @@ def _invoke_tail_pipeline(ctx: RunContext, prepared: IndexTailPrepared) -> Index
             since=prepared.since_filter,
             limit=prepared.limit,
             touched_dates=touched_dates,
-            index_meta_path=_index_meta_path,
+            index_meta_path=lambda root: _index_meta_path(root, ctx.workspace, ctx.config),
         )
 
         message = (
@@ -534,29 +534,31 @@ def _persist_search_output(ctx: RunContext, search_result: IndexSearchResult) ->
             typer.echo("")
 
 
-def _index_dir() -> Path:
-    return resolve_path(ctx.workspace, ctx.config, "derived/index")
+def _index_dir(workspace: Path, config: AppConfig) -> Path:
+    return resolve_path(workspace, config, "derived/index")
 
 
-def _index_db_path() -> Path:
-    return _index_dir() / INDEX_DB_FILENAME
+def _index_db_path(workspace: Path, config: AppConfig) -> Path:
+    return _index_dir(workspace, config) / INDEX_DB_FILENAME
 
 
-def _annoy_index_path() -> Path:
-    return _index_dir() / ANNOY_FILENAME
+def _annoy_index_path(workspace: Path, config: AppConfig) -> Path:
+    return _index_dir(workspace, config) / ANNOY_FILENAME
 
 
-def _chunk_manifest_dir() -> Path:
-    return _index_dir() / "chunks"
+def _chunk_manifest_dir(workspace: Path, config: AppConfig) -> Path:
+    return _index_dir(workspace, config) / "chunks"
 
 
-def _index_meta_path(_root: Path) -> Path:
+def _index_meta_path(_root: Path, workspace: Path, config: AppConfig) -> Path:
     """Get index meta path. Root parameter kept for callback interface compatibility."""
-    return _index_dir() / INDEX_META_FILENAME
+    return _index_dir(workspace, config) / INDEX_META_FILENAME
 
 
-def _collect_normalized_files(since: str | None) -> list[tuple[str, Path]]:
-    normalized_root = resolve_path(ctx.workspace, ctx.config, "data/normalized")
+def _collect_normalized_files(
+    workspace: Path, config: AppConfig, since: str | None
+) -> list[tuple[str, Path]]:
+    normalized_root = resolve_path(workspace, config, "data/normalized")
     if not normalized_root.exists():
         return []
     entries: list[tuple[str, Path]] = []

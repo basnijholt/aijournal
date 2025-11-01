@@ -11,6 +11,7 @@ import pytest
 import yaml
 from tests.helpers import make_claim_atom
 
+from aijournal.common.app_config import AppConfig
 from aijournal.common.meta import Artifact, ArtifactKind, ArtifactMeta
 from aijournal.domain.changes import (
     ClaimAtomInput,
@@ -79,7 +80,7 @@ def test_run_capture_records_telemetry(tmp_path: Path, monkeypatch: pytest.Monke
     index_rebuild_calls: list[tuple[str | None, int | None]] = []
     index_tail_calls: list[tuple[str | None, int, int | None]] = []
     persona_build_calls: list[tuple[dict[str, object], list[object]]] = []
-    persona_state_calls: list[Path] = []
+    persona_state_calls: list[tuple[Path, Path, object]] = []
     pack_calls: list[tuple[str, Path]] = []
 
     def _ensure_file(path: Path, content: str) -> Path:
@@ -330,8 +331,8 @@ def test_run_capture_records_telemetry(tmp_path: Path, monkeypatch: pytest.Monke
         ("fresh", []),
     ]
 
-    def fake_persona_state(root: Path) -> tuple[str, list[str]]:
-        persona_state_calls.append(root)
+    def fake_persona_state(root: Path, workspace: Path, config: object) -> tuple[str, list[str]]:
+        persona_state_calls.append((root, workspace, config))
         return persona_states.pop(0) if persona_states else ("fresh", [])
 
     def fake_run_persona_build(
@@ -609,7 +610,7 @@ def test_run_capture_rebuild_always_forces_refresh(
     ]
     persona_build_calls: list[tuple[dict[str, object], list[object]]] = []
 
-    def fake_persona_state(root: Path) -> tuple[str, list[str]]:
+    def fake_persona_state(root: Path, workspace: Path, config: object) -> tuple[str, list[str]]:
         return persona_states.pop(0)
 
     def fake_run_persona_build(
@@ -756,7 +757,7 @@ def test_run_capture_review_mode_skips_apply(
     ]
     monkeypatch.setattr(
         "aijournal.commands.persona.persona_state",
-        lambda root: persona_states.pop(0),
+        lambda root, workspace, config: persona_states.pop(0),
     )
     monkeypatch.setattr(
         "aijournal.commands.persona.run_persona_build",
@@ -796,7 +797,8 @@ def test_persist_text_writes_markdown_and_normalized(
     )
     inputs = CaptureInput(source="stdin", text="Hello capture", title="My Entry")
     manifest: list[ManifestEntry] = []
-    result = _persist_text_entry(inputs, tmp_path, manifest)
+    config = AppConfig()
+    result = _persist_text_entry(inputs, tmp_path, config, manifest)
 
     assert result.slug.startswith("2025-10-28")
     assert result.markdown_path
@@ -813,7 +815,7 @@ def test_persist_text_writes_markdown_and_normalized(
     normalized_path = tmp_path / result.normalized_path
     normalized_path.unlink()
     copy = result.model_copy(update={"changed": True})
-    counts = normalize_entries([copy], tmp_path)
+    counts = normalize_entries([copy], tmp_path, config)
     assert counts["normalized"] == 1
     assert normalized_path.exists()
 
@@ -830,12 +832,13 @@ def test_persist_file_skips_duplicate(tmp_path: Path, monkeypatch: pytest.Monkey
 
     inputs = CaptureInput(source="file", paths=[str(entry_path)])
     manifest: list[ManifestEntry] = []
-    first = _persist_file_entry(inputs, tmp_path, manifest)
+    config = AppConfig()
+    first = _persist_file_entry(inputs, tmp_path, config, manifest)
     assert first.changed is True
-    second = _persist_file_entry(inputs, tmp_path, manifest)
+    second = _persist_file_entry(inputs, tmp_path, config, manifest)
     assert second.deduped is True
 
-    counts = normalize_entries([second], tmp_path)
+    counts = normalize_entries([second], tmp_path, config)
     # Already normalized via first persist; second should trigger no rewrite.
     assert counts["normalized"] == 0
 
@@ -874,7 +877,10 @@ def test_persist_file_records_snapshot_and_manifest_fields(
         projects=["proj"],
     )
     manifest: list[ManifestEntry] = []
-    result = _persist_file_entry(inputs, tmp_path, manifest, source_path=entry_path, snapshot=True)
+    config = AppConfig()
+    result = _persist_file_entry(
+        inputs, tmp_path, config, manifest, source_path=entry_path, snapshot=True
+    )
 
     assert result.changed is True
     manifest_entry = manifest[-1]
@@ -911,12 +917,13 @@ def test_persist_file_slug_collision_logs_alias(
     )
 
     manifest: list[ManifestEntry] = []
+    config = AppConfig()
     inputs = CaptureInput(source="file", paths=[str(entry_one)])
-    _persist_file_entry(inputs, tmp_path, manifest, source_path=entry_one, snapshot=False)
+    _persist_file_entry(inputs, tmp_path, config, manifest, source_path=entry_one, snapshot=False)
 
     inputs_two = CaptureInput(source="file", paths=[str(entry_two)])
     result_two = _persist_file_entry(
-        inputs_two, tmp_path, manifest, source_path=entry_two, snapshot=False
+        inputs_two, tmp_path, config, manifest, source_path=entry_two, snapshot=False
     )
 
     assert result_two.slug.endswith("-2")

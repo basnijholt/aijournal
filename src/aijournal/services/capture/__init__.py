@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 
 from aijournal.api.capture import CaptureInput
 from aijournal.commands.ingest import _load_config
+from aijournal.common.app_config import AppConfig
 from aijournal.common.logging import StructuredLogger
 from aijournal.models.authoritative import ManifestEntry
 from aijournal.services.capture.results import OperationResult, StageResult
@@ -443,6 +444,7 @@ def run_capture(
         persist_outputs = run_persist_stage_0(
             inputs,
             root,
+            config,
             manifest_entries,
             log_event,
         )
@@ -467,6 +469,7 @@ def run_capture(
         normalize_outputs = run_normalize_stage_1(
             entry_results,
             root,
+            config,
         )
         artifact_counts = normalize_outputs.artifacts
         normalize_result = normalize_outputs.result
@@ -835,7 +838,7 @@ def run_capture(
     return result
 
 
-def normalize_entries(entries: list[EntryResult], root: Path) -> dict[str, Any]:
+def normalize_entries(entries: list[EntryResult], root: Path, config: AppConfig) -> dict[str, Any]:
     """Normalize Markdown entries that changed during capture."""
 
     normalized = 0
@@ -854,6 +857,7 @@ def normalize_entries(entries: list[EntryResult], root: Path) -> dict[str, Any]:
         normalized_path, changed = normalize_markdown(
             markdown_path,
             root=root,
+            config=config,
             source_hash=source_hash,
             source_type=source_type,
         )

@@ -16,6 +16,7 @@ from aijournal.commands.ingest import (
     _use_fake_llm,
 )
 from aijournal.commands.persona import ensure_persona_ready_for_pack
+from aijournal.common.app_config import AppConfig
 from aijournal.common.command_runner import run_command_pipeline
 from aijournal.common.context import RunContext, create_run_context
 from aijournal.common.meta import Artifact, ArtifactKind, ArtifactMeta
@@ -111,8 +112,8 @@ def prepare_inputs(ctx: RunContext, options: PackOptions) -> PackPrepared:
 
     default_budget = {"L1": 1200, "L2": 2000, "L3": 2600, "L4": 3200}
     budget = options.max_tokens or default_budget.get(normalized_level, 2000)
-    ensure_persona_ready_for_pack(ctx.workspace)
-    resolved_date = _resolve_pack_date(normalized_level, options.date, ctx.workspace)
+    ensure_persona_ready_for_pack(ctx.workspace, ctx.workspace, ctx.config)
+    resolved_date = _resolve_pack_date(normalized_level, options.date, ctx.workspace, ctx.config)
 
     _, _, char_per_token = _index_settings(ctx.config)
 
@@ -258,20 +259,20 @@ def run_pack_command(ctx: RunContext, options: PackOptions) -> None:
     )
 
 
-def _latest_normalized_day() -> str | None:
-    base = resolve_path(ctx.workspace, ctx.config, "data/normalized")
+def _latest_normalized_day(workspace: Path, config: AppConfig) -> str | None:
+    base = resolve_path(workspace, config, "data/normalized")
     if not base.exists():
         return None
     candidates = sorted(p.name for p in base.iterdir() if p.is_dir())
     return candidates[-1] if candidates else None
 
 
-def _resolve_pack_date(level: str, requested: str | None, root: Path) -> str:
+def _resolve_pack_date(level: str, requested: str | None, root: Path, config: AppConfig) -> str:
     if requested:
         return requested
     if level == "L1":
         return time_utils.now().strftime("%Y-%m-%d")
-    latest = _latest_normalized_day()
+    latest = _latest_normalized_day(root, config)
     if latest:
         return latest
     typer.secho("No normalized entries available; provide --date.", fg=typer.colors.RED, err=True)

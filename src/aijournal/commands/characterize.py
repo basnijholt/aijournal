@@ -94,14 +94,16 @@ def run_characterize_command(
     normalize_fn = normalize_claims if normalize_claims is not None else _normalize_claim_proposals
 
     def _prepare_inputs(ctx: RunContext, opts: CharacterizeOptions) -> CharacterizePrepared:
-        entries_with_paths = _load_normalized_entries_with_paths(opts.date)
+        entries_with_paths = _load_normalized_entries_with_paths(
+            ctx.workspace, ctx.config, opts.date
+        )
         if not entries_with_paths:
             typer.secho(f"No normalized entries for {opts.date}", fg=typer.colors.RED, err=True)
             ctx.emit(event="command_failed", reason="missing_entries")
             raise typer.Exit(1)
 
         timeout_value = _validate_timeout(opts.timeout)
-        manifest_entries = _load_manifest(_manifest_path())
+        manifest_entries = _load_manifest(_manifest_path(ctx.workspace, ctx.config))
         manifest_index = _manifest_by_id(manifest_entries)
         profile_model, claim_models = load_profile_components(ctx.workspace, config=ctx.config)
         profile = profile_to_dict(profile_model)
@@ -202,7 +204,7 @@ def run_characterize_command(
             proposals=proposals_model,
             preview=preview_model,
         )
-        batch_path = _pending_updates_path(batch_id)
+        batch_path = _pending_updates_path(ctx.workspace, ctx.config, batch_id)
         artifact = Artifact[ProfileUpdateBatch](
             kind=ArtifactKind.PROFILE_UPDATES,
             meta=artifact_meta,
@@ -289,7 +291,9 @@ def _validate_timeout(value: float) -> float:
     return value
 
 
-def _load_normalized_entries_with_paths(day: str) -> list[tuple[NormalizedEntry, Path]]:
+def _load_normalized_entries_with_paths(
+    workspace: Path, config: AppConfig, day: str
+) -> list[tuple[NormalizedEntry, Path]]:
     data_dir = Path(config.paths.data)
     if not data_dir.is_absolute():
         data_dir = workspace / data_dir
@@ -309,9 +313,9 @@ def _pending_updates_dir(workspace: Path, config: AppConfig) -> Path:
     return derived / "pending" / "profile_updates"
 
 
-def _pending_updates_path(batch_id: str) -> Path:
+def _pending_updates_path(workspace: Path, config: AppConfig, batch_id: str) -> Path:
     safe_id = batch_id.replace(":", "-")
-    return _pending_updates_dir(ctx.workspace, ctx.config) / f"{safe_id}.yaml"
+    return _pending_updates_dir(workspace, config) / f"{safe_id}.yaml"
 
 
 def _characterize_payload(

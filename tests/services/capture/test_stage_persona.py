@@ -19,7 +19,7 @@ def test_stage7_persona_triggers_build(tmp_path: Path, monkeypatch) -> None:
 
     monkeypatch.setattr(
         "aijournal.commands.persona.persona_state",
-        lambda root: states.pop(0),
+        lambda root, workspace, config: states.pop(0),
     )
 
     monkeypatch.setattr(
@@ -62,7 +62,7 @@ def test_stage7_persona_triggers_build(tmp_path: Path, monkeypatch) -> None:
 def test_stage7_persona_noop_when_fresh(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(
         "aijournal.commands.persona.persona_state",
-        lambda root: ("fresh", []),
+        lambda root, workspace, config: ("fresh", []),
     )
     monkeypatch.setattr(
         "aijournal.commands.profile.load_profile_components",
