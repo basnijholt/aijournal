@@ -174,6 +174,8 @@ def _get_workspace() -> Path:
 app = typer.Typer(
     help="Local-first personal journal utilities.",
     context_settings={"help_option_names": ["-h", "--help"]},
+    invoke_without_command=True,
+    no_args_is_help=True,
 )
 profile_app = typer.Typer(help="Profile utilities.")
 ollama_app = typer.Typer(help="Ollama helpers.")
