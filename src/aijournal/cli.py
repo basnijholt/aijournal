@@ -120,6 +120,7 @@ from aijournal.services.ollama import (
 from aijournal.utils import time as time_utils
 from aijournal.utils.coercion import coerce_int
 from aijournal.utils.paths import (
+    WorkspacePaths,
     find_data_root,
     normalized_entry_path,
 )
@@ -209,7 +210,12 @@ def _cli_settings() -> CLISettings:
     return settings
 
 
-def _run_context(command: str, *, workspace: Path | None = None) -> RunContext:
+def _run_context(
+    command: str,
+    *,
+    workspace: Path | None = None,
+    config: AppConfig | None = None,
+) -> RunContext:
     """Create a run context for command execution.
 
     Args:
@@ -221,11 +227,12 @@ def _run_context(command: str, *, workspace: Path | None = None) -> RunContext:
     """
     settings = _cli_settings()
     actual_workspace = workspace or _get_workspace()
-    config = _load_config(actual_workspace)
+    config_model = config or _load_config(actual_workspace)
+    WorkspacePaths.configure(workspace=actual_workspace, paths=config_model.paths)
     return create_run_context(
         command=command,
         workspace=actual_workspace,
-        config=config,
+        config=config_model,
         use_fake_llm=_use_fake_llm(),
         trace=settings.trace,
         verbose_json=settings.verbose_json,
@@ -848,6 +855,8 @@ def normalize(
     created_str = _normalize_created_at(created_value)
     date_str = time_utils.created_date(created_str)
     workspace = find_data_root(entry)
+    config = _load_config(workspace)
+    WorkspacePaths.configure(workspace=workspace, paths=config.paths)
     normalized_data = {
         "id": entry_id,
         "created_at": created_str,
@@ -857,7 +866,7 @@ def normalize(
         "sections": sections,
     }
 
-    output_path = normalized_entry_path(workspace, date_str, entry_id)
+    output_path = normalized_entry_path(workspace, date_str, entry_id, paths=config.paths)
     _write_yaml_if_changed(
         output_path,
         normalized_data,
@@ -946,8 +955,10 @@ def facts(
     """Generate micro-facts from normalized entries."""
     _emit_deprecation("aijournal ops pipeline extract-facts", "aijournal capture --from/--text")
     workspace = _get_workspace()
-    _, claim_models = load_profile_components()
-    ctx = _run_context("facts", workspace=workspace)
+    config = _load_config(workspace)
+    WorkspacePaths.configure(workspace=workspace, paths=config.paths)
+    _, claim_models = load_profile_components(config=config)
+    ctx = _run_context("facts", workspace=workspace, config=config)
     output = run_facts_command(
         ctx,
         FactsOptions(
@@ -1093,6 +1104,8 @@ def review_updates(
         raise typer.Exit(1)
 
     batch = load_artifact_data(batch_path, ProfileUpdateBatch)
+    config = _load_config(workspace)
+    WorkspacePaths.configure(workspace=workspace, paths=config.paths)
     claim_proposals: list[ClaimProposal] = [
         proposal.model_copy(deep=True) for proposal in batch.proposals.claims
     ]
@@ -1121,12 +1134,12 @@ def review_updates(
         if batch.preview and batch.preview.claim_events:
             _print_claim_preview(batch.preview)
         else:
-            _preview_claim_consolidation(workspace, claim_proposals)
+            _preview_claim_consolidation(claim_proposals, config=config)
         if batch.preview and batch.preview.interview_prompts:
             typer.echo("Hint: run `aijournal interview` to follow up on the queued prompts.")
         return
 
-    profile_model, claim_models = load_profile_components()
+    profile_model, claim_models = load_profile_components(config=config)
     profile = profile_to_dict(profile_model)
     claims_data = [claim.model_copy(deep=True) for claim in claim_models]
     timestamp = time_utils.format_timestamp(time_utils.now())
@@ -1150,8 +1163,9 @@ def review_updates(
 
     updated_profile = SelfProfile.model_validate(profile)
     updated_claims = [claim.model_copy(deep=True) for claim in claims_data]
-    write_yaml_model(workspace / "profile" / "self_profile.yaml", updated_profile)
-    write_yaml_model(workspace / "profile" / "claims.yaml", ClaimsFile(claims=updated_claims))
+    profile_dir = WorkspacePaths.profile()
+    write_yaml_model(profile_dir / "self_profile.yaml", updated_profile)
+    write_yaml_model(profile_dir / "claims.yaml", ClaimsFile(claims=updated_claims))
     _emit_claim_merge_events(merge_events, "Applied claim consolidations:")
     typer.echo(f"Applied {applied} updates from {batch_path}")
 
@@ -1233,9 +1247,10 @@ def persona_build(
 ) -> None:
     """Regenerate derived/persona/persona_core.yaml."""
     workspace = _get_workspace()
-    profile_model, claim_models = load_profile_components()
-    profile = profile_to_dict(profile_model)
     config = _load_config(workspace)
+    WorkspacePaths.configure(workspace=workspace, paths=config.paths)
+    profile_model, claim_models = load_profile_components(config=config)
+    profile = profile_to_dict(profile_model)
     path, changed = run_persona_build(
         profile,
         claim_models,
@@ -1253,6 +1268,8 @@ def persona_build(
 def persona_status() -> None:
     """Check whether persona_core.yaml matches the latest profile edits."""
     workspace = _get_workspace()
+    config = _load_config(workspace)
+    WorkspacePaths.configure(workspace=workspace, paths=config.paths)
     status, reasons = persona_state(workspace)
     if status == "fresh":
         typer.echo("Persona core is up to date (profile files unchanged).")
@@ -1406,12 +1423,13 @@ def _emit_claim_merge_events(events: list[ClaimMergeOutcome], heading: str) -> N
 
 
 def _preview_claim_consolidation(
-    workspace: Path,
     claim_proposals: Sequence[Any],
+    *,
+    config: AppConfig | None = None,
 ) -> None:
     if not claim_proposals:
         return
-    _, claim_models = load_profile_components()
+    _, claim_models = load_profile_components(config=config)
     if not claim_models:
         return
     timestamp = time_utils.format_timestamp(time_utils.now())
@@ -1598,15 +1616,10 @@ def interview(
     """Surface targeted interview probes based on stale facets."""
     workspace = _get_workspace()
 
-    # Configure WorkspacePaths early so helper functions can use it
-    from aijournal.common.app_config import AppConfig
-    from aijournal.utils.paths import WorkspacePaths
-
     config = _load_config(workspace)
-    config_model = AppConfig.model_validate(dict(config))
-    WorkspacePaths.configure(workspace=workspace, paths=config_model.paths)
+    WorkspacePaths.configure(workspace=workspace, paths=config.paths)
 
-    profile_model, claim_models = load_profile_components()
+    profile_model, claim_models = load_profile_components(config=config)
     profile = profile_to_dict(profile_model)
     claims = [claim.model_copy(deep=True) for claim in claim_models]
     if not profile and not claims:

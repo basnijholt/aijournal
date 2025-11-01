@@ -473,7 +473,12 @@ def _invoke_ingest_pipeline(ctx: RunContext, prepared: IngestPrepared) -> Ingest
             log("error", f"Failed to ingest {file}: {exc}")
             continue
 
-        normalized_path = normalized_entry_path(ctx.root, date_str, normalized["id"])
+        normalized_path = normalized_entry_path(
+            ctx.root,
+            date_str,
+            normalized["id"],
+            paths=ctx.config.paths,
+        )
         _write_yaml_if_changed(
             normalized_path,
             normalized,

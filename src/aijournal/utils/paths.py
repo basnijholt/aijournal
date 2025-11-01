@@ -49,6 +49,12 @@ class WorkspacePaths:
         return cls._paths or PathsConfig()
 
     @classmethod
+    def paths(cls) -> PathsConfig:
+        """Public accessor for the active PathsConfig."""
+
+        return cls._get_paths()
+
+    @classmethod
     def root(cls) -> Path:
         """Get the workspace root directory."""
         return cls._workspace or Path.cwd()
@@ -253,25 +259,32 @@ def find_data_root(entry: Path) -> Path:
     return Path.cwd()
 
 
-def normalized_entry_path(workspace: Path, date_str: str, entry_id: str) -> Path:
+def normalized_entry_path(
+    workspace: Path,
+    date_str: str,
+    entry_id: str,
+    *,
+    paths: PathsConfig | None = None,
+) -> Path:
     """Return the normalized entry path for a given day/id.
 
-    Note: This function is called during capture/normalization and must respect
-    the configured paths (e.g., custom data directory names from config.yaml).
-    We use WorkspacePaths which is configured with the active PathsConfig.
-
     Args:
-        workspace: Workspace directory (ignored, kept for API compatibility)
-        date_str: Date string in YYYY-MM-DD format
-        entry_id: Entry identifier
+        workspace: Workspace directory.
+        date_str: Date string in YYYY-MM-DD format.
+        entry_id: Entry identifier.
+        paths: Optional PathsConfig to resolve custom data directory names.
 
     Returns:
-        Path to the normalized entry YAML file
+        Path to the normalized entry YAML file.
     """
-    del workspace  # Use WorkspacePaths instead to respect config
-    # WorkspacePaths is already configured at this point, so use it
-    # to respect user config like paths.data = "my_data_dir"
-    return WorkspacePaths.data() / "normalized" / date_str / f"{entry_id}.yaml"
+
+    if paths is not None:
+        data_dir = Path(paths.data)
+        if not data_dir.is_absolute():
+            data_dir = workspace / data_dir
+    else:
+        data_dir = WorkspacePaths.data()
+    return data_dir / "normalized" / date_str / f"{entry_id}.yaml"
 
 
 def resolve_prompt_path(prompt_path: str) -> Path:

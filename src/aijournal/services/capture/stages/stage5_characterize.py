@@ -33,7 +33,7 @@ def run_characterize_stage_5(
     review_candidates: list[str] = []
     review_errors: list[str] = []
     for date in changed_dates:
-        pending_before = pending_batches(root)
+        pending_before = pending_batches()
         try:
             batch_path = run_characterize(
                 date,
@@ -53,7 +53,7 @@ def run_characterize_stage_5(
             rel_batch = relative_path(batch_path, root)
             characterize_paths.append(rel_batch)
 
-        pending_after = pending_batches(root)
+        pending_after = pending_batches()
         new_batches = sorted(pending_after - pending_before)
         if batch_path not in new_batches:
             new_batches.append(batch_path)
@@ -65,7 +65,7 @@ def run_characterize_stage_5(
         if inputs.apply_profile == "auto":
             for pending_path in new_batches:
                 try:
-                    if apply_profile_update_batch(root, pending_path):
+                    if apply_profile_update_batch(pending_path):
                         review_applied.append(relative_path(pending_path, root))
                     else:
                         review_pending.append(relative_path(pending_path, root))

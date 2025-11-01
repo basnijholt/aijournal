@@ -273,8 +273,7 @@ def test_run_capture_records_telemetry(tmp_path: Path, monkeypatch: pytest.Monke
             date,
         )
 
-    def fake_apply_batch(root: Path, batch_path: Path) -> bool:
-        del root
+    def fake_apply_batch(batch_path: Path) -> bool:
         review_calls.append(batch_path)
         return True
 
