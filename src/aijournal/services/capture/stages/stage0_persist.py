@@ -8,8 +8,9 @@ from typing import TYPE_CHECKING, Any
 from pydantic import BaseModel, Field
 
 from aijournal.api.capture import CaptureInput
-from aijournal.commands.ingest import _fake_structured_entry, _load_config
+from aijournal.commands.ingest import _fake_structured_entry
 from aijournal.common.app_config import AppConfig
+from aijournal.common.config_loader import load_config, use_fake_llm
 from aijournal.domain.journal import NormalizedEntry
 from aijournal.ingest_agent import IngestResult, build_ingest_agent, ingest_with_agent
 from aijournal.io.yaml_io import dump_yaml
@@ -27,7 +28,6 @@ from aijournal.services.capture.utils import (
     resolve_created_dt,
     scan_headings,
     split_frontmatter,
-    use_fake_llm,
     write_manifest,
     write_markdown_entry,
     write_snapshot,
@@ -54,7 +54,7 @@ def _ingest_frontmatter(
 ) -> tuple[dict[str, Any], str, NormalizedEntry, list[str]]:
     """Infer front matter and normalized entry using the ingest agent."""
 
-    config = _load_config(root)
+    config = load_config(root)
     fallback_sections = scan_headings(raw_text)
     warnings: list[str] = []
 

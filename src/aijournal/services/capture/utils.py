@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from datetime import UTC, datetime
 from hashlib import sha256
@@ -116,10 +115,6 @@ def write_yaml_if_changed(path: Path, payload: dict[str, object]) -> bool:
         return False
     write_yaml(path, payload)
     return True
-
-
-def use_fake_llm() -> bool:
-    return os.getenv("AIJOURNAL_FAKE_OLLAMA") == "1"
 
 
 def digest_bytes(data: bytes) -> str:

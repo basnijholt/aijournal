@@ -12,9 +12,9 @@ from typing import Any
 import typer
 from pydantic import BaseModel
 
-from aijournal.commands.ingest import _use_fake_llm
 from aijournal.common.app_config import AppConfig
 from aijournal.common.command_runner import run_command_pipeline
+from aijournal.common.config_loader import use_fake_llm
 from aijournal.common.context import RunContext, create_run_context
 from aijournal.common.meta import Artifact, ArtifactKind, ArtifactMeta
 from aijournal.domain.claims import ClaimAtom
@@ -375,7 +375,7 @@ def run_persona_build(
         command="persona.build",
         workspace=root,
         config=config,
-        use_fake_llm=_use_fake_llm(),
+        use_fake_llm=use_fake_llm(),
         trace=False,
         verbose_json=False,
     )

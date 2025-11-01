@@ -11,8 +11,8 @@ from typing import Any, NamedTuple
 from pydantic import BaseModel, Field
 
 from aijournal.api.capture import CaptureInput
-from aijournal.commands.ingest import _load_config
 from aijournal.common.app_config import AppConfig
+from aijournal.common.config_loader import load_config
 from aijournal.common.logging import StructuredLogger
 from aijournal.models.authoritative import ManifestEntry
 from aijournal.services.capture.results import OperationResult, StageResult
@@ -345,7 +345,7 @@ def run_capture(
         raise ValueError(msg)
 
     root = root or Path.cwd()
-    config = _load_config(root)
+    config = load_config(root)
 
     ollama_config = build_ollama_config_from_mapping(config)
     config_host = config.host

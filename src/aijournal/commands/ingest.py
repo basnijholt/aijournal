@@ -17,7 +17,7 @@ from pydantic_ai import Agent
 
 from aijournal.common.app_config import AppConfig
 from aijournal.common.command_runner import run_command_pipeline
-from aijournal.common.config_loader import load_config, load_yaml, use_fake_llm
+from aijournal.common.config_loader import load_config, use_fake_llm
 from aijournal.common.constants import MARKDOWN_SUFFIXES
 from aijournal.common.context import RunContext, create_run_context
 from aijournal.ingest_agent import (
@@ -67,11 +67,6 @@ class IngestPipelineResult:
     manifest_entries: list[ManifestEntry]
     logs: list[IngestLogEntry]
     manifest_path: Path
-
-
-_load_yaml = load_yaml
-_load_config = load_config
-_use_fake_llm = use_fake_llm
 
 
 def _manifest_path(workspace: Path, config: AppConfig) -> Path:

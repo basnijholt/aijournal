@@ -10,14 +10,11 @@ import typer
 from pydantic import BaseModel
 
 from aijournal.commands.index import _index_settings
-from aijournal.commands.ingest import (
-    _load_config,
-    _relative_source_path,
-    _use_fake_llm,
-)
+from aijournal.commands.ingest import _relative_source_path
 from aijournal.commands.persona import ensure_persona_ready_for_pack
 from aijournal.common.app_config import AppConfig
 from aijournal.common.command_runner import run_command_pipeline
+from aijournal.common.config_loader import load_config, use_fake_llm
 from aijournal.common.context import RunContext, create_run_context
 from aijournal.common.meta import Artifact, ArtifactKind, ArtifactMeta
 from aijournal.domain.packs import PackBundle
@@ -76,12 +73,12 @@ def run_pack(
 ) -> None:
     """Assemble a context bundle for prompting."""
     workspace = workspace or Path.cwd()
-    config = _load_config(workspace)
+    config = load_config(workspace)
     ctx = create_run_context(
         command="pack",
         workspace=workspace,
         config=config,
-        use_fake_llm=_use_fake_llm(),
+        use_fake_llm=use_fake_llm(),
         trace=False,
         verbose_json=False,
     )
