@@ -79,8 +79,7 @@ from aijournal.commands.summarize import (
 )
 from aijournal.commands.system import run_system_doctor_cli, run_system_status_cli
 from aijournal.common.app_config import AppConfig
-from aijournal.common.config_loader import load_config as _load_config
-from aijournal.common.config_loader import use_fake_llm as _use_fake_llm
+from aijournal.common.config_loader import load_config, use_fake_llm
 from aijournal.common.constants import (
     DEFAULT_LLM_RETRIES,
     DEFAULT_TIMEOUT_SECONDS,
@@ -262,12 +261,12 @@ def _run_context(
     """
     settings = _cli_settings()
     actual_workspace = workspace or _get_workspace()
-    config_model = config or _load_config(actual_workspace)
+    config_model = config or load_config(actual_workspace)
     return create_run_context(
         command=command,
         workspace=actual_workspace,
         config=config_model,
-        use_fake_llm=_use_fake_llm(),
+        use_fake_llm=use_fake_llm(),
         trace=settings.trace,
         verbose_json=settings.verbose_json,
     )
@@ -752,7 +751,7 @@ def _summarize_day_payload(
         retries=retries,
         invoke_structured_llm=_invoke_structured_llm,
         structured_call=_structured_call_with_retry,
-        use_fake_llm=_use_fake_llm(),
+        use_fake_llm=use_fake_llm(),
     )
 
 
@@ -883,7 +882,7 @@ def normalize(
     created_str = _normalize_created_at(created_value)
     date_str = time_utils.created_date(created_str)
     workspace = find_data_root(entry)
-    config = _load_config(workspace)
+    config = load_config(workspace)
     normalized_data = {
         "id": entry_id,
         "created_at": created_str,
@@ -982,7 +981,7 @@ def facts(
     """Generate micro-facts from normalized entries."""
     _emit_deprecation("aijournal ops pipeline extract-facts", "aijournal capture --from/--text")
     workspace = _get_workspace()
-    config = _load_config(workspace)
+    config = load_config(workspace)
     _, claim_models = load_profile_components(workspace, config=config)
     ctx = _run_context("facts", workspace=workspace, config=config)
     output = run_facts_command(
@@ -1121,7 +1120,7 @@ def review_updates(
     """Review or apply pending profile update batches."""
     _emit_deprecation("aijournal ops pipeline review", "aijournal capture --apply-profile review")
     workspace = _get_workspace()
-    config = _load_config(workspace)
+    config = load_config(workspace)
     batch_path = file or _latest_pending_batch(workspace, config)
     if batch_path is None:
         typer.secho("No pending profile update batches found.", fg=typer.colors.RED, err=True)
@@ -1210,7 +1209,7 @@ def advise(
 @ollama_app.command("health")
 def ollama_health() -> None:
     """Inspect Ollama availability for both fake and live modes."""
-    if _use_fake_llm():
+    if use_fake_llm():
         models = [
             {"name": "llama3.1:8b-instruct", "size": "8B", "quant": "Q4_K_M"},
             {"name": "llama3.1:70b-instruct", "size": "70B", "quant": "Q4_K_M"},
@@ -1248,7 +1247,7 @@ def ollama_health() -> None:
             )
 
     workspace = _get_workspace()
-    config = _load_config(workspace)
+    config = load_config(workspace)
     payload = {
         "endpoint": base,
         "default": build_ollama_config_from_mapping(config).model,
@@ -1274,7 +1273,7 @@ def persona_build(
 ) -> None:
     """Regenerate derived/persona/persona_core.yaml."""
     workspace = _get_workspace()
-    config = _load_config(workspace)
+    config = load_config(workspace)
     profile_model, claim_models = load_profile_components(workspace, config=config)
     profile = profile_to_dict(profile_model)
     path, changed = run_persona_build(
@@ -1294,7 +1293,7 @@ def persona_build(
 def persona_status() -> None:
     """Check whether persona_core.yaml matches the latest profile edits."""
     workspace = _get_workspace()
-    config = _load_config(workspace)
+    config = load_config(workspace)
     status, reasons = persona_state(workspace, workspace, config)
     if status == "fresh":
         typer.echo("Persona core is up to date (profile files unchanged).")
@@ -1642,7 +1641,7 @@ def interview(
     """Surface targeted interview probes based on stale facets."""
     workspace = _get_workspace()
 
-    config = _load_config(workspace)
+    config = load_config(workspace)
 
     profile_model, claim_models = load_profile_components(workspace, config=config)
     profile = profile_to_dict(profile_model)
@@ -1674,7 +1673,7 @@ def interview(
         typer.echo("- Coaching preferences disable probing right now.")
         return
 
-    if _use_fake_llm():
+    if use_fake_llm():
         interview_set = _build_targeted_probes(rankings, entries, max_items=max_questions)
     else:
         rankings_payload = [
