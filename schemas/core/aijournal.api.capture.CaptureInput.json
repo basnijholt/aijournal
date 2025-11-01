@@ -99,7 +99,7 @@
       "type": "string"
     },
     "retries": {
-      "default": 1,
+      "default": 4,
       "minimum": 0,
       "title": "Retries",
       "type": "integer"
