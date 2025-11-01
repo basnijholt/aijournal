@@ -71,11 +71,11 @@ Read the inputs, form hypotheses, check the entries, and document only what the 
   "facets": [
     {
       "path": "values_motivations.recurring_theme",
-      "operation": "set" | "remove",
+      "operation": "set",
       "value": "string or list of strings when operation is set",
-      "method": "inferred|self_report|behavioral",
-      "confidence": 0.0-1.0,
-      "review_after_days": integer,
+      "method": "inferred",
+      "confidence": 0.7,
+      "review_after_days": 120,
       "user_verified": false,
       "evidence": [
         {"entry_id": "normalized-entry-id", "spans": [{"type": "para", "index": 1}]}
@@ -84,6 +84,9 @@ Read the inputs, form hypotheses, check the entries, and document only what the 
     }
   ]
 }
+```
+
+⚠️ **CRITICAL**: Facets MUST use `"path"` and `"operation"` fields, NOT `"key"`. See the example above.
 ```
 
 ### Enum Reference
