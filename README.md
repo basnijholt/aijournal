@@ -43,7 +43,7 @@ uv run pytest -q
 ```
 
 - Runtime deps beyond Typer/PyYAML/httpx/pydantic/dateutil: `numpy`, `annoy`, `fastapi`, `uvicorn`, `orjson`. Install once via `uv add ...`; everything stays local-first.
-- Retrieval uses Ollama’s `embeddinggemma` embeddings by default. Override it by setting `embedding_model` in `config.yaml`; the `AIJOURNAL_MODEL` env var only affects chat/advice, not embeddings.
+- Retrieval uses Ollama's `embeddinggemma` embeddings by default. Override it with `AIJOURNAL_EMBEDDING_MODEL` env var or by setting `embedding_model` in `config.yaml`; the `AIJOURNAL_MODEL` env var only affects chat/advice, not embeddings.
 
 - `config.yaml` stores runtime defaults (model, host, temperature, advisor settings).
 - `src/aijournal/commands/` contains orchestration logic for each Typer command (I/O, retries, progress logging). Most CLI work happens here now; `cli.py` is intentionally thin glue.
@@ -485,7 +485,7 @@ aijournal ops index update
 
 `config.yaml` ships with defaults for the chat/advice model, temperature, seed, impact weights, token estimator, and persona budgets. You can optionally add:
 
-- `embedding_model: "<model-name>"` to change the embedding model (defaults to `embeddinggemma` when omitted).
+- `embedding_model: "<model-name>"` to change the embedding model (defaults to `embeddinggemma` when omitted). Can also be overridden with `AIJOURNAL_EMBEDDING_MODEL` env var.
 - `llm: {retries: 4, timeout: 120.0}` to customize LLM retry behavior and request timeouts.
 - `index: {ann_trees: 50, search_k_factor: 3.0}` to tweak ANN settings.
 - `chat: {max_retrieved_chunks: 12, max_claims: 16, follow_up_enabled: true, write_back_facts: true}` for retrieval/chat behaviour.

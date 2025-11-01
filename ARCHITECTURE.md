@@ -214,10 +214,10 @@ All structured prompts go through `run_ollama_agent`, which sanitizes JSON, retr
 - Environment overrides:
   - `AIJOURNAL_WORKSPACE` – alternate workspace directory (defaults to `Path.cwd()`).
   - `AIJOURNAL_CONFIG` – alternate config path.
-  - `AIJOURNAL_MODEL`, `AIJOURNAL_OLLAMA_HOST`, `OLLAMA_BASE_URL` – run-time model/endpoint selection.
+  - `AIJOURNAL_MODEL`, `AIJOURNAL_EMBEDDING_MODEL`, `AIJOURNAL_OLLAMA_HOST`, `OLLAMA_BASE_URL` – run-time model/endpoint selection.
   - `AIJOURNAL_FAKE_OLLAMA=1` – deterministic fixtures for tests and CI.
 - Workspace validation: Commands validate that the workspace directory contains `config.yaml` and provide clear error messages directing users to run `aijournal init` if needed.
-- Host precedence: per-command override → `AIJOURNAL_OLLAMA_HOST` / `OLLAMA_BASE_URL` → `config.yaml` → `http://127.0.0.1:11434`. Model precedence mirrors the pattern (override → `AIJOURNAL_MODEL` → config → default).
+- Host precedence: per-command override → `AIJOURNAL_OLLAMA_HOST` / `OLLAMA_BASE_URL` → `config.yaml` → `http://127.0.0.1:11434`. Model precedence mirrors the pattern (override → `AIJOURNAL_MODEL` → config → default). Embedding model precedence: `AIJOURNAL_EMBEDDING_MODEL` → config → `embeddinggemma`.
 - Live-mode defaults (see `agents.md`): remote Ollama at `http://192.168.1.143:11434`, chat/advice model `gpt-oss:20b`, embedding model `embeddinggemma`, commands executed via `uv run -- bash -lc '…'`.
 - Always ensure runs start from a clean git tree; archive live artifacts under `/tmp/aijournal_live_run_*` rather than touching the repo directly.
 

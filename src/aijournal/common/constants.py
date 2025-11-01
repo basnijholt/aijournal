@@ -18,6 +18,7 @@ DEFAULT_LLM_RETRIES = 4
 # ============================================================================
 # Embedding Configuration
 # ============================================================================
+DEFAULT_EMBEDDING_MODEL = "embeddinggemma"
 DEFAULT_EMBED_DIM = 384
 EMBED_TIMEOUT = 60.0
 

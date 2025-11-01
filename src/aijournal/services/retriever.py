@@ -204,8 +204,14 @@ class Retriever:
 
     def _get_embedder(self) -> EmbeddingBackend:
         if self._embedder_instance is None:
+            from aijournal.common.constants import DEFAULT_EMBEDDING_MODEL
+
+            env_model = os.getenv("AIJOURNAL_EMBEDDING_MODEL")
             model = str(
-                self._meta.embedding_model or self.config.embedding_model or "embeddinggemma",
+                env_model
+                or self._meta.embedding_model
+                or self.config.embedding_model
+                or DEFAULT_EMBEDDING_MODEL,
             )
             host = os.getenv("AIJOURNAL_OLLAMA_HOST")
             dimension = self._meta.vector_dimension
