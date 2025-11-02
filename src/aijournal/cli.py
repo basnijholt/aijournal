@@ -444,9 +444,9 @@ def capture(
         rich_help_panel="METADATA",
     ),
     apply_profile: str = typer.Option(
-        "auto",
+        "review",
         "--apply-profile",
-        help="Apply profile suggestions automatically or leave for review (auto|review).",
+        help="Apply profile suggestions automatically or leave for review (auto|review). Default: review (manual inspection required).",
         rich_help_panel="APPLY & REFRESH",
     ),
     rebuild: str = typer.Option(
