@@ -35,7 +35,14 @@ If you genuinely have nothing new to add, return `{"claims": [], "facets": [], "
 - 0.70–0.80: Three to five entries showing a pattern **or** strong self-report plus behavioral evidence.
 - 0.85–0.95: Five or more consistent entries **or** user-verified claims.
 - 0.95–1.00: Reserved for immutable facts (e.g., birthdate) and formally verified truths.
-- Default to 0.55 when uncertain and document ambiguity via interview prompt if needed.
+
+**Quality Standards** – Before proposing any claim:
+1. Can this be verified by re-reading the journal entries?
+2. Would a neutral observer reach the same conclusion?
+3. Is there at least 2 independent pieces of supporting evidence?
+4. Does the claim reflect a durable pattern rather than a one-off event?
+
+If ANY answer is "no", either omit the claim or queue an interview prompt to gather clarifying evidence.
 
 ---
 ## Output Schema (strict template)
@@ -104,7 +111,7 @@ If you genuinely have nothing new to add, return `{"claims": [], "facets": [], "
 2. Evidence spans must be `{"type": "para", "index": N}` or an empty list when paragraphs are absent.
 3. Facet `operation` must be `set` or `remove` (never `merge`).
 4. Facet `value` must be a string or list of strings (never objects).
-5. `strength` must be a float in [0.0, 1.0] (default 0.55 when uncertain).
+5. `strength` must be a float in [0.0, 1.0] calibrated using the reference above.
 6. Statement ≤160 chars, rationale ≤25 words, interview prompt ≤20 words.
 
 ---

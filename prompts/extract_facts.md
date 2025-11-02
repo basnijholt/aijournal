@@ -26,9 +26,17 @@ Guidelines:
 - Use every structured field available. Pull supporting details from `summary`, `sections`, and `tags`; when paragraphs are absent, synthesize the most concrete statement implied by those fields.
 - Facts must be specific, non-trivial statements grounded in the provided entries. Never contradict the source metadata.
 - Reference entry IDs exactly as supplied.
-- Confidence reflects evidence strength (default 0.6 if unsure).
+- Confidence reflects evidence strength based on quality and specificity of the supporting details.
 - Reuse the entry's `created_at` date for `first_seen`/`last_seen` when only one mention exists.
 - Do not include analysis or prose outside JSON.
+
+**Quality Standards** – Before extracting any fact:
+1. Can this be verified by re-reading the journal entry?
+2. Would a neutral observer reach the same conclusion?
+3. Is there concrete supporting evidence (not just inference)?
+4. Does the statement add non-trivial information?
+
+If ANY answer is "no", omit the fact. Return empty arrays when evidence is weak or ambiguous.
 
 If you cannot produce a valid payload matching this schema, respond with `{"facts": []}` as
 the full response.

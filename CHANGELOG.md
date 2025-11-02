@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **⚠️ BREAKING: Profile safety improvements (2025-11-01)**: Changed default `apply_profile` mode from `"auto"` to `"review"` to prevent silent profile corruption. Users must now explicitly use `--apply-profile=auto` to skip manual review. Also updated consolidation formula from logarithmic (`log1p`) to square-root weighting (`sqrt`), reducing single-entry impact on well-established claims from 31.7% to ~2.4%. Updated prompts (`profile_suggest.md`, `characterize.md`, `extract_facts.md`) to remove speculation defaults and add quality standards requiring ≥2 independent pieces of evidence. See `RISK_ANALYSIS.md` for detailed mathematical validation and `docs/workflow.md` for safety best practices.
 - **Workspace validation**: Commands now validate that the workspace directory contains `config.yaml` and provide helpful error messages directing users to run `aijournal init` if missing.
 - **Configurable LLM settings**: Added `llm` section to `config.yaml` with configurable `retries` (default: 4) and `timeout` (default: 120.0) settings, replacing hardcoded retry constants.
 - Chat service fully migrated to strict domain models: `ChatService` now returns `ChatTurn`/`ChatTelemetry` `StrictModel`s end-to-end and CLI/API/tests no longer depend on legacy dataclasses.

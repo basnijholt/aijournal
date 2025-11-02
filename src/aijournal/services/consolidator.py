@@ -222,7 +222,7 @@ class ClaimConsolidator:
 
         provenance = existing.provenance
         n_prev = provenance.observation_count or len(provenance.sources) or 1
-        w_prev = min(1.0, math.log1p(n_prev))
+        w_prev = min(10.0, math.sqrt(n_prev))
         w_obs = 1.0
         merged_strength = _clamp01((w_prev * prev_strength + w_obs * signal) / (w_prev + w_obs))
 

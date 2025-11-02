@@ -30,7 +30,7 @@ Read the inputs, form hypotheses, check the entries, and document only what the 
 3. Strengthen or refine an existing claim or facet when new evidence confirms it.
 4. Introduce a new claim or facet only when entries reveal a durable new pattern.
 5. Remove a facet when the evidence shows it no longer applies.
-6. Score each claim using the strength calibration ladder below; default to 0.55 when in doubt.
+6. Score each claim using the strength calibration ladder below; omit claims when evidence is insufficient.
 7. Document each accepted insight using the schema exactly as specified and drop anything that lacks evidence or duplicates existing statements.
 
 ## Strength Calibration Reference
@@ -39,7 +39,14 @@ Read the inputs, form hypotheses, check the entries, and document only what the 
 - 0.70–0.80: Three to five entries showing a pattern **or** strong self-report plus behavioral evidence.
 - 0.85–0.95: Five or more consistent entries **or** user-verified claims.
 - 0.95–1.00: Immutable facts only (e.g., birthdate) or formally verified truths.
-- Default to 0.55 when uncertain and note ambiguity in the rationale.
+
+**Quality Standards** – Before proposing any claim:
+1. Can this be verified by re-reading the journal entries?
+2. Would a neutral observer reach the same conclusion?
+3. Is there at least 2 independent pieces of supporting evidence?
+4. Does the claim reflect a durable pattern rather than a one-off event?
+
+If ANY answer is "no", omit the claim. Return empty arrays when evidence is weak, ambiguous, or speculative.
 
 ---
 ## Output Schema (copy faithfully)
@@ -108,7 +115,7 @@ Read the inputs, form hypotheses, check the entries, and document only what the 
 2. Evidence spans must be `{"type": "para", "index": N}` or an empty list when paragraphs are absent.
 3. Facet `operation` must be `set` or `remove` (never `merge`).
 4. Facet `value` must be a string or list of strings (never objects).
-5. `strength` must be a float in [0.0, 1.0] (use 0.55 when uncertain).
+5. `strength` must be a float in [0.0, 1.0] calibrated using the reference above.
 6. Statement ≤160 chars, rationale ≤25 words.
 
 ---

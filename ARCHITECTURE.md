@@ -107,7 +107,8 @@ aijournal/
 
 ### 3.3 Consolidation, Freshness, and Conflicts
 
-- Consolidation weights existing strengths by `w_prev = min(1.0, log1p(n_prev))` and combines them with new evidence via `strength_new = clamp01((w_prev * strength_prev + w_obs * signal) / (w_prev + w_obs))`, where `w_obs = 1.0` and `signal` defaults to the evidence confidence.
+- Consolidation weights existing strengths by `w_prev = min(10.0, sqrt(n_prev))` and combines them with new evidence via `strength_new = clamp01((w_prev * strength_prev + w_obs * signal) / (w_prev + w_obs))`, where `w_obs = 1.0` and `signal` defaults to the evidence confidence.
+  - **Risk Mitigation (2025-11-01)**: Previous formula used logarithmic weighting (`log1p`) which saturated at 1.0 after ~2.7 observations, allowing single weak entries to degrade well-established claims by up to 31.7%. Square-root weighting provides 10x greater resistance (claims with 100 observations now have weight 10.0 vs 1.0), reducing single-entry impact from 31.7% to ~2.4%. See `RISK_ANALYSIS.md` for mathematical validation.
 - Effective strength decays at read time using `strength * exp(-lambda * staleness)` (`lambda ≈ 0.2`, `staleness = min(2, days_since / review_after_days)`).
 - Conflicting evidence with distinct scopes is split into separate atoms; otherwise both claims are downgraded to `status: tentative`, strength reduced, and an interview question is queued.
 

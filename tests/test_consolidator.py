@@ -33,7 +33,8 @@ def test_claim_consolidator_merges_strength_and_observation_count() -> None:
     assert outcome.action == "strength_delta"
     assert outcome.conflict is None
     updated = claims[0]
-    w_prev = min(1.0, math.log1p(1))
+    # New formula uses sqrt instead of log1p
+    w_prev = min(10.0, math.sqrt(1))  # sqrt(1) = 1.0
     merged_strength = (w_prev * 0.5 + 1.0 * 0.9) / (w_prev + 1.0)
     assert math.isclose(updated["strength"], merged_strength, rel_tol=1e-5)
     assert math.isclose(outcome.delta_strength, merged_strength - 0.5, rel_tol=1e-5)
