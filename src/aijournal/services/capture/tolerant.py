@@ -11,6 +11,7 @@ import json
 import logging
 import re
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Literal
 
 import yaml
@@ -325,6 +326,138 @@ def parse_date_tolerant(
 
     warnings.append(f"Failed to parse date '{text}' and no fallback, using current time")
     return DateParseResult(datetime.now(UTC), "now", warnings)
+
+
+_MONTH_PART = r"(1[0-2]|0?[1-9])"
+_DAY_PART = r"(3[01]|[12]\d|0?[1-9])"
+
+_PATH_DATE_PATTERN = re.compile(
+    rf"(?P<year>(?:19|20)\d{{2}})[-_/](?P<month>{_MONTH_PART})[-_/](?P<day>{_DAY_PART})"
+)
+_COMPACT_DATE_PATTERN = re.compile(
+    r"(?P<year>(?:19|20)\d{2})(?P<month>0[1-9]|1[0-2])(?P<day>0[1-9]|[12]\d|3[01])"
+)
+_BODY_LABEL_PATTERN = re.compile(
+    r"^\s*(date|published|created(?:_at)?)\s*[:\-]\s*(.+)$",
+    re.IGNORECASE,
+)
+
+
+def infer_created_at_from_context(
+    *,
+    source_path: Path | None,
+    body: str,
+    max_body_lines: int = 12,
+) -> tuple[datetime | None, str | None]:
+    """Best-effort created_at inference from filenames, directories, or body text."""
+
+    if source_path:
+        inferred, reason = _infer_date_from_path(source_path)
+        if inferred:
+            return inferred, reason
+
+    inferred, reason = _infer_date_from_body(body, max_body_lines=max_body_lines)
+    if inferred:
+        return inferred, reason
+
+    return None, None
+
+
+def _infer_date_from_path(path: Path) -> tuple[datetime | None, str | None]:
+    candidate = _match_date_in_text(path.stem)
+    if candidate:
+        return candidate, f"filename '{path.name}'"
+
+    candidate = _match_date_in_text(path.name)
+    if candidate:
+        return candidate, f"filename '{path.name}'"
+
+    candidate = _match_date_in_text(str(path))
+    if candidate:
+        return candidate, f"path '{path}'"
+
+    parts = path.parts
+    for idx in range(len(parts) - 2):
+        year_part, month_part, day_part = parts[idx : idx + 3]
+        if (
+            _looks_like_year(year_part)
+            and _looks_like_month(month_part)
+            and _looks_like_day(day_part)
+        ):
+            try:
+                dt = datetime(int(year_part), int(month_part), int(day_part), tzinfo=UTC)
+                return dt, f"directory components '{year_part}/{month_part}/{day_part}'"
+            except ValueError:
+                continue
+
+    return None, None
+
+
+def _infer_date_from_body(body: str, *, max_body_lines: int) -> tuple[datetime | None, str | None]:
+    if not body:
+        return None, None
+
+    lines = [line.strip() for line in body.splitlines() if line.strip()]
+    if not lines:
+        return None, None
+
+    search_space = lines[:max_body_lines]
+    for line in search_space:
+        label_match = _BODY_LABEL_PATTERN.match(line)
+        if not label_match:
+            continue
+        candidate_text = label_match.group(2).strip()
+        parsed = _try_parse_candidate(candidate_text)
+        if parsed:
+            return parsed, f"body line '{line}'"
+
+    for line in search_space:
+        parsed = _match_date_in_text(line)
+        if parsed:
+            return parsed, "body text"
+
+    return None, None
+
+
+def _match_date_in_text(text: str) -> datetime | None:
+    match = _PATH_DATE_PATTERN.search(text)
+    if match:
+        iso = _build_iso(match.group("year"), match.group("month"), match.group("day"))
+        parsed = _try_parse_candidate(iso)
+        if parsed:
+            return parsed
+
+    match = _COMPACT_DATE_PATTERN.search(text)
+    if match:
+        iso = _build_iso(match.group("year"), match.group("month"), match.group("day"))
+        parsed = _try_parse_candidate(iso)
+        if parsed:
+            return parsed
+
+    return None
+
+
+def _looks_like_year(value: str) -> bool:
+    return value.isdigit() and len(value) == 4 and 1900 <= int(value) <= 2100
+
+
+def _looks_like_month(value: str) -> bool:
+    return value.isdigit() and 1 <= int(value) <= 12
+
+
+def _looks_like_day(value: str) -> bool:
+    return value.isdigit() and 1 <= int(value) <= 31
+
+
+def _try_parse_candidate(text: str) -> datetime | None:
+    result = parse_date_tolerant(text, fallback=None)
+    if result.format_used in {"now", "fallback"}:
+        return None
+    return result.dt
+
+
+def _build_iso(year: str, month: str, day: str) -> str:
+    return f"{int(year):04d}-{int(month):02d}-{int(day):02d}"
 
 
 def _parse_iso_date(text: str) -> tuple[datetime, str]:

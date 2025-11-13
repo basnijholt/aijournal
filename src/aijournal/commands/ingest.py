@@ -208,7 +208,7 @@ def _parse_datetime(value: str) -> datetime | None:
 def _fake_structured_entry(entry_path: Path) -> IngestResult:
     try:
         frontmatter, sections_raw = _parse_entry(entry_path)
-    except ValueError:
+    except (ValueError, yaml.YAMLError):
         frontmatter = {}
         sections_raw = []
 

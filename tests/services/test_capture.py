@@ -843,6 +843,61 @@ def test_persist_file_skips_duplicate(tmp_path: Path, monkeypatch: pytest.Monkey
     assert counts["normalized"] == 0
 
 
+def test_persist_file_infers_created_at_from_filename(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        "aijournal.utils.time.now",
+        lambda: datetime(2025, 1, 6, 9, 0, tzinfo=UTC),
+    )
+    entry_path = tmp_path / "2024-03-14-focus-log.md"
+    entry_path.write_text(
+        "---\nid: focus-log\ntitle: Focus Log\n---\nBody content",
+        encoding="utf-8",
+    )
+    inputs = CaptureInput(source="file", paths=[str(entry_path)])
+    manifest: list[ManifestEntry] = []
+    config = AppConfig()
+
+    result = _persist_file_entry(inputs, tmp_path, config, manifest, source_path=entry_path)
+
+    assert result.date == "2024-03-14"
+    assert any("inferred" in warning for warning in result.warnings)
+    markdown_path = tmp_path / result.markdown_path
+    markdown_text = markdown_path.read_text(encoding="utf-8")
+    frontmatter_yaml = markdown_text.split("---\n", 1)[1].split("\n---", 1)[0]
+    metadata = yaml.safe_load(frontmatter_yaml)
+    assert metadata["created_at"].startswith("2024-03-14")
+
+
+def test_persist_file_infers_created_at_from_body(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        "aijournal.utils.time.now",
+        lambda: datetime(2025, 2, 10, 8, 0, tzinfo=UTC),
+    )
+    entry_path = tmp_path / "body-date.md"
+    entry_path.write_text(
+        "---\nid: body-date\ntitle: Body Date\n---\nDate: Jan 2, 2022\nEntry text",
+        encoding="utf-8",
+    )
+    inputs = CaptureInput(source="file", paths=[str(entry_path)])
+    manifest: list[ManifestEntry] = []
+    config = AppConfig()
+
+    result = _persist_file_entry(inputs, tmp_path, config, manifest, source_path=entry_path)
+
+    assert result.date == "2022-01-02"
+    assert any("body" in warning for warning in result.warnings)
+    markdown_path = tmp_path / result.markdown_path
+    frontmatter_yaml = (
+        markdown_path.read_text(encoding="utf-8").split("---\n", 1)[1].split("\n---", 1)[0]
+    )
+    metadata = yaml.safe_load(frontmatter_yaml)
+    assert metadata["created_at"].startswith("2022-01-02")
+
+
 def test_persist_file_records_snapshot_and_manifest_fields(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
