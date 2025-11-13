@@ -65,6 +65,19 @@ Body content here.
         assert result.body == "Body content here.\n"
         assert not result.warnings
 
+    def test_yaml_frontmatter_with_zero_width_space_prefix(self) -> None:
+        text = """\u200b---
+title: Hidden Space Entry
+---
+
+Body content here.
+"""
+        result = split_frontmatter_tolerant(text)
+        assert result.format == "yaml"
+        assert result.data["title"] == "Hidden Space Entry"
+        assert result.body == "Body content here.\n"
+        assert not result.warnings
+
     def test_toml_frontmatter_valid(self) -> None:
         # Use YAML-compatible TOML syntax since we're using yaml.safe_load
         text = """+++
@@ -238,6 +251,17 @@ Strict body line.
 """
         frontmatter, body = split_frontmatter(text)
         assert frontmatter["title"] == "Strict BOM"
+        assert body == "Strict body line.\n"
+
+    def test_yaml_frontmatter_with_zero_width_space_prefix(self) -> None:
+        text = """\u200b---
+title: Strict Hidden Space
+---
+
+Strict body line.
+"""
+        frontmatter, body = split_frontmatter(text)
+        assert frontmatter["title"] == "Strict Hidden Space"
         assert body == "Strict body line.\n"
 
 

@@ -33,12 +33,7 @@ from aijournal.schema import SchemaValidationError, validate_schema
 from aijournal.services.ollama import build_ollama_config_from_mapping
 from aijournal.utils import time as time_utils
 from aijournal.utils.paths import normalized_entry_path, resolve_path
-
-
-def _strip_utf8_bom(text: str) -> str:
-    """Remove a leading UTF-8 BOM while keeping other whitespace intact."""
-
-    return text.lstrip("\ufeff")
+from aijournal.utils.text import strip_invisible_prefix
 
 
 class IngestOptions(BaseModel):
@@ -131,7 +126,8 @@ def _write_yaml_if_changed(
 
 
 def _split_frontmatter(text: str) -> tuple[str, str]:
-    stripped = _strip_utf8_bom(text).lstrip()
+    stripped = strip_invisible_prefix(text)
+    stripped = strip_invisible_prefix(stripped.lstrip())
     delimiter = None
     if stripped.startswith("---"):
         delimiter = "---"
