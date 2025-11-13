@@ -35,7 +35,7 @@ All advanced and one-off utilities now live under `aijournal ops ...` (pipelines
 
 A quick reminder for live mode: export `AIJOURNAL_OLLAMA_HOST` before running capture or other LLM-backed commands so they don’t fall back to localhost.
 
-A more detailed walkthrough lives in [docs/workflow.md](docs/workflow.md).
+A more detailed walkthrough lives in [docs/workflow.md](docs/workflow.md). See [docs/simulator.md](docs/simulator.md) for the human-style simulator and validator harness overview.
 
 ```sh
 uv sync
