@@ -202,7 +202,8 @@ def test_chat_no_save_skips_transcript(
     assert result.exit_code == 0, result.stdout
     sessions_dir = cli_workspace / "derived" / "chat_sessions"
     if sessions_dir.exists():
-        assert not any(sessions_dir.iterdir()), "Expected no sessions when save disabled"
+        artifacts = [p for p in sessions_dir.iterdir() if p.name != ".gitkeep"]
+        assert not artifacts, "Expected no sessions when save disabled"
 
 
 def test_chat_feedback_adjusts_claim_strength(

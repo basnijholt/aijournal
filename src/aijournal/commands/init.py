@@ -14,6 +14,7 @@ from aijournal.utils.paths import (
     AUTHORITATIVE_DIRS,
     DERIVED_DIRS,
     ensure_directories,
+    ensure_gitkeep_files,
     ensure_seed_files,
 )
 
@@ -52,7 +53,20 @@ def invoke_pipeline(ctx: RunContext, prepared: InitPrepared) -> InitResult:
         created_dirs += created
         total_dirs += total
 
-    created_files, total_files = ensure_seed_files(prepared.base)
+    unique_dirs: list[str] = []
+    seen: set[str] = set()
+    for rels in dir_sets:
+        for rel in rels:
+            if rel in seen:
+                continue
+            seen.add(rel)
+            unique_dirs.append(rel)
+
+    gitkeep_created, gitkeep_total = ensure_gitkeep_files(prepared.base, unique_dirs)
+
+    seed_created, seed_total = ensure_seed_files(prepared.base)
+    created_files = gitkeep_created + seed_created
+    total_files = gitkeep_total + seed_total
 
     ctx.emit(
         event="pipeline_complete",

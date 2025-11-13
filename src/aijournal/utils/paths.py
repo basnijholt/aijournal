@@ -210,6 +210,27 @@ def ensure_directories(base: Path, rel_paths: Iterable[str]) -> tuple[int, int]:
     return created, len(paths)
 
 
+def ensure_gitkeep_files(base: Path, rel_paths: Iterable[str]) -> tuple[int, int]:
+    """Ensure each directory contains a .gitkeep marker, returning created vs total."""
+
+    created = 0
+    total = 0
+    seen: set[str] = set()
+    for rel in rel_paths:
+        if rel in seen:
+            continue
+        seen.add(rel)
+        total += 1
+        directory = base / rel
+        directory.mkdir(parents=True, exist_ok=True)
+        marker = directory / ".gitkeep"
+        if marker.exists():
+            continue
+        marker.touch()
+        created += 1
+    return created, total
+
+
 def ensure_seed_files(base: Path, seeds: Mapping[str, str] | None = None) -> tuple[int, int]:
     """Write seed files when missing; returns created vs total."""
     payloads = seeds or SEED_FILES
