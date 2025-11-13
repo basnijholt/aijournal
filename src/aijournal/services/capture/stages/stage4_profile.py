@@ -4,8 +4,6 @@ from pathlib import Path
 from time import perf_counter
 from typing import TYPE_CHECKING
 
-import typer
-
 if TYPE_CHECKING:
     from aijournal.common.app_config import AppConfig
 
@@ -18,10 +16,10 @@ def run_profile_stage_4(
     root: Path,
     config: AppConfig,
 ) -> ProfileStage4Outputs:
-    from aijournal.commands.profile import run_profile_apply, run_profile_suggest
     from aijournal.common.constants import DEFAULT_TIMEOUT_SECONDS
 
     from .. import OperationResult, ProfileStage4Outputs
+    from ..graceful import graceful_profile_apply, graceful_profile_suggest
     from ..utils import relative_path
 
     del config  # Stage loads config internally via workspace
@@ -32,38 +30,28 @@ def run_profile_stage_4(
     apply_errors: list[str] = []
     applied_count = 0
     for date in changed_dates:
-        suggestions_path: Path | None = None
-        try:
-            suggestions_path = run_profile_suggest(
-                date,
-                timeout=DEFAULT_TIMEOUT_SECONDS,
-                retries=inputs.retries,
-                progress=inputs.progress,
-                workspace=root,
-            )
-        except typer.Exit as exc:
-            if exc.exit_code not in (0,):
-                suggestion_errors.append(f"{date}: {exc}")
-        except Exception as exc:  # pragma: no cover - defensive
-            suggestion_errors.append(f"{date}: {exc}")
-        else:
-            if suggestions_path is not None:
-                suggestion_paths.append(relative_path(suggestions_path, root))
+        suggestions_path, suggest_error = graceful_profile_suggest(
+            date,
+            timeout=DEFAULT_TIMEOUT_SECONDS,
+            retries=inputs.retries,
+            progress=inputs.progress,
+            workspace=root,
+        )
+        if suggest_error:
+            suggestion_errors.append(f"{date}: {suggest_error}")
+        elif suggestions_path is not None:
+            suggestion_paths.append(relative_path(suggestions_path, root))
 
         if inputs.apply_profile == "auto" and suggestions_path is not None:
-            try:
-                run_profile_apply(
-                    date,
-                    suggestions_path=suggestions_path,
-                    auto_confirm=True,
-                    workspace=root,
-                )
-            except typer.Exit as exc:
-                if exc.exit_code not in (0,):
-                    apply_errors.append(f"{date}: {exc}")
-            except Exception as exc:  # pragma: no cover - defensive
-                apply_errors.append(f"{date}: {exc}")
-            else:
+            apply_success, apply_error = graceful_profile_apply(
+                date,
+                suggestions_path=suggestions_path,
+                auto_confirm=True,
+                workspace=root,
+            )
+            if apply_error:
+                apply_errors.append(f"{date}: {apply_error}")
+            elif apply_success:
                 applied_count += 1
 
     duration_ms = (perf_counter() - stage_start) * 1000.0

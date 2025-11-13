@@ -16,6 +16,7 @@ from aijournal.ingest_agent import IngestResult, build_ingest_agent, ingest_with
 from aijournal.io.yaml_io import dump_yaml
 from aijournal.models.authoritative import ManifestEntry
 from aijournal.pipelines import normalization
+from aijournal.services.capture.tolerant import split_frontmatter_tolerant
 from aijournal.services.capture.utils import (
     coerce_frontmatter_tags,
     digest_bytes,
@@ -213,14 +214,19 @@ def _persist_file_entry(
     try:
         frontmatter_data, body = split_frontmatter(text)
         body = body.strip()
-    except ValueError:
-        frontmatter_data, body, normalized_seed, ingest_warnings = _ingest_frontmatter(
-            inputs,
-            root=root,
-            source_path=source_path,
-            raw_text=text,
-            digest=digest,
-        )
+    except Exception:  # noqa: BLE001 - tolerate malformed front matter
+        tolerant = split_frontmatter_tolerant(text)
+        ingest_warnings.extend(tolerant.warnings)
+        frontmatter_data = tolerant.data
+        body = tolerant.body.strip()
+        if not frontmatter_data and tolerant.format == "none":
+            frontmatter_data, body, normalized_seed, ingest_warnings = _ingest_frontmatter(
+                inputs,
+                root=root,
+                source_path=source_path,
+                raw_text=text,
+                digest=digest,
+            )
 
     created_dt = resolve_created_dt(
         frontmatter_data.get("created_at") or inputs.date,

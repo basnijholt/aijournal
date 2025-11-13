@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from datetime import UTC, datetime
 from hashlib import sha256
@@ -28,12 +29,24 @@ from aijournal.models.authoritative import ClaimsFile, JournalSection, ManifestE
 from aijournal.models.derived import ProfileUpdateBatch
 from aijournal.pipelines import normalization
 from aijournal.services.capture.results import OperationResult
+from aijournal.services.capture.tolerant import (
+    parse_date_tolerant,
+    split_frontmatter_tolerant,
+)
 from aijournal.utils import time as time_utils
 from aijournal.utils.paths import normalized_entry_path
 
+logger = logging.getLogger(__name__)
+
 
 def journal_path(root: Path, date_str: str, slug: str) -> Path:
-    date = datetime.strptime(date_str, "%Y-%m-%d")
+    try:
+        date = datetime.strptime(date_str, "%Y-%m-%d")
+    except ValueError:
+        parsed = parse_date_tolerant(date_str, fallback=datetime.now(tz=UTC))
+        for warning in parsed.warnings:
+            logger.warning("tolerant date parsing while building journal path: %s", warning)
+        date = parsed.dt
     return (
         root
         / "data"
@@ -286,21 +299,10 @@ def coerce_frontmatter_tags(raw: object) -> list[str]:
 
 def resolve_created_dt(preferred: object, fallback: datetime) -> datetime:
     if preferred:
-        if isinstance(preferred, datetime):
-            parsed = preferred
-        elif (
-            hasattr(preferred, "year") and hasattr(preferred, "month") and hasattr(preferred, "day")
-        ):
-            parsed = datetime(preferred.year, preferred.month, preferred.day, tzinfo=UTC)
-        else:
-            text = str(preferred)
-            try:
-                parsed = datetime.fromisoformat(text)
-            except ValueError:
-                parsed = datetime.strptime(text, "%Y-%m-%d")
-        if parsed.tzinfo is None:
-            parsed = parsed.replace(tzinfo=UTC)
-        return parsed
+        result = parse_date_tolerant(preferred, fallback=fallback)
+        for warning in result.warnings:
+            logger.warning("tolerant date parsing for created_at: %s", warning)
+        return result.dt.astimezone(UTC)
     return fallback
 
 
@@ -406,7 +408,19 @@ def normalize_markdown(
     source_hash: str,
     source_type: str,
 ) -> tuple[Path, bool]:
-    frontmatter, body = split_frontmatter(markdown_path.read_text(encoding="utf-8"))
+    raw_text = markdown_path.read_text(encoding="utf-8")
+    try:
+        frontmatter, body = split_frontmatter(raw_text)
+    except Exception:  # noqa: BLE001 - fallback to tolerant parser
+        tolerant = split_frontmatter_tolerant(raw_text)
+        frontmatter = tolerant.data
+        body = tolerant.body
+        for warning in tolerant.warnings:
+            logger.warning(
+                "tolerant front-matter parsing while normalizing %s: %s",
+                markdown_path,
+                warning,
+            )
 
     created_dt = resolve_created_dt(frontmatter.get("created_at"), time_utils.now())
     created_str = time_utils.format_timestamp(created_dt)

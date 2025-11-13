@@ -821,6 +821,52 @@ def new(
     run_new(title, tags, fake, seed, _get_workspace())
 
 
+@ops_dev_app.command("human-sim", hidden=True)
+def dev_human_sim(
+    output: Path | None = typer.Option(
+        None,
+        "--output",
+        help="Optional workspace path to populate (defaults to a temp directory).",
+    ),
+    keep_workspace: bool = typer.Option(
+        False,
+        "--keep-workspace/--cleanup-workspace",
+        help="Preserve the generated workspace after the run (auto-enabled when --output is set).",
+    ),
+    max_stage: int = typer.Option(
+        8,
+        "--max-stage",
+        min=0,
+        max=8,
+        help="Maximum pipeline stage to execute (0=persist, 8=pack).",
+    ),
+    pack_level: str = typer.Option(
+        "L1",
+        "--pack-level",
+        help="Pack level to request when packs are enabled (L1, L3, or L4).",
+    ),
+) -> None:
+    """Run the human simulator with configurable stage depth for validation."""
+
+    from aijournal.simulator.orchestrator import HumanSimulator
+
+    resolved_pack = pack_level.upper()
+    if resolved_pack not in {"L1", "L3", "L4"}:
+        typer.secho("--pack-level must be one of L1, L3, or L4", fg=typer.colors.RED, err=True)
+        raise typer.Exit(1)
+
+    pack_literal = cast(Literal["L1", "L3", "L4"], resolved_pack)
+    simulator = HumanSimulator(max_stage=max_stage, pack_level=pack_literal)
+    report = simulator.run(
+        workspace=output,
+        keep_workspace=keep_workspace or output is not None,
+    )
+    typer.echo(report.render())
+    typer.echo("Result: " + ("PASS" if report.validation.ok else "FAIL"))
+    if not report.validation.ok:
+        raise typer.Exit(1)
+
+
 @ops_pipeline_app.command("ingest", hidden=True)
 def ingest(
     sources: list[Path] = typer.Argument(
