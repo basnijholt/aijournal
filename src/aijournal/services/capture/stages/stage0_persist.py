@@ -231,6 +231,10 @@ def _persist_file_entry(
                 digest=digest,
             )
 
+    # Normalize common date field names (Jekyll/WordPress 'date') to 'created_at'
+    if not frontmatter_data.get("created_at") and frontmatter_data.get("date"):
+        frontmatter_data["created_at"] = frontmatter_data["date"]
+
     if not frontmatter_data.get("created_at") and inputs.date is None:
         inferred_dt, inferred_reason = infer_created_at_from_context(
             source_path=source_path,
