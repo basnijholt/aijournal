@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 from datetime import UTC, date, datetime
+from pathlib import Path
 
 from aijournal.services.capture.tolerant import (
+    infer_created_at_from_context,
     parse_date_tolerant,
     split_frontmatter_tolerant,
 )
@@ -287,6 +289,52 @@ class TestParseDateTolerant:
         result = parse_date_tolerant("5 January 2024")
         assert result.dt == datetime(2024, 1, 5, tzinfo=UTC)
         assert result.format_used == "text"
+
+
+class TestInferCreatedAtFromContext:
+    def test_infers_from_filename(self) -> None:
+        dt, reason = infer_created_at_from_context(
+            source_path=Path("/notes/2024-03-15-focus.md"),
+            body="",
+        )
+        assert dt == datetime(2024, 3, 15, tzinfo=UTC)
+        assert reason and "filename" in reason
+
+    def test_infers_from_directory_components(self) -> None:
+        dt, reason = infer_created_at_from_context(
+            source_path=Path("/blog/2023/12/25/holiday.md"),
+            body="",
+        )
+        assert dt == datetime(2023, 12, 25, tzinfo=UTC)
+        assert reason and any(keyword in reason for keyword in ("directory", "path"))
+
+    def test_infers_from_body_label(self) -> None:
+        body = """
+Date: Jan 2, 2022
+Entry text.
+"""
+        dt, reason = infer_created_at_from_context(source_path=None, body=body)
+        assert dt == datetime(2022, 1, 2, tzinfo=UTC)
+        assert reason and "body line" in reason
+
+    def test_infers_from_body_without_label(self) -> None:
+        body = "Captured reflections from 2014/07/03 during the hike."
+        dt, reason = infer_created_at_from_context(source_path=None, body=body)
+        assert dt == datetime(2014, 7, 3, tzinfo=UTC)
+        assert reason and "body text" in reason
+
+    def test_infers_from_compact_filename(self) -> None:
+        dt, reason = infer_created_at_from_context(
+            source_path=Path("/notes/meeting_20190309.md"),
+            body="",
+        )
+        assert dt == datetime(2019, 3, 9, tzinfo=UTC)
+        assert reason and "filename" in reason
+
+    def test_returns_none_when_no_matches(self) -> None:
+        dt, reason = infer_created_at_from_context(source_path=None, body="No hints here")
+        assert dt is None
+        assert reason is None
 
         # Abbreviated, day first
         result = parse_date_tolerant("5 Jan 2024")

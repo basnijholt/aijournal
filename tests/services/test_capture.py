@@ -27,6 +27,7 @@ from aijournal.domain.facts import (
     MicroFact,
     MicroFactsFile,
 )
+from aijournal.domain.journal import NormalizedEntry
 from aijournal.io.artifacts import save_artifact
 from aijournal.models.authoritative import ManifestEntry
 from aijournal.models.derived import (
@@ -843,6 +844,61 @@ def test_persist_file_skips_duplicate(tmp_path: Path, monkeypatch: pytest.Monkey
     assert counts["normalized"] == 0
 
 
+def test_persist_file_infers_created_at_from_filename(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        "aijournal.utils.time.now",
+        lambda: datetime(2025, 1, 6, 9, 0, tzinfo=UTC),
+    )
+    entry_path = tmp_path / "2024-03-14-focus-log.md"
+    entry_path.write_text(
+        "---\nid: focus-log\ntitle: Focus Log\n---\nBody content",
+        encoding="utf-8",
+    )
+    inputs = CaptureInput(source="file", paths=[str(entry_path)])
+    manifest: list[ManifestEntry] = []
+    config = AppConfig()
+
+    result = _persist_file_entry(inputs, tmp_path, config, manifest, source_path=entry_path)
+
+    assert result.date == "2024-03-14"
+    assert any("inferred" in warning for warning in result.warnings)
+    markdown_path = tmp_path / result.markdown_path
+    markdown_text = markdown_path.read_text(encoding="utf-8")
+    frontmatter_yaml = markdown_text.split("---\n", 1)[1].split("\n---", 1)[0]
+    metadata = yaml.safe_load(frontmatter_yaml)
+    assert metadata["created_at"].startswith("2024-03-14")
+
+
+def test_persist_file_infers_created_at_from_body(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        "aijournal.utils.time.now",
+        lambda: datetime(2025, 2, 10, 8, 0, tzinfo=UTC),
+    )
+    entry_path = tmp_path / "body-date.md"
+    entry_path.write_text(
+        "---\nid: body-date\ntitle: Body Date\n---\nDate: Jan 2, 2022\nEntry text",
+        encoding="utf-8",
+    )
+    inputs = CaptureInput(source="file", paths=[str(entry_path)])
+    manifest: list[ManifestEntry] = []
+    config = AppConfig()
+
+    result = _persist_file_entry(inputs, tmp_path, config, manifest, source_path=entry_path)
+
+    assert result.date == "2022-01-02"
+    assert any("body" in warning for warning in result.warnings)
+    markdown_path = tmp_path / result.markdown_path
+    frontmatter_yaml = (
+        markdown_path.read_text(encoding="utf-8").split("---\n", 1)[1].split("\n---", 1)[0]
+    )
+    metadata = yaml.safe_load(frontmatter_yaml)
+    assert metadata["created_at"].startswith("2022-01-02")
+
+
 def test_persist_file_records_snapshot_and_manifest_fields(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -932,6 +988,64 @@ def test_persist_file_slug_collision_logs_alias(
     manifest_entry = manifest[-1]
     assert manifest_entry.aliases == ["collide"]
     assert manifest_entry.snapshot_path is None
+
+
+def test_persist_file_falls_back_to_ingest_agent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    broken = tmp_path / "broken.md"
+    broken.write_text(
+        '---\ntitle: "Broken\nsummary: Missing closing quote\n---\nOriginal body',
+        encoding="utf-8",
+    )
+
+    called: dict[str, Path] = {}
+
+    def fake_ingest(inputs, *, root, source_path, raw_text, digest):  # type: ignore[annotation-unchecked]
+        called["source"] = source_path
+        normalized_seed = NormalizedEntry(
+            id="ingested-slug",
+            created_at="2024-02-02T00:00:00Z",
+            source_path="data/journal/2024/02/02/ingested-slug.md",
+            title="Synth Title",
+            tags=["synth"],
+            sections=[],
+            summary="Synth summary",
+            source_hash=digest,
+            source_type=inputs.source_type,
+        )
+        return (
+            {
+                "id": "ingested-slug",
+                "created_at": "2024-02-02T00:00:00Z",
+                "title": "Synth Title",
+                "summary": "Synth summary",
+            },
+            "Normalized body",
+            normalized_seed,
+            ["front matter synthesized via ingest agent"],
+        )
+
+    monkeypatch.setattr(
+        "aijournal.services.capture.stages.stage0_persist._ingest_frontmatter",
+        fake_ingest,
+    )
+
+    inputs = CaptureInput(source="file", paths=[str(broken)])
+    manifest: list[ManifestEntry] = []
+    config = AppConfig()
+    result = _persist_file_entry(
+        inputs, tmp_path, config, manifest, source_path=broken, snapshot=False
+    )
+
+    assert called["source"] == broken
+    assert result.slug == "ingested-slug"
+    assert any("ingest agent" in warning for warning in result.warnings)
+
+    markdown_path = tmp_path / result.markdown_path
+    content = markdown_path.read_text(encoding="utf-8")
+    assert "Synth Title" in content
+    assert "2024-02-02" in content
 
 
 def test_discover_markdown_files_recurses(tmp_path: Path) -> None:
