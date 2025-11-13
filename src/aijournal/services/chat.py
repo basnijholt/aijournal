@@ -420,9 +420,11 @@ class ChatService:
         prefs = persona.profile.get("coaching_prefs") if persona.profile else {}
         probing = prefs.get("probing") if isinstance(prefs, dict) else None
         if not isinstance(probing, dict):
-            return False
+            return True
         max_questions = coerce_int(probing.get("max_questions"))
-        return bool(max_questions and max_questions > 0)
+        if max_questions is None:
+            return True
+        return max_questions > 0
 
     def _generate_clarifying_question(self, intent: str, question: str) -> str:
         base = question.strip().rstrip("?.!")
