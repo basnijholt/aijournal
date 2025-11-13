@@ -149,9 +149,10 @@ def run_characterize_command(
                 structured_call=structured_call,
             )
         except LLMResponseError as exc:
-            typer.secho(f"Characterize failed: {exc}", fg=typer.colors.RED, err=True)
+            error_msg = f"LLM response error: {exc}"
+            typer.secho(f"Characterize failed: {error_msg}", fg=typer.colors.RED, err=True)
             ctx.emit(event="command_failed", reason="llm_error", error=str(exc))
-            raise typer.Exit(1)
+            raise typer.Exit(1) from exc
 
         interview_prompts = facts_pipeline.merge_unique(
             proposals_model.interview_prompts,

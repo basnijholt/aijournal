@@ -51,6 +51,9 @@ def graceful_summarize(
         if exc.exit_code == 0:
             # Exit code 0 is success, shouldn't happen but handle it
             return None, None
+        # Try to extract the original error from the exception chain
+        if exc.__cause__ is not None:
+            return None, f"summarize failed: {exc.__cause__}"
         return None, f"summarize exited with code {exc.exit_code}"
     except Exception as exc:
         return None, f"summarize failed: {exc}"
@@ -90,6 +93,9 @@ def graceful_facts(
     except typer.Exit as exc:
         if exc.exit_code == 0:
             return None, None
+        # Try to extract the original error from the exception chain
+        if exc.__cause__ is not None:
+            return None, f"facts extraction failed: {exc.__cause__}"
         return None, f"facts extraction exited with code {exc.exit_code}"
     except Exception as exc:
         return None, f"facts extraction failed: {exc}"
@@ -123,6 +129,9 @@ def graceful_profile_suggest(
     except typer.Exit as exc:
         if exc.exit_code == 0:
             return None, None
+        # Try to extract the original error from the exception chain
+        if exc.__cause__ is not None:
+            return None, f"profile suggest failed: {exc.__cause__}"
         return None, f"profile suggest exited with code {exc.exit_code}"
     except Exception as exc:
         return None, f"profile suggest failed: {exc}"
@@ -155,6 +164,9 @@ def graceful_profile_apply(
         if exc.exit_code == 0:
             # Exit 0 means no changes to apply, which is fine
             return True, None
+        # Try to extract the original error from the exception chain
+        if exc.__cause__ is not None:
+            return False, f"profile apply failed: {exc.__cause__}"
         return False, f"profile apply exited with code {exc.exit_code}"
     except Exception as exc:
         return False, f"profile apply failed: {exc}"
@@ -192,6 +204,9 @@ def graceful_characterize(
     except typer.Exit as exc:
         if exc.exit_code == 0:
             return None, None
+        # Try to extract the original error from the exception chain
+        if exc.__cause__ is not None:
+            return None, f"characterize failed: {exc.__cause__}"
         return None, f"characterize exited with code {exc.exit_code}"
     except Exception as exc:
         return None, f"characterize failed: {exc}"
