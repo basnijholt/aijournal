@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 import os
 import sys
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal, cast
@@ -123,6 +123,7 @@ from aijournal.services.ollama import (
 from aijournal.services.persona_export import (
     PersonaArtifactMissingError,
     PersonaContentError,
+    PersonaExportResult,
     PersonaVariant,
     export_persona_markdown,
     load_persona_core,
@@ -1371,11 +1372,12 @@ def persona_status() -> None:
 
 @persona_app.command("export")
 def persona_export(
-    variant: str = typer.Option(
-        "short",
+    variants: list[str] = typer.Option(
+        ["short"],
         "--variant",
-        help="Preset size: tiny, short, or full.",
-        show_default=True,
+        "-v",
+        help="Preset sizes to render (tiny, short, full, or all). Repeat for multiples.",
+        show_default=False,
     ),
     tokens: int | None = typer.Option(
         None,
@@ -1387,6 +1389,11 @@ def persona_export(
         "--output",
         "-o",
         help="Destination file; defaults to stdout when omitted.",
+    ),
+    output_dir: Path | None = typer.Option(
+        None,
+        "--output-dir",
+        help="Write persona exports into this directory (one file per variant).",
     ),
     overwrite: bool = typer.Option(
         False,
@@ -1422,22 +1429,14 @@ def persona_export(
 ) -> None:
     """Render the current persona as Markdown for downstream LLM contexts."""
 
-    mode = variant.lower().strip()
-    allowed_variants = {value.value: value for value in PersonaVariant}
-    if mode not in allowed_variants:
-        raise typer.BadParameter(
-            "--variant must be one of: tiny, short, full.",
-            param_hint="--variant",
-        )
-    variant_value = allowed_variants[mode]
-
-    if tokens is not None and tokens <= 0:
-        raise typer.BadParameter("--tokens must be a positive integer.", param_hint="--tokens")
-    if max_items is not None and max_items <= 0:
-        raise typer.BadParameter(
-            "--max-items must be positive when provided.",
-            param_hint="--max-items",
-        )
+    expanded = _normalize_persona_variants(variants)
+    _validate_persona_export_flags(
+        expanded_variants=expanded,
+        tokens=tokens,
+        max_items=max_items,
+        output=output,
+        output_dir=output_dir,
+    )
 
     sort_key = sort.lower().strip()
     if sort_key not in {"strength", "recency", "id"}:
@@ -1454,23 +1453,152 @@ def persona_export(
         typer.secho(str(exc), fg=typer.colors.RED, err=True)
         raise typer.Exit(1) from exc
 
-    options = PersonaExportOptions(
-        variant=variant_value,
-        token_budget=tokens,
-        sort_by=sort_key,  # type: ignore[arg-type]
-        deterministic=deterministic,
-        seed=seed,
-        max_items=max_items,
-        include_claim_markers=not no_claim_markers,
-    )
+    rendered: list[RenderedPersona] = []
+    for variant_value in expanded:
+        options = PersonaExportOptions(
+            variant=variant_value,
+            token_budget=tokens,
+            sort_by=sort_key,  # type: ignore[arg-type]
+            deterministic=deterministic,
+            seed=seed,
+            max_items=max_items,
+            include_claim_markers=not no_claim_markers,
+        )
 
-    try:
-        result = export_persona_markdown(persona, config=config, options=options)
-    except PersonaContentError as exc:
-        typer.secho(str(exc), fg=typer.colors.YELLOW, err=True)
-        raise typer.Exit(1) from exc
+        try:
+            result = export_persona_markdown(persona, config=config, options=options)
+        except PersonaContentError as exc:
+            typer.secho(str(exc), fg=typer.colors.YELLOW, err=True)
+            raise typer.Exit(1) from exc
+        label = _persona_variant_label(variant_value, tokens)
+        rendered.append((label, variant_value, result))
 
-    destination: Path | None = None
+    if _write_persona_exports(rendered, workspace, output, output_dir, overwrite):
+        return
+
+    if len(rendered) == 1:
+        typer.echo(rendered[0][2].text.rstrip())
+        return
+
+    for idx, (label, _, result) in enumerate(rendered):
+        typer.echo(f"<!-- persona:{label} (≈{result.approx_tokens} tokens) -->")
+        typer.echo(result.text.rstrip())
+        if idx < len(rendered) - 1:
+            typer.echo("")
+            typer.echo("---")
+            typer.echo("")
+
+
+def _persona_variant_label(variant: PersonaVariant, tokens: int | None) -> str:
+    base = variant.value
+    if tokens is None:
+        return base
+    return f"{base}-{tokens}"
+
+
+RenderedPersona = tuple[str, PersonaVariant, PersonaExportResult]
+
+
+def _normalize_persona_variants(raw_variants: Iterable[str]) -> list[PersonaVariant]:
+    allowed = {member.value: member for member in PersonaVariant}
+    normalized = [value.lower().strip() for value in raw_variants if value]
+    if not normalized:
+        normalized = [PersonaVariant.SHORT.value]
+
+    expanded: list[PersonaVariant] = []
+    seen: set[PersonaVariant] = set()
+    for value in normalized:
+        candidates: Iterable[PersonaVariant]
+        if value == "all":
+            candidates = PersonaVariant
+        else:
+            member = allowed.get(value)
+            if member is None:
+                raise typer.BadParameter(
+                    "--variant must be one of: tiny, short, full, or all.",
+                    param_hint="--variant",
+                )
+            candidates = (member,)
+
+        for candidate in candidates:
+            if candidate in seen:
+                continue
+            seen.add(candidate)
+            expanded.append(candidate)
+
+    if not expanded:
+        expanded = [PersonaVariant.SHORT]
+    return expanded
+
+
+def _validate_persona_export_flags(
+    *,
+    expanded_variants: Sequence[PersonaVariant],
+    tokens: int | None,
+    max_items: int | None,
+    output: Path | None,
+    output_dir: Path | None,
+) -> None:
+    if tokens is not None:
+        if tokens <= 0:
+            raise typer.BadParameter("--tokens must be a positive integer.", param_hint="--tokens")
+        if len(expanded_variants) > 1:
+            raise typer.BadParameter(
+                "--tokens can only be combined with a single --variant.",
+                param_hint="--tokens",
+            )
+
+    if max_items is not None and max_items <= 0:
+        raise typer.BadParameter(
+            "--max-items must be positive when provided.",
+            param_hint="--max-items",
+        )
+
+    if output is not None and output_dir is not None:
+        raise typer.BadParameter(
+            "Use either --output or --output-dir, not both.",
+            param_hint="--output",
+        )
+    if output is not None and len(expanded_variants) > 1:
+        raise typer.BadParameter(
+            "--output only supports a single variant; use --output-dir for multiples.",
+            param_hint="--output",
+        )
+
+
+def _write_persona_exports(
+    rendered: Sequence[RenderedPersona],
+    workspace: Path,
+    output: Path | None,
+    output_dir: Path | None,
+    overwrite: bool,
+) -> bool:
+    if output_dir is not None:
+        destination_dir = output_dir if output_dir.is_absolute() else workspace / output_dir
+        destination_dir.mkdir(parents=True, exist_ok=True)
+        targets: list[tuple[Path, PersonaExportResult]] = []
+        for label, _, result in rendered:
+            filename = f"persona-{label}.md"
+            targets.append((destination_dir / filename, result))
+
+        if not overwrite:
+            for path, _ in targets:
+                if path.exists():
+                    typer.secho(
+                        f"Refusing to overwrite existing file: {path}. Use --overwrite to replace it.",
+                        fg=typer.colors.RED,
+                        err=True,
+                    )
+                    raise typer.Exit(1)
+
+        written: list[Path] = []
+        for path, result in targets:
+            path.write_text(result.text, encoding="utf-8")
+            written.append(path)
+        joined = ", ".join(str(path) for path in written)
+        typer.echo(f"Wrote persona exports to {joined}")
+        return True
+
     if output is not None:
         destination = output if output.is_absolute() else workspace / output
         if destination.exists() and not overwrite:
@@ -1481,10 +1609,11 @@ def persona_export(
             )
             raise typer.Exit(1)
         destination.parent.mkdir(parents=True, exist_ok=True)
-        destination.write_text(result.text, encoding="utf-8")
+        destination.write_text(rendered[0][2].text, encoding="utf-8")
         typer.echo(f"Wrote persona export to {destination}")
-    else:
-        typer.echo(result.text.rstrip())
+        return True
+
+    return False
 
 
 def _build_targeted_probes(

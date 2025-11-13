@@ -4,10 +4,17 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+import typer
 from typer.testing import CliRunner
 
-from aijournal.cli import app
+from aijournal.cli import (
+    _normalize_persona_variants,
+    _validate_persona_export_flags,
+    app,
+)
 from aijournal.io.yaml_io import dump_yaml
+from aijournal.services.persona_export import PersonaVariant
 from tests.helpers import make_claim_atom
 
 
@@ -153,3 +160,129 @@ def test_persona_export_errors_when_persona_missing(tmp_path: Path, cli_runner: 
     assert result.exit_code == 1
     combined = (result.stdout or "") + (result.stderr or "")
     assert "persona" in combined.lower()
+
+
+def test_persona_export_multiple_variants_stdout(
+    cli_workspace: Path, cli_runner: CliRunner
+) -> None:
+    _ensure_persona_core(cli_workspace, cli_runner)
+
+    result = cli_runner.invoke(
+        app,
+        ["ops", "persona", "export", "--variant", "tiny", "--variant", "short"],
+    )
+    assert result.exit_code == 0, result.stdout
+    output = result.stdout
+    assert output.count("# Persona Context") == 2
+    assert "<!-- persona:tiny" in output
+    assert "<!-- persona:short" in output
+    assert "\n---\n" in output
+
+
+def test_persona_export_output_dir_writes_all_variants(
+    cli_workspace: Path, cli_runner: CliRunner
+) -> None:
+    _ensure_persona_core(cli_workspace, cli_runner)
+    destination = cli_workspace / "derived" / "cards"
+
+    result = cli_runner.invoke(
+        app,
+        [
+            "ops",
+            "persona",
+            "export",
+            "--variant",
+            "all",
+            "--output-dir",
+            str(destination.relative_to(cli_workspace)),
+            "--overwrite",
+        ],
+    )
+    assert result.exit_code == 0, result.stdout
+
+    files = sorted(destination.glob("*.md"))
+    names = [path.name for path in files]
+    assert any("tiny" in name for name in names)
+    assert any("short" in name for name in names)
+    assert any("full" in name for name in names)
+
+
+def test_persona_export_disallows_token_override_with_multiple_variants(
+    cli_workspace: Path, cli_runner: CliRunner
+) -> None:
+    _ensure_persona_core(cli_workspace, cli_runner)
+
+    result = cli_runner.invoke(
+        app,
+        [
+            "ops",
+            "persona",
+            "export",
+            "--variant",
+            "tiny",
+            "--variant",
+            "short",
+            "--tokens",
+            "400",
+        ],
+    )
+    assert result.exit_code == 2
+    combined = (result.stdout or "") + (result.stderr or "")
+    assert "only" in combined.lower()
+
+
+def test_persona_export_disallows_output_with_multiple_variants(
+    cli_workspace: Path, cli_runner: CliRunner
+) -> None:
+    _ensure_persona_core(cli_workspace, cli_runner)
+    destination = cli_workspace / "derived" / "persona-multi.md"
+
+    result = cli_runner.invoke(
+        app,
+        [
+            "ops",
+            "persona",
+            "export",
+            "--variant",
+            "tiny",
+            "--variant",
+            "short",
+            "--output",
+            str(destination.relative_to(cli_workspace)),
+        ],
+    )
+    assert result.exit_code == 2
+    combined = (result.stdout or "") + (result.stderr or "")
+    assert "output" in combined.lower()
+
+
+def test_normalize_persona_variants_handles_all_keyword() -> None:
+    result = _normalize_persona_variants(["all"])
+    assert result == list(PersonaVariant)
+
+
+def test_normalize_persona_variants_defaults_to_short() -> None:
+    result = _normalize_persona_variants([])
+    assert result == [PersonaVariant.SHORT]
+
+
+def test_validate_persona_export_flags_detects_conflicts(tmp_path: Path) -> None:
+    destination = tmp_path / "persona.md"
+
+    with pytest.raises(typer.BadParameter):
+        _validate_persona_export_flags(
+            expanded_variants=[PersonaVariant.TINY, PersonaVariant.SHORT],
+            tokens=100,
+            max_items=None,
+            output=None,
+            output_dir=None,
+        )
+
+    with pytest.raises(typer.BadParameter):
+        _validate_persona_export_flags(
+            expanded_variants=[PersonaVariant.TINY, PersonaVariant.SHORT],
+            tokens=None,
+            max_items=None,
+            output=destination,
+            output_dir=None,
+        )
