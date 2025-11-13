@@ -26,6 +26,16 @@ def _enum_representer(dumper: _EnumSafeDumper, value: Enum) -> yaml.Node:
 _EnumSafeDumper.add_multi_representer(Enum, _enum_representer)
 
 
+def _str_representer(dumper: _EnumSafeDumper, value: str) -> yaml.Node:
+    """Render unicode directly and pretty-print multiline scalars."""
+
+    style = "|" if "\n" in value else None
+    return dumper.represent_scalar("tag:yaml.org,2002:str", value, style=style)
+
+
+_EnumSafeDumper.add_representer(str, _str_representer)
+
+
 def _read_yaml(path: Path) -> Any:
     data = yaml.safe_load(path.read_text(encoding="utf-8"))
     return data if data is not None else {}
@@ -44,7 +54,12 @@ def load_yaml_model(path: Path, cls: type[T], *, default: T | None = None) -> T:
 def dump_yaml(data: Any, *, sort_keys: bool = False) -> str:
     """Serialize arbitrary data to YAML using the enum-safe dumper."""
 
-    return yaml.dump(data, Dumper=_EnumSafeDumper, sort_keys=sort_keys)
+    return yaml.dump(
+        data,
+        Dumper=_EnumSafeDumper,
+        sort_keys=sort_keys,
+        allow_unicode=True,
+    )
 
 
 def write_yaml_model(path: Path, instance: T) -> None:
