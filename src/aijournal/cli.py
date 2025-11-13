@@ -1619,46 +1619,51 @@ def _write_persona_exports(
     overwrite: bool,
 ) -> bool:
     if output_dir is not None:
-        destination_dir = output_dir if output_dir.is_absolute() else workspace / output_dir
+        destination_dir = _resolve_workspace_path(workspace, output_dir)
         destination_dir.mkdir(parents=True, exist_ok=True)
         targets: list[tuple[Path, PersonaExportResult]] = []
         for label, _, result in rendered:
             filename = f"persona-{label}.md"
             targets.append((destination_dir / filename, result))
 
-        if not overwrite:
-            for path, _ in targets:
-                if path.exists():
-                    typer.secho(
-                        f"Refusing to overwrite existing file: {path}. Use --overwrite to replace it.",
-                        fg=typer.colors.RED,
-                        err=True,
-                    )
-                    raise typer.Exit(1)
+        for path, _ in targets:
+            _ensure_output_write(path, overwrite=overwrite)
 
         written: list[Path] = []
         for path, result in targets:
-            path.write_text(result.text, encoding="utf-8")
+            _write_text_file(path, result.text)
             written.append(path)
         joined = ", ".join(str(path) for path in written)
         typer.echo(f"Wrote persona exports to {joined}")
         return True
 
     if output is not None:
-        destination = output if output.is_absolute() else workspace / output
-        if destination.exists() and not overwrite:
-            typer.secho(
-                f"Refusing to overwrite existing file: {destination}. Use --overwrite to replace it.",
-                fg=typer.colors.RED,
-                err=True,
-            )
-            raise typer.Exit(1)
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        destination.write_text(rendered[0][2].text, encoding="utf-8")
+        destination = _resolve_workspace_path(workspace, output)
+        _ensure_output_write(destination, overwrite=overwrite)
+        _write_text_file(destination, rendered[0][2].text)
         typer.echo(f"Wrote persona export to {destination}")
         return True
 
     return False
+
+
+def _resolve_workspace_path(workspace: Path, target: Path) -> Path:
+    return target if target.is_absolute() else workspace / target
+
+
+def _ensure_output_write(path: Path, *, overwrite: bool, exit_code: int = 1) -> None:
+    if path.exists() and not overwrite:
+        typer.secho(
+            f"Refusing to overwrite existing file: {path}. Use --overwrite to replace it.",
+            fg=typer.colors.RED,
+            err=True,
+        )
+        raise typer.Exit(exit_code)
+
+
+def _write_text_file(path: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
 
 
 def _build_targeted_probes(
