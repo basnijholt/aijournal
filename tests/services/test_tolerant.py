@@ -8,6 +8,7 @@ from aijournal.services.capture.tolerant import (
     parse_date_tolerant,
     split_frontmatter_tolerant,
 )
+from aijournal.services.capture.utils import split_frontmatter
 
 
 class TestSplitFrontmatterTolerant:
@@ -47,6 +48,20 @@ Body
         assert len(result.warnings) == 1
         assert "unknown" in result.warnings[0].lower()
         assert "custom_field" in result.warnings[0]
+
+    def test_yaml_frontmatter_with_utf8_bom(self) -> None:
+        text = """\ufeff---
+title: BOM Entry
+created_at: 2025-01-05
+---
+
+Body content here.
+"""
+        result = split_frontmatter_tolerant(text)
+        assert result.format == "yaml"
+        assert result.data["title"] == "BOM Entry"
+        assert result.body == "Body content here.\n"
+        assert not result.warnings
 
     def test_toml_frontmatter_valid(self) -> None:
         # Use YAML-compatible TOML syntax since we're using yaml.safe_load
@@ -207,6 +222,21 @@ Body
         assert result.format == "yaml"
         assert result.data["id"] == "test"
         assert result.body.strip() == "Body"
+
+
+class TestSplitFrontmatterStrict:
+    """Tests for the strict split_frontmatter helper."""
+
+    def test_yaml_frontmatter_with_utf8_bom(self) -> None:
+        text = """\ufeff---
+title: Strict BOM
+---
+
+Strict body line.
+"""
+        frontmatter, body = split_frontmatter(text)
+        assert frontmatter["title"] == "Strict BOM"
+        assert body == "Strict body line.\n"
 
 
 class TestParseDateTolerant:

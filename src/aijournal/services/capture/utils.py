@@ -39,6 +39,12 @@ from aijournal.utils.paths import normalized_entry_path
 logger = logging.getLogger(__name__)
 
 
+def _strip_utf8_bom(text: str) -> str:
+    """Remove a leading UTF-8 BOM so delimiters stay detectable."""
+
+    return text.lstrip("\ufeff")
+
+
 def journal_path(root: Path, date_str: str, slug: str) -> Path:
     try:
         date = datetime.strptime(date_str, "%Y-%m-%d")
@@ -374,6 +380,7 @@ def _extract_json_frontmatter(text: str) -> tuple[dict[str, object], str]:
 
 
 def split_frontmatter(text: str) -> tuple[dict[str, object], str]:
+    text = _strip_utf8_bom(text)
     stripped = text.lstrip()
     if stripped.startswith("{"):
         return _extract_json_frontmatter(stripped)

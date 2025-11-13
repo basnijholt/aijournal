@@ -17,6 +17,13 @@ import yaml
 
 logger = logging.getLogger(__name__)
 
+
+def _strip_utf8_bom(text: str) -> str:
+    """Remove a leading UTF-8 BOM while preserving the rest of the text."""
+
+    return text.lstrip("\ufeff")
+
+
 FrontMatterFormat = Literal["yaml", "toml", "json", "none"]
 
 
@@ -72,6 +79,7 @@ def split_frontmatter_tolerant(text: str) -> ParseResult:
     Returns:
         ParseResult with metadata dict, body text, detected format, and any warnings
     """
+    text = _strip_utf8_bom(text)
     stripped = text.lstrip()
     if not stripped:
         return ParseResult({}, "", "none", ["Empty input text"])

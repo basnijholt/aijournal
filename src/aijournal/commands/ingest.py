@@ -35,6 +35,12 @@ from aijournal.utils import time as time_utils
 from aijournal.utils.paths import normalized_entry_path, resolve_path
 
 
+def _strip_utf8_bom(text: str) -> str:
+    """Remove a leading UTF-8 BOM while keeping other whitespace intact."""
+
+    return text.lstrip("\ufeff")
+
+
 class IngestOptions(BaseModel):
     sources: list[Path]
     source_type: str
@@ -125,16 +131,17 @@ def _write_yaml_if_changed(
 
 
 def _split_frontmatter(text: str) -> tuple[str, str]:
+    stripped = _strip_utf8_bom(text).lstrip()
     delimiter = None
-    if text.startswith("---"):
+    if stripped.startswith("---"):
         delimiter = "---"
-    elif text.startswith("+++"):
+    elif stripped.startswith("+++"):
         delimiter = "+++"
     if delimiter is None:
         msg = "Markdown entry missing YAML/TOML frontmatter delimiter"
         raise ValueError(msg)
 
-    parts = text.split(delimiter, 2)
+    parts = stripped.split(delimiter, 2)
     if len(parts) < 3:
         msg = "Incomplete YAML/TOML frontmatter block"
         raise ValueError(msg)
