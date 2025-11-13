@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from hashlib import sha256
 from typing import TYPE_CHECKING
 
+import pytest
 import yaml
 from typer.testing import CliRunner
 
 from aijournal.cli import app
+from aijournal.commands.ingest import _fake_structured_entry
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -85,3 +88,23 @@ def test_ingest_skips_duplicate_hash(
     manifest_path = cli_workspace / "data" / "manifest" / "ingested.yaml"
     manifest: list[dict[str, object]] = _read_yaml(manifest_path)
     assert len(manifest) == 1
+
+
+def test_fake_structured_entry_handles_malformed_frontmatter(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bad = tmp_path / "broken.md"
+    bad.write_text(
+        '---\ntitle: "Broken\nsummary: Missing closing quote\n---\nBody text',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "aijournal.utils.time.now",
+        lambda: datetime(2025, 1, 1, 8, 0, tzinfo=UTC),
+    )
+
+    result = _fake_structured_entry(bad)
+
+    assert result.title == "broken"
+    assert result.created_at.startswith("2025-01-01")
+    assert result.sections

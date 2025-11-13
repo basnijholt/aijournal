@@ -27,6 +27,7 @@ from aijournal.domain.facts import (
     MicroFact,
     MicroFactsFile,
 )
+from aijournal.domain.journal import NormalizedEntry
 from aijournal.io.artifacts import save_artifact
 from aijournal.models.authoritative import ManifestEntry
 from aijournal.models.derived import (
@@ -987,6 +988,64 @@ def test_persist_file_slug_collision_logs_alias(
     manifest_entry = manifest[-1]
     assert manifest_entry.aliases == ["collide"]
     assert manifest_entry.snapshot_path is None
+
+
+def test_persist_file_falls_back_to_ingest_agent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    broken = tmp_path / "broken.md"
+    broken.write_text(
+        '---\ntitle: "Broken\nsummary: Missing closing quote\n---\nOriginal body',
+        encoding="utf-8",
+    )
+
+    called: dict[str, Path] = {}
+
+    def fake_ingest(inputs, *, root, source_path, raw_text, digest):  # type: ignore[annotation-unchecked]
+        called["source"] = source_path
+        normalized_seed = NormalizedEntry(
+            id="ingested-slug",
+            created_at="2024-02-02T00:00:00Z",
+            source_path="data/journal/2024/02/02/ingested-slug.md",
+            title="Synth Title",
+            tags=["synth"],
+            sections=[],
+            summary="Synth summary",
+            source_hash=digest,
+            source_type=inputs.source_type,
+        )
+        return (
+            {
+                "id": "ingested-slug",
+                "created_at": "2024-02-02T00:00:00Z",
+                "title": "Synth Title",
+                "summary": "Synth summary",
+            },
+            "Normalized body",
+            normalized_seed,
+            ["front matter synthesized via ingest agent"],
+        )
+
+    monkeypatch.setattr(
+        "aijournal.services.capture.stages.stage0_persist._ingest_frontmatter",
+        fake_ingest,
+    )
+
+    inputs = CaptureInput(source="file", paths=[str(broken)])
+    manifest: list[ManifestEntry] = []
+    config = AppConfig()
+    result = _persist_file_entry(
+        inputs, tmp_path, config, manifest, source_path=broken, snapshot=False
+    )
+
+    assert called["source"] == broken
+    assert result.slug == "ingested-slug"
+    assert any("ingest agent" in warning for warning in result.warnings)
+
+    markdown_path = tmp_path / result.markdown_path
+    content = markdown_path.read_text(encoding="utf-8")
+    assert "Synth Title" in content
+    assert "2024-02-02" in content
 
 
 def test_discover_markdown_files_recurses(tmp_path: Path) -> None:

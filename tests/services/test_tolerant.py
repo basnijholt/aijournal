@@ -317,6 +317,20 @@ Entry text.
         assert dt == datetime(2022, 1, 2, tzinfo=UTC)
         assert reason and "body line" in reason
 
+    def test_infers_from_body_without_label(self) -> None:
+        body = "Captured reflections from 2014/07/03 during the hike."
+        dt, reason = infer_created_at_from_context(source_path=None, body=body)
+        assert dt == datetime(2014, 7, 3, tzinfo=UTC)
+        assert reason and "body text" in reason
+
+    def test_infers_from_compact_filename(self) -> None:
+        dt, reason = infer_created_at_from_context(
+            source_path=Path("/notes/meeting_20190309.md"),
+            body="",
+        )
+        assert dt == datetime(2019, 3, 9, tzinfo=UTC)
+        assert reason and "filename" in reason
+
     def test_returns_none_when_no_matches(self) -> None:
         dt, reason = infer_created_at_from_context(source_path=None, body="No hints here")
         assert dt is None
