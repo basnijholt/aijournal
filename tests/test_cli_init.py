@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 from typer.testing import CliRunner
 
 from aijournal.cli import app
+from aijournal.utils.paths import AUTHORITATIVE_DIRS, DERIVED_DIRS
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -15,21 +16,7 @@ if TYPE_CHECKING:
     import pytest
 
 
-AUTHORITATIVE_DIRS = {
-    "profile",
-    "data/journal",
-    "data/normalized",
-    "prompts",
-}
-
-DERIVED_DIRS = {
-    "derived/summaries",
-    "derived/microfacts",
-    "derived/profile_proposals",
-    "derived/interviews",
-    "derived/advice",
-    "derived/index",
-}
+ALL_LAYOUT_DIRS = set(AUTHORITATIVE_DIRS) | set(DERIVED_DIRS)
 
 SEED_FILES = {
     "config.yaml",
@@ -42,6 +29,13 @@ def _assert_paths_exist(base: Path, relative_paths: Iterable[str]) -> None:
     for rel in relative_paths:
         path = base / rel
         assert path.exists(), f"Expected path missing: {rel}"
+
+
+def _assert_gitkeep_markers(base: Path, relative_dirs: Iterable[str]) -> None:
+    for rel in relative_dirs:
+        marker = (base / rel / ".gitkeep").resolve()
+        assert marker.exists(), f"Missing .gitkeep for {rel}"
+        assert marker.is_file(), f".gitkeep for {rel} is not a file"
 
 
 def _collect_relative(base: Path, *, files: bool) -> set[str]:
@@ -63,13 +57,14 @@ def test_init_creates_expected_structure(
 
     assert result.exit_code == 0, result.output
 
-    _assert_paths_exist(tmp_path, AUTHORITATIVE_DIRS | DERIVED_DIRS)
+    _assert_paths_exist(tmp_path, ALL_LAYOUT_DIRS)
     _assert_paths_exist(tmp_path, SEED_FILES)
+    _assert_gitkeep_markers(tmp_path, ALL_LAYOUT_DIRS)
 
     created_dirs = _collect_relative(tmp_path, files=False)
     created_files = _collect_relative(tmp_path, files=True)
 
-    assert created_dirs >= AUTHORITATIVE_DIRS | DERIVED_DIRS
+    assert created_dirs >= ALL_LAYOUT_DIRS
     assert created_files >= SEED_FILES
 
 
@@ -102,8 +97,9 @@ def test_init_respects_path_argument(
     result = cli_runner.invoke(app, ["init", "--path", str(target)])
 
     assert result.exit_code == 0, result.output
-    _assert_paths_exist(target, AUTHORITATIVE_DIRS | DERIVED_DIRS)
+    _assert_paths_exist(target, ALL_LAYOUT_DIRS)
     _assert_paths_exist(target, SEED_FILES)
+    _assert_gitkeep_markers(target, ALL_LAYOUT_DIRS)
 
 
 def test_init_prints_summary(
