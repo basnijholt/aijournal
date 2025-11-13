@@ -120,6 +120,16 @@ from aijournal.services.ollama import (
     resolve_ollama_host,
     run_ollama_agent,
 )
+from aijournal.services.persona_export import (
+    PersonaArtifactMissingError,
+    PersonaContentError,
+    PersonaVariant,
+    export_persona_markdown,
+    load_persona_core,
+)
+from aijournal.services.persona_export import (
+    PersonaExportOptions as PersonaExportOptions,
+)
 from aijournal.utils import time as time_utils
 from aijournal.utils.coercion import coerce_int
 from aijournal.utils.paths import (
@@ -1311,6 +1321,124 @@ def persona_status() -> None:
         typer.echo(f"- {reason}", err=True)
     typer.echo("Run `aijournal persona build` to refresh.")
     raise typer.Exit(1)
+
+
+@persona_app.command("export")
+def persona_export(
+    variant: str = typer.Option(
+        "short",
+        "--variant",
+        help="Preset size: tiny, short, or full.",
+        show_default=True,
+    ),
+    tokens: int | None = typer.Option(
+        None,
+        "--tokens",
+        help="Approximate token budget override (takes precedence over --variant).",
+    ),
+    output: Path | None = typer.Option(
+        None,
+        "--output",
+        "-o",
+        help="Destination file; defaults to stdout when omitted.",
+    ),
+    overwrite: bool = typer.Option(
+        False,
+        "--overwrite",
+        help="Allow overwriting an existing --output file.",
+    ),
+    deterministic: bool = typer.Option(
+        True,
+        "--deterministic/--no-deterministic",
+        help="Use stable ordering; disable to add seeded randomness.",
+    ),
+    seed: int | None = typer.Option(
+        None,
+        "--seed",
+        help="Optional seed used for tie-breaking when deterministic is enabled.",
+    ),
+    sort: str = typer.Option(
+        "strength",
+        "--sort",
+        help="Claim ordering: strength, recency, or id.",
+        show_default=True,
+    ),
+    max_items: int | None = typer.Option(
+        None,
+        "--max-items",
+        help="Optional hard cap on number of claims to include.",
+    ),
+    no_claim_markers: bool = typer.Option(
+        False,
+        "--no-claim-markers",
+        help="Omit [claim:<id>] markers when listing claims.",
+    ),
+) -> None:
+    """Render the current persona as Markdown for downstream LLM contexts."""
+
+    mode = variant.lower().strip()
+    allowed_variants = {value.value: value for value in PersonaVariant}
+    if mode not in allowed_variants:
+        raise typer.BadParameter(
+            "--variant must be one of: tiny, short, full.",
+            param_hint="--variant",
+        )
+    variant_value = allowed_variants[mode]
+
+    if tokens is not None and tokens <= 0:
+        raise typer.BadParameter("--tokens must be a positive integer.", param_hint="--tokens")
+    if max_items is not None and max_items <= 0:
+        raise typer.BadParameter(
+            "--max-items must be positive when provided.",
+            param_hint="--max-items",
+        )
+
+    sort_key = sort.lower().strip()
+    if sort_key not in {"strength", "recency", "id"}:
+        raise typer.BadParameter(
+            "--sort must be one of: strength, recency, id.",
+            param_hint="--sort",
+        )
+
+    workspace = _get_workspace()
+    config = load_config(workspace)
+    try:
+        persona = load_persona_core(workspace, config)
+    except PersonaArtifactMissingError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        raise typer.Exit(1) from exc
+
+    options = PersonaExportOptions(
+        variant=variant_value,
+        token_budget=tokens,
+        sort_by=sort_key,  # type: ignore[arg-type]
+        deterministic=deterministic,
+        seed=seed,
+        max_items=max_items,
+        include_claim_markers=not no_claim_markers,
+    )
+
+    try:
+        result = export_persona_markdown(persona, config=config, options=options)
+    except PersonaContentError as exc:
+        typer.secho(str(exc), fg=typer.colors.YELLOW, err=True)
+        raise typer.Exit(1) from exc
+
+    destination: Path | None = None
+    if output is not None:
+        destination = output if output.is_absolute() else workspace / output
+        if destination.exists() and not overwrite:
+            typer.secho(
+                f"Refusing to overwrite existing file: {destination}. Use --overwrite to replace it.",
+                fg=typer.colors.RED,
+                err=True,
+            )
+            raise typer.Exit(1)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_text(result.text, encoding="utf-8")
+        typer.echo(f"Wrote persona export to {destination}")
+    else:
+        typer.echo(result.text.rstrip())
 
 
 def _build_targeted_probes(
