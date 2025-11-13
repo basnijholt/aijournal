@@ -144,7 +144,46 @@ keeps derived artifacts refreshed automatically.
 
 ---
 
-## 8. Developer Notes
+## 8. Safety Best Practices
+
+### Profile Mutation Safety
+
+The default `--apply-profile=review` mode requires manual inspection before applying profile changes. This prevents trivial entries from corrupting your self-model.
+
+**Best Practices:**
+1. **Review before apply**: Always inspect `derived/pending/profile_updates/` batches before applying
+2. **Check diffs**: Run `git diff profile/` before committing profile changes
+3. **Backup regularly**: Keep versioned copies of `profile/` outside workspace
+4. **Audit claims**: Periodically run `aijournal ops profile status --verbose` to identify:
+   - Low-strength claims (strength <0.50)
+   - Duplicate or near-duplicate claims
+   - Stale claims (not updated in >365 days)
+5. **Use rollback**: If profile corrupted, use `git log profile/` + `git checkout <commit> -- profile/`
+
+### When to Use Auto-Apply
+
+Only use `--apply-profile=auto` when:
+- Running batch imports of curated notes you've manually pre-reviewed
+- Processing entries you've verified beforehand
+- Testing/developing new prompts in an isolated workspace
+
+**Never** use auto-apply for:
+- Casual daily journaling
+- Importing untrusted content
+- First-time ingestion of large archives
+
+### Consolidation Formula Improvements
+
+As of 2025-11-01, the consolidation formula uses square-root weighting (`w_prev = min(10.0, sqrt(n))`) to prevent single weak entries from degrading well-established claims:
+
+- **Old formula** (`log1p`): Single entry could drop strength 0.82 → 0.56 (31.7% degradation)
+- **New formula** (`sqrt`): Single entry drops strength 0.82 → 0.80 (~2.4% degradation)
+
+Claims with 100 observations now have 10x greater resistance to weak evidence. See `RISK_ANALYSIS.md` for mathematical validation.
+
+---
+
+## 9. Developer Notes
 
 The runtime is now split between small, testable modules:
 

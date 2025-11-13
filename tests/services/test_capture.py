@@ -363,15 +363,14 @@ def test_run_capture_records_telemetry(tmp_path: Path, monkeypatch: pytest.Monke
     result = run_capture(inputs)
 
     assert result.run_id.startswith("capture-")
+    # Core stages that always run
     for key in [
         "persist",
         "normalize",
         "derive.summarize",
         "derive.extract_facts",
         "derive.profile_suggest",
-        "derive.profile_apply",
         "derive.characterize",
-        "derive.review",
         "refresh.index",
         "refresh.persona",
     ]:
@@ -392,8 +391,9 @@ def test_run_capture_records_telemetry(tmp_path: Path, monkeypatch: pytest.Monke
     assert entry.normalized_path is not None
     assert (tmp_path / entry.normalized_path).exists()
 
+    # With review mode as default, neither profile_apply nor review runs automatically
     assert profile_apply_calls in ([], [entry.date])
-    assert review_calls
+    # review_calls may be empty in review mode (manual review required)
     assert stage_calls[0][0] == "summarize"
     assert index_rebuild_calls == [(None, None)]
     assert not index_tail_calls
@@ -421,6 +421,7 @@ def test_run_capture_records_telemetry(tmp_path: Path, monkeypatch: pytest.Monke
     ]
     event_names = {event.get("event") for event in events}
     assert all("timestamp" in event for event in events)
+    # Core events that always run (review mode excludes profile_apply and review)
     expected = {
         "preflight",
         "persist",
@@ -428,9 +429,7 @@ def test_run_capture_records_telemetry(tmp_path: Path, monkeypatch: pytest.Monke
         "derive.summarize",
         "derive.extract_facts",
         "derive.profile_suggest",
-        "derive.profile_apply",
         "derive.characterize",
-        "derive.review",
         "index.rebuild",
         "persona.status",
         "done",

@@ -23,7 +23,7 @@ class CaptureRequest(StrictModel):
     tags: list[str] = Field(default_factory=list)
     projects: list[str] = Field(default_factory=list)
     mood: str | None = None
-    apply_profile: Literal["auto", "review"] = "auto"
+    apply_profile: Literal["auto", "review"] = "review"
     rebuild: Literal["auto", "always", "skip"] = "auto"
     pack: Literal["L1", "L3", "L4"] | None = None
     retries: int = Field(DEFAULT_LLM_RETRIES, ge=0)
