@@ -4,8 +4,6 @@ from pathlib import Path
 from time import perf_counter
 from typing import TYPE_CHECKING
 
-import typer
-
 if TYPE_CHECKING:
     from aijournal.common.app_config import AppConfig
 
@@ -18,10 +16,10 @@ def run_characterize_stage_5(
     root: Path,
     config: AppConfig,
 ) -> CharacterizeStage5Outputs:
-    from aijournal.commands.characterize import run_characterize
     from aijournal.common.constants import DEFAULT_TIMEOUT_SECONDS
 
     from .. import CharacterizeStage5Outputs, OperationResult
+    from ..graceful import graceful_characterize
     from ..utils import (
         apply_profile_update_batch,
         noop_preview,
@@ -38,25 +36,21 @@ def run_characterize_stage_5(
     review_errors: list[str] = []
     for date in changed_dates:
         pending_before = pending_batches(root, config)
-        try:
-            batch_path = run_characterize(
-                date,
-                timeout=DEFAULT_TIMEOUT_SECONDS,
-                retries=inputs.retries,
-                progress=inputs.progress,
-                build_claim_preview=noop_preview,
-                workspace=root,
-            )
-        except typer.Exit as exc:
-            if exc.exit_code not in (0,):
-                characterize_errors.append(f"{date}: {exc}")
+        batch_path, error = graceful_characterize(
+            date,
+            timeout=DEFAULT_TIMEOUT_SECONDS,
+            retries=inputs.retries,
+            progress=inputs.progress,
+            build_claim_preview=noop_preview,
+            workspace=root,
+        )
+        if error:
+            characterize_errors.append(f"{date}: {error}")
             continue
-        except Exception as exc:  # pragma: no cover - defensive
-            characterize_errors.append(f"{date}: {exc}")
+        if batch_path is None:
             continue
-        else:
-            rel_batch = relative_path(batch_path, root)
-            characterize_paths.append(rel_batch)
+        rel_batch = relative_path(batch_path, root)
+        characterize_paths.append(rel_batch)
 
         pending_after = pending_batches(root, config)
         new_batches = sorted(pending_after - pending_before)

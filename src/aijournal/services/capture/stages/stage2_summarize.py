@@ -4,8 +4,6 @@ from pathlib import Path
 from time import perf_counter
 from typing import TYPE_CHECKING
 
-import typer
-
 if TYPE_CHECKING:
     from .. import CaptureInput, SummarizeStage2Outputs
 
@@ -15,33 +13,29 @@ def run_summarize_stage_2(
     inputs: CaptureInput,
     root: Path,
 ) -> SummarizeStage2Outputs:
-    from aijournal.commands.summarize import run_summarize
     from aijournal.common.constants import DEFAULT_TIMEOUT_SECONDS
 
     from .. import (
         OperationResult,
         SummarizeStage2Outputs,
     )
+    from ..graceful import graceful_summarize
     from ..utils import relative_path
 
     stage_start = perf_counter()
     summary_paths: list[str] = []
     summary_errors: list[str] = []
     for date in changed_dates:
-        try:
-            summary_path = run_summarize(
-                date,
-                timeout=DEFAULT_TIMEOUT_SECONDS,
-                retries=inputs.retries,
-                progress=inputs.progress,
-                workspace=root,
-            )
-        except typer.Exit as exc:
-            if exc.exit_code not in (0,):
-                summary_errors.append(f"{date}: {exc}")
-        except Exception as exc:  # pragma: no cover - defensive
-            summary_errors.append(f"{date}: {exc}")
-        else:
+        summary_path, error = graceful_summarize(
+            date,
+            timeout=DEFAULT_TIMEOUT_SECONDS,
+            retries=inputs.retries,
+            progress=inputs.progress,
+            workspace=root,
+        )
+        if error:
+            summary_errors.append(f"{date}: {error}")
+        elif summary_path:
             summary_paths.append(relative_path(summary_path, root))
     duration_ms = (perf_counter() - stage_start) * 1000.0
     summary_details: dict[str, object] = {"dates": changed_dates}
