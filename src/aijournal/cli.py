@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 import os
 import sys
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal, cast
@@ -23,6 +23,12 @@ from pydantic import ValidationError
 from typer.models import CommandInfo
 
 from aijournal.api.capture import CaptureRequest
+from aijournal.cli_helpers import (
+    ensure_output_write,
+    normalize_choice,
+    resolve_workspace_path,
+    write_text_file,
+)
 from aijournal.commands import summarize as summarize_commands
 from aijournal.commands.advise import (
     AdviceOptions,
@@ -187,41 +193,6 @@ def _workspace_with_config() -> tuple[Path, AppConfig]:
     workspace = _get_workspace()
     config = load_config(workspace)
     return workspace, config
-
-
-def _normalize_choice(
-    value: str,
-    *,
-    option: str,
-    allowed: Mapping[str, str] | Sequence[str],
-    casefold_input: bool = True,
-    error: Literal["badparam", "exit"] = "badparam",
-    exit_code: int = 2,
-) -> str:
-    """Normalize an option value against an allowed set and emit consistent errors."""
-
-    if isinstance(allowed, Mapping):
-        lookup = allowed
-        display_values = list(dict.fromkeys(allowed.values()))
-        casefold_lookup = casefold_input
-    else:
-        lookup = {(item.lower() if casefold_input else item): item for item in allowed}
-        display_values = list(dict.fromkeys(lookup.values()))
-        casefold_lookup = casefold_input
-
-    normalized_key = value.strip()
-    if casefold_lookup:
-        normalized_key = normalized_key.lower()
-
-    canonical = lookup.get(normalized_key)
-    if canonical is None:
-        message = f"{option} must be one of: {', '.join(display_values)}."
-        if error == "exit":
-            typer.secho(message, fg=typer.colors.RED, err=True)
-            raise typer.Exit(exit_code)
-        raise typer.BadParameter(message, param_hint=option)
-
-    return canonical
 
 
 app = typer.Typer(
@@ -567,21 +538,21 @@ def capture(
         )
         raise typer.Exit(code=2)
 
-    source_type_value = _normalize_choice(
+    source_type_value = normalize_choice(
         source_type,
         option="--source-type",
         allowed=("journal", "notes", "blog"),
         error="exit",
     )
 
-    apply_profile_value = _normalize_choice(
+    apply_profile_value = normalize_choice(
         apply_profile,
         option="--apply-profile",
         allowed=("auto", "review"),
         error="exit",
     )
 
-    rebuild_value = _normalize_choice(
+    rebuild_value = normalize_choice(
         rebuild,
         option="--rebuild",
         allowed=("auto", "always", "skip"),
@@ -590,7 +561,7 @@ def capture(
 
     pack_value: str | None = None
     if pack:
-        pack_value = _normalize_choice(
+        pack_value = normalize_choice(
             pack,
             option="--pack",
             allowed=("L1", "L3", "L4"),
@@ -898,7 +869,7 @@ def dev_human_sim(
 
     from aijournal.simulator.orchestrator import HumanSimulator
 
-    resolved_pack = _normalize_choice(
+    resolved_pack = normalize_choice(
         pack_level,
         option="--pack-level",
         allowed=("L1", "L3", "L4"),
@@ -1483,7 +1454,7 @@ def persona_export(
         output_dir=output_dir,
     )
 
-    sort_key = _normalize_choice(
+    sort_key = normalize_choice(
         sort,
         option="--sort",
         allowed=("strength", "recency", "id"),
@@ -1557,7 +1528,7 @@ def _normalize_persona_variants(raw_variants: Iterable[str]) -> list[PersonaVari
         else:
             member = allowed.get(value)
             if member is None:
-                _normalize_choice(
+                normalize_choice(
                     value,
                     option="--variant",
                     allowed=tuple(allowed.keys()),
@@ -1619,7 +1590,7 @@ def _write_persona_exports(
     overwrite: bool,
 ) -> bool:
     if output_dir is not None:
-        destination_dir = _resolve_workspace_path(workspace, output_dir)
+        destination_dir = resolve_workspace_path(workspace, output_dir)
         destination_dir.mkdir(parents=True, exist_ok=True)
         targets: list[tuple[Path, PersonaExportResult]] = []
         for label, _, result in rendered:
@@ -1627,43 +1598,24 @@ def _write_persona_exports(
             targets.append((destination_dir / filename, result))
 
         for path, _ in targets:
-            _ensure_output_write(path, overwrite=overwrite)
+            ensure_output_write(path, overwrite=overwrite)
 
         written: list[Path] = []
         for path, result in targets:
-            _write_text_file(path, result.text)
+            write_text_file(path, result.text)
             written.append(path)
         joined = ", ".join(str(path) for path in written)
         typer.echo(f"Wrote persona exports to {joined}")
         return True
 
     if output is not None:
-        destination = _resolve_workspace_path(workspace, output)
-        _ensure_output_write(destination, overwrite=overwrite)
-        _write_text_file(destination, rendered[0][2].text)
+        destination = resolve_workspace_path(workspace, output)
+        ensure_output_write(destination, overwrite=overwrite)
+        write_text_file(destination, rendered[0][2].text)
         typer.echo(f"Wrote persona export to {destination}")
         return True
 
     return False
-
-
-def _resolve_workspace_path(workspace: Path, target: Path) -> Path:
-    return target if target.is_absolute() else workspace / target
-
-
-def _ensure_output_write(path: Path, *, overwrite: bool, exit_code: int = 1) -> None:
-    if path.exists() and not overwrite:
-        typer.secho(
-            f"Refusing to overwrite existing file: {path}. Use --overwrite to replace it.",
-            fg=typer.colors.RED,
-            err=True,
-        )
-        raise typer.Exit(exit_code)
-
-
-def _write_text_file(path: Path, text: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(text, encoding="utf-8")
 
 
 def _build_targeted_probes(

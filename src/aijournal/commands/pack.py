@@ -9,6 +9,7 @@ from pathlib import Path
 import typer
 from pydantic import BaseModel
 
+from aijournal.cli_helpers import resolve_workspace_path
 from aijournal.commands.index import _index_settings
 from aijournal.commands.ingest import _relative_source_path
 from aijournal.commands.persona import ensure_persona_ready_for_pack
@@ -228,13 +229,14 @@ def persist_output(ctx: RunContext, result: PackResult) -> None:
         return
 
     if result.output:
-        result.output.parent.mkdir(parents=True, exist_ok=True)
-        previous = result.output.read_text(encoding="utf-8") if result.output.exists() else None
-        save_artifact(result.output, artifact, format=result.fmt_value)
-        new_text = result.output.read_text(encoding="utf-8") if result.output.exists() else None
+        destination = resolve_workspace_path(ctx.workspace, result.output)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        previous = destination.read_text(encoding="utf-8") if destination.exists() else None
+        save_artifact(destination, artifact, format=result.fmt_value)
+        new_text = destination.read_text(encoding="utf-8") if destination.exists() else None
         changed = previous != new_text
         if changed:
-            typer.echo(str(result.output))
+            typer.echo(str(destination))
         else:
             typer.echo("No changes")
         return
