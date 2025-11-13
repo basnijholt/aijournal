@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 import os
 import sys
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal, cast
@@ -187,6 +187,41 @@ def _workspace_with_config() -> tuple[Path, AppConfig]:
     workspace = _get_workspace()
     config = load_config(workspace)
     return workspace, config
+
+
+def _normalize_choice(
+    value: str,
+    *,
+    option: str,
+    allowed: Mapping[str, str] | Sequence[str],
+    casefold_input: bool = True,
+    error: Literal["badparam", "exit"] = "badparam",
+    exit_code: int = 2,
+) -> str:
+    """Normalize an option value against an allowed set and emit consistent errors."""
+
+    if isinstance(allowed, Mapping):
+        lookup = allowed
+        display_values = list(dict.fromkeys(allowed.values()))
+        casefold_lookup = casefold_input
+    else:
+        lookup = {(item.lower() if casefold_input else item): item for item in allowed}
+        display_values = list(dict.fromkeys(lookup.values()))
+        casefold_lookup = casefold_input
+
+    normalized_key = value.strip()
+    if casefold_lookup:
+        normalized_key = normalized_key.lower()
+
+    canonical = lookup.get(normalized_key)
+    if canonical is None:
+        message = f"{option} must be one of: {', '.join(display_values)}."
+        if error == "exit":
+            typer.secho(message, fg=typer.colors.RED, err=True)
+            raise typer.Exit(exit_code)
+        raise typer.BadParameter(message, param_hint=option)
+
+    return canonical
 
 
 app = typer.Typer(
@@ -532,30 +567,35 @@ def capture(
         )
         raise typer.Exit(code=2)
 
-    source_type_value = source_type.lower()
-    if source_type_value not in {"journal", "notes", "blog"}:
-        typer.secho(
-            "--source-type must be one of: journal, notes, blog.", fg=typer.colors.RED, err=True
-        )
-        raise typer.Exit(code=2)
+    source_type_value = _normalize_choice(
+        source_type,
+        option="--source-type",
+        allowed=("journal", "notes", "blog"),
+        error="exit",
+    )
 
-    apply_profile_value = apply_profile.lower()
-    if apply_profile_value not in {"auto", "review"}:
-        typer.secho("--apply-profile must be auto or review.", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=2)
+    apply_profile_value = _normalize_choice(
+        apply_profile,
+        option="--apply-profile",
+        allowed=("auto", "review"),
+        error="exit",
+    )
 
-    rebuild_value = rebuild.lower()
-    if rebuild_value not in {"auto", "always", "skip"}:
-        typer.secho("--rebuild must be auto, always, or skip.", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=2)
+    rebuild_value = _normalize_choice(
+        rebuild,
+        option="--rebuild",
+        allowed=("auto", "always", "skip"),
+        error="exit",
+    )
 
     pack_value: str | None = None
     if pack:
-        pack_upper = pack.upper()
-        if pack_upper not in {"L1", "L3", "L4"}:
-            typer.secho("--pack must be one of: L1, L3, L4.", fg=typer.colors.RED, err=True)
-            raise typer.Exit(code=2)
-        pack_value = pack_upper
+        pack_value = _normalize_choice(
+            pack,
+            option="--pack",
+            allowed=("L1", "L3", "L4"),
+            error="exit",
+        )
 
     if not (0 <= min_stage <= CAPTURE_MAX_STAGE and 0 <= max_stage <= CAPTURE_MAX_STAGE):
         typer.secho(
@@ -858,10 +898,13 @@ def dev_human_sim(
 
     from aijournal.simulator.orchestrator import HumanSimulator
 
-    resolved_pack = pack_level.upper()
-    if resolved_pack not in {"L1", "L3", "L4"}:
-        typer.secho("--pack-level must be one of L1, L3, or L4", fg=typer.colors.RED, err=True)
-        raise typer.Exit(1)
+    resolved_pack = _normalize_choice(
+        pack_level,
+        option="--pack-level",
+        allowed=("L1", "L3", "L4"),
+        error="exit",
+        exit_code=1,
+    )
 
     pack_literal = cast(Literal["L1", "L3", "L4"], resolved_pack)
     simulator = HumanSimulator(max_stage=max_stage, pack_level=pack_literal)
@@ -1440,12 +1483,11 @@ def persona_export(
         output_dir=output_dir,
     )
 
-    sort_key = sort.lower().strip()
-    if sort_key not in {"strength", "recency", "id"}:
-        raise typer.BadParameter(
-            "--sort must be one of: strength, recency, id.",
-            param_hint="--sort",
-        )
+    sort_key = _normalize_choice(
+        sort,
+        option="--sort",
+        allowed=("strength", "recency", "id"),
+    )
 
     workspace, config = _workspace_with_config()
     try:
@@ -1515,10 +1557,12 @@ def _normalize_persona_variants(raw_variants: Iterable[str]) -> list[PersonaVari
         else:
             member = allowed.get(value)
             if member is None:
-                raise typer.BadParameter(
-                    "--variant must be one of: tiny, short, full, or all.",
-                    param_hint="--variant",
+                _normalize_choice(
+                    value,
+                    option="--variant",
+                    allowed=tuple(allowed.keys()),
                 )
+                raise AssertionError("unreachable")
             candidates = (member,)
 
         for candidate in candidates:
