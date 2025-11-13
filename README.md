@@ -1,5 +1,8 @@
 # aijournal
 
+> [!WARNING]
+> This is a mostly AI coded experiment.
+
 **aijournal** is a local-first, AI-powered journal designed to build a deep, evolving understanding of who you are. Imagine a diary that not only stores your thoughts but actively learns from them to maintain a detailed, evidence-linked model of your character—your motivations, goals, values, and ambitions.
 
 Everything is transparent and owned by you, stored in plain text Markdown and YAML files. As you add entries, `aijournal`:
