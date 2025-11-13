@@ -182,6 +182,13 @@ def _get_workspace() -> Path:
     return workspace
 
 
+def _workspace_with_config() -> tuple[Path, AppConfig]:
+    """Return the active workspace and its loaded config."""
+    workspace = _get_workspace()
+    config = load_config(workspace)
+    return workspace, config
+
+
 app = typer.Typer(
     help="Local-first personal journal utilities.",
     context_settings={"help_option_names": ["-h", "--help"]},
@@ -1042,8 +1049,7 @@ def facts(
 ) -> None:
     """Generate micro-facts from normalized entries."""
     _emit_deprecation("aijournal ops pipeline extract-facts", "aijournal capture --from/--text")
-    workspace = _get_workspace()
-    config = load_config(workspace)
+    workspace, config = _workspace_with_config()
     _, claim_models = load_profile_components(workspace, config=config)
     ctx = _run_context("facts", workspace=workspace, config=config)
     output = run_facts_command(
@@ -1181,8 +1187,7 @@ def review_updates(
 ) -> None:
     """Review or apply pending profile update batches."""
     _emit_deprecation("aijournal ops pipeline review", "aijournal capture --apply-profile review")
-    workspace = _get_workspace()
-    config = load_config(workspace)
+    workspace, config = _workspace_with_config()
     batch_path = file or _latest_pending_batch(workspace, config)
     if batch_path is None:
         typer.secho("No pending profile update batches found.", fg=typer.colors.RED, err=True)
@@ -1308,8 +1313,7 @@ def ollama_health() -> None:
                 },
             )
 
-    workspace = _get_workspace()
-    config = load_config(workspace)
+    workspace, config = _workspace_with_config()
     payload = {
         "endpoint": base,
         "default": build_ollama_config_from_mapping(config).model,
@@ -1334,8 +1338,7 @@ def persona_build(
     ),
 ) -> None:
     """Regenerate derived/persona/persona_core.yaml."""
-    workspace = _get_workspace()
-    config = load_config(workspace)
+    workspace, config = _workspace_with_config()
     profile_model, claim_models = load_profile_components(workspace, config=config)
     profile = profile_to_dict(profile_model)
     path, changed = run_persona_build(
@@ -1354,8 +1357,7 @@ def persona_build(
 @persona_app.command("status")
 def persona_status() -> None:
     """Check whether persona_core.yaml matches the latest profile edits."""
-    workspace = _get_workspace()
-    config = load_config(workspace)
+    workspace, config = _workspace_with_config()
     status, reasons = persona_state(workspace, workspace, config)
     if status == "fresh":
         typer.echo("Persona core is up to date (profile files unchanged).")
@@ -1445,8 +1447,7 @@ def persona_export(
             param_hint="--sort",
         )
 
-    workspace = _get_workspace()
-    config = load_config(workspace)
+    workspace, config = _workspace_with_config()
     try:
         persona = load_persona_core(workspace, config)
     except PersonaArtifactMissingError as exc:
@@ -1947,9 +1948,7 @@ def interview(
     date: str = typer.Option(..., "--date", "-d", help="Date (YYYY-MM-DD) to review."),
 ) -> None:
     """Surface targeted interview probes based on stale facets."""
-    workspace = _get_workspace()
-
-    config = load_config(workspace)
+    workspace, config = _workspace_with_config()
 
     profile_model, claim_models = load_profile_components(workspace, config=config)
     profile = profile_to_dict(profile_model)
