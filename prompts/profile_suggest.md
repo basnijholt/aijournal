@@ -27,11 +27,12 @@ Read the inputs, form hypotheses, check the entries, and document only what the 
 ## Reasoning Checklist
 1. Read `PROFILE_JSON` and `CLAIMS_JSON` to understand the current baseline.
 2. Collect candidate signals from `ENTRIES_JSON` summaries, sections, tags, and paragraphs.
-3. Strengthen or refine an existing claim or facet when new evidence confirms it.
-4. Introduce a new claim or facet only when entries reveal a durable new pattern.
-5. Remove a facet when the evidence shows it no longer applies.
-6. Score each claim using the strength calibration ladder below; default to 0.55 when in doubt.
-7. Document each accepted insight using the schema exactly as specified and drop anything that lacks evidence or duplicates existing statements.
+3. Treat figurative, metaphorical, or speculative language as context only; only promote it into a claim when the entry states the fact plainly and unambiguously.
+4. Strengthen or refine an existing claim or facet when new evidence confirms it.
+5. Introduce a new claim or facet only when entries reveal a durable new pattern.
+6. Remove a facet when the evidence shows it no longer applies.
+7. Score each claim using the strength calibration ladder below; default to 0.55 when in doubt.
+8. Document each accepted insight using the schema exactly as specified and drop anything that lacks evidence or duplicates existing statements.
 
 ## Strength Calibration Reference
 - 0.30–0.40: Single ambiguous mention or inference only; exploratory.
