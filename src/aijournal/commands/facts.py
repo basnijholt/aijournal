@@ -30,7 +30,7 @@ from aijournal.common.context import RunContext
 from aijournal.common.meta import Artifact, ArtifactKind
 from aijournal.domain.changes import ClaimProposal
 from aijournal.domain.claims import ClaimAtom, ClaimSource
-from aijournal.domain.facts import MicroFactsFile
+from aijournal.domain.facts import DailySummary, MicroFactsFile
 from aijournal.domain.journal import NormalizedEntry
 from aijournal.domain.prompts import PromptMicroFacts, convert_prompt_microfacts
 from aijournal.io.artifacts import save_artifact
@@ -38,6 +38,7 @@ from aijournal.models.authoritative import ManifestEntry
 from aijournal.models.derived import ProfileUpdatePreview
 from aijournal.pipelines import facts as facts_pipeline
 from aijournal.services.ollama import LLMResponseError, resolve_model_name
+from aijournal.services.summaries import SummaryNotFoundError, load_daily_summary
 from aijournal.utils import time as time_utils
 
 
@@ -99,6 +100,7 @@ class FactsOptions(BaseModel):
 class FactsPrepared:
     date: str
     entries: list[NormalizedEntry]
+    summary: DailySummary
     timeout: float
     retries: int
     manifest_index: dict[str, ManifestEntry]
@@ -139,6 +141,15 @@ def prepare_inputs(ctx: RunContext, options: FactsOptions) -> FactsPrepared:
 
     manifest_entries = _load_manifest(_manifest_path(ctx.workspace, ctx.config))
     manifest_index = _manifest_by_id(manifest_entries)
+    try:
+        summary = cast(
+            DailySummary,
+            load_daily_summary(ctx.workspace, ctx.config, options.date),
+        )
+    except SummaryNotFoundError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        ctx.emit(event="command_failed", reason="missing_summary", date=options.date)
+        raise typer.Exit(1) from exc
     if options.claim_models is not None:
         claim_models = [claim.model_copy(deep=True) for claim in options.claim_models]
     else:
@@ -157,6 +168,7 @@ def prepare_inputs(ctx: RunContext, options: FactsOptions) -> FactsPrepared:
     return FactsPrepared(
         date=options.date,
         entries=list(entries),
+        summary=summary,
         timeout=timeout_value,
         retries=options.retries,
         manifest_index=manifest_index,
@@ -179,6 +191,7 @@ def invoke_pipeline(ctx: RunContext, prepared: FactsPrepared) -> FactsResult:
                     "entries_json": _json_block(
                         _entries_to_payload(prepared.entries, prepared.workspace)
                     ),
+                    "summary_json": _json_block(prepared.summary.model_dump(mode="python")),
                 },
                 response_model=PromptMicroFacts,
                 agent_name="aijournal-facts",

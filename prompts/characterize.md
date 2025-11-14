@@ -19,15 +19,25 @@ If you genuinely have nothing new to add, return `{"claims": [], "facets": [], "
 - Aim for durable, evidence-backed updates.
 - Lower confidence or defer with an interview prompt when the signal is weak.
 
+## Daily Summary Context
+- `SUMMARY_JSON` is the Stage 2 artifact (`derived/summaries/<DATE>.yaml`) for the target day.
+- `SUMMARY_WINDOW_JSON` (when provided) includes recent summaries ordered from oldest to newest.
+- Treat these summaries as your **starting map**: read them before diving into the normalized entries.
+- Use the summaries to form hypotheses about habits, goals, or tensions, then verify each hypothesis against `ENTRIES_JSON`.
+- When a summary highlight lacks supporting paragraphs, prefer an interview prompt over speculation.
+- When entries surface strong evidence the summaries missed, you may still propose claims; the summaries guide attention, not scope.
+
 ---
 ## Reasoning Workflow
-1. Read `PROFILE_JSON` and `CLAIMS_JSON` to understand the baseline.
-2. Review `ENTRIES_JSON` (summaries, sections, mood, tags, paragraphs) and `MANIFEST_JSON` metadata for concrete behaviors or shifts.
-3. Reinforce or adjust an existing claim or facet when new observations confirm it.
-4. Introduce a new claim or facet only when entries show a consistent new pattern or motivation.
-5. Remove a facet when entries contradict it or it is clearly outdated.
-6. Queue an interview prompt for important ambiguities rather than speculating.
-7. Fill out the schema precisely for every accepted insight and verify against the constraints before emitting JSON.
+1. Read `SUMMARY_JSON` to understand the day's bullets, highlights, and todo candidates.
+2. Scan `SUMMARY_WINDOW_JSON` (when present) to see how recent themes evolved.
+3. Read `PROFILE_JSON` and `CLAIMS_JSON` to understand the baseline persona.
+4. Use the summaries to prioritize which portions of `ENTRIES_JSON` deserve deep inspection; always verify summary-derived hypotheses against the normalized entries and `MANIFEST_JSON`.
+5. Reinforce or adjust an existing claim/facet when entries confirm a summarized pattern.
+6. Introduce new claims or facets only when entries reveal durable behavior that summaries hint at (or that summaries missed but entries prove).
+7. Remove facets when entries contradict them or the summary trend shows they no longer apply.
+8. Queue interview prompts for ambiguities, summary/entry mismatches, or emerging questions rather than speculating.
+9. Fill out the schema precisely for every accepted insight and verify all constraints before emitting JSON.
 
 ## Strength Calibration Reference
 - 0.30–0.40: Single ambiguous mention or inference only; treat as exploratory.
@@ -185,6 +195,7 @@ Return `{"claims": [], "facets": [], "interview_prompts": []}` when **any** of t
 - All entries are metadata-only with no summaries, sections, or paragraphs to ground evidence (raise interview prompts instead).
 - Evidence contradicts itself across entries and cannot be resolved without operator input.
 - No new information exists beyond what `CLAIMS_JSON` and `PROFILE_JSON` already capture.
+- `SUMMARY_JSON` is missing, malformed, or contradicts the entries in a way you cannot resolve by examining `ENTRIES_JSON`.
 Do not add explanations; the system records failures separately.
 
 ---
@@ -198,6 +209,10 @@ PROFILE_JSON: $profile_json
 CLAIMS_JSON: $claims_json
 
 MANIFEST_JSON: $manifest_json
+
+SUMMARY_JSON: $summary_json
+
+SUMMARY_WINDOW_JSON: $summary_window_json
 
 ---
 ## Final Instruction

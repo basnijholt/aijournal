@@ -35,6 +35,7 @@ from aijournal.domain.claims import (
     Scope,
 )
 from aijournal.domain.evidence import SourceRef, redact_source_text
+from aijournal.domain.facts import DailySummary
 from aijournal.domain.journal import NormalizedEntry
 from aijournal.domain.prompts import PromptProfileUpdates, convert_prompt_updates_to_proposals
 from aijournal.fakes import fake_profile_proposals
@@ -44,6 +45,7 @@ from aijournal.models.authoritative import ClaimsFile, SelfProfile
 from aijournal.pipelines import normalization
 from aijournal.services.consolidator import ClaimConsolidator, ClaimMergeOutcome
 from aijournal.services.ollama import LLMResponseError
+from aijournal.services.summaries import SummaryNotFoundError, load_daily_summary
 from aijournal.utils import time as time_utils
 
 DEFAULT_PROFILE_RETRIES = 1
@@ -63,6 +65,7 @@ class ProfileSuggestPrepared:
     retries: int
     progress: bool
     entries: list[NormalizedEntry]
+    summary: DailySummary
     profile: dict[str, Any]
     claims: list[ClaimAtom]
     config: AppConfig
@@ -233,6 +236,16 @@ def run_profile_suggest_command(
             f"Generating profile suggestions for {opts.date}", entries, opts.progress
         )
 
+        try:
+            summary = cast(
+                DailySummary,
+                load_daily_summary(ctx.workspace, ctx.config, opts.date),
+            )
+        except SummaryNotFoundError as exc:
+            typer.secho(str(exc), fg=typer.colors.RED, err=True)
+            ctx.emit(event="command_failed", reason="missing_summary", date=opts.date)
+            raise typer.Exit(1) from exc
+
         ctx.emit(
             event="prepare_summary",
             entries=len(entries),
@@ -244,6 +257,7 @@ def run_profile_suggest_command(
             retries=opts.retries,
             progress=opts.progress,
             entries=list(entries),
+            summary=summary,
             profile=profile,
             claims=claims,
             config=ctx.config,
@@ -254,10 +268,11 @@ def run_profile_suggest_command(
         try:
             proposals = _profile_proposals_payload(
                 prepared.entries,
-                prepared.profile,
-                prepared.claims,
-                prepared.date,
-                prepared.config,
+                summary=prepared.summary,
+                profile=prepared.profile,
+                claims=prepared.claims,
+                date=prepared.date,
+                config=prepared.config,
                 workspace=prepared.workspace,
                 timeout=prepared.timeout,
                 retries=prepared.retries,
@@ -415,11 +430,12 @@ def run_profile_status_command(ctx: RunContext, options: ProfileStatusOptions) -
 
 def _profile_proposals_payload(
     entries: Sequence[NormalizedEntry],
+    *,
+    summary: DailySummary,
     profile: dict[str, Any],
     claims: Sequence[ClaimAtom],
     date: str,
     config: AppConfig,
-    *,
     workspace: Path,
     timeout: float | None = None,
     retries: int = DEFAULT_PROFILE_RETRIES,
@@ -441,6 +457,7 @@ def _profile_proposals_payload(
                 {
                     "date": date,
                     "entries_json": _json_block(_entries_to_payload(entries, workspace)),
+                    "summary_json": _json_block(summary.model_dump(mode="python")),
                     "profile_json": _json_block(profile),
                     "claims_json": _json_block(
                         {"claims": [claim.model_dump(mode="python") for claim in claims]}

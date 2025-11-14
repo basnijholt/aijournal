@@ -89,6 +89,37 @@ def write_normalized_entry(
     return path
 
 
+def write_daily_summary(
+    base: Path,
+    *,
+    date: str,
+    bullets: list[str] | None = None,
+    highlights: list[str] | None = None,
+    todo_candidates: list[str] | None = None,
+) -> Path:
+    """Write a minimal Artifact[DailySummary] for tests."""
+
+    payload = {
+        "kind": "summaries.daily",
+        "meta": {
+            "created_at": datetime.now(tz=UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "model": "fake-ollama",
+            "prompt_path": "prompts/summarize_day.md",
+            "prompt_hash": "test",
+        },
+        "data": {
+            "day": date,
+            "bullets": bullets or ["Captured daily snapshot"],
+            "highlights": highlights or [],
+            "todo_candidates": todo_candidates or [],
+        },
+    }
+    path = base / "derived" / "summaries" / f"{date}.yaml"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(dump_yaml(payload, sort_keys=False), encoding="utf-8")
+    return path
+
+
 def write_manifest(base: Path, entries: list[dict[str, Any]]) -> Path:
     path = base / "data" / "manifest" / "ingested.yaml"
     path.parent.mkdir(parents=True, exist_ok=True)
