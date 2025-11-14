@@ -923,7 +923,7 @@ def normalize(
     """Normalize a Markdown journal entry into structured YAML."""
     entry = entry.resolve()
     try:
-        frontmatter, sections = _parse_entry(entry)
+        frontmatter, sections, body = _parse_entry(entry)
     except ValueError as err:
         typer.secho(str(err), fg=typer.colors.RED, err=True)
         raise typer.Exit(1)
@@ -955,6 +955,8 @@ def normalize(
         "tags": tags,
         "sections": sections,
     }
+    if body.strip():
+        normalized_data["content"] = body.strip()
 
     output_path = normalized_entry_path(workspace, date_str, entry_id, paths=config.paths)
     _write_yaml_if_changed(
