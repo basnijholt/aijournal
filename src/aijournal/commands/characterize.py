@@ -354,6 +354,11 @@ def _characterize_payload(
 ) -> tuple[ProfileUpdateProposals, list[str]]:
     claim_timestamp = time_utils.format_timestamp(time_utils.now())
     context = _characterization_context(entries, manifest_index)
+    hash_lookup = {
+        entry_id: manifest.hash
+        for entry_id, manifest in manifest_index.items()
+        if getattr(manifest, "hash", None)
+    }
     target_date = date or time_utils.created_date(claim_timestamp)
     manifest_payload = _json_block(
         {key: entry.model_dump(mode="python") for key, entry in manifest_index.items()},
@@ -401,6 +406,7 @@ def _characterize_payload(
             llm_response,
             normalized_ids=context[0],
             manifest_hashes=context[1],
+            entry_hash_lookup=hash_lookup,
         )
 
     return characterize_pipeline.generate_characterization(

@@ -376,6 +376,9 @@ def normalize_claim_proposals(
             for src in combined_sources
         ]
 
+        scoped_ids = proposal.normalized_ids or normalized_ids
+        scoped_hashes = proposal.manifest_hashes or manifest_hashes
+
         proposals.append(
             ClaimProposal(
                 type=claim_input.type,
@@ -389,9 +392,9 @@ def normalize_claim_proposals(
                 method=claim_input.method,
                 user_verified=claim_input.user_verified,
                 review_after_days=claim_input.review_after_days,
-                normalized_ids=merge_unique(proposal.normalized_ids, normalized_ids),
+                normalized_ids=merge_unique(scoped_ids, []),
                 evidence=sanitized_sources,
-                manifest_hashes=merge_unique(proposal.manifest_hashes, manifest_hashes),
+                manifest_hashes=merge_unique(scoped_hashes, []),
                 rationale=proposal.rationale,
             ),
         )

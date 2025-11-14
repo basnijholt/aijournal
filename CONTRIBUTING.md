@@ -78,4 +78,14 @@ The pre-push hook and CI workflows run the non-bless check automatically; rememb
 - PRs should link back to the corresponding issue (if any) and include a short summary of the change plus testing notes.
 - Ensure documentation (README, workflow guide, architecture doc) stays accurate when behaviour changes.
 
+## 7. LLM prompts and DTO contracts
+
+Structured LLM commands follow a strict boundary so prompts stay stable and runtime models remain deterministic:
+
+- Typer commands that call `_invoke_structured_llm` **must** set `response_model` to a prompt DTO such as `PromptProfileUpdates`, `PromptMicroFacts`, `PromptFacetItem`, etc., or to a small allowlist of DTOs (`DailySummary`, `AdviceCard`). Never point `response_model` at runtime artifacts like `ProfileUpdateProposals`, `MicroFactsFile`, `FacetChange`, or any `Artifact[...]`.
+- Every new structured prompt needs a DTO defined in `src/aijournal/domain/prompts.py` (or a nearby domain module) plus a converter (e.g., `convert_prompt_microfacts`) that maps DTO instances into runtime models, adding IDs, provenance, and manifest hashes there—not in the prompt output.
+- Keep prompt templates (`prompts/*.md`) in sync with the DTO fields: require JSON-only payloads, forbid extra prose or markdown fences, and document any optional fields the DTO allows.
+- Micro-facts quality rule: prompts and converters must reject metadata-only statements ("entry created on…", "title is…", tag dumps). Facts and claim proposals must cite actual paragraph content via `evidence_entry` / `evidence_para` and default confidence rules.
+- Before submitting a PR, run `rg 'response_model=' -n src/aijournal/commands` and confirm every match points at an approved DTO. CI has a pytest check under `tests/ci/` that enforces the same rule—keep it green.
+
 Following this workflow keeps the project reproducible and easy to reason about for both humans and automated agents. Thank you for contributing!
