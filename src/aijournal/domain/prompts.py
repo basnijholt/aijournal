@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any
 
 from pydantic import Field, field_validator
@@ -204,10 +205,56 @@ def _source_from_prompt_fact(item: PromptMicroFact) -> SourceRef:
     return SourceRef(entry_id=entry_id, spans=spans)
 
 
+_METADATA_ID_HINTS = (
+    "entry-created",
+    "frontmatter",
+    "metadata",
+    "title-",
+    "tags-",
+    "mood-",
+    "slug",
+)
+
+_METADATA_STATEMENT_HINTS = (
+    "entry created",  # e.g. "Entry created on 2025-11-14"
+    "title is",
+    "tags include",
+    "tagged",
+    "front matter",
+    "metadata",
+    "slug",
+)
+
+
+def is_metadata_only_fact(item: PromptMicroFact) -> bool:
+    """Heuristic filter for metadata-only micro-facts.
+
+    Drops statements that merely restate front-matter (created_at, title, tags, mood)
+    or that omit an `evidence_entry`, which means the fact cannot be grounded in a
+    specific paragraph.
+    """
+
+    identifier = item.id.lower()
+    statement = item.statement.lower()
+
+    if not item.evidence_entry:
+        return True
+
+    if any(hint in identifier for hint in _METADATA_ID_HINTS):
+        return True
+
+    if any(hint in statement for hint in _METADATA_STATEMENT_HINTS):
+        return True
+
+    return False
+
+
 def convert_prompt_microfacts(prompt: PromptMicroFacts) -> Any:  # Returns MicroFactsFile
     """Convert lightweight prompt DTO to the authoritative micro-facts payload."""
 
     from aijournal.domain.facts import MicroFact, MicroFactsFile
+
+    filtered_facts = [fact for fact in prompt.facts if not is_metadata_only_fact(fact)]
 
     facts = [
         MicroFact(
@@ -218,7 +265,7 @@ def convert_prompt_microfacts(prompt: PromptMicroFacts) -> Any:  # Returns Micro
             first_seen=item.first_seen,
             last_seen=item.last_seen,
         )
-        for item in prompt.facts
+        for item in filtered_facts
     ]
 
     claim_proposals = [
@@ -265,18 +312,33 @@ def convert_prompt_updates_to_proposals(
     *,
     normalized_ids: list[str],
     manifest_hashes: list[str],
+    entry_hash_lookup: Mapping[str, str] | None = None,
 ) -> Any:  # Returns ProfileUpdateProposals
     """Convert lightweight prompt DTOs to full domain models with system metadata."""
     from aijournal.domain.changes import ProfileUpdateProposals
 
-    claims = [
-        convert_prompt_claim_to_proposal(
-            item,
-            normalized_ids=normalized_ids,
-            manifest_hashes=manifest_hashes,
+    def _claim_context(item: PromptClaimItem) -> tuple[list[str], list[str]]:
+        entry_id = (item.evidence_entry or "").strip()
+        if entry_id:
+            hashes: list[str] = []
+            if entry_hash_lookup:
+                manifest_hash = entry_hash_lookup.get(entry_id)
+                if manifest_hash:
+                    hashes = [manifest_hash]
+            return [entry_id], hashes
+
+        return list(normalized_ids), list(manifest_hashes)
+
+    claims = []
+    for item in prompt_updates.claims:
+        claim_ids, claim_hashes = _claim_context(item)
+        claims.append(
+            convert_prompt_claim_to_proposal(
+                item,
+                normalized_ids=claim_ids,
+                manifest_hashes=claim_hashes,
+            )
         )
-        for item in prompt_updates.claims
-    ]
 
     facets = [convert_prompt_facet_to_change(item) for item in prompt_updates.facets]
 

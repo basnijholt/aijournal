@@ -155,6 +155,12 @@ The runtime is now split between small, testable modules:
 - `src/aijournal/services/` keeps reusable integrations (Ollama client, retriever, chat API, feedback).
 - Strict schema definitions live in `src/aijournal/domain/` and every derived artifact persists as an `Artifact[T]` envelope. Keep an eye on the `schemas/core/` diff when touching models so you commit any intentional changes.
 
+### Prompt DTO contracts
+
+- Any `_invoke_structured_llm` call must use a prompt DTO as its `response_model`—usually a `Prompt*` class from `src/aijournal/domain/prompts.py` or the narrow allowlist (`DailySummary`, `AdviceCard`). Runtime artifacts (`ProfileUpdateProposals`, `MicroFactsFile`, etc.) never appear directly in `response_model`.
+- Commands convert DTOs into runtime models immediately via helpers like `convert_prompt_microfacts` or `convert_prompt_updates_to_proposals`, which add IDs, provenance, and manifest hashes.
+- Prompt templates in `prompts/*.md` must describe the DTO schema exactly and remind the model to emit JSON only. Stage 3 micro-facts additionally forbid metadata-only statements—facts must cite actual paragraph content through `evidence_entry` / `evidence_para`, not just front-matter.
+
 If you need to extend a command, start with the relevant `commands/*.py` module and only dip into pipelines/services when you need new orchestration steps. Keep CLI changes limited to wiring so the high-level flow in this guide stays stable.
 
 ---
