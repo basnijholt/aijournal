@@ -168,6 +168,74 @@ def convert_prompt_claim_to_proposal(
     )
 
 
+class PromptMicroFact(StrictModel):
+    """Lightweight micro-fact emitted by the LLM."""
+
+    id: str
+    statement: str = Field(..., max_length=500)
+    confidence: float | None = Field(default=None, ge=0.0, le=1.0)
+    evidence_entry: str | None = None
+    evidence_para: int = Field(default=0, ge=0)
+    first_seen: str | None = None
+    last_seen: str | None = None
+
+    @field_validator("statement", mode="before")
+    @classmethod
+    def _strip_statement(cls, value: Any) -> Any:
+        if isinstance(value, str):
+            value = value.strip()
+        if not value:
+            raise ValueError("statement cannot be empty")
+        return value
+
+
+class PromptMicroFacts(StrictModel):
+    """Container for LLM-emitted micro-facts and optional claim proposals."""
+
+    facts: list[PromptMicroFact] = Field(default_factory=list)
+    claim_proposals: list[PromptClaimItem] = Field(default_factory=list)
+
+
+def _source_from_prompt_fact(item: PromptMicroFact) -> SourceRef:
+    spans: list[Span] = []
+    if item.evidence_entry:
+        spans.append(Span(type="para", index=item.evidence_para))
+    entry_id = item.evidence_entry or f"prompt.fact.{item.id}"
+    return SourceRef(entry_id=entry_id, spans=spans)
+
+
+def convert_prompt_microfacts(prompt: PromptMicroFacts) -> Any:  # Returns MicroFactsFile
+    """Convert lightweight prompt DTO to the authoritative micro-facts payload."""
+
+    from aijournal.domain.facts import MicroFact, MicroFactsFile
+
+    facts = [
+        MicroFact(
+            id=item.id,
+            statement=item.statement,
+            confidence=float(item.confidence) if item.confidence is not None else 0.6,
+            evidence=_source_from_prompt_fact(item),
+            first_seen=item.first_seen,
+            last_seen=item.last_seen,
+        )
+        for item in prompt.facts
+    ]
+
+    claim_proposals = [
+        convert_prompt_claim_to_proposal(
+            proposal,
+            normalized_ids=[proposal.evidence_entry] if proposal.evidence_entry else [],
+            manifest_hashes=[],
+        )
+        for proposal in prompt.claim_proposals
+    ]
+
+    return MicroFactsFile(
+        facts=facts,
+        claim_proposals=claim_proposals,
+    )
+
+
 def convert_prompt_facet_to_change(item: PromptFacetItem) -> Any:  # Returns FacetChange
     """Convert lightweight prompt DTO to full FacetChange with system metadata."""
     from aijournal.domain.changes import FacetChange

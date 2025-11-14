@@ -11,7 +11,11 @@ import pytest
 
 from aijournal.domain.facts import DailySummary, MicroFactsFile
 from aijournal.domain.persona import InterviewSet
-from aijournal.domain.prompts import PromptProfileUpdates
+from aijournal.domain.prompts import (
+    PromptMicroFacts,
+    PromptProfileUpdates,
+    convert_prompt_microfacts,
+)
 from aijournal.models.derived import AdviceCard
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -26,13 +30,13 @@ def _load_example(name: str) -> dict[str, Any]:
 
 
 @pytest.mark.parametrize(
-    "filename,response_model,target_model,domain_keys",
+    "filename,response_model,target_model,domain_keys,converter",
     [
-        ("summarize.json", DailySummary, DailySummary, None),
-        ("extract_facts.json", MicroFactsFile, MicroFactsFile, None),
-        ("characterize.json", PromptProfileUpdates, PromptProfileUpdates, None),
-        ("profile_suggest.json", PromptProfileUpdates, PromptProfileUpdates, None),
-        ("advise.json", AdviceCard, AdviceCard, None),
+        ("summarize.json", DailySummary, DailySummary, None, None),
+        ("extract_facts.json", PromptMicroFacts, MicroFactsFile, None, convert_prompt_microfacts),
+        ("characterize.json", PromptProfileUpdates, PromptProfileUpdates, None, None),
+        ("profile_suggest.json", PromptProfileUpdates, PromptProfileUpdates, None, None),
+        ("advise.json", AdviceCard, AdviceCard, None, None),
     ],
 )
 def test_prompt_examples_validate_against_models(
@@ -40,6 +44,7 @@ def test_prompt_examples_validate_against_models(
     response_model: type,
     target_model: type | None,
     domain_keys: set[str] | None,
+    converter,
 ) -> None:
     """Each example must validate against response and domain schemas."""
 
@@ -51,12 +56,16 @@ def test_prompt_examples_validate_against_models(
 
     # Domain model (persisted artifact) when applicable.
     if target_model is not None:
-        domain_payload: dict[str, Any]
-        if domain_keys:
-            domain_payload = {key: payload[key] for key in domain_keys if key in payload}
+        if converter is not None:
+            domain_instance = converter(instance)
+            target_model.model_validate(domain_instance.model_dump(mode="python"))
         else:
-            domain_payload = payload
-        target_model.model_validate(domain_payload)
+            domain_payload: dict[str, Any]
+            if domain_keys:
+                domain_payload = {key: payload[key] for key in domain_keys if key in payload}
+            else:
+                domain_payload = payload
+            target_model.model_validate(domain_payload)
 
 
 def test_profile_suggest_example_matches_strict_schema() -> None:

@@ -32,6 +32,7 @@ from aijournal.domain.changes import ClaimProposal
 from aijournal.domain.claims import ClaimAtom, ClaimSource
 from aijournal.domain.facts import MicroFactsFile
 from aijournal.domain.journal import NormalizedEntry
+from aijournal.domain.prompts import PromptMicroFacts, convert_prompt_microfacts
 from aijournal.io.artifacts import save_artifact
 from aijournal.models.authoritative import ManifestEntry
 from aijournal.models.derived import ProfileUpdatePreview
@@ -167,15 +168,15 @@ def invoke_pipeline(ctx: RunContext, prepared: FactsPrepared) -> FactsResult:
     context = _characterization_context(prepared.entries, prepared.manifest_index)
 
     def request_microfacts() -> MicroFactsFile:
-        return cast(
-            MicroFactsFile,
+        llm_response = cast(
+            PromptMicroFacts,
             _invoke_structured_llm(
                 "prompts/extract_facts.md",
                 {
                     "date": prepared.date,
                     "entries_json": _json_block(_entries_to_payload(prepared.entries)),
                 },
-                response_model=MicroFactsFile,
+                response_model=PromptMicroFacts,
                 agent_name="aijournal-facts",
                 config=ctx.config,
                 timeout=prepared.timeout,
@@ -185,6 +186,7 @@ def invoke_pipeline(ctx: RunContext, prepared: FactsPrepared) -> FactsResult:
                 ),
             ),
         )
+        return convert_prompt_microfacts(llm_response)
 
     facts_data = facts_pipeline.generate_microfacts(
         prepared.entries,
