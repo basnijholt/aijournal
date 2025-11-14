@@ -3,121 +3,20 @@
     "FacetOperation": {
       "enum": [
         "set",
-        "remove",
-        "merge"
+        "remove"
       ],
       "title": "FacetOperation",
       "type": "string"
-    },
-    "SourceRef": {
-      "additionalProperties": false,
-      "description": "Reference to a normalized entry and the supporting spans.",
-      "properties": {
-        "entry_id": {
-          "title": "Entry Id",
-          "type": "string"
-        },
-        "spans": {
-          "items": {
-            "$ref": "#/$defs/Span"
-          },
-          "title": "Spans",
-          "type": "array"
-        }
-      },
-      "required": [
-        "entry_id"
-      ],
-      "title": "SourceRef",
-      "type": "object"
-    },
-    "Span": {
-      "additionalProperties": false,
-      "description": "Detailed pointer back into a source document.",
-      "properties": {
-        "end": {
-          "anyOf": [
-            {
-              "type": "integer"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "End"
-        },
-        "index": {
-          "anyOf": [
-            {
-              "type": "integer"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Index"
-        },
-        "start": {
-          "anyOf": [
-            {
-              "type": "integer"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Start"
-        },
-        "text": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Text"
-        },
-        "type": {
-          "title": "Type",
-          "type": "string"
-        }
-      },
-      "required": [
-        "type"
-      ],
-      "title": "Span",
-      "type": "object"
     }
   },
   "additionalProperties": false,
   "description": "Facet modification proposed by characterization pipelines.",
   "properties": {
-    "confidence": {
-      "anyOf": [
-        {
-          "type": "number"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null,
-      "title": "Confidence"
+    "action": {
+      "$ref": "#/$defs/FacetOperation",
+      "default": "set"
     },
-    "evidence": {
-      "items": {
-        "$ref": "#/$defs/SourceRef"
-      },
-      "title": "Evidence",
-      "type": "array"
-    },
-    "method": {
+    "evidence_entry": {
       "anyOf": [
         {
           "type": "string"
@@ -127,16 +26,19 @@
         }
       ],
       "default": null,
-      "title": "Method"
+      "title": "Evidence Entry"
     },
-    "operation": {
-      "$ref": "#/$defs/FacetOperation"
+    "evidence_para": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Evidence Para",
+      "type": "integer"
     },
     "path": {
       "title": "Path",
       "type": "string"
     },
-    "rationale": {
+    "reason": {
       "anyOf": [
         {
           "type": "string"
@@ -146,31 +48,7 @@
         }
       ],
       "default": null,
-      "title": "Rationale"
-    },
-    "review_after_days": {
-      "anyOf": [
-        {
-          "type": "integer"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null,
-      "title": "Review After Days"
-    },
-    "user_verified": {
-      "anyOf": [
-        {
-          "type": "boolean"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null,
-      "title": "User Verified"
+      "title": "Reason"
     },
     "value": {
       "anyOf": [
@@ -184,8 +62,7 @@
     }
   },
   "required": [
-    "path",
-    "operation"
+    "path"
   ],
   "title": "FacetChange",
   "type": "object"

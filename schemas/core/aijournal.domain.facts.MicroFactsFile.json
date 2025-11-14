@@ -1,66 +1,5 @@
 {
   "$defs": {
-    "ClaimAtomInput": {
-      "additionalProperties": false,
-      "description": "Normalized claim payload without identifiers or provenance.",
-      "properties": {
-        "method": {
-          "$ref": "#/$defs/ClaimMethod"
-        },
-        "predicate": {
-          "title": "Predicate",
-          "type": "string"
-        },
-        "review_after_days": {
-          "title": "Review After Days",
-          "type": "integer"
-        },
-        "scope": {
-          "$ref": "#/$defs/Scope"
-        },
-        "statement": {
-          "title": "Statement",
-          "type": "string"
-        },
-        "status": {
-          "$ref": "#/$defs/ClaimStatus"
-        },
-        "strength": {
-          "title": "Strength",
-          "type": "number"
-        },
-        "subject": {
-          "title": "Subject",
-          "type": "string"
-        },
-        "type": {
-          "$ref": "#/$defs/ClaimType"
-        },
-        "user_verified": {
-          "title": "User Verified",
-          "type": "boolean"
-        },
-        "value": {
-          "title": "Value",
-          "type": "string"
-        }
-      },
-      "required": [
-        "type",
-        "subject",
-        "predicate",
-        "value",
-        "statement",
-        "scope",
-        "strength",
-        "status",
-        "method",
-        "user_verified",
-        "review_after_days"
-      ],
-      "title": "ClaimAtomInput",
-      "type": "object"
-    },
     "ClaimConflictPayload": {
       "additionalProperties": false,
       "description": "Structured conflict emitted during consolidation previews.",
@@ -111,15 +50,6 @@
         "strength_delta"
       ],
       "title": "ClaimEventAction",
-      "type": "string"
-    },
-    "ClaimMethod": {
-      "enum": [
-        "self_report",
-        "inferred",
-        "behavioral"
-      ],
-      "title": "ClaimMethod",
       "type": "string"
     },
     "ClaimPreviewEvent": {
@@ -253,33 +183,9 @@
     },
     "ClaimProposal": {
       "additionalProperties": false,
-      "description": "Structured claim update prepared for downstream review.",
+      "description": "Flattened claim proposal emitted by the LLM.",
       "properties": {
-        "claim": {
-          "$ref": "#/$defs/ClaimAtomInput"
-        },
-        "evidence": {
-          "items": {
-            "$ref": "#/$defs/SourceRef"
-          },
-          "title": "Evidence",
-          "type": "array"
-        },
-        "manifest_hashes": {
-          "items": {
-            "type": "string"
-          },
-          "title": "Manifest Hashes",
-          "type": "array"
-        },
-        "normalized_ids": {
-          "items": {
-            "type": "string"
-          },
-          "title": "Normalized Ids",
-          "type": "array"
-        },
-        "rationale": {
+        "evidence_entry": {
           "anyOf": [
             {
               "type": "string"
@@ -289,11 +195,63 @@
             }
           ],
           "default": null,
-          "title": "Rationale"
+          "title": "Evidence Entry"
+        },
+        "evidence_para": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Evidence Para",
+          "type": "integer"
+        },
+        "predicate": {
+          "default": "states",
+          "maxLength": 80,
+          "title": "Predicate",
+          "type": "string"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reason"
+        },
+        "statement": {
+          "maxLength": 160,
+          "title": "Statement",
+          "type": "string"
+        },
+        "subject": {
+          "default": "self",
+          "maxLength": 80,
+          "title": "Subject",
+          "type": "string"
+        },
+        "type": {
+          "$ref": "#/$defs/ClaimType"
+        },
+        "value": {
+          "anyOf": [
+            {
+              "maxLength": 160,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Value"
         }
       },
       "required": [
-        "claim"
+        "type",
+        "statement"
       ],
       "title": "ClaimProposal",
       "type": "object"
@@ -348,15 +306,6 @@
       ],
       "title": "ClaimSignaturePayload",
       "type": "object"
-    },
-    "ClaimStatus": {
-      "enum": [
-        "accepted",
-        "tentative",
-        "rejected"
-      ],
-      "title": "ClaimStatus",
-      "type": "string"
     },
     "ClaimType": {
       "enum": [
@@ -444,40 +393,6 @@
         }
       },
       "title": "ProfileUpdatePreview",
-      "type": "object"
-    },
-    "Scope": {
-      "additionalProperties": false,
-      "description": "Contextual qualifiers for a claim atom.",
-      "properties": {
-        "conditions": {
-          "items": {
-            "type": "string"
-          },
-          "title": "Conditions",
-          "type": "array"
-        },
-        "context": {
-          "items": {
-            "type": "string"
-          },
-          "title": "Context",
-          "type": "array"
-        },
-        "domain": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Domain"
-        }
-      },
-      "title": "Scope",
       "type": "object"
     },
     "SourceRef": {
