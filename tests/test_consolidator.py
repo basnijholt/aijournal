@@ -113,3 +113,64 @@ def test_claim_consolidator_flags_conflicts_and_downgrades_strength() -> None:
     assert updated["strength"] == pytest.approx(0.65, abs=1e-6)
     assert updated["provenance"]["observation_count"] == 2
     assert updated["provenance"]["last_updated"] == "2025-10-26T03:00:00Z"
+
+
+def test_claim_consolidator_does_not_merge_general_into_scoped_claim() -> None:
+    existing_claim = make_claim_atom(
+        "preference.focus.window",
+        "Blocks 8-10 for deep work on weekdays.",
+        subject="focus_window",
+        strength=0.75,
+        status="accepted",
+        last_updated="2025-10-20T08:00:00Z",
+    )
+    existing_claim["scope"]["context"].append("weekday")
+
+    incoming_claim = make_claim_atom(
+        "proposal.focus.general",
+        "Blocks 8-10 for deep work on weekdays.",
+        subject="focus_window",
+        strength=0.6,
+        status="tentative",
+        last_updated="2025-10-25T08:00:00Z",
+    )
+
+    claims = [existing_claim]
+    consolidator = ClaimConsolidator(timestamp="2025-10-26T03:00:00Z")
+
+    outcome = consolidator.upsert(claims, incoming_claim)
+
+    assert outcome.action == "upsert"
+    assert len(claims) == 2
+    scoped_contexts = [ctx.lower() for ctx in claims[0]["scope"]["context"]]
+    assert "weekday" in scoped_contexts
+    general_claim = claims[1]
+    assert general_claim["scope"]["context"] == []
+
+
+def test_claim_consolidator_still_falls_back_for_unscoped_matches() -> None:
+    existing_claim = make_claim_atom(
+        "preference.focus.window",
+        "Blocks 8-10 for deep work.",
+        subject="focus_window",
+        strength=0.6,
+        status="accepted",
+        last_updated="2025-10-20T08:00:00Z",
+    )
+    incoming_claim = make_claim_atom(
+        "proposal.focus.general",
+        "Blocks 8-10 for deep work.",
+        subject="focus_window",
+        strength=0.8,
+        status="accepted",
+        last_updated="2025-10-25T08:00:00Z",
+    )
+
+    claims = [existing_claim]
+    consolidator = ClaimConsolidator(timestamp="2025-10-26T03:00:00Z")
+
+    outcome = consolidator.upsert(claims, incoming_claim)
+
+    assert outcome.action in {"strength_delta", "update"}
+    assert len(claims) == 1
+    assert claims[0]["strength"] >= 0.6

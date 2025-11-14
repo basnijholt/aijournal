@@ -40,6 +40,11 @@ def _scope_tuple(scope: Scope | None) -> tuple[str | None, tuple[str, ...], tupl
     return (domain, context, conditions)
 
 
+def _scope_is_empty(scope: tuple[str | None, tuple[str, ...], tuple[str, ...]]) -> bool:
+    domain, context, conditions = scope
+    return domain is None and not context and not conditions
+
+
 _SCOPE_QUALIFIER_GROUPS: dict[str, dict[str, tuple[str, ...]]] = {
     "day_type": {
         "weekday": ("weekday", "weekdays", "workday", "workdays"),
@@ -195,7 +200,7 @@ class ClaimConsolidator:
         incoming_id: str | None,
     ) -> int | None:
         fallback: int | None = None
-        allow_scope_fallback = not signature.scope[1] and not signature.scope[2]
+        allow_scope_fallback = _scope_is_empty(signature.scope)
         for idx, claim in enumerate(claims):
             if incoming_id and claim.id == incoming_id:
                 return idx
@@ -208,6 +213,7 @@ class ClaimConsolidator:
                 and claim_signature.subject == signature.subject
                 and claim_signature.predicate == signature.predicate
                 and allow_scope_fallback
+                and _scope_is_empty(claim_signature.scope)
             ):
                 fallback = idx
         return fallback

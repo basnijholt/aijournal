@@ -52,6 +52,15 @@
       "title": "ClaimEventAction",
       "type": "string"
     },
+    "ClaimMethod": {
+      "enum": [
+        "self_report",
+        "inferred",
+        "behavioral"
+      ],
+      "title": "ClaimMethod",
+      "type": "string"
+    },
     "ClaimPreviewEvent": {
       "additionalProperties": false,
       "description": "Outcome of attempting to merge a claim proposal into existing atoms.",
@@ -185,6 +194,13 @@
       "additionalProperties": false,
       "description": "Flattened claim proposal emitted by the LLM.",
       "properties": {
+        "evidence": {
+          "items": {
+            "$ref": "#/$defs/SourceRef"
+          },
+          "title": "Evidence",
+          "type": "array"
+        },
         "evidence_entry": {
           "anyOf": [
             {
@@ -202,6 +218,24 @@
           "minimum": 0,
           "title": "Evidence Para",
           "type": "integer"
+        },
+        "manifest_hashes": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Manifest Hashes",
+          "type": "array"
+        },
+        "method": {
+          "$ref": "#/$defs/ClaimMethod",
+          "default": "inferred"
+        },
+        "normalized_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Normalized Ids",
+          "type": "array"
         },
         "predicate": {
           "default": "states",
@@ -221,10 +255,29 @@
           "default": null,
           "title": "Reason"
         },
+        "review_after_days": {
+          "default": 120,
+          "title": "Review After Days",
+          "type": "integer"
+        },
+        "scope": {
+          "$ref": "#/$defs/Scope"
+        },
         "statement": {
           "maxLength": 160,
           "title": "Statement",
           "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/ClaimStatus",
+          "default": "tentative"
+        },
+        "strength": {
+          "default": 0.55,
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Strength",
+          "type": "number"
         },
         "subject": {
           "default": "self",
@@ -234,6 +287,11 @@
         },
         "type": {
           "$ref": "#/$defs/ClaimType"
+        },
+        "user_verified": {
+          "default": false,
+          "title": "User Verified",
+          "type": "boolean"
         },
         "value": {
           "anyOf": [
@@ -306,6 +364,15 @@
       ],
       "title": "ClaimSignaturePayload",
       "type": "object"
+    },
+    "ClaimStatus": {
+      "enum": [
+        "accepted",
+        "tentative",
+        "rejected"
+      ],
+      "title": "ClaimStatus",
+      "type": "string"
     },
     "ClaimType": {
       "enum": [
@@ -393,6 +460,40 @@
         }
       },
       "title": "ProfileUpdatePreview",
+      "type": "object"
+    },
+    "Scope": {
+      "additionalProperties": false,
+      "description": "Contextual qualifiers for a claim atom.",
+      "properties": {
+        "conditions": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Conditions",
+          "type": "array"
+        },
+        "context": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Context",
+          "type": "array"
+        },
+        "domain": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Domain"
+        }
+      },
+      "title": "Scope",
       "type": "object"
     },
     "SourceRef": {

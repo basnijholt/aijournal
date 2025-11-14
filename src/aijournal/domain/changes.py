@@ -40,15 +40,15 @@ class ClaimProposal(StrictModel):
     evidence_entry: str | None = None
     evidence_para: int = Field(default=0, ge=0)
 
-    scope: Scope = Field(default_factory=Scope, exclude=True)
-    strength: float = Field(default=0.55, ge=0.0, le=1.0, exclude=True)
-    status: ClaimStatus = Field(default=ClaimStatus.TENTATIVE, exclude=True)
-    method: ClaimMethod = Field(default=ClaimMethod.INFERRED, exclude=True)
-    user_verified: bool = Field(default=False, exclude=True)
-    review_after_days: int = Field(default=120, exclude=True)
-    evidence: list[SourceRef] = Field(default_factory=list, exclude=True)
-    normalized_ids: list[str] = Field(default_factory=list, exclude=True)
-    manifest_hashes: list[str] = Field(default_factory=list, exclude=True)
+    scope: Scope = Field(default_factory=Scope)
+    strength: float = Field(default=0.55, ge=0.0, le=1.0)
+    status: ClaimStatus = Field(default=ClaimStatus.TENTATIVE)
+    method: ClaimMethod = Field(default=ClaimMethod.INFERRED)
+    user_verified: bool = Field(default=False)
+    review_after_days: int = Field(default=120)
+    evidence: list[SourceRef] = Field(default_factory=list)
+    normalized_ids: list[str] = Field(default_factory=list)
+    manifest_hashes: list[str] = Field(default_factory=list)
 
     @field_validator("statement", "subject", "predicate", mode="before")
     @classmethod
@@ -108,11 +108,11 @@ class FacetChange(StrictModel):
     evidence_entry: str | None = None
     evidence_para: int = Field(default=0, ge=0)
 
-    method: str = Field(default="inferred", exclude=True)
-    confidence: float = Field(default=0.55, exclude=True)
-    review_after_days: int = Field(default=120, exclude=True)
-    user_verified: bool = Field(default=False, exclude=True)
-    evidence: list[SourceRef] = Field(default_factory=list, exclude=True)
+    method: str = Field(default="inferred")
+    confidence: float = Field(default=0.55)
+    review_after_days: int = Field(default=120)
+    user_verified: bool = Field(default=False)
+    evidence: list[SourceRef] = Field(default_factory=list)
 
     @field_validator("path")
     @classmethod

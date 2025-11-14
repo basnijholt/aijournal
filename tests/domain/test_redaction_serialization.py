@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from aijournal.cli import _claim_proposal_to_atom
-from aijournal.domain.changes import ClaimProposal
+from aijournal.common.meta import Artifact, ArtifactKind, ArtifactMeta
+from aijournal.domain.changes import ClaimProposal, ProfileUpdateProposals
 from aijournal.domain.claims import Scope
 from aijournal.domain.evidence import SourceRef, Span
+from aijournal.io.artifacts import load_artifact_data, save_artifact
 from aijournal.pipelines import normalization
 from aijournal.pipelines.facts import normalize_claim_proposals
 
@@ -83,3 +87,25 @@ def test_normalize_provenance_redacts_span_text() -> None:
     for source in provenance.sources:
         for span in source.spans:
             assert span.text is None
+
+
+def test_claim_proposal_round_trip_preserves_scope_and_ids(tmp_path: Path) -> None:
+    proposal = _proposal_with_span_text()
+    proposal.scope = Scope(domain="work", context=["weekday"], conditions=["office"])
+    proposals = ProfileUpdateProposals(claims=[proposal])
+    artifact = Artifact[ProfileUpdateProposals](
+        kind=ArtifactKind.PROFILE_PROPOSALS,
+        meta=ArtifactMeta(created_at="2025-10-26T07:00:00Z"),
+        data=proposals,
+    )
+    path = tmp_path / "proposal.yaml"
+    save_artifact(path, artifact)
+
+    loaded = load_artifact_data(path, ProfileUpdateProposals)
+    loaded_claim = loaded.claims[0]
+
+    assert loaded_claim.scope.domain == "work"
+    assert loaded_claim.scope.context == ["weekday"]
+    assert loaded_claim.scope.conditions == ["office"]
+    assert loaded_claim.normalized_ids == ["2025-10-26-focus-log"]
+    assert loaded_claim.evidence and loaded_claim.evidence[0].entry_id == "2025-10-26-focus-log"
