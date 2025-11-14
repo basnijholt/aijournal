@@ -13,11 +13,7 @@ from tests.helpers import make_claim_atom
 
 from aijournal.common.app_config import AppConfig
 from aijournal.common.meta import Artifact, ArtifactKind, ArtifactMeta
-from aijournal.domain.changes import (
-    ClaimAtomInput,
-    ClaimProposal,
-    ProfileUpdateProposals,
-)
+from aijournal.domain.changes import ClaimProposal, ProfileUpdateProposals
 from aijournal.domain.claims import ClaimAtom
 from aijournal.domain.evidence import SourceRef
 from aijournal.domain.facts import (
@@ -155,23 +151,21 @@ def test_run_capture_records_telemetry(tmp_path: Path, monkeypatch: pytest.Monke
                 last_updated=f"{day}T09:00:00Z",
             )
         )
-        claim_input = ClaimAtomInput(
-            type=claim_model.type,
-            subject=claim_model.subject,
-            predicate=claim_model.predicate,
-            value=claim_model.value,
-            statement=claim_model.statement,
-            scope=claim_model.scope,
-            strength=claim_model.strength,
-            status=claim_model.status,
-            method=claim_model.method,
-            user_verified=claim_model.user_verified,
-            review_after_days=claim_model.review_after_days,
-        )
         proposals = ProfileUpdateProposals(
             claims=[
                 ClaimProposal(
-                    claim=claim_input,
+                    type=claim_model.type,
+                    subject=claim_model.subject,
+                    predicate=claim_model.predicate,
+                    value=claim_model.value,
+                    statement=claim_model.statement,
+                    scope=claim_model.scope,
+                    strength=claim_model.strength,
+                    status=claim_model.status,
+                    method=claim_model.method,
+                    user_verified=claim_model.user_verified,
+                    review_after_days=claim_model.review_after_days,
+                    evidence_entry="capture-entry",
                     normalized_ids=[claim_model.id],
                     evidence=[SourceRef(entry_id="capture-entry", spans=[])],
                 )

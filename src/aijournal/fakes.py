@@ -5,12 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable, Sequence
 from typing import Any
 
-from aijournal.domain.changes import (
-    ClaimAtomInput,
-    ClaimProposal,
-    FacetChange,
-    ProfileUpdateProposals,
-)
+from aijournal.domain.changes import ClaimProposal, FacetChange, ProfileUpdateProposals
 from aijournal.domain.claims import ClaimAtom
 from aijournal.domain.enums import ClaimStatus, FacetOperation
 from aijournal.domain.evidence import SourceRef
@@ -172,26 +167,24 @@ def fake_profile_proposals(
             strength=0.6,
             status="tentative",
         )
-        claim_input = ClaimAtomInput(
-            type=claim_model.type,
-            subject=claim_model.subject,
-            predicate=claim_model.predicate,
-            value=claim_model.value,
-            statement=claim_model.statement,
-            scope=claim_model.scope,
-            strength=claim_model.strength,
-            status=claim_model.status,
-            method=claim_model.method,
-            user_verified=claim_model.user_verified,
-            review_after_days=claim_model.review_after_days,
-        )
         evidence = [SourceRef(entry_id=entry.id or claim_id, spans=[])]
         claim_proposals.append(
             ClaimProposal(
-                claim=claim_input,
+                type=claim_model.type,
+                subject=claim_model.subject,
+                predicate=claim_model.predicate,
+                value=claim_model.value,
+                statement=claim_model.statement,
+                scope=claim_model.scope,
+                strength=claim_model.strength,
+                status=claim_model.status,
+                method=claim_model.method,
+                user_verified=claim_model.user_verified,
+                review_after_days=claim_model.review_after_days,
+                evidence_entry=entry.id,
                 normalized_ids=[claim_id],
                 evidence=evidence,
-                rationale="Captured new observation",
+                reason="Captured new observation",
             )
         )
 
@@ -199,10 +192,10 @@ def fake_profile_proposals(
         facet_changes.append(
             FacetChange(
                 path="values_motivations.schwartz_top5",
-                operation=FacetOperation.SET,
+                action=FacetOperation.SET,
                 value=profile.get("values_motivations", {}).get("schwartz_top5", []),
                 evidence=[SourceRef(entry_id="profile.snapshot", spans=[])],
-                rationale="Retain existing Schwartz ranking in fake mode",
+                reason="Retain existing Schwartz ranking in fake mode",
             )
         )
 
@@ -239,49 +232,39 @@ def fake_characterize(
 
     facet = FacetChange(
         path="values_motivations.recurring_theme",
-        value={
-            "label": theme,
-            "tag_hint": tag,
-            "last_seen": date,
-        },
-        operation=FacetOperation.SET,
+        value=f"{theme} (tag: {tag}, seen {date})",
+        action=FacetOperation.SET,
         method="inferred",
         confidence=0.55,
         review_after_days=90,
         user_verified=False,
     )
 
-    claim_input = _claim_atom_to_input(claim)
     evidence = [
         SourceRef.model_validate(source.model_dump(mode="python"))
         for source in claim.provenance.sources
     ]
 
     claim_proposal = ClaimProposal(
-        claim=claim_input,
-        normalized_ids=[],
-        evidence=evidence,
-        manifest_hashes=[],
-        rationale=None,
-    )
-
-    return ProfileUpdateProposals(
-        claims=[claim_proposal],
-        facets=[facet],
-    )
-
-
-def _claim_atom_to_input(claim: ClaimAtom) -> ClaimAtomInput:
-    return ClaimAtomInput(
         type=claim.type,
         subject=claim.subject,
         predicate=claim.predicate,
         value=claim.value,
         statement=claim.statement,
-        scope=claim.scope.model_copy(deep=True),
+        scope=claim.scope,
         strength=claim.strength,
         status=claim.status,
         method=claim.method,
         user_verified=claim.user_verified,
         review_after_days=claim.review_after_days,
+        evidence_entry=seed.id,
+        normalized_ids=[],
+        evidence=evidence,
+        manifest_hashes=[],
+        reason=None,
+    )
+
+    return ProfileUpdateProposals(
+        claims=[claim_proposal],
+        facets=[facet],
     )

@@ -2,12 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from aijournal.domain.changes import (
-    ClaimAtomInput,
-    ClaimProposal,
-    FacetChange,
-    ProfileUpdateProposals,
-)
+from aijournal.domain.changes import ClaimProposal, FacetChange, ProfileUpdateProposals
 from aijournal.domain.claims import (
     ClaimAtom,
     ClaimSource,
@@ -15,6 +10,7 @@ from aijournal.domain.claims import (
     Provenance,
     Scope,
 )
+from aijournal.domain.enums import FacetOperation
 from aijournal.domain.journal import NormalizedEntry
 from aijournal.pipelines import characterize
 
@@ -67,21 +63,21 @@ def _context(entry_id: str) -> tuple[list[str], list[str], list[ClaimSource]]:
     )
 
 
-def _claim_input(entry_id: str) -> ClaimAtomInput:
+def _claim_fields(entry_id: str) -> dict[str, object]:
     base = _claim(entry_id)
-    return ClaimAtomInput(
-        type=base.type,
-        subject=base.subject,
-        predicate=base.predicate,
-        value=base.value,
-        statement=base.statement,
-        scope=base.scope.model_copy(deep=True),
-        strength=base.strength,
-        status=base.status,
-        method=base.method,
-        user_verified=base.user_verified,
-        review_after_days=base.review_after_days,
-    )
+    return {
+        "type": base.type,
+        "subject": base.subject,
+        "predicate": base.predicate,
+        "value": base.value,
+        "statement": base.statement,
+        "scope": base.scope.model_copy(deep=True),
+        "strength": base.strength,
+        "status": base.status,
+        "method": base.method,
+        "user_verified": base.user_verified,
+        "review_after_days": base.review_after_days,
+    }
 
 
 def test_generate_characterization_fake_mode(monkeypatch) -> None:
@@ -107,7 +103,7 @@ def test_generate_characterization_fake_mode(monkeypatch) -> None:
         captured["raw_claims"] = raw_claims
         return [
             ClaimProposal(
-                claim=_claim_input("entry-1"),
+                **_claim_fields("entry-1"),
                 normalized_ids=[],
                 evidence=[],
                 manifest_hashes=[],
@@ -148,30 +144,21 @@ def test_generate_characterization_normalizes_llm_payload(monkeypatch) -> None:
     response = ProfileUpdateProposals(
         claims=[
             {
-                "claim": {
-                    "type": "preference",
-                    "subject": "Focus routines",
-                    "predicate": "affinity",
-                    "value": "Focus improved",
-                    "statement": "Focus improved",
-                    "scope": {"domain": None, "context": [], "conditions": []},
-                    "strength": 0.6,
-                    "status": "tentative",
-                    "method": "inferred",
-                    "user_verified": False,
-                    "review_after_days": 120,
-                },
-                "normalized_ids": ["entry-1"],
-                "manifest_hashes": ["manifest-1"],
-                "rationale": "Recent entry reinforces the pattern.",
+                "type": "preference",
+                "subject": "Focus routines",
+                "predicate": "affinity",
+                "value": "Focus improved",
+                "statement": "Focus improved",
+                "reason": "Recent entry reinforces the pattern.",
+                "evidence_entry": "entry-1",
+                "evidence_para": 0,
             }
         ],
         facets=[
             {
                 "path": "values_motivations.primary_focus",
-                "operation": "set",
+                "action": "set",
                 "value": "Deep Work",
-                "confidence": 0.7,
             }
         ],
         interview_prompts=["What helped you focus this week?"],
@@ -198,7 +185,7 @@ def test_generate_characterization_normalizes_llm_payload(monkeypatch) -> None:
         captured["claims"] = raw_claims
         return [
             ClaimProposal(
-                claim=_claim_input("entry-1"),
+                **_claim_fields("entry-1"),
                 normalized_ids=[],
                 evidence=[ClaimSource(entry_id="entry-1", spans=[])],
                 manifest_hashes=[],
@@ -211,7 +198,7 @@ def test_generate_characterization_normalizes_llm_payload(monkeypatch) -> None:
             FacetChange(
                 path="values_motivations.primary_focus",
                 value="Deep Work",
-                operation="set",
+                action=FacetOperation.SET,
                 method="inferred",
             )
         ]

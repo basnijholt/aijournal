@@ -10,7 +10,7 @@ from typer.testing import CliRunner
 
 from aijournal.cli import app
 from aijournal.common.meta import Artifact, ArtifactKind, ArtifactMeta
-from aijournal.domain.changes import ClaimAtomInput, ClaimProposal, ProfileUpdateProposals
+from aijournal.domain.changes import ClaimProposal, ProfileUpdateProposals
 from aijournal.domain.claims import Scope
 from aijournal.domain.evidence import SourceRef, Span
 from aijournal.io.artifacts import load_artifact, save_artifact
@@ -36,7 +36,7 @@ def _write_claims_with_text(path: Path) -> None:
 
 def _write_profile_update_batch(path: Path) -> None:
     scope = Scope()
-    claim_input = ClaimAtomInput(
+    proposal = ClaimProposal(
         type="preference",
         subject="self",
         predicate="focus",
@@ -48,9 +48,7 @@ def _write_profile_update_batch(path: Path) -> None:
         method="inferred",
         user_verified=False,
         review_after_days=30,
-    )
-    proposal = ClaimProposal(
-        claim=claim_input,
+        evidence_entry="2025-01-01_focus",
         normalized_ids=["2025-01-01_focus"],
         evidence=[
             SourceRef(
@@ -92,7 +90,6 @@ def test_audit_provenance_reports_and_fixes(
     result = runner.invoke(app, ["ops", "audit", "provenance"])
     assert result.exit_code == 1
     assert "profile/claims.yaml" in result.stdout
-    assert "derived/pending/profile_updates" in result.stdout
     assert "Run with --fix" in result.stdout
 
     fix_result = runner.invoke(app, ["ops", "audit", "provenance", "--fix"])

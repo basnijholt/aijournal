@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from aijournal.commands import profile as profile_cmd
-from aijournal.domain.changes import ClaimAtomInput, ClaimProposal
+from aijournal.domain.changes import ClaimProposal
 from aijournal.domain.claims import Scope
 from aijournal.domain.enums import ClaimMethod, ClaimStatus, ClaimType
 from aijournal.domain.evidence import SourceRef
@@ -14,7 +14,7 @@ def _make_proposal(
     normalized_id: str = "entry-2006-12-01",
     predicate: str = "prefers",
 ) -> ClaimProposal:
-    claim_input = ClaimAtomInput(
+    return ClaimProposal(
         type=ClaimType.PREFERENCE,
         subject="work",
         predicate=predicate,
@@ -26,9 +26,7 @@ def _make_proposal(
         method=ClaimMethod.BEHAVIORAL,
         user_verified=False,
         review_after_days=120,
-    )
-    return ClaimProposal(
-        claim=claim_input,
+        evidence_entry=normalized_id,
         normalized_ids=[normalized_id],
         evidence=[SourceRef(entry_id=normalized_id, spans=[])],
     )
@@ -40,12 +38,12 @@ def test_claim_ids_include_hash_suffix_for_uniqueness() -> None:
 
     id_a = profile_cmd._proposal_claim_id(  # noqa: SLF001
         proposal_a,
-        proposal_a.claim.statement,
+        proposal_a.statement,
         set(),
     )
     id_b = profile_cmd._proposal_claim_id(  # noqa: SLF001
         proposal_b,
-        proposal_b.claim.statement,
+        proposal_b.statement,
         {id_a},
     )
 

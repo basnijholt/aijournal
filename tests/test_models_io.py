@@ -8,18 +8,14 @@ from typing import TYPE_CHECKING
 import yaml
 
 from aijournal.common.meta import Artifact, ArtifactKind, ArtifactMeta
-from aijournal.domain.changes import (
-    ClaimAtomInput,
-    ClaimProposal,
-    FacetChange,
-    ProfileUpdateProposals,
-)
+from aijournal.domain.changes import ClaimProposal, FacetChange, ProfileUpdateProposals
 from aijournal.domain.claims import (
     ClaimAtom,
     ClaimSource,
     ClaimSourceSpan,
     Scope,
 )
+from aijournal.domain.enums import FacetOperation
 from aijournal.domain.evidence import SourceRef
 from aijournal.domain.facts import (
     DailySummary,
@@ -323,7 +319,7 @@ def test_profile_proposals_schema(tmp_path: Path) -> None:
         prompt_path="prompts/profile_suggest.md",
         prompt_hash="meta",
     )
-    claim_input = ClaimAtomInput(
+    claim_proposal = ClaimProposal(
         type="preference",
         subject="Focus",
         predicate="insight",
@@ -335,16 +331,14 @@ def test_profile_proposals_schema(tmp_path: Path) -> None:
         method="inferred",
         user_verified=False,
         review_after_days=120,
-    )
-    claim_proposal = ClaimProposal(
-        claim=claim_input,
+        evidence_entry="2025-10-25-entry",
         normalized_ids=["pref_focus"],
         evidence=[SourceRef(entry_id="2025-10-25-entry", spans=[])],
-        rationale="Recurring pattern in planning entries.",
+        reason="Recurring pattern in planning entries.",
     )
     facet_change = FacetChange(
         path="values_motivations.schwartz_top5",
-        operation="set",
+        action=FacetOperation.SET,
         value=["Self-Direction", "Security"],
         method="inferred",
         evidence=[SourceRef(entry_id="profile.snapshot", spans=[])],

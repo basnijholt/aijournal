@@ -10,13 +10,9 @@ from typer.testing import CliRunner
 
 from aijournal.cli import app
 from aijournal.common.meta import Artifact, ArtifactKind, ArtifactMeta
-from aijournal.domain.changes import (
-    ClaimAtomInput,
-    ClaimProposal,
-    FacetChange,
-    ProfileUpdateProposals,
-)
+from aijournal.domain.changes import ClaimProposal, FacetChange, ProfileUpdateProposals
 from aijournal.domain.claims import ClaimAtom
+from aijournal.domain.enums import FacetOperation
 from aijournal.domain.evidence import SourceRef
 from aijournal.io.artifacts import save_artifact
 from aijournal.io.yaml_io import dump_yaml
@@ -78,7 +74,7 @@ def _seed_suggestions(workspace: Path) -> Path:
             last_updated=f"{DATE}T10:00:00Z",
         )
     )
-    claim_input = ClaimAtomInput(
+    claim_proposal = ClaimProposal(
         type=proposed_claim.type,
         subject=proposed_claim.subject,
         predicate=proposed_claim.predicate,
@@ -90,16 +86,14 @@ def _seed_suggestions(workspace: Path) -> Path:
         method=proposed_claim.method,
         user_verified=proposed_claim.user_verified,
         review_after_days=proposed_claim.review_after_days,
-    )
-    claim_proposal = ClaimProposal(
-        claim=claim_input,
+        evidence_entry="2025-02-03_pref_evening",
         normalized_ids=[proposed_claim.id],
         evidence=[SourceRef(entry_id="2025-02-03_pref_evening", spans=[])],
-        rationale="Detected new evening preference",
+        reason="Detected new evening preference",
     )
     facet_change = FacetChange(
         path="values_motivations.schwartz_top5",
-        operation="set",
+        action=FacetOperation.SET,
         value=["Universalism", "Benevolence"],
         evidence=[SourceRef(entry_id="profile.snapshot", spans=[])],
     )
@@ -150,7 +144,7 @@ def test_profile_apply_merges_suggestions(
 
     claims = yaml.safe_load((cli_workspace / "profile" / "claims.yaml").read_text(encoding="utf-8"))
     new_claims = {claim["id"] for claim in claims["claims"]}
-    assert any(cid.startswith("pref_evening") for cid in new_claims)
+    assert any(cid.startswith("proposal-prefers-evening-walks") for cid in new_claims)
     assert len(claims["claims"]) == len(new_claims), "Duplicate claim IDs"
 
     profile = yaml.safe_load(

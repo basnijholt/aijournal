@@ -1208,9 +1208,9 @@ def review_updates(
         label = (
             claim_proposal.normalized_ids[0]
             if claim_proposal.normalized_ids
-            else claim_proposal.claim.statement[:48]
+            else claim_proposal.statement[:48]
         )
-        typer.echo(f"- claim {label}: {claim_proposal.claim.statement}")
+        typer.echo(f"- claim {label}: {claim_proposal.statement}")
 
     for facet_proposal in facet_proposals:
         if facet_proposal.path:
@@ -1789,7 +1789,7 @@ def _preview_claim_consolidation(
 
 
 def _claim_proposal_to_atom(proposal: ClaimProposal, *, timestamp: str) -> ClaimAtom:
-    claim_payload = proposal.claim.model_dump(mode="python")
+    claim_payload = proposal.claim_fields()
     evidence_sources = [
         ClaimSource.model_validate(
             redact_source_text(source).model_dump(mode="python"),

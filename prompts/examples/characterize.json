@@ -1,66 +1,24 @@
 {
   "claims": [
     {
-      "claim": {
-        "type": "habit",
-        "subject": "morning routine",
-        "predicate": "includes_reflection",
-        "value": "Each focus block ends with a five-minute reflection.",
-        "statement": "Each focus block is followed by a five-minute reflection.",
-        "scope": {
-          "domain": "productivity",
-          "context": [
-            "weekday mornings"
-          ],
-          "conditions": []
-        },
-        "strength": 0.6,
-        "status": "tentative",
-        "method": "inferred",
-        "user_verified": false,
-        "review_after_days": 45
-      },
-      "normalized_ids": [
-        "2025-10-25-focus-log"
-      ],
-      "evidence": [
-        {
-          "entry_id": "2025-10-25-focus-log",
-          "spans": [
-            {
-              "type": "para",
-              "index": 1
-            }
-          ]
-        }
-      ],
-      "manifest_hashes": [
-        "focus-log-manifest"
-      ],
-      "rationale": "Reflection is mentioned after every logged focus block."
+      "type": "habit",
+      "subject": "morning routine",
+      "predicate": "includes_reflection",
+      "value": "Each focus block ends with a five-minute reflection.",
+      "statement": "Each focus block is followed by a five-minute reflection.",
+      "reason": "Reflection is mentioned after every logged focus block.",
+      "evidence_entry": "2025-10-25-focus-log",
+      "evidence_para": 1
     }
   ],
   "facets": [
     {
       "path": "values_motivations.recurring_theme",
-      "operation": "set",
+      "action": "set",
       "value": "Morning momentum shows up in recent reflections.",
-      "method": "inferred",
-      "confidence": 0.65,
-      "review_after_days": 60,
-      "user_verified": false,
-      "evidence": [
-        {
-          "entry_id": "2025-10-25-focus-log",
-          "spans": [
-            {
-              "type": "para",
-              "index": 2
-            }
-          ]
-        }
-      ],
-      "rationale": "Entries emphasize momentum gained from early focus blocks."
+      "reason": "Entries emphasize momentum gained from early focus blocks.",
+      "evidence_entry": "2025-10-25-focus-log",
+      "evidence_para": 2
     }
   ],
   "interview_prompts": [

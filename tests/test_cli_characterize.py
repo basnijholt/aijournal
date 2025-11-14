@@ -131,9 +131,9 @@ def test_characterize_generates_pending_batch(
     claims = proposals.get("claims")
     assert claims, "Expected at least one claim proposal"
     first_claim = claims[0]
-    assert SOURCE_HASH in (first_claim.get("manifest_hashes") or [])
-    evidence = first_claim.get("evidence") or []
-    assert any(item.get("entry_id") == ENTRY_ID for item in evidence)
+    assert first_claim.get("type")
+    assert first_claim.get("evidence_entry") == ENTRY_ID
+    assert isinstance(first_claim.get("evidence_para"), int)
     preview = data.get("preview", {})
     events = preview.get("claim_events") or []
     assert events and events[0].get("action") == "upsert"
@@ -214,26 +214,15 @@ def test_characterize_live_mode_structured(
         "predicate": "affinity",
         "value": "Focus routines hold",
         "statement": "Focus routines hold",
-        "scope": {"domain": None, "context": ["focus"], "conditions": []},
-        "strength": 0.6,
-        "status": "tentative",
-        "method": "inferred",
-        "user_verified": False,
-        "review_after_days": 120,
+        "reason": "Recent entry reinforces the pattern.",
+        "evidence_entry": ENTRY_ID,
+        "evidence_para": 0,
     }
 
     def _fake_structured(*_args, **_kwargs) -> ProfileUpdateProposals:
         return ProfileUpdateProposals.model_validate(
             {
-                "claims": [
-                    {
-                        "claim": claim_payload,
-                        "normalized_ids": [ENTRY_ID],
-                        "manifest_hashes": [SOURCE_HASH],
-                        "evidence": [{"entry_id": ENTRY_ID, "spans": []}],
-                        "rationale": "Recent entry reinforces the pattern.",
-                    }
-                ],
+                "claims": [claim_payload],
                 "facets": [],
                 "interview_prompts": ["How do mornings vary on travel days?"],
             },
@@ -265,10 +254,9 @@ def test_characterize_live_mode_structured(
     data = artifact.get("data", {})
     assert captured.get("raw_claims"), "Expected structured claims to flow into normalization"
     claims = data["proposals"]["claims"]
-    assert all("id" not in item.get("claim", {}) for item in claims)
-    statements = [item["claim"]["statement"] for item in claims]
-    normalized_ids = [item.get("normalized_ids") for item in claims]
-    assert any(ENTRY_ID in (ids or []) for ids in normalized_ids)
+    assert all("id" not in item for item in claims)
+    statements = [item["statement"] for item in claims]
+    assert any(item.get("evidence_entry") == ENTRY_ID for item in claims)
     assert any("Focus routines hold" in stmt for stmt in statements)
     prompts = data.get("preview", {}).get("interview_prompts") or []
     assert "travel" in prompts[0]

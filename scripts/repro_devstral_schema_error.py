@@ -82,40 +82,24 @@ Return JSON exactly following the `ProfileUpdateProposals` schema:
 {
   "claims": [
     {
-      "claim": {
-        "type": "goal" | "habit" | "value" | ...,
-        "subject": "who or what the claim refers to",
-        "predicate": "relationship or attribute",
-        "value": "normalized value",
-        "statement": "Readable sentence",
-        "scope": {"domain": "optional", "context": ["tags"], "conditions": []},
-        "strength": 0.0-1.0,
-        "status": "accepted" | "tentative" | "rejected",
-        "method": "self_report" | "inferred" | "behavioral",
-        "user_verified": false,
-        "review_after_days": integer
-      },
-      "normalized_ids": ["normalized-entry-id"],
-      "evidence": [
-        {"entry_id": "normalized-entry-id", "spans": [{"type": "paragraph", "index": 0}]}
-      ],
-      "manifest_hashes": ["optional-manifest-hash"],
-      "rationale": "≤25 word justification"
+      "type": "goal" | "habit" | "value" | ..., 
+      "subject": "who or what the claim refers to",
+      "predicate": "relationship or attribute",
+      "value": "normalized value",
+      "statement": "Readable sentence",
+      "reason": "≤25 word justification",
+      "evidence_entry": "normalized-entry-id",
+      "evidence_para": 0
     }
   ],
   "facets": [
     {
       "path": "values_motivations.recurring_theme",
-      "operation": "set" | "merge" | "remove",
-      "value": <JSON value when operation is set/merge>,
-      "method": "inferred" | "self_report" | "behavioral",
-      "confidence": 0.0-1.0,
-      "review_after_days": integer,
-      "user_verified": false,
-      "evidence": [
-        {"entry_id": "normalized-entry-id", "spans": [{"type": "paragraph", "index": 1}]}
-      ],
-      "rationale": "≤25 word justification"
+      "action": "set" | "remove",
+      "value": "string or list of strings",
+      "reason": "≤25 word justification",
+      "evidence_entry": "normalized-entry-id",
+      "evidence_para": 1
     }
   ]
 }

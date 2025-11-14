@@ -17,7 +17,7 @@ from aijournal.domain.evidence import SourceRef
 from aijournal.domain.journal import NormalizedEntry
 from aijournal.fakes import fake_characterize
 from aijournal.pipelines import facts as facts_pipeline
-from aijournal.utils.coercion import coerce_float, coerce_int
+from aijournal.utils.coercion import coerce_int
 
 StructuredCall = Callable[..., Any]
 CharacterizeRequestFactory = Callable[[], ProfileUpdateProposals]
@@ -38,7 +38,7 @@ def normalize_facet_proposals(
         if not isinstance(payload, dict):
             continue
 
-        path = payload.get("path") or payload.get("target")
+        path = payload.get("path")
         if not path:
             continue
 
@@ -53,14 +53,11 @@ def normalize_facet_proposals(
         proposal_data = {
             "path": str(path),
             "value": payload.get("value"),
-            "operation": str(payload.get("operation") or "set"),
-            "method": payload.get("method"),
-            "confidence": coerce_float(payload.get("confidence")),
-            "review_after_days": coerce_int(payload.get("review_after_days")),
-            "user_verified": payload.get("user_verified"),
+            "action": str(payload.get("action") or "set"),
             "evidence": evidence_sources,
-            "rationale": str(payload.get("rationale") or payload.get("reason") or "").strip()
-            or None,
+            "reason": str(payload.get("reason") or "").strip() or None,
+            "evidence_entry": payload.get("evidence_entry"),
+            "evidence_para": coerce_int(payload.get("evidence_para")) or 0,
         }
 
         try:

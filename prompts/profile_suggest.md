@@ -13,7 +13,7 @@ If you have nothing grounded to add, return the empty payload `{ "claims": [], "
 ---
 ## Mental Model
 - Claims capture specific statements about the user (e.g., habits, values, goals).
-- Claims must follow the `ClaimAtomInput` shape and are later merged into the long-term profile.
+- Claims emit only flattened fields (type, statement, subject/predicate, optional value/reason). The backend merges them into the long-term profile and injects scope, strength, status, provenance, and IDs.
 - The backend adds `id` and `provenance`, so never invent them.
 - Facets are knobs inside the persona profile such as `planning.routines` or `values_motivations`.
 - Each facet update either `set`s a new value (string or list of strings) or `remove`s an outdated one.
@@ -40,7 +40,7 @@ Read the inputs, form hypotheses, check the entries, and document only what the 
 - 0.70–0.80: Three to five entries showing a pattern **or** strong self-report plus behavioral evidence.
 - 0.85–0.95: Five or more consistent entries **or** user-verified claims.
 - 0.95–1.00: Immutable facts only (e.g., birthdate) or formally verified truths.
-- Default to 0.55 when uncertain and note ambiguity in the rationale.
+- Default to 0.55 when uncertain and explain ambiguity inside the `reason` field.
 
 ---
 ## Output Schema (copy faithfully)
@@ -48,69 +48,49 @@ Read the inputs, form hypotheses, check the entries, and document only what the 
 {
   "claims": [
     {
-      "claim": {
-        "type": "preference|value|goal|boundary|trait|habit|aversion|skill",
-        "subject": "who or what the claim refers to",
-        "predicate": "relationship or attribute",
-        "value": "string value",
-        "statement": "Readable sentence (≤ 160 chars)",
-        "scope": {"domain": "optional", "context": ["tags"], "conditions": []},
-        "strength": 0.0-1.0,
-        "status": "accepted|tentative|rejected",
-        "method": "self_report|inferred|behavioral",
-        "user_verified": false,
-        "review_after_days": integer
-      },
-      "normalized_ids": ["normalized-entry-id"],
-      "evidence": [
-        {"entry_id": "normalized-entry-id", "spans": [{"type": "para", "index": 0}]}
-      ],
-      "manifest_hashes": ["optional-manifest-hash"],
-      "rationale": "≤25 word justification that cites the evidence"
+      "type": "preference|value|goal|boundary|trait|habit|aversion|skill",
+      "statement": "Readable sentence (≤160 chars)",
+      "subject": "entity the claim is about (defaults to \"self\")",
+      "predicate": "relationship or attribute (defaults to \"states\")",
+      "value": "string value (≤160 chars, defaults to statement)",
+      "reason": "≤25 word justification",
+      "evidence_entry": "normalized-entry-id",
+      "evidence_para": 0
     }
   ],
   "facets": [
     {
       "path": "values_motivations.recurring_theme",
-      "operation": "set",
-      "value": "string or list of strings when operation is set",
-      "method": "inferred",
-      "confidence": 0.7,
-      "review_after_days": 120,
-      "user_verified": false,
-      "evidence": [
-        {"entry_id": "normalized-entry-id", "spans": [{"type": "para", "index": 1}]}
-      ],
-      "rationale": "≤25 word justification"
+      "action": "set" | "remove",
+      "value": "string or list of strings when action is set",
+      "reason": "≤25 word justification",
+      "evidence_entry": "normalized-entry-id",
+      "evidence_para": 1
     }
   ]
 }
 ```
 
-⚠️ **CRITICAL**: Facets MUST use `"path"` and `"operation"` fields, NOT `"key"`. See the example above.
-```
+⚠️ **CRITICAL**: Facets MUST use `"path"` and `"action"` fields, NOT `"key"`. See the example above.
 
-### Enum Reference
+### Enum / Field Reference
 - `type`: preference, value, goal, boundary, trait, habit, aversion, skill.
-- `status`: accepted, tentative, rejected.
-- `method`: self_report, inferred, behavioral.
-- `operation`: set, remove.
+- `action`: set, remove.
+- `reason`: ≤25 words.
+- `evidence_para`: integer ≥0 (defaults to 0).
 
 ### Field Constraints
-- Keep `strength` within [0, 1] and use the calibration ladder above.
-- Keep `statement`, `value`, and `rationale` within 160 characters each.
-- List every supporting normalized entry inside `normalized_ids` (at least one when evidence exists).
-- Use `{"type": "para", "index": <int>}` for every evidence span; when no paragraph exists, set `spans`: [] and rely on summaries/sections/tags.
-- Restrict facet `value` to a single string or a list of strings.
-- Allow `manifest_hashes` to remain empty when unknown and never fabricate values.
+- Claims must cite at least one normalized entry via `evidence_entry`.
+- Statements must be ≤160 characters; keep `reason` ≤25 words.
+- Restrict facet `value` to a string or list when `action == set`.
+- Never emit IDs, scope, strength, status, method, review cadence, normalized IDs, manifest hashes, or `evidence` arrays — the system adds them.
 
 ## ⚠️ Critical Constraints (Violations = Rejection)
-1. Never emit `id` or `provenance` fields; the backend generates them.
-2. Evidence spans must be `{"type": "para", "index": N}` or an empty list when paragraphs are absent.
-3. Facet `operation` must be `set` or `remove` (never `merge`).
-4. Facet `value` must be a string or list of strings (never objects).
-5. `strength` must be a float in [0.0, 1.0] (use 0.55 when uncertain).
-6. Statement ≤160 chars, rationale ≤25 words.
+1. Never emit `id`, `provenance`, or any system-only fields; the backend generates them.
+2. Facet `action` must be `set` or `remove` (never `merge`).
+3. Facet `value` must be a string or list of strings (never objects) when `action == set`.
+4. `reason` must stay ≤25 words (omit when unnecessary).
+5. Statements must be ≤160 chars.
 
 ---
 ## Illustrated Examples
@@ -121,40 +101,24 @@ Suppose the entry mentions launching a `/auto` command for code automation with 
 {
   "claims": [
     {
-      "claim": {
-        "type": "habit",
-        "subject": "automation",
-        "predicate": "invests_in",
-        "value": "Builds automation workflows to eliminate repetitive coding tasks.",
-        "statement": "Invests time in automation workflows to remove repetitive coding tasks.",
-        "scope": {"domain": null, "context": ["engineering"], "conditions": []},
-        "strength": 0.64,
-        "status": "tentative",
-        "method": "behavioral",
-        "user_verified": false,
-        "review_after_days": 90
-      },
-      "normalized_ids": ["2025-10-28-auto-workflows"],
-      "evidence": [
-        {"entry_id": "2025-10-28-auto-workflows", "spans": [{"type": "para", "index": 0}]}
-      ],
-      "manifest_hashes": [],
-      "rationale": "Automation entry describes new `/auto` command and time investment."
+      "type": "habit",
+      "subject": "automation",
+      "predicate": "invests_in",
+      "value": "Builds automation workflows to eliminate repetitive coding tasks.",
+      "statement": "Invests time in automation workflows to remove repetitive coding tasks.",
+      "reason": "Automation entry describes new `/auto` command and time investment.",
+      "evidence_entry": "2025-10-28-auto-workflows",
+      "evidence_para": 0
     }
   ],
   "facets": [
     {
       "path": "planning.quality_guardrails",
-      "operation": "set",
+      "action": "set",
       "value": "Validates automation with manual review before rollout.",
-      "method": "inferred",
-      "confidence": 0.58,
-      "review_after_days": 120,
-      "user_verified": false,
-      "evidence": [
-        {"entry_id": "2025-10-28-auto-workflows", "spans": [{"type": "para", "index": 1}]}
-      ],
-      "rationale": "Journal notes cautious rollout with manual checks."
+      "reason": "Journal notes cautious rollout with manual checks.",
+      "evidence_entry": "2025-10-28-auto-workflows",
+      "evidence_para": 1
     }
   ]
 }
@@ -166,11 +130,11 @@ Suppose the entry mentions launching a `/auto` command for code automation with 
 ```
 
 ### Example C – Invalid
-- Never add an `id` or `provenance` field to the claim payload.
-- Never emit `operation: "merge"` for facets.
-- Never set a facet `value` to an object.
-- Never omit spans or use `"paragraph"` instead of `"para"`.
-- Never provide a rationale longer than 25 words.
+- Never add `id`, `scope`, `strength`, `status`, `method`, `review_after_days`, `normalized_ids`, or `manifest_hashes` to the payload.
+- Never emit `action: "merge"` for facets.
+- Never set a facet `value` to an object when `action == set`.
+- Never invent evidence (always cite a real `evidence_entry`).
+- Never provide a `reason` longer than 25 words.
 
 Any of these errors will cause the suggestion to be rejected.
 

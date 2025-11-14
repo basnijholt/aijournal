@@ -11,7 +11,7 @@ from typer.testing import CliRunner
 
 from aijournal.cli import app
 from aijournal.common.meta import Artifact, ArtifactKind, ArtifactMeta
-from aijournal.domain.changes import ClaimAtomInput, ClaimProposal, ProfileUpdateProposals
+from aijournal.domain.changes import ClaimProposal, ProfileUpdateProposals
 from aijournal.domain.claims import ClaimAtom
 from aijournal.domain.evidence import SourceRef
 from aijournal.io.artifacts import save_artifact
@@ -149,7 +149,7 @@ def _seed_profile_proposals(tmp_path: Path, day: str = DATE) -> Path:
             last_updated=f"{day}T11:00:00Z",
         )
     )
-    claim_input = ClaimAtomInput(
+    claim_proposal = ClaimProposal(
         type=claim_model.type,
         subject=claim_model.subject,
         predicate=claim_model.predicate,
@@ -161,9 +161,7 @@ def _seed_profile_proposals(tmp_path: Path, day: str = DATE) -> Path:
         method=claim_model.method,
         user_verified=claim_model.user_verified,
         review_after_days=claim_model.review_after_days,
-    )
-    claim_proposal = ClaimProposal(
-        claim=claim_input,
+        evidence_entry=f"{day}-entry",
         normalized_ids=[claim_model.id],
         evidence=[SourceRef(entry_id=f"{day}-entry", spans=[])],
     )

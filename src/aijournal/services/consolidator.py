@@ -194,12 +194,23 @@ class ClaimConsolidator:
         signature: ClaimSignature,
         incoming_id: str | None,
     ) -> int | None:
+        fallback: int | None = None
+        allow_scope_fallback = not signature.scope[1] and not signature.scope[2]
         for idx, claim in enumerate(claims):
             if incoming_id and claim.id == incoming_id:
                 return idx
-            if ClaimSignature.from_atom(claim) == signature:
+            claim_signature = ClaimSignature.from_atom(claim)
+            if claim_signature == signature:
                 return idx
-        return None
+            if (
+                fallback is None
+                and claim_signature.claim_type == signature.claim_type
+                and claim_signature.subject == signature.subject
+                and claim_signature.predicate == signature.predicate
+                and allow_scope_fallback
+            ):
+                fallback = idx
+        return fallback
 
     def _initialize_provenance(self, provenance: Provenance) -> None:
         provenance.sources = _redacted_sources(provenance.sources)

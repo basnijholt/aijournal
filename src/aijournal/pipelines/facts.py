@@ -7,7 +7,7 @@ from typing import Any, cast
 
 from pydantic import ValidationError
 
-from aijournal.domain.changes import ClaimAtomInput, ClaimProposal
+from aijournal.domain.changes import ClaimProposal
 from aijournal.domain.claims import (
     ClaimAtom,
     ClaimSource,
@@ -49,14 +49,13 @@ def merge_unique(existing: Iterable[str], extras: Iterable[str]) -> list[str]:
 
 
 def _proposal_key(proposal: ClaimProposal) -> str:
-    claim = proposal.claim
     return "|".join(
         [
-            claim.type,
-            claim.subject,
-            claim.predicate,
-            claim.value,
-            claim.statement,
+            proposal.type,
+            proposal.subject,
+            proposal.predicate,
+            proposal.value or proposal.statement,
+            proposal.statement,
         ]
     )
 
@@ -178,30 +177,27 @@ def _microfact_claim_proposals(
         except (ValidationError, ValueError):
             continue
 
-        claim_input = ClaimAtomInput(
-            type=claim_model.type,
-            subject=claim_model.subject,
-            predicate=claim_model.predicate,
-            value=claim_model.value,
-            statement=claim_model.statement,
-            scope=claim_model.scope,
-            strength=claim_model.strength,
-            status=claim_model.status,
-            method=claim_model.method,
-            user_verified=claim_model.user_verified,
-            review_after_days=claim_model.review_after_days,
-        )
-
         proposals.append(
             ClaimProposal(
-                claim=claim_input,
+                type=claim_model.type,
+                subject=claim_model.subject,
+                predicate=claim_model.predicate,
+                value=claim_model.value,
+                statement=claim_model.statement,
+                scope=claim_model.scope,
+                strength=claim_model.strength,
+                status=claim_model.status,
+                method=claim_model.method,
+                user_verified=claim_model.user_verified,
+                review_after_days=claim_model.review_after_days,
                 normalized_ids=normalized_ids,
                 evidence=[
                     SourceRef.model_validate(src.model_dump(mode="python"))
                     for src in provenance_sources
                 ],
                 manifest_hashes=manifest_hashes,
-                rationale=f"Derived from micro-fact {fact.id}",
+                evidence_entry=entry_id,
+                reason=f"Derived from micro-fact {fact.id}",
             )
         )
     return proposals
@@ -222,25 +218,11 @@ def normalize_claim_proposals(
         except ValidationError:
             continue
 
-        claim_atom = _normalize_claim_input(
-            proposal.claim,
+        claim_atom = _normalize_claim_fields(
+            proposal.claim_fields(),
             timestamp=timestamp,
             default_sources=default_sources,
             evidence=proposal.evidence,
-        )
-
-        claim_input = ClaimAtomInput(
-            type=claim_atom.type,
-            subject=claim_atom.subject,
-            predicate=claim_atom.predicate,
-            value=claim_atom.value,
-            statement=claim_atom.statement,
-            scope=claim_atom.scope,
-            strength=claim_atom.strength,
-            status=claim_atom.status,
-            method=claim_atom.method,
-            user_verified=claim_atom.user_verified,
-            review_after_days=claim_atom.review_after_days,
         )
 
         combined_sources = _merge_sources(default_sources, proposal.evidence)
@@ -252,28 +234,33 @@ def normalize_claim_proposals(
             for src in combined_sources
         ]
 
-        proposals.append(
-            ClaimProposal(
-                claim=claim_input,
-                normalized_ids=merge_unique(proposal.normalized_ids, normalized_ids),
-                evidence=sanitized_sources,
-                manifest_hashes=merge_unique(proposal.manifest_hashes, manifest_hashes),
-                rationale=proposal.rationale,
-            ),
-        )
+        proposal.subject = claim_atom.subject
+        proposal.predicate = claim_atom.predicate
+        proposal.value = claim_atom.value
+        proposal.statement = claim_atom.statement
+        proposal.scope = claim_atom.scope
+        proposal.strength = claim_atom.strength
+        proposal.status = claim_atom.status
+        proposal.method = claim_atom.method
+        proposal.user_verified = claim_atom.user_verified
+        proposal.review_after_days = claim_atom.review_after_days
+        proposal.evidence = sanitized_sources
+        proposal.normalized_ids = merge_unique(proposal.normalized_ids, normalized_ids)
+        proposal.manifest_hashes = merge_unique(proposal.manifest_hashes, manifest_hashes)
+        proposals.append(proposal)
 
     return proposals
 
 
-def _normalize_claim_input(
-    claim_input: ClaimAtomInput,
+def _normalize_claim_fields(
+    claim_fields: dict[str, Any],
     *,
     timestamp: str,
     default_sources: Sequence[ClaimSource],
     evidence: Sequence[SourceRef],
 ) -> ClaimAtom:
     combined_sources = _merge_sources(default_sources, evidence)
-    claim_dict = claim_input.model_dump(mode="python")
+    claim_dict = dict(claim_fields)
     return normalization.normalize_claim_atom(
         claim_dict,
         timestamp=timestamp,

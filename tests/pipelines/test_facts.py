@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 
 import pytest
 
-from aijournal.domain.changes import ClaimAtomInput, ClaimProposal
+from aijournal.domain.changes import ClaimProposal
 from aijournal.domain.claims import ClaimSource, Scope
 from aijournal.domain.evidence import SourceRef
 from aijournal.domain.facts import MicroFact, MicroFactsFile
@@ -91,23 +91,22 @@ def test_generate_microfacts_merges_llm_and_derived(monkeypatch: pytest.MonkeyPa
         ],
         claim_proposals=[
             ClaimProposal(
-                claim=ClaimAtomInput(
-                    type="preference",
-                    subject="fact-1",
-                    predicate="insight",
-                    value="Completed focus block",
-                    statement="Completed focus block",
-                    scope=Scope(),
-                    strength=0.8,
-                    status="tentative",
-                    method="inferred",
-                    user_verified=False,
-                    review_after_days=90,
-                ),
+                type="preference",
+                subject="fact-1",
+                predicate="insight",
+                value="Completed focus block",
+                statement="Completed focus block",
+                scope=Scope(),
+                strength=0.8,
+                status="tentative",
+                method="inferred",
+                user_verified=False,
+                review_after_days=90,
+                evidence_entry="entry-1",
                 normalized_ids=["entry-1"],
                 manifest_hashes=["manifest-1"],
                 evidence=[SourceRef(entry_id="entry-1", spans=[])],
-                rationale=None,
+                reason=None,
             )
         ],
     )
@@ -147,8 +146,9 @@ def test_generate_microfacts_merges_llm_and_derived(monkeypatch: pytest.MonkeyPa
     assert len(result.claim_proposals) == 1
     proposal = result.claim_proposals[0]
     assert isinstance(proposal, ClaimProposal)
-    assert isinstance(proposal.claim, ClaimAtomInput)
-    assert proposal.claim.statement == "Completed focus block"
+    assert proposal.statement == "Completed focus block"
     assert proposal.normalized_ids == ["entry-1"]
     assert proposal.manifest_hashes == ["manifest-1"]
-    assert proposal.evidence == [SourceRef(entry_id="entry-1", spans=[])]
+    assert proposal.evidence
+    assert proposal.evidence[0].entry_id == "entry-1"
+    assert all(span.text is None for span in proposal.evidence[0].spans)

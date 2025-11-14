@@ -31,7 +31,6 @@ class ClaimMethod(StrEnum):
 class FacetOperation(StrEnum):
     SET = "set"
     REMOVE = "remove"
-    MERGE = "merge"
 
 
 class ClaimEventAction(StrEnum):
