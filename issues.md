@@ -1,15 +1,5 @@
 # Outstanding Issues – November 14, 2025
 
-- **Prompt/LLM Contract Hygiene (High)**  
-  **Rationale:** During the refactor we fixed characterize/profile-suggest/micro-facts by routing them through prompt-specific DTOs, but new commands can easily regress (e.g., interview/facts previously pointed at runtime models).  
-  **Acceptance criteria:** (1) `rg 'response_model=' -n src/aijournal/commands` lists only DTOs (`Prompt*`, `DailySummary`, etc.), never runtime artifacts. (2) A short checklist lives in `CONTRIBUTING.md` reminding contributors to add DTO + converter whenever a new structured prompt is introduced. (3) CI includes a lightweight test (or script) that fails if a runtime model is used directly.  
-  **Actions:** add the checklist, add an automated grep-based check, and document the DTO boundary so future work stays clean.
-
-- **Micro-facts quality & metadata leakage (Medium)**  
-  **Rationale:** Even with the DTO layer, live runs still produce metadata-only claims/facts (e.g., “entry created on …”, “title is …”) and hallucinations such as “Author born on 2011‑02‑20” despite the body describing metaphorical rebirth. These dilute downstream claims.  
-  **Acceptance criteria:** (1) Prompt explicitly forbids metadata-only statements and the converter drops them (unit test asserting unwanted IDs like `*-entry-created`). (2) End-to-end test feeds a sample entry with rich text and asserts at least one fact references paragraph content (via `raw_markdown`). (3) Manual QA log shows micro-facts referencing concrete sentences, not front-matter.  
-  **Actions:** tighten `prompts/extract_facts.md`, add filtering in `generate_microfacts`, and cover with regression tests.
-
 - **Characterize resilience (High)**  
   **Rationale:** Stage 5 still flakes in two ways: (a) DTO rejects optional fields like scope/provenance, yielding `extra_forbidden` errors; (b) very large entries (e.g., 8 KB blog posts) hit timeouts or Ollama JSON parse errors. Both leave capture half-finished.  
   **Acceptance criteria:** (1) DTO/converter tolerate optional scope/provenance fields and strip unsupported keys before validation. (2) Characterize runner escalates timeout/attempts for large entries (e.g., adaptive retries or chunking). (3) Running `uv run aijournal capture --from ~/example-blog-entries` completes stage 5 for all dates without manual retries, with the run log showing either success or graceful degradation per-entry instead of overall failure.  
@@ -46,3 +36,9 @@ Update this list as fixes land so future agents know which items remain.
 
 ## Characterize flakes on large entries (⚠ ongoing)
 - Live run 2025‑11‑13: 8KB Dutch entry timed out/hit JSON parse errors. Even after DTO fixes, long entries still require adaptive timeouts or chunking; see “Characterize resilience” above for acceptance criteria.
+
+## Prompt/LLM contract hygiene (✅ fixed in current branch)
+- Added contributor checklist + workflow/TLDR notes covering DTO rules, added pytest guard `tests/ci/test_prompt_contracts.py`, and ensured Typer commands only point `response_model` at `Prompt*`, `DailySummary`, or `AdviceCard`.
+
+## Micro-facts quality & metadata leakage (✅ fixed in current branch)
+- Prompt now warns against metadata-only statements, `convert_prompt_microfacts` filters them via `is_metadata_only_fact`, and regression tests cover the heuristics. Facts referencing only front matter are discarded before persistence.
