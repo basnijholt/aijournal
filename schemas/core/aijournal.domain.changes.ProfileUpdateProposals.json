@@ -1,15 +1,57 @@
 {
   "$defs": {
-    "ClaimAtomInput": {
+    "ClaimMethod": {
+      "enum": [
+        "self_report",
+        "inferred",
+        "behavioral"
+      ],
+      "title": "ClaimMethod",
+      "type": "string"
+    },
+    "ClaimProposal": {
       "additionalProperties": false,
-      "description": "Normalized claim payload without identifiers or provenance.",
+      "description": "Structured claim update prepared for downstream review.",
       "properties": {
+        "evidence": {
+          "items": {
+            "$ref": "#/$defs/SourceRef"
+          },
+          "title": "Evidence",
+          "type": "array"
+        },
+        "manifest_hashes": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Manifest Hashes",
+          "type": "array"
+        },
         "method": {
           "$ref": "#/$defs/ClaimMethod"
+        },
+        "normalized_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Normalized Ids",
+          "type": "array"
         },
         "predicate": {
           "title": "Predicate",
           "type": "string"
+        },
+        "rationale": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rationale"
         },
         "review_after_days": {
           "title": "Review After Days",
@@ -57,62 +99,6 @@
         "method",
         "user_verified",
         "review_after_days"
-      ],
-      "title": "ClaimAtomInput",
-      "type": "object"
-    },
-    "ClaimMethod": {
-      "enum": [
-        "self_report",
-        "inferred",
-        "behavioral"
-      ],
-      "title": "ClaimMethod",
-      "type": "string"
-    },
-    "ClaimProposal": {
-      "additionalProperties": false,
-      "description": "Structured claim update prepared for downstream review.",
-      "properties": {
-        "claim": {
-          "$ref": "#/$defs/ClaimAtomInput"
-        },
-        "evidence": {
-          "items": {
-            "$ref": "#/$defs/SourceRef"
-          },
-          "title": "Evidence",
-          "type": "array"
-        },
-        "manifest_hashes": {
-          "items": {
-            "type": "string"
-          },
-          "title": "Manifest Hashes",
-          "type": "array"
-        },
-        "normalized_ids": {
-          "items": {
-            "type": "string"
-          },
-          "title": "Normalized Ids",
-          "type": "array"
-        },
-        "rationale": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Rationale"
-        }
-      },
-      "required": [
-        "claim"
       ],
       "title": "ClaimProposal",
       "type": "object"
