@@ -36,7 +36,6 @@ class NormalizedEntry(StrictModel):
     title: str
     tags: list[str] = Field(default_factory=list)
     sections: list[Section] = Field(default_factory=list)
-    paragraphs: list[str] = Field(default_factory=list)
     entities: list[NormalizedEntity] = Field(default_factory=list)
     summary: str | None = None
     source_hash: str | None = None
