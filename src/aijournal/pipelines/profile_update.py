@@ -1,32 +1,29 @@
-"""Pipeline helpers for profile characterization."""
+"""Pipeline helpers for the unified profile update stage."""
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Sequence
 from typing import Any, cast
 
 from pydantic import ValidationError
 
-from aijournal.domain.changes import (
-    ClaimProposal,
-    FacetChange,
-    ProfileUpdateProposals,
-)
+from aijournal.domain.changes import ClaimProposal, FacetChange, ProfileUpdateProposals
 from aijournal.domain.claims import ClaimAtom, ClaimSource
 from aijournal.domain.evidence import SourceRef
 from aijournal.domain.journal import NormalizedEntry
-from aijournal.fakes import fake_characterize
+from aijournal.fakes import fake_profile_proposals
 from aijournal.pipelines import facts as facts_pipeline
 from aijournal.utils.coercion import coerce_float, coerce_int
 
 StructuredCall = Callable[..., Any]
-CharacterizeRequestFactory = Callable[[], ProfileUpdateProposals]
+RequestFactory = Callable[[], ProfileUpdateProposals]
 NormalizeClaims = Callable[..., list[ClaimProposal]]
 NormalizeFacets = Callable[..., list[FacetChange]]
+BuildClaim = Callable[..., ClaimAtom]
 
 
 def normalize_facet_proposals(
-    raw_facets: Iterable[Any],
+    raw_facets: Sequence[Any],
 ) -> list[FacetChange]:
     proposals: list[FacetChange] = []
     for raw in raw_facets:
@@ -43,7 +40,7 @@ def normalize_facet_proposals(
             continue
 
         evidence_payload = payload.get("evidence") or []
-        evidence_sources = []
+        evidence_sources: list[SourceRef] = []
         for item in evidence_payload:
             try:
                 evidence_sources.append(SourceRef.model_validate(item))
@@ -70,52 +67,39 @@ def normalize_facet_proposals(
     return proposals
 
 
-def generate_characterization(
+def generate_profile_update(
     entries: Sequence[NormalizedEntry],
     profile: dict[str, Any],
     claims: Sequence[ClaimAtom],
     *,
     use_fake_llm: bool,
     structured_call: StructuredCall,
-    request_factory: CharacterizeRequestFactory,
+    request_factory: RequestFactory,
     retries: int,
     label: str,
     context: tuple[list[str], list[str], list[ClaimSource]],
     claim_timestamp: str,
-    build_claim: Callable[..., ClaimAtom],
+    build_claim: BuildClaim,
     normalize_claims: NormalizeClaims,
     normalize_facets: NormalizeFacets,
 ) -> tuple[ProfileUpdateProposals, list[str]]:
-    """Produce claim/facet proposals along with follow-up prompts."""
-
-    normalized_ids, manifest_hashes, default_sources = context
+    """Produce profile update proposals plus interview prompts for a single day."""
 
     if use_fake_llm:
-        base = fake_characterize(
-            entries,
-            profile,
-            claims,
-            build_claim=build_claim,
-        )
-        raw_claims = [
-            claim.model_dump(mode="python") if hasattr(claim, "model_dump") else claim
-            for claim in base.claims
-        ]
-        raw_facets = [
-            facet.model_dump(mode="python") if hasattr(facet, "model_dump") else facet
-            for facet in base.facets
-        ]
-        prompts: list[str] = []
-    else:
-        response = cast(
-            ProfileUpdateProposals,
-            structured_call(request_factory, retries=retries, label=label),
-        )
+        fake = fake_profile_proposals(entries, profile, claims, build_claim=build_claim)
+        prompts = list(fake.interview_prompts)
+        return fake, prompts
 
-        raw_claims = [proposal.model_dump(mode="python") for proposal in response.claims]
-        raw_facets = [proposal.model_dump(mode="python") for proposal in response.facets]
-        prompts = [prompt for prompt in response.interview_prompts if prompt]
+    response = cast(
+        ProfileUpdateProposals,
+        structured_call(request_factory, retries=retries, label=label),
+    )
 
+    raw_claims = [proposal.model_dump(mode="python") for proposal in response.claims]
+    raw_facets = [proposal.model_dump(mode="python") for proposal in response.facets]
+    prompts = [prompt for prompt in response.interview_prompts if prompt]
+
+    normalized_ids, manifest_hashes, default_sources = context
     claims_payload = normalize_claims(
         raw_claims,
         normalized_ids=normalized_ids,

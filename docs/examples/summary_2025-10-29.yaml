@@ -1,18 +1,18 @@
 data:
   bullets:
-  - 'finally got aijournal characterize working using llama.cpp instead of ollama:
-    finally got aijournal characterize working using llama.cpp instead of ollama'
+  - 'finally got aijournal profile_update working using llama.cpp instead of ollama:
+    finally got aijournal profile_update working using llama.cpp instead of ollama'
   day: '2025-10-29'
   highlights:
-  - 'finally got aijournal characterize working using llama.cpp instead of ollama:
-    finally got aijournal characterize working using llama.cpp instead of ollama'
+  - 'finally got aijournal profile_update working using llama.cpp instead of ollama:
+    finally got aijournal profile_update working using llama.cpp instead of ollama'
   meta:
     created_at: '2025-10-29T19:58:27Z'
     llm_model: fake-ollama
     prompt_hash: 6a32e2008868a7fabf85f096df6d312ca3c0b3b40ef9ea5d44ec00ae1d057f0e
     prompt_path: prompts/summarize_day.md
   todo_candidates:
-  - Review follow-ups from finally got aijournal characterize working using llama.cpp
+  - Review follow-ups from finally got aijournal profile_update working using llama.cpp
     instead of ollama
 kind: summaries.daily
 meta:

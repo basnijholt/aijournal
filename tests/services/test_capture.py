@@ -9,17 +9,12 @@ from pathlib import Path
 
 import pytest
 import yaml
-from tests.helpers import make_claim_atom
 
 from aijournal.common.app_config import AppConfig
 from aijournal.common.meta import Artifact, ArtifactKind, ArtifactMeta
 from aijournal.domain.changes import (
-    ClaimAtomInput,
-    ClaimProposal,
     ProfileUpdateProposals,
 )
-from aijournal.domain.claims import ClaimAtom
-from aijournal.domain.evidence import SourceRef
 from aijournal.domain.facts import (
     DailySummary,
     FactEvidence,
@@ -76,7 +71,6 @@ def test_run_capture_records_telemetry(tmp_path: Path, monkeypatch: pytest.Monke
     monkeypatch.chdir(tmp_path)
 
     stage_calls: list[tuple[str, str]] = []
-    profile_apply_calls: list[str] = []
     review_calls: list[Path] = []
     index_rebuild_calls: list[tuple[str | None, int | None]] = []
     index_tail_calls: list[tuple[str | None, int, int | None]] = []
@@ -140,67 +134,11 @@ def test_run_capture_records_telemetry(tmp_path: Path, monkeypatch: pytest.Monke
         save_artifact(path, artifact)
         return path
 
-    def _write_profile_proposals_artifact(path: Path, day: str) -> Path:
-        meta = ArtifactMeta(
-            created_at=f"{day}T09:10:00Z",
-            model="fake-ollama",
-            prompt_path="prompts/profile_suggest.md",
-            prompt_hash="fake",
-        )
-        claim_model = ClaimAtom.model_validate(
-            make_claim_atom(
-                "pref_capture",
-                "Capture suggestion",
-                strength=0.5,
-                last_updated=f"{day}T09:00:00Z",
-            )
-        )
-        claim_input = ClaimAtomInput(
-            type=claim_model.type,
-            subject=claim_model.subject,
-            predicate=claim_model.predicate,
-            value=claim_model.value,
-            statement=claim_model.statement,
-            scope=claim_model.scope,
-            strength=claim_model.strength,
-            status=claim_model.status,
-            method=claim_model.method,
-            user_verified=claim_model.user_verified,
-            review_after_days=claim_model.review_after_days,
-        )
-        proposals = ProfileUpdateProposals(
-            claims=[
-                ClaimProposal(
-                    type=claim_input.type,
-                    subject=claim_input.subject,
-                    predicate=claim_input.predicate,
-                    value=claim_input.value,
-                    statement=claim_input.statement,
-                    scope=claim_input.scope,
-                    strength=claim_input.strength,
-                    status=claim_input.status,
-                    method=claim_input.method,
-                    user_verified=claim_input.user_verified,
-                    review_after_days=claim_input.review_after_days,
-                    normalized_ids=[claim_model.id],
-                    evidence=[SourceRef(entry_id="capture-entry", spans=[])],
-                )
-            ],
-            facets=[],
-        )
-        artifact = Artifact[ProfileUpdateProposals](
-            kind=ArtifactKind.PROFILE_PROPOSALS,
-            meta=meta,
-            data=proposals,
-        )
-        save_artifact(path, artifact)
-        return path
-
     def _write_profile_update_batch_artifact(path: Path, day: str) -> Path:
         meta = ArtifactMeta(
             created_at=f"{day}T09:20:00Z",
             model="fake-ollama",
-            prompt_path="prompts/characterize.md",
+            prompt_path="prompts/profile_update.md",
             prompt_hash="fake",
         )
         batch = ProfileUpdateBatch(
@@ -258,33 +196,7 @@ def test_run_capture_records_telemetry(tmp_path: Path, monkeypatch: pytest.Monke
         )
         return None, path
 
-    def fake_run_profile_suggest(
-        date: str,
-        *,
-        timeout: float,
-        retries: int,
-        progress: bool,
-        workspace: Path | None = None,
-    ) -> Path:
-        del timeout, retries, progress, workspace
-        stage_calls.append(("profile_suggest", date))
-        return _write_profile_proposals_artifact(
-            tmp_path / "derived" / "profile_proposals" / f"{date}.yaml",
-            date,
-        )
-
-    def fake_run_profile_apply(
-        date: str,
-        *,
-        suggestions_path: Path | None,
-        auto_confirm: bool,
-        workspace: Path | None = None,
-    ) -> str:
-        del suggestions_path, auto_confirm, workspace
-        profile_apply_calls.append(date)
-        return "Applied"
-
-    def fake_run_characterize(
+    def fake_run_profile_update(
         date: str,
         *,
         timeout: float,
@@ -294,7 +206,7 @@ def test_run_capture_records_telemetry(tmp_path: Path, monkeypatch: pytest.Monke
         workspace: Path | None = None,
     ) -> Path:
         del timeout, retries, progress, build_claim_preview, workspace
-        stage_calls.append(("characterize", date))
+        stage_calls.append(("profile_update", date))
         return _write_profile_update_batch_artifact(
             tmp_path / "derived" / "pending" / "profile_updates" / f"{date}-batch.yaml",
             date,
@@ -308,16 +220,8 @@ def test_run_capture_records_telemetry(tmp_path: Path, monkeypatch: pytest.Monke
     monkeypatch.setattr("aijournal.commands.summarize.run_summarize", fake_run_summarize)
     monkeypatch.setattr("aijournal.commands.facts.run_facts", fake_run_facts)
     monkeypatch.setattr(
-        "aijournal.commands.profile.run_profile_suggest",
-        fake_run_profile_suggest,
-    )
-    monkeypatch.setattr(
-        "aijournal.commands.profile.run_profile_apply",
-        fake_run_profile_apply,
-    )
-    monkeypatch.setattr(
-        "aijournal.commands.characterize.run_characterize",
-        fake_run_characterize,
+        "aijournal.commands.profile_update.run_profile_update",
+        fake_run_profile_update,
     )
     dummy_claim = object()
     monkeypatch.setattr(
@@ -379,9 +283,7 @@ def test_run_capture_records_telemetry(tmp_path: Path, monkeypatch: pytest.Monke
         "normalize",
         "derive.summarize",
         "derive.extract_facts",
-        "derive.profile_suggest",
-        "derive.profile_apply",
-        "derive.characterize",
+        "derive.profile_update",
         "derive.review",
         "refresh.index",
         "refresh.persona",
@@ -391,9 +293,8 @@ def test_run_capture_records_telemetry(tmp_path: Path, monkeypatch: pytest.Monke
 
     assert result.artifacts_changed.get("summaries") == 1
     assert result.artifacts_changed.get("microfacts") == 1
-    assert result.artifacts_changed.get("characterize") == 1
-    assert result.artifacts_changed.get("profile_proposals") == 1
-    expected_profile_updates = len(profile_apply_calls) + len(review_calls)
+    assert result.artifacts_changed.get("profile_updates") == 1
+    expected_profile_updates = len(review_calls)
     assert result.artifacts_changed.get("profile") == expected_profile_updates
 
     assert len(result.entries) == 1
@@ -403,7 +304,6 @@ def test_run_capture_records_telemetry(tmp_path: Path, monkeypatch: pytest.Monke
     assert entry.normalized_path is not None
     assert (tmp_path / entry.normalized_path).exists()
 
-    assert profile_apply_calls in ([], [entry.date])
     assert review_calls
     assert stage_calls[0][0] == "summarize"
     assert index_rebuild_calls == [(None, None)]
@@ -438,9 +338,7 @@ def test_run_capture_records_telemetry(tmp_path: Path, monkeypatch: pytest.Monke
         "normalize",
         "derive.summarize",
         "derive.extract_facts",
-        "derive.profile_suggest",
-        "derive.profile_apply",
-        "derive.characterize",
+        "derive.profile_update",
         "derive.review",
         "index.rebuild",
         "persona.status",
@@ -479,18 +377,7 @@ def test_run_capture_rebuild_skip_skips_refresh(
         ),
     )
     monkeypatch.setattr(
-        "aijournal.commands.profile.run_profile_suggest",
-        lambda date, *, timeout, retries, progress: _ensure_file(
-            tmp_path / "derived" / "profile_proposals" / f"{date}.yaml",
-            "suggest",
-        ),
-    )
-    monkeypatch.setattr(
-        "aijournal.commands.profile.run_profile_apply",
-        lambda *args, **kwargs: "Applied",
-    )
-    monkeypatch.setattr(
-        "aijournal.commands.characterize.run_characterize",
+        "aijournal.commands.profile_update.run_profile_update",
         lambda date,
         *,
         timeout,
@@ -565,18 +452,7 @@ def test_run_capture_rebuild_always_forces_refresh(
         ),
     )
     monkeypatch.setattr(
-        "aijournal.commands.profile.run_profile_suggest",
-        lambda date, *, timeout, retries, progress: _ensure_file(
-            tmp_path / "derived" / "profile_proposals" / f"{date}.yaml",
-            "suggest",
-        ),
-    )
-    monkeypatch.setattr(
-        "aijournal.commands.profile.run_profile_apply",
-        lambda *args, **kwargs: "Applied",
-    )
-    monkeypatch.setattr(
-        "aijournal.commands.characterize.run_characterize",
+        "aijournal.commands.profile_update.run_profile_update",
         lambda date,
         *,
         timeout,
@@ -720,15 +596,7 @@ def test_run_capture_review_mode_skips_apply(
     )
 
     monkeypatch.setattr(
-        "aijournal.commands.profile.run_profile_suggest",
-        lambda date, *, timeout, retries, progress, workspace=None: _ensure_file(
-            tmp_path / "derived" / "profile_proposals" / f"{date}.yaml",
-            "suggest",
-        ),
-    )
-
-    monkeypatch.setattr(
-        "aijournal.commands.characterize.run_characterize",
+        "aijournal.commands.profile_update.run_profile_update",
         lambda date,
         *,
         timeout,
@@ -741,13 +609,7 @@ def test_run_capture_review_mode_skips_apply(
         ),
     )
 
-    profile_apply_calls: list[str] = []
     review_calls: list[Path] = []
-
-    monkeypatch.setattr(
-        "aijournal.commands.profile.run_profile_apply",
-        lambda *args, **kwargs: profile_apply_calls.append("called"),
-    )
 
     monkeypatch.setattr(
         "aijournal.commands.profile.load_profile_components",
@@ -789,9 +651,8 @@ def test_run_capture_review_mode_skips_apply(
     )
     result = run_capture(inputs)
 
-    assert "derive.profile_apply" not in result.durations_ms
+    assert "derive.profile_update" in result.durations_ms
     assert "derive.review" not in result.durations_ms
-    assert not profile_apply_calls
     assert not review_calls
     assert index_rebuild_calls == [(None, None)]
     assert result.index_rebuilt is True

@@ -94,10 +94,7 @@ def run_audit_provenance(
                 ),
             )
 
-    for relative_dir in (
-        "derived/profile_proposals",
-        "derived/pending/profile_updates",
-    ):
+    for relative_dir in ("derived/pending/profile_updates",):
         for path in _iter_artifact_files(root / relative_dir):
             artifact_entry = _load_auditable_artifact(path)
             if artifact_entry is None:

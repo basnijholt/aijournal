@@ -63,7 +63,6 @@ aijournal/
   derived/
     summaries/
     microfacts/
-    profile_proposals/
     pending/profile_updates/
     persona/
     index/
@@ -78,9 +77,9 @@ aijournal/
 - **CLI (`src/aijournal/cli.py`)** – Thin Typer glue that wires user-facing commands to the orchestration layer. It exposes everyday verbs (`init`, `capture`, `chat`, `advise`, `status`, `serve chat`, `export pack`) while advanced utilities are namespaced under `ops.*`. Global flags `--trace` and `--verbose-json` mirror structured trace events to stdout for debugging.
 - **Commands (`src/aijournal/commands/`)** – Feature-specific runners that orchestrate file I/O, pipelines, and error handling for each CLI surface (capture, ops.pipeline, ops.profile, ops.index, ops.persona, ops.feedback, ops.system, ops.dev, etc.). Complex commands now follow a standard three-phase skeleton (`prepare_inputs`, `invoke_pipeline`, `persist_output`) driven by `run_command_pipeline`.
 - **Common context (`src/aijournal/common/context.py`, `common/logging.py`, `common/command_runner.py`)** – Provides `RunContext` objects that resolve config, fake/live flags, and a shared `StructuredLogger` writing NDJSON entries to `derived/logs/run_trace.jsonl`. Additional sinks enable pretty or JSON traces when `--trace`/`--verbose-json` is used, and `aijournal ops logs tail --last N` pretty-prints recent trace events for debugging live runs.
-- **Pipelines (`src/aijournal/pipelines/`)** – Deterministic workflows that combine services, prompts, and validation for a single use case (summaries, facts, characterization, packs, advice). Pipelines avoid Typer and file-system concerns so they remain testable.
+- **Pipelines (`src/aijournal/pipelines/`)** – Deterministic workflows that combine services, prompts, and validation for a single use case (summaries, facts, profile_update, packs, advice). Pipelines avoid Typer and file-system concerns so they remain testable.
 - **Models (`src/aijournal/models/`)** – Pydantic schemas that validate every authoritative and derived artifact before it hits disk.
-- **Services (`src/aijournal/services/`)** – Ollama client, retrieval/indexing, characterization, consolidation, chat orchestrator, advisor, capture orchestrator, and feedback handlers.
+- **Services (`src/aijournal/services/`)** – Ollama client, retrieval/indexing, profile update, consolidation, chat orchestrator, advisor, capture orchestrator, and feedback handlers.
 - **Utilities (`src/aijournal/utils/` & `src/aijournal/io/`)** – Path mappers, YAML helpers, slug and ID generators, time utilities, filesystem safety rails.
 - **Prompts (`prompts/`)** – Markdown templates hashed into derived metadata to keep runs reproducible.
 
@@ -137,14 +136,14 @@ Refer to `docs/workflow.md` for the operational command order. This section expl
 Once normalized entries exist for a date, `aijournal capture` drives the derivation stack automatically. Advanced operators can run the same steps manually via:
 1. `aijournal ops pipeline summarize --date <date>` – writes `derived/summaries/<date>.yaml` with bullets, highlights, and TODO candidates.
 2. `aijournal ops pipeline extract-facts --date <date>` – produces `derived/microfacts/<date>.yaml`, claim proposals, and consolidation previews.
-3. `aijournal ops profile suggest --date <date>` – generates `derived/profile_proposals/<date>.yaml` with claim/facet proposals.
+3. `aijournal ops profile update --date <date>` – generates `derived/pending/profile_updates/<date>-<timestamp>.yaml` with claim/facet proposals.
 4. `aijournal ops profile apply --date <date> --yes` – merges accepted suggestions into `profile/claims.yaml` and `profile/self_profile.yaml` (capture runs this automatically when `--apply-profile=auto`).
 
 All outputs include `meta.{llm_model, prompt_path, prompt_hash, created_at}` and are validated against Pydantic models. Each capture run logs NDJSON telemetry (`derived/logs/capture/<run_id>.jsonl`) with per-stage durations, counters, and warnings.
 
 ### 4.3 Characterization and Review Loop
 
-- `aijournal ops pipeline characterize --date …` reads normalized entries, persona data, and manifest hashes to propose claim and facet updates plus interview prompts. Results land in `derived/pending/profile_updates/<timestamp>.yaml`.
+- `aijournal ops profile update --date …` reads normalized entries, persona data, summaries, and microfacts to propose claim/facet updates plus interview prompts. Results land in `derived/pending/profile_updates/<timestamp>.yaml`.
 - `aijournal ops pipeline review --file … --apply` previews each proposal (including scope conflicts), updates the authoritative profile when approved, refreshes timestamps, and records which normalized entries and manifest hashes drove the change. `capture` diffs the pending directory and only auto-applies the batches generated during the current run when `--apply-profile=auto`.
 - Multiple batches per day are common; review and apply each batch before moving to retrieval.
 
@@ -192,8 +191,7 @@ Derived schemas (see `src/aijournal/models/derived.py`):
 
 - `prompts/summarize_day.md` – Bullets, highlights, TODOs. Output validated by `DailySummary`.
 - `prompts/extract_facts.md` – Emits atomic statements with evidence and temporal bounds. Validated by `MicroFactsFile`.
-- `prompts/profile_suggest.md` – Proposes claim/facet upserts with rationale, method, and review cadence.
-- `prompts/characterize.md` – Produces consolidated claim/facet updates tied to manifest hashes plus interview prompts.
+- `prompts/profile_update.md` – Produces consolidated claim/facet updates with manifest hashes, summaries, microfacts, and interview prompts.
 - `prompts/interview.md` – Generates targeted follow-up questions using staleness and scope gaps.
 - `prompts/advise.md` – Advisor mode, requiring `why_this_fits_you` with claim/facet citations, risks, mitigations, and tone alignment.
 
@@ -224,7 +222,7 @@ All structured prompts go through `run_ollama_agent`, which sanitizes JSON, retr
 ## 9. Performance Considerations
 
 - Journals are small and YAML parsing is fast. Retrieval performance hinges on the Annoy index; rebuilding remains quick even with tens of thousands of chunks.
-- Structured-output commands (summaries, facts, characterize, advise) run sequentially and typically complete within seconds under `gpt-oss:20b`.
+- Structured-output commands (summaries, facts, profile update, advise) run sequentially and typically complete within seconds under `gpt-oss:20b`.
 - Caching hooks (`derived/cache/`) can capture prompt outputs keyed by `(model, prompt_hash, inputs_hash)` if future workloads demand reuse.
 - Keep an eye on retrieval latency via chat telemetry; maintaining `index.meta.json` helps correlate ANN parameters (`ann_trees`, `search_k_factor`) with observed timings.
 
@@ -234,7 +232,7 @@ Contributor setup, testing expectations, and linting tools are covered in [CONTR
 
 ## 11. Operational Runbooks
 
-- **Daily workflow:** Follow `docs/workflow.md` for the canonical command order—from `init` and manual journaling through normalize, summarize, facts, profile suggest/apply, characterize, review, rebuild index, persona build, pack, chat/advice, and feedback application.
+- **Daily workflow:** Follow `docs/workflow.md` for the canonical command order—from `init` and manual journaling through normalize, summarize, facts, profile update/review, rebuild index, persona build, pack, chat/advice, and feedback application.
 - **Live-mode rehearsal:** `agents.md` captures the full 350/350 run checklist, environment variables, model verification, prompt calibration lessons, chat feedback expectations, server shutdown validation, and post-run cleanup. Use it whenever running against the remote `gpt-oss:20b` instance with real data.
 - Maintain a run log (e.g., `run_log.md`) when executing long rehearsals, recording score, command, artifacts, and troubleshooting notes.
 

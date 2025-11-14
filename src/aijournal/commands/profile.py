@@ -7,25 +7,16 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Literal, cast
+from typing import Any, Literal
 
 import typer
 from pydantic import BaseModel, ValidationError
 
-from aijournal.commands.summarize import (
-    _build_meta,
-    _entries_to_payload,
-    _invoke_structured_llm,
-    _json_block,
-    _load_normalized_entries,
-    _log_entry_progress,
-    _validate_timeout,
-)
 from aijournal.common.app_config import AppConfig
 from aijournal.common.command_runner import run_command_pipeline
 from aijournal.common.config_loader import load_config, load_yaml, use_fake_llm
 from aijournal.common.context import RunContext, create_run_context
-from aijournal.common.meta import Artifact, ArtifactKind
+from aijournal.common.meta import ArtifactKind
 from aijournal.domain.changes import ClaimProposal, FacetChange, ProfileUpdateProposals
 from aijournal.domain.claims import (
     ClaimAtom,
@@ -36,43 +27,15 @@ from aijournal.domain.claims import (
 )
 from aijournal.domain.evidence import SourceRef, redact_source_text
 from aijournal.domain.journal import NormalizedEntry
-from aijournal.domain.prompts import PromptProfileUpdates, convert_prompt_updates_to_proposals
-from aijournal.fakes import fake_profile_proposals
-from aijournal.io.artifacts import load_artifact_data, save_artifact
+from aijournal.io.artifacts import load_artifact, load_artifact_data
 from aijournal.io.yaml_io import load_yaml_model, write_yaml_model
 from aijournal.models.authoritative import ClaimsFile, SelfProfile
+from aijournal.models.derived import ProfileUpdateBatch
 from aijournal.pipelines import normalization
 from aijournal.services.consolidator import ClaimConsolidator, ClaimMergeOutcome
-from aijournal.services.ollama import LLMResponseError
 from aijournal.utils import time as time_utils
 
 DEFAULT_PROFILE_RETRIES = 1
-
-
-class ProfileSuggestOptions(BaseModel):
-    date: str
-    timeout: float
-    retries: int
-    progress: bool
-
-
-@dataclass(slots=True)
-class ProfileSuggestPrepared:
-    date: str
-    timeout: float
-    retries: int
-    progress: bool
-    entries: list[NormalizedEntry]
-    profile: dict[str, Any]
-    claims: list[ClaimAtom]
-    config: AppConfig
-    workspace: Path
-
-
-@dataclass(slots=True)
-class ProfileSuggestResult:
-    artifact: Artifact[ProfileUpdateProposals]
-    path: Path
 
 
 class ProfileApplyOptions(BaseModel):
@@ -84,10 +47,12 @@ class ProfileApplyOptions(BaseModel):
 @dataclass(slots=True)
 class ProfileApplyPrepared:
     root: Path
-    proposals: ProfileUpdateProposals
-    profile: dict[str, Any]
-    claims: list[ClaimAtom]
-    timestamp: str
+    config: AppConfig
+    proposals: ProfileUpdateProposals | None
+    profile: dict[str, Any] | None
+    claims: list[ClaimAtom] | None
+    timestamp: str | None
+    batch_path: Path | None
 
 
 @dataclass(slots=True)
@@ -124,37 +89,6 @@ class InterviewTarget:
     reasons: tuple[str, ...] = ()
     claim_id: str | None = None
     missing_context: tuple[str, ...] = ()
-
-
-def run_profile_suggest(
-    date: str,
-    *,
-    timeout: float,
-    retries: int,
-    progress: bool,
-    workspace: Path | None = None,
-) -> Path:
-    """Generate profile suggestions for a specific date."""
-
-    workspace = workspace or Path.cwd()
-    config = load_config(workspace)
-    ctx = create_run_context(
-        command="profile.suggest",
-        workspace=workspace,
-        config=config,
-        use_fake_llm=use_fake_llm(),
-        trace=False,
-        verbose_json=False,
-    )
-
-    options = ProfileSuggestOptions(
-        date=date,
-        timeout=timeout,
-        retries=retries,
-        progress=progress,
-    )
-
-    return run_profile_suggest_command(ctx, options)
 
 
 def run_profile_apply(
@@ -203,97 +137,19 @@ def run_profile_status(workspace: Path | None = None, *, root: Path | None = Non
     run_profile_status_command(ctx, ProfileStatusOptions())
 
 
-def _derived_profile_proposals_path(workspace: Path, config: AppConfig, day: str) -> Path:
-    """Build path to profile proposals file for a given day."""
+def _pending_profile_update_dir(workspace: Path, config: AppConfig) -> Path:
     derived = Path(config.paths.derived)
     if not derived.is_absolute():
         derived = workspace / derived
-    return derived / "profile_proposals" / f"{day}.yaml"
+    return derived / "pending" / "profile_updates"
 
 
-def run_profile_suggest_command(
-    ctx: RunContext,
-    options: ProfileSuggestOptions,
-) -> Path:
-    def _prepare(_: RunContext, opts: ProfileSuggestOptions) -> ProfileSuggestPrepared:
-        entries = _load_normalized_entries(ctx.workspace, ctx.config, opts.date)
-        if not entries:
-            typer.secho(f"No normalized entries for {opts.date}", fg=typer.colors.RED, err=True)
-            raise typer.Exit(1)
-
-        timeout_value = _validate_timeout(opts.timeout)
-        profile_model, claim_models = load_profile_components(ctx.workspace, config=ctx.config)
-        profile = profile_to_dict(profile_model)
-        claims = [claim.model_copy(deep=True) for claim in claim_models]
-        if not profile and not claims:
-            typer.secho("No profile data", fg=typer.colors.RED, err=True)
-            raise typer.Exit(1)
-
-        _log_entry_progress(
-            f"Generating profile suggestions for {opts.date}", entries, opts.progress
-        )
-
-        ctx.emit(
-            event="prepare_summary",
-            entries=len(entries),
-            claims=len(claims),
-        )
-        return ProfileSuggestPrepared(
-            date=opts.date,
-            timeout=timeout_value,
-            retries=opts.retries,
-            progress=opts.progress,
-            entries=list(entries),
-            profile=profile,
-            claims=claims,
-            config=ctx.config,
-            workspace=ctx.workspace,
-        )
-
-    def _invoke(_: RunContext, prepared: ProfileSuggestPrepared) -> ProfileSuggestResult:
-        try:
-            proposals = _profile_proposals_payload(
-                prepared.entries,
-                prepared.profile,
-                prepared.claims,
-                prepared.date,
-                prepared.config,
-                workspace=prepared.workspace,
-                timeout=prepared.timeout,
-                retries=prepared.retries,
-            )
-        except LLMResponseError as exc:
-            typer.secho(f"Profile suggestions failed: {exc}", fg=typer.colors.RED, err=True)
-            raise typer.Exit(1) from exc
-
-        path = _derived_profile_proposals_path(ctx.workspace, ctx.config, prepared.date)
-        artifact_meta = _build_meta(
-            "prompts/profile_suggest.md", config=prepared.config, use_fake_llm=ctx.use_fake_llm
-        )
-        artifact = Artifact[ProfileUpdateProposals](
-            kind=ArtifactKind.PROFILE_PROPOSALS,
-            meta=artifact_meta,
-            data=proposals,
-        )
-
-        ctx.emit(
-            event="pipeline_complete",
-            claims=len(proposals.claims),
-            facets=len(proposals.facets),
-        )
-        return ProfileSuggestResult(artifact=artifact, path=path)
-
-    def _persist(_: RunContext, result: ProfileSuggestResult) -> Path:
-        save_artifact(result.path, result.artifact)
-        return result.path
-
-    return run_command_pipeline(
-        ctx,
-        options,
-        prepare_inputs=_prepare,
-        invoke_pipeline=_invoke,
-        persist_output=_persist,
-    )
+def _latest_profile_update_batch(workspace: Path, config: AppConfig, day: str) -> Path | None:
+    directory = _pending_profile_update_dir(workspace, config)
+    if not directory.exists():
+        return None
+    candidates = sorted(directory.glob(f"{day}*.yaml"), reverse=True)
+    return candidates[0] if candidates else None
 
 
 def run_profile_apply_command(
@@ -301,18 +157,47 @@ def run_profile_apply_command(
     options: ProfileApplyOptions,
 ) -> str:
     def _prepare(_: RunContext, opts: ProfileApplyOptions) -> ProfileApplyPrepared:
-        resolved_path = opts.suggestions_path or _derived_profile_proposals_path(
-            ctx.workspace, ctx.config, opts.date
-        )
-        if not resolved_path.exists():
+        candidate: Path | None
+        if opts.suggestions_path is not None:
+            candidate = opts.suggestions_path
+        else:
+            candidate = _latest_profile_update_batch(ctx.workspace, ctx.config, opts.date)
+        if candidate is None or not candidate.exists():
             typer.secho(
-                f"Suggestions file not found: {resolved_path}",
+                "Profile update batch not found; pass --file with a pending batch path.",
                 fg=typer.colors.RED,
                 err=True,
             )
             raise typer.Exit(1)
 
-        proposals = load_artifact_data(resolved_path, ProfileUpdateProposals)
+        batch_path: Path | None = None
+        proposals: ProfileUpdateProposals | None = None
+        try:
+            artifact = load_artifact(candidate, ProfileUpdateBatch)
+            if artifact.kind is ArtifactKind.PROFILE_UPDATES:
+                batch_path = candidate
+        except Exception:
+            proposals = load_artifact_data(candidate, ProfileUpdateProposals)
+
+        if batch_path is not None:
+            return ProfileApplyPrepared(
+                root=ctx.workspace,
+                config=ctx.config,
+                proposals=None,
+                profile=None,
+                claims=None,
+                timestamp=None,
+                batch_path=batch_path,
+            )
+
+        if proposals is None:
+            typer.secho(
+                "File is not a profile update batch or legacy proposals artifact.",
+                fg=typer.colors.RED,
+                err=True,
+            )
+            raise typer.Exit(1)
+
         profile_model, claim_models = load_profile_components(ctx.workspace, config=ctx.config)
         profile = profile_to_dict(profile_model)
         claims = [claim.model_copy(deep=True) for claim in claim_models]
@@ -324,13 +209,32 @@ def run_profile_apply_command(
         )
         return ProfileApplyPrepared(
             root=ctx.workspace,
+            config=ctx.config,
             proposals=proposals,
             profile=profile,
             claims=claims,
             timestamp=timestamp,
+            batch_path=None,
         )
 
     def _invoke(_: RunContext, prepared: ProfileApplyPrepared) -> ProfileApplyResult:
+        if prepared.batch_path is not None:
+            from aijournal.services.capture import utils as capture_utils
+
+            applied = capture_utils.apply_profile_update_batch(
+                prepared.root,
+                prepared.config,
+                prepared.batch_path,
+            )
+            if not applied:
+                typer.echo("No changes to apply")
+                raise typer.Exit(0)
+            return ProfileApplyResult(message="Applied profile update batch", changed=True)
+
+        assert prepared.proposals is not None
+        assert prepared.profile is not None
+        assert prepared.claims is not None
+        assert prepared.timestamp is not None
         changed = False
         events: list[ClaimMergeOutcome] = []
 
@@ -353,7 +257,7 @@ def run_profile_apply_command(
             profile_dir = ctx.workspace / profile_dir
         write_yaml_model(profile_dir / "self_profile.yaml", updated_profile)
         write_yaml_model(profile_dir / "claims.yaml", ClaimsFile(claims=updated_claims))
-        return ProfileApplyResult(message="Applied 1 suggestions file", changed=True)
+        return ProfileApplyResult(message="Applied legacy suggestions file", changed=True)
 
     def _persist(_: RunContext, result: ProfileApplyResult) -> str:
         return result.message
@@ -413,60 +317,6 @@ def run_profile_status_command(ctx: RunContext, options: ProfileStatusOptions) -
     )
 
 
-def _profile_proposals_payload(
-    entries: Sequence[NormalizedEntry],
-    profile: dict[str, Any],
-    claims: Sequence[ClaimAtom],
-    date: str,
-    config: AppConfig,
-    *,
-    workspace: Path,
-    timeout: float | None = None,
-    retries: int = DEFAULT_PROFILE_RETRIES,
-) -> ProfileUpdateProposals:
-    entry_ids, entry_hashes = _profile_entry_context(entries)
-    if use_fake_llm():
-        proposals = fake_profile_proposals(
-            entries,
-            profile,
-            claims,
-            build_claim=_build_claim_atom_from_entry,
-        )
-    else:
-        # LLM emits lightweight DTO with only 8 fields per claim
-        llm_response = cast(
-            PromptProfileUpdates,
-            _invoke_structured_llm(
-                "prompts/profile_suggest.md",
-                {
-                    "date": date,
-                    "entries_json": _json_block(_entries_to_payload(entries, workspace)),
-                    "profile_json": _json_block(profile),
-                    "claims_json": _json_block(
-                        {"claims": [claim.model_dump(mode="python") for claim in claims]}
-                    ),
-                },
-                response_model=PromptProfileUpdates,
-                agent_name="aijournal-profile-suggest",
-                config=config,
-                timeout=timeout,
-                max_attempts=max(1, retries + 1),
-                retry_message=(
-                    "Return JSON with keys `claims` and `facets`; include `interview_prompts` "
-                    "when follow-up questions are warranted."
-                ),
-            ),
-        )
-        # Convert lightweight DTO to full domain model with system metadata
-        proposals = convert_prompt_updates_to_proposals(
-            llm_response,
-            normalized_ids=entry_ids,
-            manifest_hashes=entry_hashes,
-        )
-
-    return _sanitize_proposals(proposals)
-
-
 def _sanitize_proposals(proposals: ProfileUpdateProposals) -> ProfileUpdateProposals:
     sanitized_claims = [
         proposal.model_copy(
@@ -479,16 +329,6 @@ def _sanitize_proposals(proposals: ProfileUpdateProposals) -> ProfileUpdatePropo
         for change in proposals.facets
     ]
     return proposals.model_copy(update={"claims": sanitized_claims, "facets": sanitized_facets})
-
-
-def _profile_entry_context(
-    entries: Sequence[NormalizedEntry],
-) -> tuple[list[str], list[str]]:
-    normalized_ids: list[str] = []
-    for idx, entry in enumerate(entries):
-        entry_id = entry.id or f"entry-{idx + 1}"
-        normalized_ids.append(entry_id)
-    return normalized_ids, []
 
 
 def _apply_claim_proposal(

@@ -16,7 +16,7 @@ Right now:
 - `profile_suggest`:
   - Reads normalized entries + existing profile/claims.
   - Proposes claims and facet updates for a given date.
-  - Writes `derived/profile_proposals/YYYY-MM-DD.yaml`, then `ops profile apply` merges them.
+  - Wrote `derived/profile_proposals/YYYY-MM-DD.yaml`, then `ops profile apply` merged them. (Legacy behavior to be removed.)
 - `characterize`:
   - Reads normalized entries + existing profile/claims (and manifest).
   - Proposes claims, facets, and interview prompts.

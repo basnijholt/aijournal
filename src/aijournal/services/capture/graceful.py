@@ -101,78 +101,7 @@ def graceful_facts(
         return None, f"facts extraction failed: {exc}"
 
 
-def graceful_profile_suggest(
-    date: str,
-    *,
-    timeout: float,
-    retries: int,
-    progress: bool,
-    workspace: Path,
-) -> tuple[Path | None, str | None]:
-    """Gracefully run profile suggestions, catching typer.Exit and returning None on failure.
-
-    Returns:
-        Tuple of (suggestions_path, error_message). If successful, error_message is None.
-        If failed, suggestions_path is None and error_message contains the reason.
-    """
-    from aijournal.commands.profile import run_profile_suggest
-
-    try:
-        suggestions_path = run_profile_suggest(
-            date,
-            timeout=timeout,
-            retries=retries,
-            progress=progress,
-            workspace=workspace,
-        )
-        return suggestions_path, None
-    except typer.Exit as exc:
-        if exc.exit_code == 0:
-            return None, None
-        # Try to extract the original error from the exception chain
-        if exc.__cause__ is not None:
-            return None, f"profile suggest failed: {exc.__cause__}"
-        return None, f"profile suggest exited with code {exc.exit_code}"
-    except Exception as exc:
-        return None, f"profile suggest failed: {exc}"
-
-
-def graceful_profile_apply(
-    date: str,
-    *,
-    suggestions_path: Path,
-    auto_confirm: bool,
-    workspace: Path,
-) -> tuple[bool, str | None]:
-    """Gracefully run profile apply, catching typer.Exit and returning status.
-
-    Returns:
-        Tuple of (success, error_message). If successful, error_message is None.
-        If failed, success is False and error_message contains the reason.
-    """
-    from aijournal.commands.profile import run_profile_apply
-
-    try:
-        run_profile_apply(
-            date,
-            suggestions_path=suggestions_path,
-            auto_confirm=auto_confirm,
-            workspace=workspace,
-        )
-        return True, None
-    except typer.Exit as exc:
-        if exc.exit_code == 0:
-            # Exit 0 means no changes to apply, which is fine
-            return True, None
-        # Try to extract the original error from the exception chain
-        if exc.__cause__ is not None:
-            return False, f"profile apply failed: {exc.__cause__}"
-        return False, f"profile apply exited with code {exc.exit_code}"
-    except Exception as exc:
-        return False, f"profile apply failed: {exc}"
-
-
-def graceful_characterize(
+def graceful_profile_update(
     date: str,
     *,
     timeout: float,
@@ -183,16 +112,12 @@ def graceful_characterize(
     ],
     workspace: Path,
 ) -> tuple[Path | None, str | None]:
-    """Gracefully run characterize, catching typer.Exit and returning None on failure.
+    """Gracefully run the unified profile update pipeline."""
 
-    Returns:
-        Tuple of (batch_path, error_message). If successful, error_message is None.
-        If failed, batch_path is None and error_message contains the reason.
-    """
-    from aijournal.commands.characterize import run_characterize
+    from aijournal.commands.profile_update import run_profile_update
 
     try:
-        batch_path = run_characterize(
+        batch_path = run_profile_update(
             date,
             timeout=timeout,
             retries=retries,
@@ -204,9 +129,8 @@ def graceful_characterize(
     except typer.Exit as exc:
         if exc.exit_code == 0:
             return None, None
-        # Try to extract the original error from the exception chain
         if exc.__cause__ is not None:
-            return None, f"characterize failed: {exc.__cause__}"
-        return None, f"characterize exited with code {exc.exit_code}"
+            return None, f"profile update failed: {exc.__cause__}"
+        return None, f"profile update exited with code {exc.exit_code}"
     except Exception as exc:
-        return None, f"characterize failed: {exc}"
+        return None, f"profile update failed: {exc}"

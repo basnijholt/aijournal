@@ -19,7 +19,7 @@ ROLE_ORDER = [
     "summaries",
     "microfacts",
     "advice",
-    "profile_proposals",
+    "profile_updates",
     "journal_raw",
 ]
 
@@ -28,7 +28,7 @@ TRIM_PRIORITY = [
     "prompt",
     "config",
     "advice",
-    "profile_proposals",
+    "profile_updates",
     "microfacts",
     "summaries",
     "normalized",
@@ -176,8 +176,10 @@ def collect_pack_entries(
     if level in {"L3", "L4"}:
         advice_dir = root / "derived" / "advice" / date
         _add_dir(entries, "advice", advice_dir, pattern="*.yaml")
-        profile_proposals = root / "derived" / "profile_proposals" / f"{date}.yaml"
-        _add_path(entries, "profile_proposals", profile_proposals)
+        pending_dir = root / "derived" / "pending" / "profile_updates"
+        candidates = sorted(pending_dir.glob(f"{date}*.yaml"))
+        if candidates:
+            _add_path(entries, "profile_updates", candidates[-1])
 
     if level == "L4":
         prompts_dir = root / "prompts"

@@ -33,7 +33,7 @@ This guide explains how the main commands fit together, the order in which to ru
    ```bash
    uv run aijournal capture --text "Kickoff journal entry" --tag planning --project onboarding
    ```  
-   `capture` writes the canonical Markdown file, records a manifest row and raw snapshot, and runs the full downstream pipeline (normalize → summarize → extract-facts → profile suggest/apply → characterize/review) for any changed dates. Re-run `capture` whenever you add entries or import folders—it automatically dedupes by hash and skips work when nothing changed.
+   `capture` writes the canonical Markdown file, records a manifest row and raw snapshot, and runs the full downstream pipeline (normalize → summarize → extract-facts → profile update/review) for any changed dates. Re-run `capture` whenever you add entries or import folders—it automatically dedupes by hash and skips work when nothing changed.
 
 ---
 
@@ -46,7 +46,7 @@ The top-level CLI now covers the common lifetime loop:
   uv run aijournal capture --text "Highlights from the product sync" --tag focus
   uv run aijournal capture --from notes/weekly --source-type notes --project roadmap
   ```  
-`capture` handles canonical Markdown writes, manifest updates, raw snapshots, and runs the downstream pipeline (normalize → summarize → extract-facts → profile suggest/apply → characterize/review). It only touches dates whose content actually changed.
+`capture` handles canonical Markdown writes, manifest updates, raw snapshots, and runs the downstream pipeline (normalize → summarize → extract-facts → profile update/review). It only touches dates whose content actually changed.
 
 > **Note:** During stage 0, if an entry lacks a summary, capture now derives one deterministically from the first paragraph of the body, trims it to ≈400 characters, and appends `...` when truncated. Existing summaries are never altered, so reruns remain idempotent.
 
@@ -151,7 +151,7 @@ keeps derived artifacts refreshed automatically.
 The runtime is now split between small, testable modules:
 
 - `src/aijournal/commands/` handles orchestration for each Typer command—file system inputs/outputs, retries, and user messaging live here.
-- `src/aijournal/pipelines/` contains deterministic workflows that combine services and prompts (summaries, facts, persona, packs, characterize, advise). Pipelines never touch Typer directly, making them easy to unit test.
+- `src/aijournal/pipelines/` contains deterministic workflows that combine services and prompts (summaries, facts, persona, packs, profile_update, advise). Pipelines never touch Typer directly, making them easy to unit test.
 - `src/aijournal/services/` keeps reusable integrations (Ollama client, retriever, chat API, feedback).
 - Strict schema definitions live in `src/aijournal/domain/` and every derived artifact persists as an `Artifact[T]` envelope. Keep an eye on the `schemas/core/` diff when touching models so you commit any intentional changes.
 

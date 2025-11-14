@@ -36,7 +36,7 @@ class CaptureInput(CaptureRequest):
     """Internal capture payload enriched with stage bounds."""
 
     min_stage: int = Field(0, ge=0)
-    max_stage: int = Field(8, ge=0)
+    max_stage: int = Field(7, ge=0)
 
     @classmethod
     def from_request(

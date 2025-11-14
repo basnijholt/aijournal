@@ -61,27 +61,19 @@ def capture_pipeline_mocks(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> N
     )
 
     monkeypatch.setattr(
-        "aijournal.commands.profile.run_profile_suggest",
-        lambda date, *, timeout, retries, progress, workspace=None: _ensure_file(
-            tmp_path / "derived" / "profile_proposals" / f"{date}.yaml",
-            "suggest",
-        ),
-    )
-
-    monkeypatch.setattr(
         "aijournal.commands.profile.run_profile_apply",
         lambda date, *, suggestions_path, auto_confirm, workspace=None: "applied",
     )
 
     monkeypatch.setattr(
-        "aijournal.commands.characterize.run_characterize",
+        "aijournal.commands.profile_update.run_profile_update",
         lambda date,
         *,
         timeout,
         retries,
         progress,
-        build_claim_preview,
-        workspace=None: _ensure_file(
+        workspace=None,
+        build_claim_preview=None: _ensure_file(
             tmp_path / "derived" / "pending" / "profile_updates" / f"{date}-batch.yaml",
             "batch",
         ),

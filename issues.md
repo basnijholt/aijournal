@@ -1,7 +1,7 @@
 # Outstanding Issues – November 14, 2025
 
 - **Prompt/LLM Contract Hygiene (High)**  
-  **Rationale:** During the refactor we fixed characterize/profile-suggest/micro-facts by routing them through prompt-specific DTOs, but new commands can easily regress (e.g., interview/facts previously pointed at runtime models).  
+  **Rationale:** During the refactor we hardened profile_update/micro-facts by routing them through prompt-specific DTOs, but new commands can easily regress (e.g., interview/facts previously pointed at runtime models).  
   **Acceptance criteria:** (1) `rg 'response_model=' -n src/aijournal/commands` lists only DTOs (`Prompt*`, `DailySummary`, etc.), never runtime artifacts. (2) A short checklist lives in `CONTRIBUTING.md` reminding contributors to add DTO + converter whenever a new structured prompt is introduced. (3) CI includes a lightweight test (or script) that fails if a runtime model is used directly.  
   **Actions:** add the checklist, add an automated grep-based check, and document the DTO boundary so future work stays clean.
 
@@ -10,9 +10,9 @@
   **Acceptance criteria:** (1) Prompt explicitly forbids metadata-only statements and the converter drops them (unit test asserting unwanted IDs like `*-entry-created`). (2) End-to-end test feeds a sample entry with rich text and asserts at least one fact references paragraph content (via `raw_markdown`). (3) Manual QA log shows micro-facts referencing concrete sentences, not front-matter.  
   **Actions:** tighten `prompts/extract_facts.md`, add filtering in `generate_microfacts`, and cover with regression tests.
 
-- **Characterize resilience (High)**  
-  **Rationale:** Stage 5 still flakes in two ways: (a) DTO rejects optional fields like scope/provenance, yielding `extra_forbidden` errors; (b) very large entries (e.g., 8 KB blog posts) hit timeouts or Ollama JSON parse errors. Both leave capture half-finished.  
-  **Acceptance criteria:** (1) DTO/converter tolerate optional scope/provenance fields and strip unsupported keys before validation. (2) Characterize runner escalates timeout/attempts for large entries (e.g., adaptive retries or chunking). (3) Running `uv run aijournal capture --from ~/example-blog-entries` completes stage 5 for all dates without manual retries, with the run log showing either success or graceful degradation per-entry instead of overall failure.  
+- **Profile update resilience (High)**  
+  **Rationale:** The unified stage still flakes in two ways: (a) DTO rejects optional fields like scope/provenance, yielding `extra_forbidden` errors; (b) very large entries (e.g., 8 KB blog posts) hit timeouts or Ollama JSON parse errors. Both leave capture half-finished.  
+  **Acceptance criteria:** (1) DTO/converter tolerate optional scope/provenance fields and strip unsupported keys before validation. (2) The profile update runner escalates timeout/attempts for large entries (e.g., adaptive retries or chunking). (3) Running `uv run aijournal capture --from ~/example-blog-entries` completes the profile update stage for all dates without manual retries, with the run log showing either success or graceful degradation per-entry instead of overall failure.  
   **Actions:** relax DTO, add tolerant converter, implement adaptive retry/timeout logic (or chunk long bodies), and expand tests to cover both schema and long-entry scenarios.
 
 - **Command/docs drift for `ops pipeline extract-facts` (Low)**  
@@ -44,5 +44,5 @@ Update this list as fixes land so future agents know which items remain.
 ## Claim proposals reused IDs (✅ fixed)
 - `_proposal_claim_id` now appends an 8‑char SHA of the normalized statement, preventing overwrites when multiple proposals share the same `normalized_id`. Regression test: `tests/services/test_claim_id_generation.py`.
 
-## Characterize flakes on large entries (⚠ ongoing)
-- Live run 2025‑11‑13: 8KB Dutch entry timed out/hit JSON parse errors. Even after DTO fixes, long entries still require adaptive timeouts or chunking; see “Characterize resilience” above for acceptance criteria.
+## Profile update flakes on large entries (⚠ ongoing)
+- Live run 2025‑11‑13: 8KB Dutch entry timed out/hit JSON parse errors. Even after DTO fixes, long entries still require adaptive timeouts or chunking; see “Profile update resilience” above for acceptance criteria.

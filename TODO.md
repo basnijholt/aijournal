@@ -49,7 +49,7 @@ Active tasks and planned improvements for the aijournal project.
 **Proposal:**
 - Extend `capture-<id>.result.json` with a `failed_stages` array containing stage name, date, and error message
 - Surface recent failed stages in `aijournal status`, nudging operators to run the resume helper
-- Enable downstream tooling (CLI, UI, status command) to quickly surface "characterize failed for 2025-10-28" without parsing NDJSON
+- Enable downstream tooling (CLI, UI, status command) to quickly surface "profile update failed for 2025-10-28" without parsing NDJSON
 
 **Acceptance Criteria:**
 - `capture-<id>.result.json` includes `failed_stages: [{stage: str, date: str, error: str}]`

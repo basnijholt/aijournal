@@ -8,7 +8,7 @@
 - Advice cards plus chat summaries/learnings now persist as `Artifact[T]` envelopes with dedicated domain schemas and updated fixtures/tests.
 - Added `aijournal ops audit provenance [--fix]` to report or redact any persisted `span.text` provenance and wired it into docs/workflow guidance.
 - Removed the legacy pending-batch YAML readers; CLI/modules now require strict `Artifact[ProfileUpdateBatch]` envelopes and surface guidance when stale files are discovered.
-- CLI commands `summarize`, `facts`, `profile suggest`, and `characterize` now run through the shared Pydantic AI agent pipeline (`run_ollama_agent` + structured response models) and surface errors when schemas fail validation instead of emitting heuristic fallbacks.
+- CLI commands `summarize`, `facts`, `profile update`, and `advise` now run through the shared Pydantic AI agent pipeline (`run_ollama_agent` + structured response models) and surface errors when schemas fail validation instead of emitting heuristic fallbacks.
 - Centralized float/int coercion in `aijournal.utils.coercion` and extended the chat service to respect `config.chat` overrides (model, temperature, seed, timeout).
 - Expanded README/plan docs and tests to describe and exercise the unified Pydantic AI configuration helper.
 - Added shared `--progress` and `--retries` flags across long-running LLM calls to surface per-entry progress and control retry behaviour.
@@ -19,7 +19,7 @@
 - Added `aijournal persona status` plus pack-level persona gating: persona core stores profile mtimes, `pack` refuses to run without it, and warns when profile edits make the cache stale.
 - Chat loop now persists transcripts/summaries/learnings under `derived/chat_sessions/<session>/`, emits JSON telemetry, and supports `--session`, `--save/--no-save`, and `--feedback up|down` to nudge cited claim strengths while queuing feedback batches for review.
 - Introduced `aijournal chatd` (FastAPI) which streams NDJSON responses, mirrors the CLI orchestrator, and reuses the transcript/feedback plumbing; accompanying tests exercise the API in fake mode.
-- Reworked `prompts/characterize.md` and live-mode handlers so structured responses validate cleanly; added coverage that patches the structured runner. `aijournal interview` now calls a new `prompts/interview.md` workflow in live mode while respecting `coaching_prefs.probing` limits.
+- Reworked `prompts/profile_update.md` and live-mode handlers so structured responses validate cleanly; added coverage that patches the structured runner. `aijournal interview` now calls a new `prompts/interview.md` workflow in live mode while respecting `coaching_prefs.probing` limits.
 - Added Python telemetry hooks for `aijournal pack` (token budgets) and chat (retrieval latency) so automation can tail structured logs.
 - Interview ranking now applies information-gain heuristics (staleness, strength, scope gaps, pending prompts) with richer metadata for prompts; both the CLI fallback and live LLM paths (and Advisor Mode) now consume these hints for context-aware follow-ups.
 

@@ -20,7 +20,7 @@ def test_simulator_runs_end_to_end(
     monkeypatch: pytest.MonkeyPatch, simulator_workspace: Path
 ) -> None:
     monkeypatch.setenv("AIJOURNAL_FAKE_OLLAMA", "1")
-    simulator = HumanSimulator(max_stage=8)
+    simulator = HumanSimulator(max_stage=7)
     report = simulator.run(workspace=simulator_workspace, keep_workspace=True)
 
     assert report.validation.ok
@@ -30,11 +30,10 @@ def test_simulator_runs_end_to_end(
         1: {"normalize"},
         2: {"derive.summarize"},
         3: {"derive.extract_facts"},
-        4: {"derive.profile_suggest", "derive.profile_apply"},
-        5: {"derive.characterize", "derive.review"},
-        6: {"refresh.index"},
-        7: {"refresh.persona"},
-        8: {"pack"},
+        4: {"derive.profile_update", "derive.review"},
+        5: {"refresh.index"},
+        6: {"refresh.persona"},
+        7: {"derive.pack"},
     }
     seen_stage_ids: set[int] = set()
     for stage_result in report.capture_result.stage_results:
@@ -43,7 +42,7 @@ def test_simulator_runs_end_to_end(
                 seen_stage_ids.add(stage_id)
                 break
 
-    assert seen_stage_ids == set(range(0, 9)), "missing stage results for one or more stages"
+    assert seen_stage_ids == set(range(0, 8)), "missing stage results for one or more stages"
     assert report.workspace.exists()
 
     changed_dates = {

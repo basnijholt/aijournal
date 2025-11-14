@@ -12,7 +12,7 @@ from aijournal.domain.changes import (
     ProfileUpdateProposals,
 )
 from aijournal.domain.claims import ClaimAtom
-from aijournal.domain.enums import ClaimStatus, FacetOperation
+from aijournal.domain.enums import FacetOperation
 from aijournal.domain.evidence import SourceRef
 from aijournal.domain.facts import DailySummary, FactEvidence, MicroFact
 from aijournal.domain.journal import NormalizedEntry
@@ -21,7 +21,6 @@ from aijournal.models.derived import (
     AdviceRecommendation,
     AdviceReference,
 )
-from aijournal.utils import time as time_utils
 
 
 def fake_summarize(
@@ -217,91 +216,3 @@ def fake_profile_proposals(
         )
 
     return ProfileUpdateProposals(claims=claim_proposals, facets=facet_changes)
-
-
-def fake_characterize(
-    entries: Sequence[NormalizedEntry],
-    profile: dict[str, Any],
-    claims: Sequence[ClaimAtom],
-    *,
-    build_claim: Callable[..., ClaimAtom],
-) -> ProfileUpdateProposals:
-    if not entries:
-        return ProfileUpdateProposals()
-
-    seed = entries[0]
-    date = time_utils.created_date(seed.created_at or time_utils.format_timestamp(time_utils.now()))
-    heading = ""
-    sections = seed.sections or []
-    if sections:
-        heading = sections[0].heading or ""
-    title = seed.title or seed.id or "entry"
-    theme = heading or title
-    tag = (seed.tags or [theme])[0]
-    claim_id = f"{time_utils.slugify_title(theme) or 'entry'}-{date.replace('-', '')}-claim"
-    claim = build_claim(
-        seed,
-        claim_id=claim_id[:64],
-        statement=f"{theme} remains top-of-mind on {date}.",
-        strength=0.64,
-        status=ClaimStatus.TENTATIVE,
-    )
-
-    facet = FacetChange(
-        path="values_motivations.recurring_theme",
-        value={
-            "label": theme,
-            "tag_hint": tag,
-            "last_seen": date,
-        },
-        operation=FacetOperation.SET,
-        method="inferred",
-        confidence=0.55,
-        review_after_days=90,
-        user_verified=False,
-    )
-
-    claim_input = _claim_atom_to_input(claim)
-    evidence = [
-        SourceRef.model_validate(source.model_dump(mode="python"))
-        for source in claim.provenance.sources
-    ]
-
-    claim_proposal = ClaimProposal(
-        type=claim_input.type,
-        subject=claim_input.subject,
-        predicate=claim_input.predicate,
-        value=claim_input.value,
-        statement=claim_input.statement,
-        scope=claim_input.scope,
-        strength=claim_input.strength,
-        status=claim_input.status,
-        method=claim_input.method,
-        user_verified=claim_input.user_verified,
-        review_after_days=claim_input.review_after_days,
-        normalized_ids=[],
-        evidence=evidence,
-        manifest_hashes=[],
-        rationale=None,
-    )
-
-    return ProfileUpdateProposals(
-        claims=[claim_proposal],
-        facets=[facet],
-    )
-
-
-def _claim_atom_to_input(claim: ClaimAtom) -> ClaimAtomInput:
-    return ClaimAtomInput(
-        type=claim.type,
-        subject=claim.subject,
-        predicate=claim.predicate,
-        value=claim.value,
-        statement=claim.statement,
-        scope=claim.scope.model_copy(deep=True),
-        strength=claim.strength,
-        status=claim.status,
-        method=claim.method,
-        user_verified=claim.user_verified,
-        review_after_days=claim.review_after_days,
-    )

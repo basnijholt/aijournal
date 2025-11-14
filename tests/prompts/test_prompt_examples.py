@@ -9,12 +9,14 @@ from typing import Any
 
 import pytest
 
+from aijournal.domain.changes import ProfileUpdateProposals
 from aijournal.domain.facts import DailySummary, MicroFactsFile
 from aijournal.domain.persona import InterviewSet
 from aijournal.domain.prompts import (
     PromptMicroFacts,
     PromptProfileUpdates,
     convert_prompt_microfacts,
+    convert_prompt_updates_to_proposals,
 )
 from aijournal.models.derived import AdviceCard
 
@@ -30,13 +32,29 @@ def _load_example(name: str) -> dict[str, Any]:
 
 
 @pytest.mark.parametrize(
-    "filename,response_model,target_model,domain_keys,converter",
+    "filename,response_model,target_model,domain_keys,converter,converter_kwargs",
     [
-        ("summarize.json", DailySummary, DailySummary, None, None),
-        ("extract_facts.json", PromptMicroFacts, MicroFactsFile, None, convert_prompt_microfacts),
-        ("characterize.json", PromptProfileUpdates, PromptProfileUpdates, None, None),
-        ("profile_suggest.json", PromptProfileUpdates, PromptProfileUpdates, None, None),
-        ("advise.json", AdviceCard, AdviceCard, None, None),
+        ("summarize.json", DailySummary, DailySummary, None, None, {}),
+        (
+            "extract_facts.json",
+            PromptMicroFacts,
+            MicroFactsFile,
+            None,
+            convert_prompt_microfacts,
+            {},
+        ),
+        (
+            "profile_update.json",
+            PromptProfileUpdates,
+            ProfileUpdateProposals,
+            None,
+            convert_prompt_updates_to_proposals,
+            {
+                "normalized_ids": ["entry-1"],
+                "manifest_hashes": ["manifest-1"],
+            },
+        ),
+        ("advise.json", AdviceCard, AdviceCard, None, None, {}),
     ],
 )
 def test_prompt_examples_validate_against_models(
@@ -45,6 +63,7 @@ def test_prompt_examples_validate_against_models(
     target_model: type | None,
     domain_keys: set[str] | None,
     converter,
+    converter_kwargs,
 ) -> None:
     """Each example must validate against response and domain schemas."""
 
@@ -57,7 +76,7 @@ def test_prompt_examples_validate_against_models(
     # Domain model (persisted artifact) when applicable.
     if target_model is not None:
         if converter is not None:
-            domain_instance = converter(instance)
+            domain_instance = converter(instance, **converter_kwargs)
             target_model.model_validate(domain_instance.model_dump(mode="python"))
         else:
             domain_payload: dict[str, Any]
@@ -66,13 +85,6 @@ def test_prompt_examples_validate_against_models(
             else:
                 domain_payload = payload
             target_model.model_validate(domain_payload)
-
-
-def test_profile_suggest_example_matches_strict_schema() -> None:
-    payload = _load_example("profile_suggest.json")
-    proposals = PromptProfileUpdates.model_validate(payload)
-    assert len(proposals.claims) == 1
-    assert len(proposals.facets) == 1
 
 
 def test_interview_example_matches_schema() -> None:
@@ -91,8 +103,7 @@ def test_expected_examples_present() -> None:
     required: Iterable[str] = {
         "summarize.json",
         "extract_facts.json",
-        "characterize.json",
-        "profile_suggest.json",
+        "profile_update.json",
         "advise.json",
         "interview.json",
     }

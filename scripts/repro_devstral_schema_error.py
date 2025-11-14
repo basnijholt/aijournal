@@ -129,7 +129,7 @@ Notes:
 
     variables = load_profile_inputs(date)
     variables["date"] = date
-    template_path = Path("prompts") / "profile_suggest.md"
+    template_path = Path("prompts") / "profile_update.md"
     template = Template(template_path.read_text(encoding="utf-8"))
     prompt_text = template.safe_substitute(variables)
     return ProfileUpdateProposals, prompt_text

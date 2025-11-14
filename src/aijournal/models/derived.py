@@ -46,7 +46,7 @@ class ProfileUpdateInput(AijournalModel):
 
 
 class ProfileUpdateBatch(AijournalModel):
-    """Pending profile update batch emitted by `aijournal characterize`."""
+    """Pending profile update batch emitted by the unified profile update stage/CLI."""
 
     batch_id: str
     created_at: str

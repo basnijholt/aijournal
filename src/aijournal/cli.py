@@ -30,11 +30,6 @@ from aijournal.commands.advise import (
     run_advise_command,
 )
 from aijournal.commands.audit import run_audit_provenance_cli
-from aijournal.commands.characterize import (
-    _normalize_claim_proposals,
-    _pending_updates_dir,
-    run_characterize,
-)
 from aijournal.commands.chat import run_chat
 from aijournal.commands.chatd import run_chatd
 from aijournal.commands.facts import (
@@ -65,7 +60,9 @@ from aijournal.commands.profile import (
     profile_to_dict,
     run_profile_apply,
     run_profile_status,
-    run_profile_suggest,
+)
+from aijournal.commands.profile_update import (
+    run_profile_update,
 )
 from aijournal.commands.summarize import (
     DailySummaryOptions,
@@ -195,7 +192,7 @@ persona_app = typer.Typer(help="Persona utilities.")
 
 # Phase 1 scaffold: advanced operations namespace and placeholder groups.
 ops_app = typer.Typer(help="Advanced operations namespace.")
-ops_pipeline_app = typer.Typer(help="Pipeline tools (normalize, summarize, characterize).")
+ops_pipeline_app = typer.Typer(help="Pipeline tools (normalize, summarize, derive).")
 ops_feedback_app = typer.Typer(help="Feedback processing utilities.")
 ops_logs_app = typer.Typer(help="Log utilities.")
 ops_system_app = typer.Typer(help="System diagnostics and doctor helpers.")
@@ -773,6 +770,13 @@ def _summarize_day_payload(
     )
 
 
+def _pending_updates_dir(workspace: Path, config: AppConfig) -> Path:
+    derived = Path(config.paths.derived)
+    if not derived.is_absolute():
+        derived = workspace / derived
+    return derived / "pending" / "profile_updates"
+
+
 def _latest_pending_batch(workspace: Path, config: AppConfig) -> Path | None:
     directory = _pending_updates_dir(workspace, config)
     if not directory.exists():
@@ -1071,8 +1075,8 @@ def facts(
     typer.echo(str(facts_path))
 
 
-@profile_app.command("suggest")
-def profile_suggest(
+@profile_app.command("update")
+def profile_update_cli(
     date: str = typer.Option(..., "--date", "-d", help="Date (YYYY-MM-DD) to analyze."),
     timeout: float = typer.Option(
         DEFAULT_TIMEOUT_SECONDS,
@@ -1093,12 +1097,17 @@ def profile_suggest(
         help="Print progress for each normalized entry before calling the model.",
     ),
 ) -> None:
-    """Suggest profile updates based on normalized entries."""
-    path = run_profile_suggest(
+    """Derive pending profile updates using the unified Prompt 3 contract."""
+    path = run_profile_update(
         date,
         timeout=timeout,
         retries=retries,
         progress=progress,
+        build_claim_preview=lambda proposals, claims, ts: _build_claim_preview(
+            proposals,
+            claims,
+            timestamp=ts,
+        ),
     )
     typer.echo(str(path))
 
@@ -1116,56 +1125,6 @@ def profile_apply(
         auto_confirm=yes,
     )
     typer.echo(message)
-
-
-@ops_pipeline_app.command("characterize", hidden=True)
-def characterize(
-    date: str = typer.Option(
-        ...,
-        "--date",
-        "-d",
-        help="Date (YYYY-MM-DD) to analyze.",
-        rich_help_panel="INPUT",
-    ),
-    timeout: float = typer.Option(
-        DEFAULT_TIMEOUT_SECONDS,
-        "--timeout",
-        help="Seconds to wait for the LLM response before retrying.",
-        show_default=True,
-        rich_help_panel="LLM",
-    ),
-    retries: int = typer.Option(
-        DEFAULT_LLM_RETRIES,
-        "--retries",
-        min=0,
-        help="Number of retry attempts when the model times out or returns invalid JSON.",
-        show_default=True,
-        rich_help_panel="LLM",
-    ),
-    progress: bool = typer.Option(
-        False,
-        "--progress/--no-progress",
-        help="Print progress for each normalized entry before calling the model.",
-        rich_help_panel="LLM",
-    ),
-) -> None:
-    """Derive pending profile updates from normalized entries."""
-    _emit_deprecation("aijournal ops pipeline characterize", "aijournal capture --from/--text")
-    batch_path = run_characterize(
-        date,
-        timeout=timeout,
-        retries=retries,
-        progress=progress,
-        build_claim_preview=lambda proposals, claims, ts: _build_claim_preview(
-            proposals,
-            claims,
-            timestamp=ts,
-        ),
-        normalize_claims=_normalize_claim_proposals,
-        invoke_structured_llm=_invoke_structured_llm,
-        structured_call=_structured_call_with_retry,
-    )
-    typer.echo(str(batch_path))
 
 
 @ops_pipeline_app.command("review", hidden=True)

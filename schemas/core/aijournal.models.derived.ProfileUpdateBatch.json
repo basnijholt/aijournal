@@ -686,7 +686,7 @@
     }
   },
   "additionalProperties": false,
-  "description": "Pending profile update batch emitted by `aijournal characterize`.",
+  "description": "Pending profile update batch emitted by the unified profile update stage/CLI.",
   "properties": {
     "batch_id": {
       "title": "Batch Id",

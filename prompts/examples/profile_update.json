@@ -1,0 +1,36 @@
+{
+  "claims": [
+    {
+      "type": "habit",
+      "statement": "Blocks 8–10am for focus sprints three mornings a week.",
+      "subject": "focus blocks",
+      "predicate": "maintains",
+      "value": "Protects morning focus sprints across Tue–Thu.",
+      "strength": 0.72,
+      "status": "tentative",
+      "method": "behavioral",
+      "scope_domain": "work",
+      "scope_context": [
+        "weekday",
+        "solo"
+      ],
+      "scope_conditions": [],
+      "reason": "Entries + summary cite recurring 8–10am deep work blocks.",
+      "evidence_entry": "2025-10-28-focus-reset",
+      "evidence_para": 0
+    }
+  ],
+  "facets": [
+    {
+      "path": "planning.focus_blocks.morning",
+      "operation": "set",
+      "value": "Protects 8–10am Tue–Thu for uninterrupted build work.",
+      "reason": "Microfact + highlights stress morning protection ritual.",
+      "evidence_entry": "2025-10-28-focus-reset",
+      "evidence_para": 1
+    }
+  ],
+  "interview_prompts": [
+    "What exceptions force skipping the 8–10am block?"
+  ]
+}

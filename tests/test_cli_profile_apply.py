@@ -20,6 +20,7 @@ from aijournal.domain.claims import ClaimAtom
 from aijournal.domain.evidence import SourceRef
 from aijournal.io.artifacts import save_artifact
 from aijournal.io.yaml_io import dump_yaml
+from aijournal.models.derived import ProfileUpdateBatch, ProfileUpdateInput, ProfileUpdatePreview
 from tests.helpers import make_claim_atom
 
 if TYPE_CHECKING:
@@ -117,17 +118,31 @@ def _seed_suggestions(workspace: Path) -> Path:
         claims=[claim_proposal],
         facets=[facet_change],
     )
-    artifact = Artifact[ProfileUpdateProposals](
-        kind=ArtifactKind.PROFILE_PROPOSALS,
+    batch = ProfileUpdateBatch(
+        batch_id=f"{DATE}-batch",
+        created_at=f"{DATE}T10:00:00Z",
+        date=DATE,
+        inputs=[
+            ProfileUpdateInput(
+                id=f"{DATE}-entry",
+                normalized_path=f"data/normalized/{DATE}/entry.yaml",
+                tags=["evening"],
+            )
+        ],
+        proposals=proposals,
+        preview=ProfileUpdatePreview(),
+    )
+    artifact = Artifact[ProfileUpdateBatch](
+        kind=ArtifactKind.PROFILE_UPDATES,
         meta=ArtifactMeta(
             created_at=f"{DATE}T10:00:00Z",
             model="fake-ollama",
-            prompt_path="prompts/profile_suggest.md",
+            prompt_path="prompts/profile_update.md",
             prompt_hash="seed",
         ),
-        data=proposals,
+        data=batch,
     )
-    path = workspace / "derived" / "profile_proposals" / f"{DATE}.yaml"
+    path = workspace / "derived" / "pending" / "profile_updates" / f"{batch.batch_id}.yaml"
     save_artifact(path, artifact)
     return path
 
@@ -159,9 +174,9 @@ def test_profile_apply_merges_suggestions(
     assert "Applied" in output
 
     claims = yaml.safe_load((cli_workspace / "profile" / "claims.yaml").read_text(encoding="utf-8"))
-    new_claims = {claim["id"] for claim in claims["claims"]}
-    assert any(cid.startswith("pref_evening") for cid in new_claims)
-    assert len(claims["claims"]) == len(new_claims), "Duplicate claim IDs"
+    statements = {claim["statement"] for claim in claims["claims"]}
+    assert any("evening" in stmt.lower() for stmt in statements)
+    assert len(claims["claims"]) == len(statements), "Duplicate claim statements"
 
     profile = yaml.safe_load(
         (cli_workspace / "profile" / "self_profile.yaml").read_text(encoding="utf-8"),
