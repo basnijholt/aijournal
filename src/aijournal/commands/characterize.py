@@ -53,6 +53,10 @@ from aijournal.models.derived import (
 )
 from aijournal.pipelines import characterize as characterize_pipeline
 from aijournal.pipelines import facts as facts_pipeline
+from aijournal.services.microfacts import (
+    load_consolidated_microfacts,
+    select_recurring_facts,
+)
 from aijournal.services.ollama import LLMResponseError
 from aijournal.utils import time as time_utils
 
@@ -82,6 +86,10 @@ class CharacterizePrepared:
 class CharacterizeResult:
     artifact: Artifact[ProfileUpdateBatch]
     batch_path: Path
+
+
+MAX_CONSOLIDATED_FACTS = 20
+MIN_CONSOLIDATED_OBSERVATIONS = 2
 
 
 def run_characterize_command(
@@ -350,6 +358,16 @@ def _characterize_payload(
     manifest_payload = _json_block(
         {key: entry.model_dump(mode="python") for key, entry in manifest_index.items()},
     )
+    consolidated_facts_json = "{}"
+    consolidated = load_consolidated_microfacts(workspace, config)
+    if consolidated:
+        recurring = select_recurring_facts(
+            consolidated,
+            min_observations=MIN_CONSOLIDATED_OBSERVATIONS,
+            limit=MAX_CONSOLIDATED_FACTS,
+        )
+        if recurring:
+            consolidated_facts_json = _json_block({"facts": recurring})
 
     def request_characterize() -> ProfileUpdateProposals:
         # LLM emits lightweight DTO with only 8 fields per claim
@@ -365,6 +383,7 @@ def _characterize_payload(
                         {"claims": [claim.model_dump(mode="python") for claim in claims]}
                     ),
                     "manifest_json": manifest_payload,
+                    "consolidated_facts_json": consolidated_facts_json,
                 },
                 response_model=PromptProfileUpdates,
                 agent_name="aijournal-characterize",

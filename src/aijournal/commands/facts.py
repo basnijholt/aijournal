@@ -37,6 +37,7 @@ from aijournal.io.artifacts import save_artifact
 from aijournal.models.authoritative import ManifestEntry
 from aijournal.models.derived import ProfileUpdatePreview
 from aijournal.pipelines import facts as facts_pipeline
+from aijournal.services.microfacts import MicrofactIndex
 from aijournal.services.ollama import LLMResponseError, resolve_model_name
 from aijournal.utils import time as time_utils
 
@@ -168,6 +169,11 @@ def prepare_inputs(ctx: RunContext, options: FactsOptions) -> FactsPrepared:
 
 def invoke_pipeline(ctx: RunContext, prepared: FactsPrepared) -> FactsResult:
     context = _characterization_context(prepared.entries, prepared.manifest_index)
+    microfact_index = MicrofactIndex(
+        prepared.workspace,
+        ctx.config,
+        fake_mode=ctx.use_fake_llm,
+    )
 
     def request_microfacts() -> MicroFactsFile:
         llm_response = cast(
@@ -201,6 +207,7 @@ def invoke_pipeline(ctx: RunContext, prepared: FactsPrepared) -> FactsResult:
         retries=prepared.retries,
         context=context,
         manifest_index=prepared.manifest_index,
+        microfact_index=microfact_index,
     )
 
     preview = prepared.preview_builder(

@@ -20,6 +20,7 @@ from aijournal.domain.journal import NormalizedEntry
 from aijournal.fakes import fake_microfacts
 from aijournal.models.authoritative import ManifestEntry
 from aijournal.pipelines import normalization
+from aijournal.services.microfacts import MicrofactIndex, MicrofactRecord
 from aijournal.utils import time as time_utils
 
 StructuredCall = Callable[..., Any]
@@ -216,6 +217,106 @@ def _microfact_claim_proposals(
     return proposals
 
 
+def _entries_by_id(entries: Sequence[NormalizedEntry]) -> dict[str, NormalizedEntry]:
+    lookup: dict[str, NormalizedEntry] = {}
+    for entry in entries:
+        if entry.id:
+            lookup[entry.id] = entry
+    return lookup
+
+
+def _lexical_overlap(text_a: str, text_b: str) -> float:
+    tokens_a = {token for token in text_a.split() if token}
+    tokens_b = {token for token in text_b.split() if token}
+    if not tokens_a or not tokens_b:
+        return 0.0
+    intersection = tokens_a.intersection(tokens_b)
+    union = tokens_a.union(tokens_b)
+    return len(intersection) / len(union)
+
+
+def _should_merge_records(
+    candidate: MicrofactRecord,
+    existing: MicrofactRecord,
+    *,
+    distance: float | None,
+    threshold: float,
+    min_overlap: float,
+) -> bool:
+    if candidate.uid == existing.uid:
+        return True
+    if candidate.domain and existing.domain and candidate.domain != existing.domain:
+        return False
+    if candidate.contexts and existing.contexts:
+        if not set(candidate.contexts).intersection(existing.contexts):
+            return False
+    if candidate.canonical_statement == existing.canonical_statement:
+        return True
+    lexical = _lexical_overlap(candidate.canonical_statement, existing.canonical_statement)
+    if lexical < min_overlap:
+        return False
+    if distance is None:
+        return False
+    return distance <= threshold
+
+
+def _consolidate_microfacts(
+    facts: Sequence[MicroFact],
+    *,
+    entries: Sequence[NormalizedEntry],
+    date: str,
+    index: MicrofactIndex,
+) -> None:
+    entry_by_id = _entries_by_id(entries)
+    settings = index.settings
+    for fact in facts:
+        entry = None
+        entry_id = fact.evidence.entry_id if fact.evidence else None
+        if entry_id:
+            entry = entry_by_id.get(entry_id)
+        scope = _scope_from_fact(fact, entry)
+        fact_key = f"{date}:{fact.id}"
+        record = MicrofactRecord.from_microfact(
+            day=date,
+            fact=fact,
+            domain=scope.domain,
+            contexts=scope.context,
+        )
+        matches = index.query_similar(record.statement, top_k=settings.default_top_k)
+        merged = False
+        for match in matches:
+            existing = MicrofactRecord.from_match(match)
+            if existing is None:
+                continue
+            if fact_key in existing.source_fact_ids:
+                existing.apply_to_fact(fact)
+                merged = True
+                break
+            if not _should_merge_records(
+                record,
+                existing,
+                distance=match.distance,
+                threshold=settings.merge_distance,
+                min_overlap=settings.min_token_overlap,
+            ):
+                continue
+            existing.merge_observation(
+                confidence=fact.confidence,
+                date=date,
+                fact_id=fact.id,
+                evidence_entry=entry_id,
+                max_evidence_entries=settings.max_evidence_entries,
+                fact_key=fact_key,
+            )
+            existing.apply_to_fact(fact)
+            index.upsert([existing])
+            merged = True
+            break
+        if not merged:
+            record.apply_to_fact(fact)
+            index.upsert([record])
+
+
 def normalize_claim_proposals(
     raw_claims: Iterable[Any],
     *,
@@ -349,6 +450,7 @@ def generate_microfacts(
     retries: int,
     context: tuple[list[str], list[str], list[ClaimSource]],
     manifest_index: dict[str, ManifestEntry],
+    microfact_index: MicrofactIndex | None = None,
 ) -> MicroFactsFile:
     """Build a `MicroFactsFile` containing facts and claim proposals."""
 
@@ -402,5 +504,13 @@ def generate_microfacts(
         seen_ids.add(key)
 
     facts_model.claim_proposals = combined
+
+    if microfact_index is not None and facts_model.facts:
+        _consolidate_microfacts(
+            facts_model.facts,
+            entries=entries,
+            date=date,
+            index=microfact_index,
+        )
 
     return facts_model

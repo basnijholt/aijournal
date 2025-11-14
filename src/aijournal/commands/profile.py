@@ -43,10 +43,16 @@ from aijournal.io.yaml_io import load_yaml_model, write_yaml_model
 from aijournal.models.authoritative import ClaimsFile, SelfProfile
 from aijournal.pipelines import normalization
 from aijournal.services.consolidator import ClaimConsolidator, ClaimMergeOutcome
+from aijournal.services.microfacts import (
+    load_consolidated_microfacts,
+    select_recurring_facts,
+)
 from aijournal.services.ollama import LLMResponseError
 from aijournal.utils import time as time_utils
 
 DEFAULT_PROFILE_RETRIES = 1
+MAX_CONSOLIDATED_FACTS = 20
+MIN_CONSOLIDATED_OBSERVATIONS = 2
 
 
 class ProfileSuggestOptions(BaseModel):
@@ -425,6 +431,17 @@ def _profile_proposals_payload(
     retries: int = DEFAULT_PROFILE_RETRIES,
 ) -> ProfileUpdateProposals:
     entry_ids, entry_hashes = _profile_entry_context(entries)
+    consolidated_facts_json = "{}"
+    consolidated = load_consolidated_microfacts(workspace, config)
+    if consolidated:
+        recurring = select_recurring_facts(
+            consolidated,
+            min_observations=MIN_CONSOLIDATED_OBSERVATIONS,
+            limit=MAX_CONSOLIDATED_FACTS,
+        )
+        if recurring:
+            consolidated_facts_json = _json_block({"facts": recurring})
+
     if use_fake_llm():
         proposals = fake_profile_proposals(
             entries,
@@ -445,6 +462,7 @@ def _profile_proposals_payload(
                     "claims_json": _json_block(
                         {"claims": [claim.model_dump(mode="python") for claim in claims]}
                     ),
+                    "consolidated_facts_json": consolidated_facts_json,
                 },
                 response_model=PromptProfileUpdates,
                 agent_name="aijournal-profile-suggest",

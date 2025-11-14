@@ -31,6 +31,22 @@ def test_collect_pack_entries_l2(tmp_path: Path) -> None:
     assert "microfacts" in roles
 
 
+def test_collect_pack_entries_l3_includes_consolidated(tmp_path: Path) -> None:
+    root = tmp_path
+    _write(root / "derived" / "persona" / "persona_core.yaml")
+    _write(root / "profile" / "self_profile.yaml")
+    _write(root / "profile" / "claims.yaml")
+    day = "2024-01-02"
+    _write(root / "derived" / "summaries" / f"{day}.yaml")
+    _write(root / "derived" / "microfacts" / f"{day}.yaml")
+    _write(root / "derived" / "microfacts" / "consolidated.yaml")
+    _write(root / "data" / "normalized" / day / "entry.yaml")
+
+    entries = pack.collect_pack_entries(root, "L3", day, history_days=0)
+    roles = [role for role, _ in entries]
+    assert "consolidated_microfacts" in roles
+
+
 def test_collect_pack_entries_missing_required(tmp_path: Path) -> None:
     root = tmp_path
     with pytest.raises(PackAssemblyError):

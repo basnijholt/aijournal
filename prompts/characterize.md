@@ -22,7 +22,8 @@ If you genuinely have nothing new to add, return `{"claims": [], "facets": [], "
 ---
 ## Reasoning Workflow
 1. Read `PROFILE_JSON` and `CLAIMS_JSON` to understand the baseline.
-2. Review `ENTRIES_JSON` (summaries, sections, mood, tags, paragraphs) and `MANIFEST_JSON` metadata for concrete behaviors or shifts.
+2. Review `CONSOLIDATED_FACTS_JSON` to see recurring, multi-day patterns and use them to strengthen or down-rank proposals.
+3. Review `ENTRIES_JSON` (summaries, sections, mood, tags, paragraphs) and `MANIFEST_JSON` metadata for concrete behaviors or shifts.
 3. Reinforce or adjust an existing claim or facet when new observations confirm it.
 4. Introduce a new claim or facet only when entries show a consistent new pattern or motivation.
 5. Remove a facet when entries contradict it or it is clearly outdated.
@@ -198,6 +199,8 @@ PROFILE_JSON: $profile_json
 CLAIMS_JSON: $claims_json
 
 MANIFEST_JSON: $manifest_json
+
+CONSOLIDATED_FACTS_JSON: $consolidated_facts_json
 
 ---
 ## Final Instruction

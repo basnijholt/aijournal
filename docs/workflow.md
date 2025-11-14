@@ -128,6 +128,7 @@ With the profile, index, and packs up to date you can use the interactive comman
 - `uv run aijournal export pack --level L4 --max-tokens 20000 --format yaml` — full context export with minimal trimming for sharing with external LLMs.
 - `uv run aijournal ops system ollama health` — verify available models on the Ollama host.
 - `uv run aijournal ops audit provenance [--fix]` — report (or redact with `--fix`) any persisted provenance spans that still carry raw text.
+- `uv run aijournal ops microfacts rebuild` — rebuild the consolidated microfact snapshot and Chroma index from daily artifacts.
 
 ---
 

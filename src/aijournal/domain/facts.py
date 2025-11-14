@@ -40,3 +40,43 @@ class MicroFactsFile(StrictModel):
     facts: list[MicroFact] = Field(default_factory=list)
     claim_proposals: list[ClaimProposal] = Field(default_factory=list)
     preview: ProfileUpdatePreview | None = None
+
+
+class ConsolidatedMicroFact(StrictModel):
+    """Global microfact entry that survives consolidation runs."""
+
+    id: str
+    statement: str
+    canonical_statement: str
+    confidence: float
+    first_seen: str
+    last_seen: str
+    observation_count: int
+    domain: str | None = None
+    contexts: list[str] = Field(default_factory=list)
+    evidence_entries: list[str] = Field(default_factory=list)
+    source_fact_ids: list[str] = Field(default_factory=list)
+
+
+class ConsolidatedMicrofactsFile(StrictModel):
+    """Artifact capturing the global consolidated microfact snapshot."""
+
+    generated_at: str
+    embedding_model: str | None = None
+    facts: list[ConsolidatedMicroFact] = Field(default_factory=list)
+
+
+class MicrofactConsolidationSummary(StrictModel):
+    """Per-day summary emitted during rebuild operations."""
+
+    day: str
+    processed: int
+    new_records: int
+    merged_records: int
+
+
+class MicrofactConsolidationLog(StrictModel):
+    """Artifact capturing the rebuild run summaries."""
+
+    generated_at: str
+    entries: list[MicrofactConsolidationSummary] = Field(default_factory=list)
