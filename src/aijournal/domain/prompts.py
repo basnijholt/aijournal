@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any
 
 from pydantic import Field, field_validator
@@ -311,18 +312,33 @@ def convert_prompt_updates_to_proposals(
     *,
     normalized_ids: list[str],
     manifest_hashes: list[str],
+    entry_hash_lookup: Mapping[str, str] | None = None,
 ) -> Any:  # Returns ProfileUpdateProposals
     """Convert lightweight prompt DTOs to full domain models with system metadata."""
     from aijournal.domain.changes import ProfileUpdateProposals
 
-    claims = [
-        convert_prompt_claim_to_proposal(
-            item,
-            normalized_ids=normalized_ids,
-            manifest_hashes=manifest_hashes,
+    def _claim_context(item: PromptClaimItem) -> tuple[list[str], list[str]]:
+        entry_id = (item.evidence_entry or "").strip()
+        if entry_id:
+            hashes: list[str] = []
+            if entry_hash_lookup:
+                manifest_hash = entry_hash_lookup.get(entry_id)
+                if manifest_hash:
+                    hashes = [manifest_hash]
+            return [entry_id], hashes
+
+        return list(normalized_ids), list(manifest_hashes)
+
+    claims = []
+    for item in prompt_updates.claims:
+        claim_ids, claim_hashes = _claim_context(item)
+        claims.append(
+            convert_prompt_claim_to_proposal(
+                item,
+                normalized_ids=claim_ids,
+                manifest_hashes=claim_hashes,
+            )
         )
-        for item in prompt_updates.claims
-    ]
 
     facets = [convert_prompt_facet_to_change(item) for item in prompt_updates.facets]
 
