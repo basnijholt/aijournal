@@ -255,8 +255,8 @@ def test_characterize_live_mode_structured(
     data = artifact.get("data", {})
     assert captured.get("raw_claims"), "Expected structured claims to flow into normalization"
     claims = data["proposals"]["claims"]
-    assert all("id" not in item.get("claim", {}) for item in claims)
-    statements = [item["claim"]["statement"] for item in claims]
+    assert all("id" not in item for item in claims)
+    statements = [item["statement"] for item in claims]
     normalized_ids = [item.get("normalized_ids") for item in claims]
     assert any(ENTRY_ID in (ids or []) for ids in normalized_ids)
     assert any("Focus routines hold" in stmt for stmt in statements)

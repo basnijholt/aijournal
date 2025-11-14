@@ -50,7 +50,17 @@ def _write_profile_update_batch(path: Path) -> None:
         review_after_days=30,
     )
     proposal = ClaimProposal(
-        claim=claim_input,
+        type=claim_input.type,
+        subject=claim_input.subject,
+        predicate=claim_input.predicate,
+        value=claim_input.value,
+        statement=claim_input.statement,
+        scope=claim_input.scope,
+        strength=claim_input.strength,
+        status=claim_input.status,
+        method=claim_input.method,
+        user_verified=claim_input.user_verified,
+        review_after_days=claim_input.review_after_days,
         normalized_ids=["2025-01-01_focus"],
         evidence=[
             SourceRef(

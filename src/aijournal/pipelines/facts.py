@@ -49,14 +49,13 @@ def merge_unique(existing: Iterable[str], extras: Iterable[str]) -> list[str]:
 
 
 def _proposal_key(proposal: ClaimProposal) -> str:
-    claim = proposal.claim
     return "|".join(
         [
-            claim.type,
-            claim.subject,
-            claim.predicate,
-            claim.value,
-            claim.statement,
+            proposal.type,
+            proposal.subject,
+            proposal.predicate,
+            proposal.value,
+            proposal.statement,
         ]
     )
 
@@ -194,7 +193,17 @@ def _microfact_claim_proposals(
 
         proposals.append(
             ClaimProposal(
-                claim=claim_input,
+                type=claim_input.type,
+                subject=claim_input.subject,
+                predicate=claim_input.predicate,
+                value=claim_input.value,
+                statement=claim_input.statement,
+                scope=claim_input.scope,
+                strength=claim_input.strength,
+                status=claim_input.status,
+                method=claim_input.method,
+                user_verified=claim_input.user_verified,
+                review_after_days=claim_input.review_after_days,
                 normalized_ids=normalized_ids,
                 evidence=[
                     SourceRef.model_validate(src.model_dump(mode="python"))
@@ -222,8 +231,23 @@ def normalize_claim_proposals(
         except ValidationError:
             continue
 
+        # ClaimProposal is now flattened, extract claim fields
+        claim_input_for_normalize = ClaimAtomInput(
+            type=proposal.type,
+            subject=proposal.subject,
+            predicate=proposal.predicate,
+            value=proposal.value,
+            statement=proposal.statement,
+            scope=proposal.scope,
+            strength=proposal.strength,
+            status=proposal.status,
+            method=proposal.method,
+            user_verified=proposal.user_verified,
+            review_after_days=proposal.review_after_days,
+        )
+
         claim_atom = _normalize_claim_input(
-            proposal.claim,
+            claim_input_for_normalize,
             timestamp=timestamp,
             default_sources=default_sources,
             evidence=proposal.evidence,
@@ -252,9 +276,20 @@ def normalize_claim_proposals(
             for src in combined_sources
         ]
 
+        # ClaimProposal is now flattened, populate all fields directly
         proposals.append(
             ClaimProposal(
-                claim=claim_input,
+                type=claim_input.type,
+                subject=claim_input.subject,
+                predicate=claim_input.predicate,
+                value=claim_input.value,
+                statement=claim_input.statement,
+                scope=claim_input.scope,
+                strength=claim_input.strength,
+                status=claim_input.status,
+                method=claim_input.method,
+                user_verified=claim_input.user_verified,
+                review_after_days=claim_input.review_after_days,
                 normalized_ids=merge_unique(proposal.normalized_ids, normalized_ids),
                 evidence=sanitized_sources,
                 manifest_hashes=merge_unique(proposal.manifest_hashes, manifest_hashes),

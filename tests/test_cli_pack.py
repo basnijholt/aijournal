@@ -163,7 +163,17 @@ def _seed_profile_proposals(tmp_path: Path, day: str = DATE) -> Path:
         review_after_days=claim_model.review_after_days,
     )
     claim_proposal = ClaimProposal(
-        claim=claim_input,
+        type=claim_input.type,
+        subject=claim_input.subject,
+        predicate=claim_input.predicate,
+        value=claim_input.value,
+        statement=claim_input.statement,
+        scope=claim_input.scope,
+        strength=claim_input.strength,
+        status=claim_input.status,
+        method=claim_input.method,
+        user_verified=claim_input.user_verified,
+        review_after_days=claim_input.review_after_days,
         normalized_ids=[claim_model.id],
         evidence=[SourceRef(entry_id=f"{day}-entry", spans=[])],
     )

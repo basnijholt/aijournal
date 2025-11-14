@@ -105,9 +105,21 @@ def test_generate_characterization_fake_mode(monkeypatch) -> None:
 
     def normalize_claims(raw_claims, **kwargs):
         captured["raw_claims"] = raw_claims
+        claim_input = _claim_input("entry-1")
+        # ClaimProposal is now flattened, populate all fields directly
         return [
             ClaimProposal(
-                claim=_claim_input("entry-1"),
+                type=claim_input.type,
+                subject=claim_input.subject,
+                predicate=claim_input.predicate,
+                value=claim_input.value,
+                statement=claim_input.statement,
+                scope=claim_input.scope,
+                strength=claim_input.strength,
+                status=claim_input.status,
+                method=claim_input.method,
+                user_verified=claim_input.user_verified,
+                review_after_days=claim_input.review_after_days,
                 normalized_ids=[],
                 evidence=[],
                 manifest_hashes=[],
@@ -148,19 +160,17 @@ def test_generate_characterization_normalizes_llm_payload(monkeypatch) -> None:
     response = ProfileUpdateProposals(
         claims=[
             {
-                "claim": {
-                    "type": "preference",
-                    "subject": "Focus routines",
-                    "predicate": "affinity",
-                    "value": "Focus improved",
-                    "statement": "Focus improved",
-                    "scope": {"domain": None, "context": [], "conditions": []},
-                    "strength": 0.6,
-                    "status": "tentative",
-                    "method": "inferred",
-                    "user_verified": False,
-                    "review_after_days": 120,
-                },
+                "type": "preference",
+                "subject": "Focus routines",
+                "predicate": "affinity",
+                "value": "Focus improved",
+                "statement": "Focus improved",
+                "scope": {"domain": None, "context": [], "conditions": []},
+                "strength": 0.6,
+                "status": "tentative",
+                "method": "inferred",
+                "user_verified": False,
+                "review_after_days": 120,
                 "normalized_ids": ["entry-1"],
                 "manifest_hashes": ["manifest-1"],
                 "rationale": "Recent entry reinforces the pattern.",
@@ -197,12 +207,24 @@ def test_generate_characterization_normalizes_llm_payload(monkeypatch) -> None:
     def normalize_claims(raw_claims, **kwargs):
         captured["claims"] = raw_claims
         return [
-            ClaimProposal(
-                claim=_claim_input("entry-1"),
-                normalized_ids=[],
-                evidence=[ClaimSource(entry_id="entry-1", spans=[])],
-                manifest_hashes=[],
-            )
+            (
+                lambda ci: ClaimProposal(
+                    type=ci.type,
+                    subject=ci.subject,
+                    predicate=ci.predicate,
+                    value=ci.value,
+                    statement=ci.statement,
+                    scope=ci.scope,
+                    strength=ci.strength,
+                    status=ci.status,
+                    method=ci.method,
+                    user_verified=ci.user_verified,
+                    review_after_days=ci.review_after_days,
+                    normalized_ids=[],
+                    evidence=[ClaimSource(entry_id="entry-1", spans=[])],
+                    manifest_hashes=[],
+                )
+            )(_claim_input("entry-1"))
         ]
 
     def normalize_facets(raw_facets, **kwargs):

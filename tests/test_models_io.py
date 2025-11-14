@@ -337,7 +337,17 @@ def test_profile_proposals_schema(tmp_path: Path) -> None:
         review_after_days=120,
     )
     claim_proposal = ClaimProposal(
-        claim=claim_input,
+        type=claim_input.type,
+        subject=claim_input.subject,
+        predicate=claim_input.predicate,
+        value=claim_input.value,
+        statement=claim_input.statement,
+        scope=claim_input.scope,
+        strength=claim_input.strength,
+        status=claim_input.status,
+        method=claim_input.method,
+        user_verified=claim_input.user_verified,
+        review_after_days=claim_input.review_after_days,
         normalized_ids=["pref_focus"],
         evidence=[SourceRef(entry_id="2025-10-25-entry", spans=[])],
         rationale="Recurring pattern in planning entries.",

@@ -528,8 +528,7 @@ def _claim_proposal_to_atom(
     timestamp: str,
     existing_ids: set[str] | None = None,
 ) -> ClaimAtom | None:
-    claim_input = proposal.claim
-    statement = claim_input.statement.strip()
+    statement = proposal.statement.strip()
     if not statement:
         typer.secho("Skipping claim proposal without statement.", fg=typer.colors.YELLOW, err=True)
         return None
@@ -545,17 +544,17 @@ def _claim_proposal_to_atom(
 
     raw_claim = {
         "id": claim_id,
-        "type": claim_input.type,
-        "subject": claim_input.subject,
-        "predicate": claim_input.predicate,
-        "value": claim_input.value,
-        "statement": claim_input.statement,
-        "scope": claim_input.scope.model_dump(mode="python"),
-        "strength": claim_input.strength,
-        "status": claim_input.status,
-        "method": claim_input.method,
-        "user_verified": claim_input.user_verified,
-        "review_after_days": claim_input.review_after_days,
+        "type": proposal.type,
+        "subject": proposal.subject,
+        "predicate": proposal.predicate,
+        "value": proposal.value,
+        "statement": proposal.statement,
+        "scope": proposal.scope.model_dump(mode="python"),
+        "strength": proposal.strength,
+        "status": proposal.status,
+        "method": proposal.method,
+        "user_verified": proposal.user_verified,
+        "review_after_days": proposal.review_after_days,
         "provenance": {
             "sources": [source.model_dump(mode="python") for source in evidence_sources],
             "first_seen": time_utils.created_date(timestamp),

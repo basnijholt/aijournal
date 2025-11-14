@@ -79,8 +79,7 @@ def test_facts_generates_microfacts(
     proposals = data.get("claim_proposals", [])
     assert isinstance(proposals, list) and proposals, "Expected claim proposals from micro-facts"
     proposal = proposals[0]
-    claim = proposal["claim"]
-    assert "sync notes" in claim["statement"].lower()
+    assert "sync notes" in proposal["statement"].lower()
     assert proposal.get("normalized_ids") == [ENTRY_ID]
     evidence = proposal.get("evidence") or []
     assert any(item.get("entry_id") == ENTRY_ID for item in evidence)

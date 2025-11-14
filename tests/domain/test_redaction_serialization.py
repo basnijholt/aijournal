@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from aijournal.cli import _claim_proposal_to_atom
-from aijournal.domain.changes import ClaimAtomInput, ClaimProposal
+from aijournal.domain.changes import ClaimProposal
 from aijournal.domain.claims import Scope
 from aijournal.domain.evidence import SourceRef, Span
 from aijournal.pipelines import normalization
@@ -9,7 +9,12 @@ from aijournal.pipelines.facts import normalize_claim_proposals
 
 
 def _proposal_with_span_text() -> ClaimProposal:
-    claim = ClaimAtomInput(
+    evidence = SourceRef(
+        entry_id="2025-10-26-focus-log",
+        spans=[Span(type="paragraph", index=0, text="sensitive text")],
+    )
+    # ClaimProposal is now flattened (no nested claim field)
+    return ClaimProposal(
         type="habit",
         subject="morning routine",
         predicate="reflection",
@@ -21,13 +26,6 @@ def _proposal_with_span_text() -> ClaimProposal:
         method="inferred",
         user_verified=False,
         review_after_days=45,
-    )
-    evidence = SourceRef(
-        entry_id="2025-10-26-focus-log",
-        spans=[Span(type="paragraph", index=0, text="sensitive text")],
-    )
-    return ClaimProposal(
-        claim=claim,
         normalized_ids=["2025-10-26-focus-log"],
         evidence=[evidence],
         manifest_hashes=["focus-log-hash"],

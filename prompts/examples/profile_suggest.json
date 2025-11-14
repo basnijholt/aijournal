@@ -1,25 +1,23 @@
 {
   "claims": [
     {
-      "claim": {
-        "type": "goal",
-        "subject": "quarterly outcomes",
-        "predicate": "focus_hours_per_week",
-        "value": "Protect 12 focus hours per week.",
-        "statement": "I protect 12 focus hours per week.",
-        "scope": {
-          "domain": "productivity",
-          "context": [
-            "planning"
-          ],
-          "conditions": []
-        },
-        "strength": 0.65,
-        "status": "tentative",
-        "method": "inferred",
-        "user_verified": false,
-        "review_after_days": 90
+      "type": "goal",
+      "subject": "quarterly outcomes",
+      "predicate": "focus_hours_per_week",
+      "value": "Protect 12 focus hours per week.",
+      "statement": "I protect 12 focus hours per week.",
+      "scope": {
+        "domain": "productivity",
+        "context": [
+          "planning"
+        ],
+        "conditions": []
       },
+      "strength": 0.65,
+      "status": "tentative",
+      "method": "inferred",
+      "user_verified": false,
+      "review_after_days": 90,
       "normalized_ids": [
         "2025-10-24-plan-review"
       ],

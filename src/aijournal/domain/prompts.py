@@ -118,8 +118,8 @@ def convert_prompt_claim_to_proposal(
     normalized_ids: list[str],
     manifest_hashes: list[str],
 ) -> Any:  # Returns ClaimProposal (avoiding circular import)
-    """Convert lightweight prompt DTO to full ClaimProposal with system metadata."""
-    from aijournal.domain.changes import ClaimAtomInput, ClaimProposal
+    """Convert lightweight prompt DTO to flattened ClaimProposal with system metadata."""
+    from aijournal.domain.changes import ClaimProposal
 
     # Fill in defaults for missing optional fields
     subject = item.subject or "self"
@@ -133,8 +133,8 @@ def convert_prompt_claim_to_proposal(
         source = SourceRef(entry_id=item.evidence_entry, spans=[span])
         evidence = [source]
 
-    # Create claim atom with system defaults
-    claim_atom = ClaimAtomInput(
+    # Populate flattened ClaimProposal directly (no nested ClaimAtomInput)
+    return ClaimProposal(
         type=item.type,
         subject=subject,
         predicate=predicate,
@@ -146,10 +146,6 @@ def convert_prompt_claim_to_proposal(
         method=ClaimMethod.INFERRED,  # Default method
         user_verified=False,
         review_after_days=120,
-    )
-
-    return ClaimProposal(
-        claim=claim_atom,
         normalized_ids=normalized_ids,
         evidence=evidence,
         manifest_hashes=manifest_hashes,

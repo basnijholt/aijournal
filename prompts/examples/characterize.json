@@ -1,25 +1,23 @@
 {
   "claims": [
     {
-      "claim": {
-        "type": "habit",
-        "subject": "morning routine",
-        "predicate": "includes_reflection",
-        "value": "Each focus block ends with a five-minute reflection.",
-        "statement": "Each focus block is followed by a five-minute reflection.",
-        "scope": {
-          "domain": "productivity",
-          "context": [
-            "weekday mornings"
-          ],
-          "conditions": []
-        },
-        "strength": 0.6,
-        "status": "tentative",
-        "method": "inferred",
-        "user_verified": false,
-        "review_after_days": 45
+      "type": "habit",
+      "subject": "morning routine",
+      "predicate": "includes_reflection",
+      "value": "Each focus block ends with a five-minute reflection.",
+      "statement": "Each focus block is followed by a five-minute reflection.",
+      "scope": {
+        "domain": "productivity",
+        "context": [
+          "weekday mornings"
+        ],
+        "conditions": []
       },
+      "strength": 0.6,
+      "status": "tentative",
+      "method": "inferred",
+      "user_verified": false,
+      "review_after_days": 45,
       "normalized_ids": [
         "2025-10-25-focus-log"
       ],
