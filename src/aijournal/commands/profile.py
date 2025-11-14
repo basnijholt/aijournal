@@ -36,6 +36,7 @@ from aijournal.domain.claims import (
 )
 from aijournal.domain.evidence import SourceRef, redact_source_text
 from aijournal.domain.journal import NormalizedEntry
+from aijournal.domain.prompts import PromptProfileUpdates, convert_prompt_updates_to_proposals
 from aijournal.fakes import fake_profile_proposals
 from aijournal.io.artifacts import load_artifact_data, save_artifact
 from aijournal.io.yaml_io import load_yaml_model, write_yaml_model
@@ -427,8 +428,9 @@ def _profile_proposals_payload(
             build_claim=_build_claim_atom_from_entry,
         )
     else:
-        proposals = cast(
-            ProfileUpdateProposals,
+        # LLM emits lightweight DTO with only 8 fields per claim
+        llm_response = cast(
+            PromptProfileUpdates,
             _invoke_structured_llm(
                 "prompts/profile_suggest.md",
                 {
@@ -439,7 +441,7 @@ def _profile_proposals_payload(
                         {"claims": [claim.model_dump(mode="python") for claim in claims]}
                     ),
                 },
-                response_model=ProfileUpdateProposals,
+                response_model=PromptProfileUpdates,
                 agent_name="aijournal-profile-suggest",
                 config=config,
                 timeout=timeout,
@@ -449,6 +451,12 @@ def _profile_proposals_payload(
                     "when follow-up questions are warranted."
                 ),
             ),
+        )
+        # Convert lightweight DTO to full domain model with system metadata
+        proposals = convert_prompt_updates_to_proposals(
+            llm_response,
+            normalized_ids=[],
+            manifest_hashes=[],
         )
 
     return _sanitize_proposals(proposals)

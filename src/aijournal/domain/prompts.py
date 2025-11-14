@@ -40,18 +40,25 @@ class PromptClaimItem(StrictModel):
     evidence_entry: str | None = None
     evidence_para: int = Field(default=0, ge=0)
 
-    @field_validator("statement", "subject", "predicate", mode="before")
+    @field_validator("statement", mode="before")
     @classmethod
     def _strip_required(cls, value: Any) -> Any:
         if isinstance(value, str):
             value = value.strip()
-        if value and not value:
-            raise ValueError("field cannot be empty")
+        if not value:
+            raise ValueError("statement cannot be empty")
         return value
+
+    @field_validator("subject", "predicate", mode="before")
+    @classmethod
+    def _strip_optional(cls, value: Any) -> Any:
+        if isinstance(value, str):
+            value = value.strip()
+        return value or None
 
     @field_validator("value", mode="after")
     @classmethod
-    def _strip_optional(cls, value: str | None) -> str | None:
+    def _strip_value(cls, value: str | None) -> str | None:
         return _clean_text(value)
 
     @field_validator("reason")
