@@ -39,6 +39,10 @@ from aijournal.domain.changes import (
 )
 from aijournal.domain.claims import ClaimAtom
 from aijournal.domain.journal import NormalizedEntry
+from aijournal.domain.prompts import (
+    PromptProfileUpdates,
+    convert_prompt_updates_to_proposals,
+)
 from aijournal.io.artifacts import save_artifact
 from aijournal.io.yaml_io import load_yaml_model
 from aijournal.models.authoritative import ManifestEntry
@@ -344,8 +348,9 @@ def _characterize_payload(
     )
 
     def request_characterize() -> ProfileUpdateProposals:
-        return cast(
-            ProfileUpdateProposals,
+        # LLM emits lightweight DTO with only 8 fields per claim
+        llm_response = cast(
+            PromptProfileUpdates,
             invoke_structured_llm(
                 "prompts/characterize.md",
                 {
@@ -357,7 +362,7 @@ def _characterize_payload(
                     ),
                     "manifest_json": manifest_payload,
                 },
-                response_model=ProfileUpdateProposals,
+                response_model=PromptProfileUpdates,
                 agent_name="aijournal-characterize",
                 config=config,
                 timeout=timeout,
@@ -367,6 +372,12 @@ def _characterize_payload(
                     "Do not add other keys or narrative text."
                 ),
             ),
+        )
+        # Convert lightweight DTO to full domain model with system metadata
+        return convert_prompt_updates_to_proposals(
+            llm_response,
+            normalized_ids=context[0],
+            manifest_hashes=context[1],
         )
 
     return characterize_pipeline.generate_characterization(

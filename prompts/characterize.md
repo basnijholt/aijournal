@@ -43,25 +43,14 @@ If you genuinely have nothing new to add, return `{"claims": [], "facets": [], "
 {
   "claims": [
     {
-      "claim": {
-        "type": "preference|value|goal|boundary|trait|habit|aversion|skill",
-        "subject": "who or what the claim refers to",
-        "predicate": "relationship or attribute",
-        "value": "string value (≤160 chars)",
-        "statement": "Readable sentence (≤160 chars)",
-        "scope": {"domain": "optional", "context": ["tags"], "conditions": []},
-        "strength": 0.0-1.0,
-        "status": "accepted|tentative|rejected",
-        "method": "self_report|inferred|behavioral",
-        "user_verified": false,
-        "review_after_days": integer
-      },
-      "normalized_ids": ["normalized-entry-id"],
-      "evidence": [
-        {"entry_id": "normalized-entry-id", "spans": [{"type": "para", "index": 0}]}
-      ],
-      "manifest_hashes": ["optional-manifest-hash"],
-      "rationale": "≤25 word justification citing the evidence"
+      "type": "preference|value|goal|boundary|trait|habit|aversion|skill",
+      "statement": "Readable sentence (≤160 chars)",
+      "subject": "who or what the claim refers to (optional, ≤80 chars)",
+      "predicate": "relationship or attribute (optional, ≤80 chars)",
+      "value": "string value (optional, ≤160 chars)",
+      "reason": "≤25 word justification citing the evidence",
+      "evidence_entry": "normalized-entry-id (optional)",
+      "evidence_para": 0
     }
   ],
   "facets": [
@@ -69,43 +58,33 @@ If you genuinely have nothing new to add, return `{"claims": [], "facets": [], "
       "path": "values_motivations.recurring_theme",
       "operation": "set" | "remove",
       "value": "string or list of strings when operation is set",
-      "method": "inferred|self_report|behavioral",
-      "confidence": 0.0-1.0,
-      "review_after_days": integer,
-      "user_verified": false,
-      "evidence": [
-        {"entry_id": "normalized-entry-id", "spans": [{"type": "para", "index": 1}]}
-      ],
-      "rationale": "≤25 word justification"
+      "reason": "≤25 word justification (optional)",
+      "evidence_entry": "normalized-entry-id (optional)",
+      "evidence_para": 0
     }
   ],
   "interview_prompts": [
-    "≤20 word question referencing claim:<id> or profile.path"
+    "≤20 word question referencing claim or profile.path"
   ]
 }
 ```
 
 ### Allowed Values
 - `type`: preference, value, goal, boundary, trait, habit, aversion, skill.
-- `status`: accepted, tentative, rejected.
-- `method`: self_report, inferred, behavioral.
 - `operation`: set, remove.
 
 ### Constraints
-- Keep `strength` within [0,1] and use the calibration ladder above when scoring.
-- List every supporting normalized entry in `normalized_ids` and include at least one when evidence exists.
-- Use `{"type": "para", "index": <int>}` for all evidence spans; when entries lack paragraphs, set `spans`: [] and rely on summaries/sections/tags.
-- Restrict facet `value` to a string or list of strings and never output objects.
-- Keep `rationale` ≤25 words and interview prompts ≤20 words.
-- Never invent manifest hashes.
+- Subject, predicate, value are **optional** for claims.
+- Reason and evidence fields are **optional** (can be null/0).
+- Facet `value` must be a string or list of strings (never objects).
+- Keep `reason` ≤25 words and interview prompts ≤20 words.
+- Keep `statement` ≤160 chars, `subject`/`predicate` ≤80 chars, `value` ≤160 chars.
+- `evidence_para` is the paragraph index (0-based integer, default 0).
 
 ## ⚠️ Critical Constraints (Violations = Rejection)
-1. Never emit `id` or `provenance` fields; the backend generates them.
-2. Evidence spans must be `{"type": "para", "index": N}` or an empty list when paragraphs are absent.
-3. Facet `operation` must be `set` or `remove` (never `merge`).
-4. Facet `value` must be a string or list of strings (never objects).
-5. `strength` must be a float in [0.0, 1.0] (default 0.55 when uncertain).
-6. Statement ≤160 chars, rationale ≤25 words, interview prompt ≤20 words.
+1. Facet `operation` must be `set` or `remove` (never `merge`).
+2. Facet `value` must be a string or list of strings (never objects).
+3. Statement ≤160 chars, subject/predicate ≤80 chars, value ≤160 chars, reason ≤25 words, interview prompt ≤20 words.
 
 ---
 ## Examples
@@ -116,25 +95,14 @@ Suppose the entries describe shipping a `/auto` automation workflow with careful
 {
   "claims": [
     {
-      "claim": {
-        "type": "habit",
-        "subject": "automation",
-        "predicate": "invests_in",
-        "value": "Builds automation workflows to remove repetitive coding tasks.",
-        "statement": "Invests time in automation workflows that replace repetitive coding tasks.",
-        "scope": {"domain": null, "context": ["engineering"], "conditions": []},
-        "strength": 0.62,
-        "status": "tentative",
-        "method": "behavioral",
-        "user_verified": false,
-        "review_after_days": 120
-      },
-      "normalized_ids": ["2025-10-28-auto-workflows"],
-      "evidence": [
-        {"entry_id": "2025-10-28-auto-workflows", "spans": [{"type": "para", "index": 0}]}
-      ],
-      "manifest_hashes": [],
-      "rationale": "Automation entry details new workflow replacing manual tasks."
+      "type": "habit",
+      "statement": "Invests time in automation workflows that replace repetitive coding tasks.",
+      "subject": "automation",
+      "predicate": "invests_in",
+      "value": "Builds automation workflows to remove repetitive coding tasks.",
+      "reason": "Automation entry details new workflow replacing manual tasks.",
+      "evidence_entry": "2025-10-28-auto-workflows",
+      "evidence_para": 0
     }
   ],
   "facets": [
@@ -142,18 +110,13 @@ Suppose the entries describe shipping a `/auto` automation workflow with careful
       "path": "planning.quality_guardrails",
       "operation": "set",
       "value": "Validates automation changes with manual smoke tests before rollout.",
-      "method": "inferred",
-      "confidence": 0.58,
-      "review_after_days": 120,
-      "user_verified": false,
-      "evidence": [
-        {"entry_id": "2025-10-28-auto-workflows", "spans": [{"type": "para", "index": 1}]}
-      ],
-      "rationale": "Journal calls out cautious review before enabling automation."
+      "reason": "Journal calls out cautious review before enabling automation.",
+      "evidence_entry": "2025-10-28-auto-workflows",
+      "evidence_para": 1
     }
   ],
   "interview_prompts": [
-    "claim:auto-workflows scope – What safeguards gate `/auto` from production use?"
+    "What safeguards gate `/auto` from production use?"
   ]
 }
 ```
@@ -164,11 +127,10 @@ Suppose the entries describe shipping a `/auto` automation workflow with careful
 ```
 
 ### Example C – Invalid
-- Never add `id` or `provenance` to the claim payload.
-- Never emit `operation: "merge"` or object values for facets.
-- Never omit spans or use `"paragraph"` instead of `"para"`.
-- Never write interview prompts longer than 20 words or lacking clear targets.
-- Never invent evidence, dates, or manifest hashes.
+- Never emit `operation: "merge"` for facets (only `set` or `remove`).
+- Never use object values for facets (only strings or lists of strings).
+- Never write interview prompts longer than 20 words.
+- Never invent evidence entries or dates.
 
 Any violation will cause the proposal to be rejected downstream.
 
@@ -176,32 +138,19 @@ Any violation will cause the proposal to be rejected downstream.
 ```json
 // INPUT: Entries mention "Blocked 8-10am again for focus work" for three consecutive weeks.
 // EXISTING: No claim about morning focus blocks.
-// DECISION: Add new habit claim (behavioral) with strength 0.72 (pattern across 3+ entries).
+// DECISION: Add new habit claim (pattern across 3+ entries).
 // ACTION: Create claim and facet update aligned with planning.focus_blocks.
 {
   "claims": [
     {
-      "claim": {
-        "type": "habit",
-        "subject": "focus blocks",
-        "predicate": "maintains",
-        "value": "Blocks 8:00-10:00 on weekdays for deep work",
-        "statement": "Blocks 8:00-10:00 on weekdays for deep work.",
-        "scope": {"domain": null, "context": ["work"], "conditions": []},
-        "strength": 0.72,
-        "status": "tentative",
-        "method": "behavioral",
-        "user_verified": false,
-        "review_after_days": 90
-      },
-      "normalized_ids": ["2025-10-15-focus", "2025-10-22-focus", "2025-10-29-focus"],
-      "evidence": [
-        {"entry_id": "2025-10-15-focus", "spans": [{"type": "para", "index": 0}]},
-        {"entry_id": "2025-10-22-focus", "spans": [{"type": "para", "index": 0}]},
-        {"entry_id": "2025-10-29-focus", "spans": [{"type": "para", "index": 0}]}
-      ],
-      "manifest_hashes": [],
-      "rationale": "Three weekly entries show recurring morning focus block pattern."
+      "type": "habit",
+      "statement": "Blocks 8:00-10:00 on weekdays for deep work.",
+      "subject": "focus blocks",
+      "predicate": "maintains",
+      "value": "Blocks 8:00-10:00 on weekdays for deep work",
+      "reason": "Three weekly entries show recurring morning focus block pattern.",
+      "evidence_entry": "2025-10-29-focus",
+      "evidence_para": 0
     }
   ],
   "facets": [
@@ -209,18 +158,13 @@ Any violation will cause the proposal to be rejected downstream.
       "path": "planning.focus_blocks.morning",
       "operation": "set",
       "value": "Protects 8:00-10:00 for deep work on weekdays",
-      "method": "behavioral",
-      "confidence": 0.72,
-      "review_after_days": 90,
-      "user_verified": false,
-      "evidence": [
-        {"entry_id": "2025-10-29-focus", "spans": [{"type": "para", "index": 0}]}
-      ],
-      "rationale": "Latest entry confirms the recurring focus block pattern."
+      "reason": "Latest entry confirms the recurring focus block pattern.",
+      "evidence_entry": "2025-10-29-focus",
+      "evidence_para": 0
     }
   ],
   "interview_prompts": [
-    "claim:focus-blocks – What triggers changes to the 8-10am deep work block?"
+    "What triggers changes to the 8-10am deep work block?"
   ]
 }
 ```

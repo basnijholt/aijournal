@@ -8,7 +8,6 @@ import yaml
 from typer.testing import CliRunner
 
 from aijournal.cli import app
-from aijournal.domain.changes import ProfileUpdateProposals
 from aijournal.io.yaml_io import dump_yaml
 
 DATE = "2025-02-03"
@@ -208,30 +207,21 @@ def test_characterize_live_mode_structured(
     _seed_profile(cli_workspace)
     monkeypatch.setenv("AIJOURNAL_FAKE_OLLAMA", "0")
 
-    claim_payload = {
-        "type": "preference",
-        "subject": "Focus routines",
-        "predicate": "affinity",
-        "value": "Focus routines hold",
-        "statement": "Focus routines hold",
-        "scope": {"domain": None, "context": ["focus"], "conditions": []},
-        "strength": 0.6,
-        "status": "tentative",
-        "method": "inferred",
-        "user_verified": False,
-        "review_after_days": 120,
-    }
+    def _fake_structured(*_args, **_kwargs):
+        from aijournal.domain.prompts import PromptProfileUpdates
 
-    def _fake_structured(*_args, **_kwargs) -> ProfileUpdateProposals:
-        return ProfileUpdateProposals.model_validate(
+        return PromptProfileUpdates.model_validate(
             {
                 "claims": [
                     {
-                        "claim": claim_payload,
-                        "normalized_ids": [ENTRY_ID],
-                        "manifest_hashes": [SOURCE_HASH],
-                        "evidence": [{"entry_id": ENTRY_ID, "spans": []}],
-                        "rationale": "Recent entry reinforces the pattern.",
+                        "type": "preference",
+                        "statement": "Focus routines hold",
+                        "subject": "Focus routines",
+                        "predicate": "affinity",
+                        "value": "Focus routines hold",
+                        "reason": "Recent entry reinforces the pattern.",
+                        "evidence_entry": ENTRY_ID,
+                        "evidence_para": 0,
                     }
                 ],
                 "facets": [],
