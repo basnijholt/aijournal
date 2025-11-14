@@ -420,6 +420,7 @@ def _profile_proposals_payload(
     timeout: float | None = None,
     retries: int = DEFAULT_PROFILE_RETRIES,
 ) -> ProfileUpdateProposals:
+    entry_ids, entry_hashes = _profile_entry_context(entries)
     if use_fake_llm():
         proposals = fake_profile_proposals(
             entries,
@@ -455,8 +456,8 @@ def _profile_proposals_payload(
         # Convert lightweight DTO to full domain model with system metadata
         proposals = convert_prompt_updates_to_proposals(
             llm_response,
-            normalized_ids=[],
-            manifest_hashes=[],
+            normalized_ids=entry_ids,
+            manifest_hashes=entry_hashes,
         )
 
     return _sanitize_proposals(proposals)
@@ -474,6 +475,16 @@ def _sanitize_proposals(proposals: ProfileUpdateProposals) -> ProfileUpdatePropo
         for change in proposals.facets
     ]
     return proposals.model_copy(update={"claims": sanitized_claims, "facets": sanitized_facets})
+
+
+def _profile_entry_context(
+    entries: Sequence[NormalizedEntry],
+) -> tuple[list[str], list[str]]:
+    normalized_ids: list[str] = []
+    for idx, entry in enumerate(entries):
+        entry_id = entry.id or f"entry-{idx + 1}"
+        normalized_ids.append(entry_id)
+    return normalized_ids, []
 
 
 def _apply_claim_proposal(
