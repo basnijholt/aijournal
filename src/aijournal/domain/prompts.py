@@ -36,6 +36,12 @@ class PromptClaimItem(StrictModel):
     subject: str | None = Field(default=None, max_length=80)
     predicate: str | None = Field(default=None, max_length=80)
     value: str | None = Field(default=None, max_length=160)
+    strength: float | None = Field(default=None, ge=0.0, le=1.0)
+    status: ClaimStatus | None = None
+    method: ClaimMethod | None = None
+    scope_domain: str | None = None
+    scope_context: list[str] | None = None
+    scope_conditions: list[str] | None = None
     reason: str | None = None
     evidence_entry: str | None = None
     evidence_para: int = Field(default=0, ge=0)
@@ -133,16 +139,26 @@ def convert_prompt_claim_to_proposal(
         source = SourceRef(entry_id=item.evidence_entry, spans=[span])
         evidence = [source]
 
+    scope = Scope(
+        domain=(item.scope_domain or None),
+        context=[s.strip() for s in (item.scope_context or []) if s.strip()],
+        conditions=[s.strip() for s in (item.scope_conditions or []) if s.strip()],
+    )
+
+    strength = float(item.strength) if item.strength is not None else 0.55
+    status = item.status or ClaimStatus.TENTATIVE
+    method = item.method or ClaimMethod.INFERRED
+
     return ClaimProposal(
         type=item.type,
         subject=subject,
         predicate=predicate,
         value=value,
         statement=item.statement,
-        scope=Scope(),  # Empty scope by default
-        strength=0.55,  # Default confidence
-        status=ClaimStatus.TENTATIVE,  # Default status
-        method=ClaimMethod.INFERRED,  # Default method
+        scope=scope,
+        strength=strength,
+        status=status,
+        method=method,
         user_verified=False,
         review_after_days=120,
         normalized_ids=normalized_ids,
