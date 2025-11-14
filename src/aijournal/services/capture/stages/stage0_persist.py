@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from collections.abc import Callable, Iterable, Sequence
 from pathlib import Path
 from time import perf_counter
@@ -46,6 +47,53 @@ if TYPE_CHECKING:
     from aijournal.models.authoritative import ManifestEntry
 
     from .. import CaptureInput, PersistStage0Outputs
+
+
+SUMMARY_CHAR_LIMIT = 400
+SUMMARY_ELLIPSIS = "..."
+
+
+def _first_paragraph(text: str) -> str:
+    """Return the first non-empty paragraph from the Markdown body."""
+
+    normalized = text.strip()
+    if not normalized:
+        return ""
+    # Split on blank lines (optionally containing whitespace).
+    paragraphs = [
+        segment.strip() for segment in re.split(r"\n\s*\n", normalized) if segment.strip()
+    ]
+    return paragraphs[0] if paragraphs else normalized
+
+
+def _truncate_to_word_boundary(text: str, max_chars: int) -> tuple[str, bool]:
+    """Trim text to <= max_chars, preferring word boundaries."""
+
+    if len(text) <= max_chars:
+        return text, False
+    cutoff = text.rfind(" ", 0, max_chars)
+    if cutoff == -1 or cutoff < max_chars // 2:
+        cutoff = max_chars
+    trimmed = text[:cutoff].rstrip()
+    return trimmed, True
+
+
+def _derive_summary_text(
+    existing_summary: Any | None,
+    body: str,
+    max_chars: int = SUMMARY_CHAR_LIMIT,
+) -> str | None:
+    """Return a deterministic summary for entries lacking one."""
+
+    if existing_summary and existing_summary.strip():
+        return str(existing_summary)
+
+    first_paragraph = " ".join(_first_paragraph(body).split())
+    if not first_paragraph:
+        return None
+
+    trimmed, truncated = _truncate_to_word_boundary(first_paragraph, max_chars)
+    return f"{trimmed}{SUMMARY_ELLIPSIS}" if truncated else trimmed
 
 
 def _ingest_frontmatter(
@@ -294,13 +342,7 @@ def _persist_file_entry(
     mood = frontmatter_data.get("mood") or inputs.mood
     if mood:
         frontmatter_out["mood"] = mood
-    summary_raw = frontmatter_data.get("summary")
-    if summary_raw is not None:
-        summary_text = str(summary_raw)
-    elif body:
-        summary_text = body
-    else:
-        summary_text = None
+    summary_text = _derive_summary_text(frontmatter_data.get("summary"), body)
     if summary_text:
         frontmatter_out["summary"] = summary_text
 
@@ -407,7 +449,7 @@ def _persist_text_entry(
         frontmatter["projects"] = projects
     if inputs.mood:
         frontmatter["mood"] = inputs.mood
-    summary_text = body_text or None
+    summary_text = _derive_summary_text(None, body_text)
     if summary_text:
         frontmatter["summary"] = summary_text
 
