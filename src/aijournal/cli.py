@@ -23,6 +23,12 @@ from pydantic import ValidationError
 from typer.models import CommandInfo
 
 from aijournal.api.capture import CaptureRequest
+from aijournal.cli_helpers import (
+    ensure_output_write,
+    normalize_choice,
+    resolve_workspace_path,
+    write_text_file,
+)
 from aijournal.commands import summarize as summarize_commands
 from aijournal.commands.advise import (
     AdviceOptions,
@@ -180,6 +186,13 @@ def _get_workspace() -> Path:
         raise RuntimeError(msg)
 
     return workspace
+
+
+def _workspace_with_config() -> tuple[Path, AppConfig]:
+    """Return the active workspace and its loaded config."""
+    workspace = _get_workspace()
+    config = load_config(workspace)
+    return workspace, config
 
 
 app = typer.Typer(
@@ -525,30 +538,35 @@ def capture(
         )
         raise typer.Exit(code=2)
 
-    source_type_value = source_type.lower()
-    if source_type_value not in {"journal", "notes", "blog"}:
-        typer.secho(
-            "--source-type must be one of: journal, notes, blog.", fg=typer.colors.RED, err=True
-        )
-        raise typer.Exit(code=2)
+    source_type_value = normalize_choice(
+        source_type,
+        option="--source-type",
+        allowed=("journal", "notes", "blog"),
+        error="exit",
+    )
 
-    apply_profile_value = apply_profile.lower()
-    if apply_profile_value not in {"auto", "review"}:
-        typer.secho("--apply-profile must be auto or review.", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=2)
+    apply_profile_value = normalize_choice(
+        apply_profile,
+        option="--apply-profile",
+        allowed=("auto", "review"),
+        error="exit",
+    )
 
-    rebuild_value = rebuild.lower()
-    if rebuild_value not in {"auto", "always", "skip"}:
-        typer.secho("--rebuild must be auto, always, or skip.", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=2)
+    rebuild_value = normalize_choice(
+        rebuild,
+        option="--rebuild",
+        allowed=("auto", "always", "skip"),
+        error="exit",
+    )
 
     pack_value: str | None = None
     if pack:
-        pack_upper = pack.upper()
-        if pack_upper not in {"L1", "L3", "L4"}:
-            typer.secho("--pack must be one of: L1, L3, L4.", fg=typer.colors.RED, err=True)
-            raise typer.Exit(code=2)
-        pack_value = pack_upper
+        pack_value = normalize_choice(
+            pack,
+            option="--pack",
+            allowed=("L1", "L3", "L4"),
+            error="exit",
+        )
 
     if not (0 <= min_stage <= CAPTURE_MAX_STAGE and 0 <= max_stage <= CAPTURE_MAX_STAGE):
         typer.secho(
@@ -851,10 +869,13 @@ def dev_human_sim(
 
     from aijournal.simulator.orchestrator import HumanSimulator
 
-    resolved_pack = pack_level.upper()
-    if resolved_pack not in {"L1", "L3", "L4"}:
-        typer.secho("--pack-level must be one of L1, L3, or L4", fg=typer.colors.RED, err=True)
-        raise typer.Exit(1)
+    resolved_pack = normalize_choice(
+        pack_level,
+        option="--pack-level",
+        allowed=("L1", "L3", "L4"),
+        error="exit",
+        exit_code=1,
+    )
 
     pack_literal = cast(Literal["L1", "L3", "L4"], resolved_pack)
     simulator = HumanSimulator(max_stage=max_stage, pack_level=pack_literal)
@@ -1042,8 +1063,7 @@ def facts(
 ) -> None:
     """Generate micro-facts from normalized entries."""
     _emit_deprecation("aijournal ops pipeline extract-facts", "aijournal capture --from/--text")
-    workspace = _get_workspace()
-    config = load_config(workspace)
+    workspace, config = _workspace_with_config()
     _, claim_models = load_profile_components(workspace, config=config)
     ctx = _run_context("facts", workspace=workspace, config=config)
     output = run_facts_command(
@@ -1181,8 +1201,7 @@ def review_updates(
 ) -> None:
     """Review or apply pending profile update batches."""
     _emit_deprecation("aijournal ops pipeline review", "aijournal capture --apply-profile review")
-    workspace = _get_workspace()
-    config = load_config(workspace)
+    workspace, config = _workspace_with_config()
     batch_path = file or _latest_pending_batch(workspace, config)
     if batch_path is None:
         typer.secho("No pending profile update batches found.", fg=typer.colors.RED, err=True)
@@ -1308,8 +1327,7 @@ def ollama_health() -> None:
                 },
             )
 
-    workspace = _get_workspace()
-    config = load_config(workspace)
+    workspace, config = _workspace_with_config()
     payload = {
         "endpoint": base,
         "default": build_ollama_config_from_mapping(config).model,
@@ -1334,8 +1352,7 @@ def persona_build(
     ),
 ) -> None:
     """Regenerate derived/persona/persona_core.yaml."""
-    workspace = _get_workspace()
-    config = load_config(workspace)
+    workspace, config = _workspace_with_config()
     profile_model, claim_models = load_profile_components(workspace, config=config)
     profile = profile_to_dict(profile_model)
     path, changed = run_persona_build(
@@ -1354,8 +1371,7 @@ def persona_build(
 @persona_app.command("status")
 def persona_status() -> None:
     """Check whether persona_core.yaml matches the latest profile edits."""
-    workspace = _get_workspace()
-    config = load_config(workspace)
+    workspace, config = _workspace_with_config()
     status, reasons = persona_state(workspace, workspace, config)
     if status == "fresh":
         typer.echo("Persona core is up to date (profile files unchanged).")
@@ -1438,15 +1454,13 @@ def persona_export(
         output_dir=output_dir,
     )
 
-    sort_key = sort.lower().strip()
-    if sort_key not in {"strength", "recency", "id"}:
-        raise typer.BadParameter(
-            "--sort must be one of: strength, recency, id.",
-            param_hint="--sort",
-        )
+    sort_key = normalize_choice(
+        sort,
+        option="--sort",
+        allowed=("strength", "recency", "id"),
+    )
 
-    workspace = _get_workspace()
-    config = load_config(workspace)
+    workspace, config = _workspace_with_config()
     try:
         persona = load_persona_core(workspace, config)
     except PersonaArtifactMissingError as exc:
@@ -1514,10 +1528,12 @@ def _normalize_persona_variants(raw_variants: Iterable[str]) -> list[PersonaVari
         else:
             member = allowed.get(value)
             if member is None:
-                raise typer.BadParameter(
-                    "--variant must be one of: tiny, short, full, or all.",
-                    param_hint="--variant",
+                normalize_choice(
+                    value,
+                    option="--variant",
+                    allowed=tuple(allowed.keys()),
                 )
+                raise AssertionError("unreachable")
             candidates = (member,)
 
         for candidate in candidates:
@@ -1574,42 +1590,28 @@ def _write_persona_exports(
     overwrite: bool,
 ) -> bool:
     if output_dir is not None:
-        destination_dir = output_dir if output_dir.is_absolute() else workspace / output_dir
+        destination_dir = resolve_workspace_path(workspace, output_dir)
         destination_dir.mkdir(parents=True, exist_ok=True)
         targets: list[tuple[Path, PersonaExportResult]] = []
         for label, _, result in rendered:
             filename = f"persona-{label}.md"
             targets.append((destination_dir / filename, result))
 
-        if not overwrite:
-            for path, _ in targets:
-                if path.exists():
-                    typer.secho(
-                        f"Refusing to overwrite existing file: {path}. Use --overwrite to replace it.",
-                        fg=typer.colors.RED,
-                        err=True,
-                    )
-                    raise typer.Exit(1)
+        for path, _ in targets:
+            ensure_output_write(path, overwrite=overwrite)
 
         written: list[Path] = []
         for path, result in targets:
-            path.write_text(result.text, encoding="utf-8")
+            write_text_file(path, result.text)
             written.append(path)
         joined = ", ".join(str(path) for path in written)
         typer.echo(f"Wrote persona exports to {joined}")
         return True
 
     if output is not None:
-        destination = output if output.is_absolute() else workspace / output
-        if destination.exists() and not overwrite:
-            typer.secho(
-                f"Refusing to overwrite existing file: {destination}. Use --overwrite to replace it.",
-                fg=typer.colors.RED,
-                err=True,
-            )
-            raise typer.Exit(1)
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        destination.write_text(rendered[0][2].text, encoding="utf-8")
+        destination = resolve_workspace_path(workspace, output)
+        ensure_output_write(destination, overwrite=overwrite)
+        write_text_file(destination, rendered[0][2].text)
         typer.echo(f"Wrote persona export to {destination}")
         return True
 
@@ -1947,9 +1949,7 @@ def interview(
     date: str = typer.Option(..., "--date", "-d", help="Date (YYYY-MM-DD) to review."),
 ) -> None:
     """Surface targeted interview probes based on stale facets."""
-    workspace = _get_workspace()
-
-    config = load_config(workspace)
+    workspace, config = _workspace_with_config()
 
     profile_model, claim_models = load_profile_components(workspace, config=config)
     profile = profile_to_dict(profile_model)
