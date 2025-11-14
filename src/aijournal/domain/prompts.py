@@ -204,10 +204,56 @@ def _source_from_prompt_fact(item: PromptMicroFact) -> SourceRef:
     return SourceRef(entry_id=entry_id, spans=spans)
 
 
+_METADATA_ID_HINTS = (
+    "entry-created",
+    "frontmatter",
+    "metadata",
+    "title-",
+    "tags-",
+    "mood-",
+    "slug",
+)
+
+_METADATA_STATEMENT_HINTS = (
+    "entry created",  # e.g. "Entry created on 2025-11-14"
+    "title is",
+    "tags include",
+    "tagged",
+    "front matter",
+    "metadata",
+    "slug",
+)
+
+
+def is_metadata_only_fact(item: PromptMicroFact) -> bool:
+    """Heuristic filter for metadata-only micro-facts.
+
+    Drops statements that merely restate front-matter (created_at, title, tags, mood)
+    or that omit an `evidence_entry`, which means the fact cannot be grounded in a
+    specific paragraph.
+    """
+
+    identifier = item.id.lower()
+    statement = item.statement.lower()
+
+    if not item.evidence_entry:
+        return True
+
+    if any(hint in identifier for hint in _METADATA_ID_HINTS):
+        return True
+
+    if any(hint in statement for hint in _METADATA_STATEMENT_HINTS):
+        return True
+
+    return False
+
+
 def convert_prompt_microfacts(prompt: PromptMicroFacts) -> Any:  # Returns MicroFactsFile
     """Convert lightweight prompt DTO to the authoritative micro-facts payload."""
 
     from aijournal.domain.facts import MicroFact, MicroFactsFile
+
+    filtered_facts = [fact for fact in prompt.facts if not is_metadata_only_fact(fact)]
 
     facts = [
         MicroFact(
@@ -218,7 +264,7 @@ def convert_prompt_microfacts(prompt: PromptMicroFacts) -> Any:  # Returns Micro
             first_seen=item.first_seen,
             last_seen=item.last_seen,
         )
-        for item in prompt.facts
+        for item in filtered_facts
     ]
 
     claim_proposals = [
