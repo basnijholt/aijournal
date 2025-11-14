@@ -106,7 +106,6 @@ def test_generate_characterization_fake_mode(monkeypatch) -> None:
     def normalize_claims(raw_claims, **kwargs):
         captured["raw_claims"] = raw_claims
         claim_input = _claim_input("entry-1")
-        # ClaimProposal is now flattened, populate all fields directly
         return [
             ClaimProposal(
                 type=claim_input.type,

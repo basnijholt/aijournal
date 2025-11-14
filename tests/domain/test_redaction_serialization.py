@@ -13,7 +13,6 @@ def _proposal_with_span_text() -> ClaimProposal:
         entry_id="2025-10-26-focus-log",
         spans=[Span(type="paragraph", index=0, text="sensitive text")],
     )
-    # ClaimProposal is now flattened (no nested claim field)
     return ClaimProposal(
         type="habit",
         subject="morning routine",

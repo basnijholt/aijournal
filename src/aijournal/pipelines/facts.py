@@ -231,7 +231,6 @@ def normalize_claim_proposals(
         except ValidationError:
             continue
 
-        # ClaimProposal is now flattened, extract claim fields
         claim_input_for_normalize = ClaimAtomInput(
             type=proposal.type,
             subject=proposal.subject,
@@ -276,7 +275,6 @@ def normalize_claim_proposals(
             for src in combined_sources
         ]
 
-        # ClaimProposal is now flattened, populate all fields directly
         proposals.append(
             ClaimProposal(
                 type=claim_input.type,

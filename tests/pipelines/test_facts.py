@@ -145,7 +145,6 @@ def test_generate_microfacts_merges_llm_and_derived(monkeypatch: pytest.MonkeyPa
     assert len(result.claim_proposals) == 1
     proposal = result.claim_proposals[0]
     assert isinstance(proposal, ClaimProposal)
-    # ClaimProposal is now flattened (no nested claim field)
     assert proposal.statement == "Completed focus block"
     assert proposal.normalized_ids == ["entry-1"]
     assert proposal.manifest_hashes == ["manifest-1"]

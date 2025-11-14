@@ -36,9 +36,9 @@ class ClaimAtomInput(StrictModel):
 
 
 class ClaimProposal(StrictModel):
-    """Structured claim update prepared for downstream review (flattened)."""
+    """Structured claim update prepared for downstream review."""
 
-    # Claim fields (previously nested in ClaimAtomInput)
+    # Claim fields
     type: ClaimType
     subject: str
     predicate: str

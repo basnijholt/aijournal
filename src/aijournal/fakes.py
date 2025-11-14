@@ -267,7 +267,6 @@ def fake_characterize(
         for source in claim.provenance.sources
     ]
 
-    # ClaimProposal is now flattened, populate all fields directly
     claim_proposal = ClaimProposal(
         type=claim_input.type,
         subject=claim_input.subject,
