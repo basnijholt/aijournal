@@ -473,6 +473,7 @@ def normalize_markdown(
         tags=tags,
         sections=sections_models,
         summary=summary_text,
+        content=body.strip() if body.strip() else None,
         source_hash=source_hash,
         source_type=source_type,
     )

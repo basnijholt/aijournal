@@ -38,5 +38,6 @@ class NormalizedEntry(StrictModel):
     sections: list[Section] = Field(default_factory=list)
     entities: list[NormalizedEntity] = Field(default_factory=list)
     summary: str | None = None
+    content: str | None = None
     source_hash: str | None = None
     source_type: str | None = None
