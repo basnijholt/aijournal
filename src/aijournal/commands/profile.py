@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -473,10 +474,35 @@ def _apply_claim_proposal(
     timestamp: str,
     events: list[ClaimMergeOutcome] | None = None,
 ) -> bool:
-    claim_atom = _claim_proposal_to_atom(proposal, timestamp)
+    existing_ids = {claim.id for claim in claims if claim.id}
+    claim_atom = _claim_proposal_to_atom(proposal, timestamp, existing_ids)
     if claim_atom is None:
         return False
     return apply_claim_upsert(claims, claim_atom, timestamp, events)
+
+
+def _proposal_claim_id(
+    proposal: ClaimProposal,
+    statement: str,
+    existing_ids: set[str] | None = None,
+) -> str:
+    """Derive a stable, unique ID per statement/normalized_id combination."""
+
+    _ = existing_ids  # retained for backward compatibility; collisions are deterministic
+    normalized_statement = " ".join(statement.split()).lower()
+    digest = hashlib.sha256(normalized_statement.encode("utf-8")).hexdigest()[:8]
+    normalized_ids = [cid.strip() for cid in proposal.normalized_ids if cid]
+    if normalized_ids:
+        base = normalized_ids[0]
+    else:
+        slug = time_utils.slugify_title(statement) or "claim"
+        base = f"proposal-{slug}"
+    suffix = f"-{digest}"
+    max_base_len = max(1, 96 - len(suffix))
+    trimmed_base = base[:max_base_len].rstrip("-")
+    if trimmed_base:
+        return f"{trimmed_base}{suffix}"
+    return f"claim-{digest}"[:96]
 
 
 def _apply_facet_change(profile: dict[str, Any], change: FacetChange, timestamp: str) -> bool:
@@ -489,19 +515,18 @@ def _apply_facet_change(profile: dict[str, Any], change: FacetChange, timestamp:
     return apply_profile_update(profile, path, change.value, timestamp)
 
 
-def _claim_proposal_to_atom(proposal: ClaimProposal, timestamp: str) -> ClaimAtom | None:
+def _claim_proposal_to_atom(
+    proposal: ClaimProposal,
+    timestamp: str,
+    existing_ids: set[str] | None = None,
+) -> ClaimAtom | None:
     claim_input = proposal.claim
     statement = claim_input.statement.strip()
     if not statement:
         typer.secho("Skipping claim proposal without statement.", fg=typer.colors.YELLOW, err=True)
         return None
 
-    canonical_id = next((cid for cid in proposal.normalized_ids if cid), None)
-    if canonical_id:
-        claim_id = canonical_id[:96]
-    else:
-        slug = time_utils.slugify_title(statement) or "claim"
-        claim_id = f"proposal-{slug}"[:96]
+    claim_id = _proposal_claim_id(proposal, statement, existing_ids)
 
     evidence_sources = _source_refs_to_claim_sources(
         proposal.evidence,

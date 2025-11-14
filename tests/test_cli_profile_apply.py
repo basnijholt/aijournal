@@ -150,7 +150,7 @@ def test_profile_apply_merges_suggestions(
 
     claims = yaml.safe_load((cli_workspace / "profile" / "claims.yaml").read_text(encoding="utf-8"))
     new_claims = {claim["id"] for claim in claims["claims"]}
-    assert "pref_evening" in new_claims
+    assert any(cid.startswith("pref_evening") for cid in new_claims)
     assert len(claims["claims"]) == len(new_claims), "Duplicate claim IDs"
 
     profile = yaml.safe_load(
