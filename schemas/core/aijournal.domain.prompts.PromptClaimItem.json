@@ -1,5 +1,23 @@
 {
   "$defs": {
+    "ClaimMethod": {
+      "enum": [
+        "self_report",
+        "inferred",
+        "behavioral"
+      ],
+      "title": "ClaimMethod",
+      "type": "string"
+    },
+    "ClaimStatus": {
+      "enum": [
+        "accepted",
+        "tentative",
+        "rejected"
+      ],
+      "title": "ClaimStatus",
+      "type": "string"
+    },
     "ClaimType": {
       "enum": [
         "preference",
@@ -36,6 +54,17 @@
       "title": "Evidence Para",
       "type": "integer"
     },
+    "method": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ClaimMethod"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
     "predicate": {
       "anyOf": [
         {
@@ -61,10 +90,77 @@
       "default": null,
       "title": "Reason"
     },
+    "scope_conditions": {
+      "anyOf": [
+        {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Scope Conditions"
+    },
+    "scope_context": {
+      "anyOf": [
+        {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Scope Context"
+    },
+    "scope_domain": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Scope Domain"
+    },
     "statement": {
       "maxLength": 160,
       "title": "Statement",
       "type": "string"
+    },
+    "status": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ClaimStatus"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "strength": {
+      "anyOf": [
+        {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Strength"
     },
     "subject": {
       "anyOf": [
