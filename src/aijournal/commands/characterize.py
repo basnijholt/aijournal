@@ -39,6 +39,10 @@ from aijournal.domain.changes import (
 )
 from aijournal.domain.claims import ClaimAtom
 from aijournal.domain.journal import NormalizedEntry
+from aijournal.domain.prompts import (
+    PromptProfileUpdates,
+    convert_prompt_updates_to_proposals,
+)
 from aijournal.io.artifacts import save_artifact
 from aijournal.io.yaml_io import load_yaml_model
 from aijournal.models.authoritative import ManifestEntry
@@ -71,6 +75,7 @@ class CharacterizePrepared:
     profile: dict[str, Any]
     claim_models: Sequence[ClaimAtom]
     config: AppConfig
+    workspace: Path
 
 
 @dataclass(slots=True)
@@ -129,6 +134,7 @@ def run_characterize_command(
             profile=profile,
             claim_models=claim_models,
             config=ctx.config,
+            workspace=ctx.workspace,
         )
 
     def _invoke_pipeline(ctx: RunContext, prepared: CharacterizePrepared) -> CharacterizeResult:
@@ -141,6 +147,7 @@ def run_characterize_command(
                 prepared.claim_models,
                 prepared.manifest_index,
                 prepared.config,
+                workspace=prepared.workspace,
                 timeout=prepared.timeout,
                 retries=prepared.retries,
                 use_fake_llm=ctx.use_fake_llm,
@@ -329,6 +336,7 @@ def _characterize_payload(
     manifest_index: dict[str, ManifestEntry],
     config: AppConfig,
     *,
+    workspace: Path,
     timeout: float | None = None,
     retries: int,
     use_fake_llm: bool,
@@ -338,26 +346,32 @@ def _characterize_payload(
 ) -> tuple[ProfileUpdateProposals, list[str]]:
     claim_timestamp = time_utils.format_timestamp(time_utils.now())
     context = _characterization_context(entries, manifest_index)
+    hash_lookup = {
+        entry_id: manifest.hash
+        for entry_id, manifest in manifest_index.items()
+        if getattr(manifest, "hash", None)
+    }
     target_date = date or time_utils.created_date(claim_timestamp)
     manifest_payload = _json_block(
         {key: entry.model_dump(mode="python") for key, entry in manifest_index.items()},
     )
 
     def request_characterize() -> ProfileUpdateProposals:
-        return cast(
-            ProfileUpdateProposals,
+        # LLM emits lightweight DTO with only 8 fields per claim
+        llm_response = cast(
+            PromptProfileUpdates,
             invoke_structured_llm(
                 "prompts/characterize.md",
                 {
                     "date": target_date,
-                    "entries_json": _json_block(_entries_to_payload(entries)),
+                    "entries_json": _json_block(_entries_to_payload(entries, workspace)),
                     "profile_json": _json_block(profile),
                     "claims_json": _json_block(
                         {"claims": [claim.model_dump(mode="python") for claim in claims]}
                     ),
                     "manifest_json": manifest_payload,
                 },
-                response_model=ProfileUpdateProposals,
+                response_model=PromptProfileUpdates,
                 agent_name="aijournal-characterize",
                 config=config,
                 timeout=timeout,
@@ -367,6 +381,13 @@ def _characterize_payload(
                     "Do not add other keys or narrative text."
                 ),
             ),
+        )
+        # Convert lightweight DTO to full domain model with system metadata
+        return convert_prompt_updates_to_proposals(
+            llm_response,
+            normalized_ids=context[0],
+            manifest_hashes=context[1],
+            entry_hash_lookup=hash_lookup,
         )
 
     return characterize_pipeline.generate_characterization(

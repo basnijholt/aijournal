@@ -1,66 +1,44 @@
-# Issues observed during 2025-11-13 live run
+# Outstanding Issues – November 14, 2025
 
-This report captures the regressions uncovered while running the `aijournal`
-CLI against real journal entries (command sequence reproduced via
-`aij capture --from ~/example-blog-entries > output.log`). It’s intended to give
-future agents full context before attempting fixes or re-runs.
+- **Characterize resilience (High)**  
+  **Rationale:** Stage 5 still flakes in two ways: (a) DTO rejects optional fields like scope/provenance, yielding `extra_forbidden` errors; (b) very large entries (e.g., 8 KB blog posts) hit timeouts or Ollama JSON parse errors. Both leave capture half-finished.  
+  **Acceptance criteria:** (1) DTO/converter tolerate optional scope/provenance fields and strip unsupported keys before validation. (2) Characterize runner escalates timeout/attempts for large entries (e.g., adaptive retries or chunking). (3) Running `uv run aijournal capture --from ~/example-blog-entries` completes stage 5 for all dates without manual retries, with the run log showing either success or graceful degradation per-entry instead of overall failure.  
+  **Actions:** relax DTO, add tolerant converter, implement adaptive retry/timeout logic (or chunk long bodies), and expand tests to cover both schema and long-entry scenarios.
 
-## 1. Characterize stage fails schema validation
+- **Command/docs drift for `ops pipeline extract-facts` (Low)**  
+  **Rationale:** The command is deprecated, yet our troubleshooting instructions still recommend it; running it in a fresh workspace emits “No normalized entries” and confuses operators.  
+  **Acceptance criteria:** (1) Documentation points users to `capture --min-stage 3 --max-stage 3` instead. (2) The command either becomes a thin wrapper around capture or prints a clearer guidance message. (3) `issues.md` entry closed once docs/tests updated.  
+  **Actions:** update docs/workflow.md + CLI help and ensure acceptance tests cover the recommended workflow.
 
-- **Command**: `aij capture --from ~/example-blog-entries > output.log`
-- **Stage**: Characterize (`capture` stage 5)
-- **Error**: `Structured output generation failed for prompts/characterize.md: Model response failed validation after retries … extra_forbidden @ loc ['summary']`
-- **Impact**: Capture aborts after stage 4. No characterization batches are
-  generated; downstream persona/index refreshes never run. Applying profile
-  updates stalls, and `capture` prints `Characterize failed` despite retries.
-- **Diagnosis**:
-  - `prompts/characterize.md` forbids extra top-level keys, but the live model
-    produced `{claims: [...], facets: [...], interview_prompts: [...], summary: ...}`.
-  - `_invoke_structured_llm` stops after `DEFAULT_LLM_RETRIES + 1` attempts, so
-    this keeps failing in live mode.
-- **Open questions**:
-  1. Should the prompt remind the model not to emit `summary`, or should the
-     schema accept it (e.g., via optional field we strip)?
-  2. Should stage 5 expose a `--retries` override (it currently inherits the CLI
-     flag) or implement adaptive retry messaging when the same field repeats?
-- **Next steps**: update either the prompt template or the response model plus
-  normalization logic so extra keys are ignored/stripped, then re-run
-  `capture --min-stage 5 --max-stage 5 --date <affected-date>` to regenerate the
-  pending batches.
+- **Prompt logging ergonomics (Low)**  
+  **Rationale:** We can log prompts via `sitecustomize`, but it’s ad-hoc. Engineers need a first-class flag (e.g., `AIJOURNAL_TRACE_PROMPTS=1`) that writes prompts/replies into `derived/logs/structured_prompts.log`.  
+  **Acceptance criteria:** (1) Setting the env var produces per-call entries (command, prompt path, prompt JSON, reply JSON). (2) Running without the flag imposes no overhead. (3) Docs reference the feature for live runs.  
+  **Actions:** wrap the current hook in a supported feature and document it.
 
-## ✅ Fixed: Journal summaries no longer duplicate full body content
+Update this list as fixes land so future agents know which items remain.
 
-- **Resolution**: Stage 0 now derives a deterministic summary when one is
-  missing by taking the first paragraph, collapsing whitespace, trimming to 400
-  characters, and appending `...` when truncated (see
-  `src/aijournal/services/capture/stages/stage0_persist.py`). Existing summaries
-  remain untouched so reruns stay idempotent.
-- **Tests**: `tests/services/capture/test_summary_policy.py` covers “missing
-  summary”, “existing summary”, and “long body with ellipsis” scenarios.
-- **Docs**: README + `docs/workflow.md` describe the policy for future runs.
-- **Outcome**: Imported Markdown stays readable and downstream prompts receive a
-  concise synopsis without extra LLM calls.
+---
 
-## ✅ Fixed: Claim proposals now get stable unique IDs
+# Resolved / Historical Context
 
-- **Resolution**: `_proposal_claim_id` now appends an 8-character SHA-256 hash of
-  the normalized statement to the first `normalized_id` (or slug fallback),
-  ensuring each statement/entry pair receives a unique, deterministic ID. This
-  change lives in `src/aijournal/commands/profile.py`.
-- **Tests**: `tests/services/test_claim_id_generation.py` asserts (a) multiple
-  proposals from the same normalized entry get unique IDs and (b) `_apply_claim_proposal`
-  keeps every statement without overwriting prior claims.
-- **Outcome**: `profile/claims.yaml` now contains every accepted statement from a
-  date, eliminating the silent overwrite that previously occurred.
+## Date field not recognized from imports (✅ fixed in 390a352)
+- **Command:** `uv run aijournal capture --from ~/example-blog-entries`
+- **Stage:** Stage 0 (persist) misread Jekyll/WordPress `date` fields and fell back to filenames, so every imported entry landed under the wrong `YYYY/MM/DD` bucket. We now normalize common aliases (`date`, `published`, etc.) into `created_at` before inference and added tests in `test_stage_persist.py`.
 
-## Pending decisions / follow-ups
+## Opaque LLM errors (✅ fixed in 52591cf)
+- Capture previously printed `stage exited with code 1` without the underlying `LLMResponseError`. Commands now chain `typer.Exit` and the graceful wrappers unwrap the cause, so operators see the real timeout/schema message.
 
-1. **Characterize schema** – Decide whether to loosen the schema or reinforce
-   the prompt, then patch stage 5 to prevent repeated failures.
-2. **Summary auto-fill** – ✅ Deterministic first-paragraph summaries now ship in
-   stage 0 with tests and docs.
-3. **Claim ID validation** – ✅ Stable hashed IDs and regression tests are in
-   place; reruns retain all claims.
+## Summaries duplicated full body (✅ fixed)
+- Stage 0 now synthesizes a ≤400‑char first paragraph when `summary` is absent, leaving existing summaries untouched. Tests: `tests/services/capture/test_summary_policy.py`.
 
-Please keep this document updated as fixes land, so future agents can see which
-issues remain outstanding before starting a live run.
+## Claim proposals reused IDs (✅ fixed)
+- `_proposal_claim_id` now appends an 8‑char SHA of the normalized statement, preventing overwrites when multiple proposals share the same `normalized_id`. Regression test: `tests/services/test_claim_id_generation.py`.
+
+## Characterize flakes on large entries (⚠ ongoing)
+- Live run 2025‑11‑13: 8KB Dutch entry timed out/hit JSON parse errors. Even after DTO fixes, long entries still require adaptive timeouts or chunking; see “Characterize resilience” above for acceptance criteria.
+
+## Prompt/LLM contract hygiene (✅ fixed in current branch)
+- Added contributor checklist + workflow/TLDR notes covering DTO rules, added pytest guard `tests/ci/test_prompt_contracts.py`, and ensured Typer commands only point `response_model` at `Prompt*`, `DailySummary`, or `AdviceCard`.
+
+## Micro-facts quality & metadata leakage (✅ fixed in current branch)
+- Prompt now warns against metadata-only statements, `convert_prompt_microfacts` filters them via `is_metadata_only_fact`, and regression tests cover the heuristics. Facts referencing only front matter are discarded before persistence.

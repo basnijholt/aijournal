@@ -65,6 +65,7 @@ class DailySummaryPrepared:
     entries: list[NormalizedEntry]
     timeout: float
     retries: int
+    workspace: Path
 
 
 @dataclass(slots=True)
@@ -159,8 +160,26 @@ def _json_block(data: Any) -> str:
     return json.dumps(data, indent=2, ensure_ascii=False)
 
 
-def _entries_to_payload(entries: Sequence[NormalizedEntry]) -> list[dict[str, Any]]:
-    return [entry.model_dump(mode="python") for entry in entries]
+def _entry_raw_markdown(entry: NormalizedEntry, workspace: Path) -> str | None:
+    source = Path(entry.source_path)
+    if not source.is_absolute():
+        source = workspace / source
+    try:
+        return source.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return None
+
+
+def _entries_to_payload(
+    entries: Sequence[NormalizedEntry],
+    workspace: Path,
+) -> list[dict[str, Any]]:
+    payloads: list[dict[str, Any]] = []
+    for entry in entries:
+        item = entry.model_dump(mode="python")
+        item["raw_markdown"] = _entry_raw_markdown(entry, workspace)
+        payloads.append(item)
+    return payloads
 
 
 def _load_normalized_entries(workspace: Path, config: AppConfig, day: str) -> list[NormalizedEntry]:
@@ -237,6 +256,7 @@ def prepare_inputs(ctx: RunContext, options: DailySummaryOptions) -> DailySummar
         entries=list(entries),
         timeout=timeout_value,
         retries=options.retries,
+        workspace=ctx.workspace,
     )
 
 
@@ -245,6 +265,7 @@ def invoke_pipeline(ctx: RunContext, prepared: DailySummaryPrepared) -> DailySum
         prepared.entries,
         prepared.date,
         ctx.config,
+        workspace=prepared.workspace,
         timeout=prepared.timeout,
         retries=prepared.retries,
         use_fake_llm_override=ctx.use_fake_llm,
@@ -278,7 +299,8 @@ def _summarize_day_payload(
     date: str,
     config: AppConfig,
     *,
-    timeout: float | None,
+    workspace: Path,
+    timeout: float | None = None,
     retries: int,
     invoke_structured_llm: Callable[..., BaseModel] | None = None,
     structured_call: Callable[..., BaseModel] | None = None,
@@ -295,7 +317,7 @@ def _summarize_day_payload(
                 "prompts/summarize_day.md",
                 {
                     "date": date,
-                    "entries_json": _json_block(_entries_to_payload(entries)),
+                    "entries_json": _json_block(_entries_to_payload(entries, workspace)),
                 },
                 response_model=DailySummary,
                 agent_name="aijournal-summarize",

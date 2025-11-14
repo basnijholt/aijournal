@@ -36,6 +36,7 @@ from aijournal.domain.claims import (
 )
 from aijournal.domain.evidence import SourceRef, redact_source_text
 from aijournal.domain.journal import NormalizedEntry
+from aijournal.domain.prompts import PromptProfileUpdates, convert_prompt_updates_to_proposals
 from aijournal.fakes import fake_profile_proposals
 from aijournal.io.artifacts import load_artifact_data, save_artifact
 from aijournal.io.yaml_io import load_yaml_model, write_yaml_model
@@ -65,6 +66,7 @@ class ProfileSuggestPrepared:
     profile: dict[str, Any]
     claims: list[ClaimAtom]
     config: AppConfig
+    workspace: Path
 
 
 @dataclass(slots=True)
@@ -245,6 +247,7 @@ def run_profile_suggest_command(
             profile=profile,
             claims=claims,
             config=ctx.config,
+            workspace=ctx.workspace,
         )
 
     def _invoke(_: RunContext, prepared: ProfileSuggestPrepared) -> ProfileSuggestResult:
@@ -255,6 +258,7 @@ def run_profile_suggest_command(
                 prepared.claims,
                 prepared.date,
                 prepared.config,
+                workspace=prepared.workspace,
                 timeout=prepared.timeout,
                 retries=prepared.retries,
             )
@@ -416,9 +420,11 @@ def _profile_proposals_payload(
     date: str,
     config: AppConfig,
     *,
+    workspace: Path,
     timeout: float | None = None,
     retries: int = DEFAULT_PROFILE_RETRIES,
 ) -> ProfileUpdateProposals:
+    entry_ids, entry_hashes = _profile_entry_context(entries)
     if use_fake_llm():
         proposals = fake_profile_proposals(
             entries,
@@ -427,19 +433,20 @@ def _profile_proposals_payload(
             build_claim=_build_claim_atom_from_entry,
         )
     else:
-        proposals = cast(
-            ProfileUpdateProposals,
+        # LLM emits lightweight DTO with only 8 fields per claim
+        llm_response = cast(
+            PromptProfileUpdates,
             _invoke_structured_llm(
                 "prompts/profile_suggest.md",
                 {
                     "date": date,
-                    "entries_json": _json_block(_entries_to_payload(entries)),
+                    "entries_json": _json_block(_entries_to_payload(entries, workspace)),
                     "profile_json": _json_block(profile),
                     "claims_json": _json_block(
                         {"claims": [claim.model_dump(mode="python") for claim in claims]}
                     ),
                 },
-                response_model=ProfileUpdateProposals,
+                response_model=PromptProfileUpdates,
                 agent_name="aijournal-profile-suggest",
                 config=config,
                 timeout=timeout,
@@ -449,6 +456,12 @@ def _profile_proposals_payload(
                     "when follow-up questions are warranted."
                 ),
             ),
+        )
+        # Convert lightweight DTO to full domain model with system metadata
+        proposals = convert_prompt_updates_to_proposals(
+            llm_response,
+            normalized_ids=entry_ids,
+            manifest_hashes=entry_hashes,
         )
 
     return _sanitize_proposals(proposals)
@@ -466,6 +479,16 @@ def _sanitize_proposals(proposals: ProfileUpdateProposals) -> ProfileUpdatePropo
         for change in proposals.facets
     ]
     return proposals.model_copy(update={"claims": sanitized_claims, "facets": sanitized_facets})
+
+
+def _profile_entry_context(
+    entries: Sequence[NormalizedEntry],
+) -> tuple[list[str], list[str]]:
+    normalized_ids: list[str] = []
+    for idx, entry in enumerate(entries):
+        entry_id = entry.id or f"entry-{idx + 1}"
+        normalized_ids.append(entry_id)
+    return normalized_ids, []
 
 
 def _apply_claim_proposal(
@@ -520,8 +543,7 @@ def _claim_proposal_to_atom(
     timestamp: str,
     existing_ids: set[str] | None = None,
 ) -> ClaimAtom | None:
-    claim_input = proposal.claim
-    statement = claim_input.statement.strip()
+    statement = proposal.statement.strip()
     if not statement:
         typer.secho("Skipping claim proposal without statement.", fg=typer.colors.YELLOW, err=True)
         return None
@@ -537,17 +559,17 @@ def _claim_proposal_to_atom(
 
     raw_claim = {
         "id": claim_id,
-        "type": claim_input.type,
-        "subject": claim_input.subject,
-        "predicate": claim_input.predicate,
-        "value": claim_input.value,
-        "statement": claim_input.statement,
-        "scope": claim_input.scope.model_dump(mode="python"),
-        "strength": claim_input.strength,
-        "status": claim_input.status,
-        "method": claim_input.method,
-        "user_verified": claim_input.user_verified,
-        "review_after_days": claim_input.review_after_days,
+        "type": proposal.type,
+        "subject": proposal.subject,
+        "predicate": proposal.predicate,
+        "value": proposal.value,
+        "statement": proposal.statement,
+        "scope": proposal.scope.model_dump(mode="python"),
+        "strength": proposal.strength,
+        "status": proposal.status,
+        "method": proposal.method,
+        "user_verified": proposal.user_verified,
+        "review_after_days": proposal.review_after_days,
         "provenance": {
             "sources": [source.model_dump(mode="python") for source in evidence_sources],
             "first_seen": time_utils.created_date(timestamp),

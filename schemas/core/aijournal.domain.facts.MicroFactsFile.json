@@ -1,66 +1,5 @@
 {
   "$defs": {
-    "ClaimAtomInput": {
-      "additionalProperties": false,
-      "description": "Normalized claim payload without identifiers or provenance.",
-      "properties": {
-        "method": {
-          "$ref": "#/$defs/ClaimMethod"
-        },
-        "predicate": {
-          "title": "Predicate",
-          "type": "string"
-        },
-        "review_after_days": {
-          "title": "Review After Days",
-          "type": "integer"
-        },
-        "scope": {
-          "$ref": "#/$defs/Scope"
-        },
-        "statement": {
-          "title": "Statement",
-          "type": "string"
-        },
-        "status": {
-          "$ref": "#/$defs/ClaimStatus"
-        },
-        "strength": {
-          "title": "Strength",
-          "type": "number"
-        },
-        "subject": {
-          "title": "Subject",
-          "type": "string"
-        },
-        "type": {
-          "$ref": "#/$defs/ClaimType"
-        },
-        "user_verified": {
-          "title": "User Verified",
-          "type": "boolean"
-        },
-        "value": {
-          "title": "Value",
-          "type": "string"
-        }
-      },
-      "required": [
-        "type",
-        "subject",
-        "predicate",
-        "value",
-        "statement",
-        "scope",
-        "strength",
-        "status",
-        "method",
-        "user_verified",
-        "review_after_days"
-      ],
-      "title": "ClaimAtomInput",
-      "type": "object"
-    },
     "ClaimConflictPayload": {
       "additionalProperties": false,
       "description": "Structured conflict emitted during consolidation previews.",
@@ -255,9 +194,6 @@
       "additionalProperties": false,
       "description": "Structured claim update prepared for downstream review.",
       "properties": {
-        "claim": {
-          "$ref": "#/$defs/ClaimAtomInput"
-        },
         "evidence": {
           "items": {
             "$ref": "#/$defs/SourceRef"
@@ -272,12 +208,19 @@
           "title": "Manifest Hashes",
           "type": "array"
         },
+        "method": {
+          "$ref": "#/$defs/ClaimMethod"
+        },
         "normalized_ids": {
           "items": {
             "type": "string"
           },
           "title": "Normalized Ids",
           "type": "array"
+        },
+        "predicate": {
+          "title": "Predicate",
+          "type": "string"
         },
         "rationale": {
           "anyOf": [
@@ -290,10 +233,53 @@
           ],
           "default": null,
           "title": "Rationale"
+        },
+        "review_after_days": {
+          "title": "Review After Days",
+          "type": "integer"
+        },
+        "scope": {
+          "$ref": "#/$defs/Scope"
+        },
+        "statement": {
+          "title": "Statement",
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/ClaimStatus"
+        },
+        "strength": {
+          "title": "Strength",
+          "type": "number"
+        },
+        "subject": {
+          "title": "Subject",
+          "type": "string"
+        },
+        "type": {
+          "$ref": "#/$defs/ClaimType"
+        },
+        "user_verified": {
+          "title": "User Verified",
+          "type": "boolean"
+        },
+        "value": {
+          "title": "Value",
+          "type": "string"
         }
       },
       "required": [
-        "claim"
+        "type",
+        "subject",
+        "predicate",
+        "value",
+        "statement",
+        "scope",
+        "strength",
+        "status",
+        "method",
+        "user_verified",
+        "review_after_days"
       ],
       "title": "ClaimProposal",
       "type": "object"

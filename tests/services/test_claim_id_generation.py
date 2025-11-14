@@ -28,7 +28,17 @@ def _make_proposal(
         review_after_days=120,
     )
     return ClaimProposal(
-        claim=claim_input,
+        type=claim_input.type,
+        subject=claim_input.subject,
+        predicate=claim_input.predicate,
+        value=claim_input.value,
+        statement=claim_input.statement,
+        scope=claim_input.scope,
+        strength=claim_input.strength,
+        status=claim_input.status,
+        method=claim_input.method,
+        user_verified=claim_input.user_verified,
+        review_after_days=claim_input.review_after_days,
         normalized_ids=[normalized_id],
         evidence=[SourceRef(entry_id=normalized_id, spans=[])],
     )
@@ -40,12 +50,12 @@ def test_claim_ids_include_hash_suffix_for_uniqueness() -> None:
 
     id_a = profile_cmd._proposal_claim_id(  # noqa: SLF001
         proposal_a,
-        proposal_a.claim.statement,
+        proposal_a.statement,
         set(),
     )
     id_b = profile_cmd._proposal_claim_id(  # noqa: SLF001
         proposal_b,
-        proposal_b.claim.statement,
+        proposal_b.statement,
         {id_a},
     )
 

@@ -1,6 +1,5 @@
-You analyze normalized journal entries and produce micro-facts as structured JSON.
-Return JSON with exactly this structure (keep every property inside each fact object). You only need to emit
-the `facts` array; the outer structure is added automatically:
+You analyze normalized journal entries and produce micro-facts (plus optional claim proposals) as structured JSON.
+Return JSON with exactly the keys `facts` and `claim_proposals` (omit the claim array when empty).
 
 ```
 {
@@ -9,14 +8,28 @@ the `facts` array; the outer structure is added automatically:
       "id": "kebab-case identifier",
       "statement": "Atomic observation",
       "confidence": 0.0-1.0,
-      "evidence": {
-        "entry_id": "id from input entries",
-        "spans": [
-          {"type": "para", "index": <paragraph index>}
-        ]
-      },
+      "evidence_entry": "id from input entries",
+      "evidence_para": <paragraph index>,
       "first_seen": "YYYY-MM-DD",
       "last_seen": "YYYY-MM-DD"
+    }
+  ],
+  "claim_proposals": [
+    {
+      "type": "preference|value|goal|boundary|trait|habit|aversion|skill",
+      "statement": "Readable sentence (≤160 chars)",
+      "subject": "optional subject (≤80 chars)",
+      "predicate": "optional predicate (≤80 chars)",
+      "value": "optional value (≤160 chars)",
+      "strength": 0.0-1.0 (optional),
+      "status": "accepted|tentative|rejected" (optional),
+      "method": "self_report|inferred|behavioral" (optional),
+      "scope_domain": "optional domain",
+      "scope_context": ["optional tags"],
+      "scope_conditions": ["optional qualifiers"],
+      "reason": "≤25 word justification",
+      "evidence_entry": "normalized-entry-id",
+      "evidence_para": 0
     }
   ]
 }
@@ -30,9 +43,9 @@ Guidelines:
 - Reference entry IDs exactly as supplied.
 - Confidence reflects evidence strength (default 0.6 if unsure).
 - Reuse the entry's `created_at` date for `first_seen`/`last_seen` when only one mention exists.
+- Claim proposals are optional; emit them only when you can cite specific evidence that maps to a persona insight.
 - Do not include analysis or prose outside JSON.
-
-If you cannot produce a valid payload matching this schema, respond with `{"facts": []}` as
+If you cannot produce a valid payload matching this schema, respond with `{"facts": [], "claim_proposals": []}` as
 the full response.
 See `prompts/examples/extract_facts.json` for a concrete example.
 

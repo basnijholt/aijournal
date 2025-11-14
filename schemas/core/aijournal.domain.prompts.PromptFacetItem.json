@@ -1,0 +1,70 @@
+{
+  "$defs": {
+    "FacetOperation": {
+      "enum": [
+        "set",
+        "remove",
+        "merge"
+      ],
+      "title": "FacetOperation",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Lightweight facet change that LLM emits (no system metadata).",
+  "properties": {
+    "evidence_entry": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Evidence Entry"
+    },
+    "evidence_para": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Evidence Para",
+      "type": "integer"
+    },
+    "operation": {
+      "$ref": "#/$defs/FacetOperation"
+    },
+    "path": {
+      "title": "Path",
+      "type": "string"
+    },
+    "reason": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Reason"
+    },
+    "value": {
+      "anyOf": [
+        {},
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Value"
+    }
+  },
+  "required": [
+    "path",
+    "operation"
+  ],
+  "title": "PromptFacetItem",
+  "type": "object"
+}

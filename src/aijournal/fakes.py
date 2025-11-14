@@ -188,7 +188,17 @@ def fake_profile_proposals(
         evidence = [SourceRef(entry_id=entry.id or claim_id, spans=[])]
         claim_proposals.append(
             ClaimProposal(
-                claim=claim_input,
+                type=claim_input.type,
+                subject=claim_input.subject,
+                predicate=claim_input.predicate,
+                value=claim_input.value,
+                statement=claim_input.statement,
+                scope=claim_input.scope,
+                strength=claim_input.strength,
+                status=claim_input.status,
+                method=claim_input.method,
+                user_verified=claim_input.user_verified,
+                review_after_days=claim_input.review_after_days,
                 normalized_ids=[claim_id],
                 evidence=evidence,
                 rationale="Captured new observation",
@@ -258,7 +268,17 @@ def fake_characterize(
     ]
 
     claim_proposal = ClaimProposal(
-        claim=claim_input,
+        type=claim_input.type,
+        subject=claim_input.subject,
+        predicate=claim_input.predicate,
+        value=claim_input.value,
+        statement=claim_input.statement,
+        scope=claim_input.scope,
+        strength=claim_input.strength,
+        status=claim_input.status,
+        method=claim_input.method,
+        user_verified=claim_input.user_verified,
+        review_after_days=claim_input.review_after_days,
         normalized_ids=[],
         evidence=evidence,
         manifest_hashes=[],

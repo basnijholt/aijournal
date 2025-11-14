@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
@@ -158,7 +159,14 @@ def test_summarize_structured_success(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(cli, "_structured_call_with_retry", fake_retry)
     monkeypatch.setattr(cli, "_invoke_structured_llm", fake_invoke)
 
-    summary = cli._summarize_day_payload([entry], DATE, {}, timeout=30.0, retries=1)
+    summary = cli._summarize_day_payload(
+        [entry],
+        DATE,
+        {},
+        workspace=Path("."),
+        timeout=30.0,
+        retries=1,
+    )
 
     assert summary.day == DATE
     assert summary.bullets
@@ -184,7 +192,14 @@ def test_summarize_structured_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(cli, "_structured_call_with_retry", fake_retry)
 
     with pytest.raises(LLMResponseError):
-        cli._summarize_day_payload([entry], DATE, {}, timeout=30.0, retries=0)
+        cli._summarize_day_payload(
+            [entry],
+            DATE,
+            {},
+            workspace=Path("."),
+            timeout=30.0,
+            retries=0,
+        )
 
 
 def test_invoke_structured_llm_uses_shared_builder(monkeypatch: pytest.MonkeyPatch) -> None:

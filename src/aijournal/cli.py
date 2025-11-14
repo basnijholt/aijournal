@@ -754,7 +754,8 @@ def _summarize_day_payload(
     date: str,
     config: AppConfig,
     *,
-    timeout: float | None,
+    workspace: Path,
+    timeout: float | None = None,
     retries: int,
 ) -> Any:
     """Proxy to the summarize command helper with test-friendly overrides."""
@@ -763,6 +764,7 @@ def _summarize_day_payload(
         entries,
         date,
         config,
+        workspace=workspace,
         timeout=timeout,
         retries=retries,
         invoke_structured_llm=_invoke_structured_llm,
@@ -1208,9 +1210,9 @@ def review_updates(
         label = (
             claim_proposal.normalized_ids[0]
             if claim_proposal.normalized_ids
-            else claim_proposal.claim.statement[:48]
+            else claim_proposal.statement[:48]
         )
-        typer.echo(f"- claim {label}: {claim_proposal.claim.statement}")
+        typer.echo(f"- claim {label}: {claim_proposal.statement}")
 
     for facet_proposal in facet_proposals:
         if facet_proposal.path:
@@ -1789,7 +1791,11 @@ def _preview_claim_consolidation(
 
 
 def _claim_proposal_to_atom(proposal: ClaimProposal, *, timestamp: str) -> ClaimAtom:
-    claim_payload = proposal.claim.model_dump(mode="python")
+    # Extract claim fields only (exclude proposal metadata)
+    claim_payload = proposal.model_dump(
+        mode="python",
+        exclude={"normalized_ids", "evidence", "manifest_hashes", "rationale"},
+    )
     evidence_sources = [
         ClaimSource.model_validate(
             redact_source_text(source).model_dump(mode="python"),
@@ -2007,7 +2013,7 @@ def interview(
                             "claims_json": _json_block(
                                 {"claims": [claim.model_dump(mode="python") for claim in claims]}
                             ),
-                            "entries_json": _json_block(_entries_to_payload(entries)),
+                            "entries_json": _json_block(_entries_to_payload(entries, workspace)),
                             "rankings_json": _json_block(rankings_payload),
                             "coaching_prefs_json": _json_block(profile.get("coaching_prefs", {})),
                         },

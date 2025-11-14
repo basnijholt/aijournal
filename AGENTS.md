@@ -17,6 +17,7 @@ This document distills everything learned while executing the full aijournal CLI
   - **False Positives**: The linter may incorrectly flag issues in `pyproject.toml`; these can be ignored.
   - **Test-Related Errors**: If a pre-commit fix breaks a test (e.g., by removing an unused but necessary fixture), suppress the warning with a `# noqa: <error_code>` comment.
 - **Be Proactive**: Continuously look for opportunities to refactor and improve the codebase for better organization and readability.
+- **Zero Legacy Policy**: This library has zero external users and no releases, so skip migrations/backward-compat layers and delete deprecated code instead of keeping shims.
 - **Incremental Changes**: Refactor in small, testable steps. Run tests after each change and commit on success.
 - **DO NOT** manually edit the CLI help messages in `README.md`. They are auto-generated.
 - **NEVER** use `git add .`.

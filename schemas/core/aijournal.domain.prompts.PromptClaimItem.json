@@ -1,0 +1,201 @@
+{
+  "$defs": {
+    "ClaimMethod": {
+      "enum": [
+        "self_report",
+        "inferred",
+        "behavioral"
+      ],
+      "title": "ClaimMethod",
+      "type": "string"
+    },
+    "ClaimStatus": {
+      "enum": [
+        "accepted",
+        "tentative",
+        "rejected"
+      ],
+      "title": "ClaimStatus",
+      "type": "string"
+    },
+    "ClaimType": {
+      "enum": [
+        "preference",
+        "value",
+        "goal",
+        "boundary",
+        "trait",
+        "habit",
+        "aversion",
+        "skill"
+      ],
+      "title": "ClaimType",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Lightweight claim item that LLM emits (no system metadata).",
+  "properties": {
+    "evidence_entry": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Evidence Entry"
+    },
+    "evidence_para": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Evidence Para",
+      "type": "integer"
+    },
+    "method": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ClaimMethod"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "predicate": {
+      "anyOf": [
+        {
+          "maxLength": 80,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Predicate"
+    },
+    "reason": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Reason"
+    },
+    "scope_conditions": {
+      "anyOf": [
+        {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Scope Conditions"
+    },
+    "scope_context": {
+      "anyOf": [
+        {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Scope Context"
+    },
+    "scope_domain": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Scope Domain"
+    },
+    "statement": {
+      "maxLength": 160,
+      "title": "Statement",
+      "type": "string"
+    },
+    "status": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ClaimStatus"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "strength": {
+      "anyOf": [
+        {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Strength"
+    },
+    "subject": {
+      "anyOf": [
+        {
+          "maxLength": 80,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Subject"
+    },
+    "type": {
+      "$ref": "#/$defs/ClaimType"
+    },
+    "value": {
+      "anyOf": [
+        {
+          "maxLength": 160,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Value"
+    }
+  },
+  "required": [
+    "type",
+    "statement"
+  ],
+  "title": "PromptClaimItem",
+  "type": "object"
+}

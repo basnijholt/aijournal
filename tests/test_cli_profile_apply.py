@@ -92,7 +92,17 @@ def _seed_suggestions(workspace: Path) -> Path:
         review_after_days=proposed_claim.review_after_days,
     )
     claim_proposal = ClaimProposal(
-        claim=claim_input,
+        type=claim_input.type,
+        subject=claim_input.subject,
+        predicate=claim_input.predicate,
+        value=claim_input.value,
+        statement=claim_input.statement,
+        scope=claim_input.scope,
+        strength=claim_input.strength,
+        status=claim_input.status,
+        method=claim_input.method,
+        user_verified=claim_input.user_verified,
+        review_after_days=claim_input.review_after_days,
         normalized_ids=[proposed_claim.id],
         evidence=[SourceRef(entry_id="2025-02-03_pref_evening", spans=[])],
         rationale="Detected new evening preference",

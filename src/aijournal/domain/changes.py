@@ -38,11 +38,30 @@ class ClaimAtomInput(StrictModel):
 class ClaimProposal(StrictModel):
     """Structured claim update prepared for downstream review."""
 
-    claim: ClaimAtomInput
+    # Claim fields
+    type: ClaimType
+    subject: str
+    predicate: str
+    value: str
+    statement: str
+    scope: Scope
+    strength: float
+    status: ClaimStatus
+    method: ClaimMethod
+    user_verified: bool
+    review_after_days: int
+    # Proposal metadata
     normalized_ids: list[str] = Field(default_factory=list)
     evidence: list[SourceRef] = Field(default_factory=list)
     manifest_hashes: list[str] = Field(default_factory=list)
     rationale: str | None = None
+
+    @field_validator("strength")
+    @classmethod
+    def _check_strength(cls, value: float) -> float:
+        if not 0.0 <= value <= 1.0:
+            raise ValueError("strength must be in [0,1]")
+        return value
 
 
 class FacetChange(StrictModel):

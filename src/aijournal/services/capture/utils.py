@@ -235,7 +235,11 @@ def apply_profile_update_batch(root: Path, config: AppConfig, batch_path: Path) 
 
 
 def _proposal_claim_to_atom(proposal: ClaimProposal, timestamp: str) -> ClaimAtom:
-    claim_payload = proposal.claim.model_dump(mode="python")
+    # Extract claim fields only (exclude proposal metadata)
+    claim_payload = proposal.model_dump(
+        mode="python",
+        exclude={"normalized_ids", "evidence", "manifest_hashes", "rationale"},
+    )
     evidence_sources = [
         ClaimSource.model_validate(
             redact_source_text(source).model_dump(mode="python"),
