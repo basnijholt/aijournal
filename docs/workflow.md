@@ -46,7 +46,9 @@ The top-level CLI now covers the common lifetime loop:
   uv run aijournal capture --text "Highlights from the product sync" --tag focus
   uv run aijournal capture --from notes/weekly --source-type notes --project roadmap
   ```  
-  `capture` handles canonical Markdown writes, manifest updates, raw snapshots, and runs the downstream pipeline (normalize → summarize → extract-facts → profile suggest/apply → characterize/review). It only touches dates whose content actually changed.
+`capture` handles canonical Markdown writes, manifest updates, raw snapshots, and runs the downstream pipeline (normalize → summarize → extract-facts → profile suggest/apply → characterize/review). It only touches dates whose content actually changed.
+
+> **Note:** During stage 0, if an entry lacks a summary, capture now derives one deterministically from the first paragraph of the body, trims it to ≈400 characters, and appends `...` when truncated. Existing summaries are never altered, so reruns remain idempotent.
 
    Need to stop early or drive the pipeline manually? Use stage filters:
    ```bash

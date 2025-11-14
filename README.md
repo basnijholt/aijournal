@@ -137,7 +137,7 @@ Capture now supports staged execution so you can stop early or resume manual pip
 
 | Stage | Name                 | What happens                                                         | Manual equivalent |
 | ----- | -------------------- | -------------------------------------------------------------------- | ----------------- |
-| 0     | persist              | Write canonical Markdown, manifest entry, optional snapshots         | handled by capture |
+| 0     | persist              | Write canonical Markdown, manifest entry, optional snapshots (adds ≤400 char summary when missing) | handled by capture |
 | 1     | normalize            | Emit `data/normalized/YYYY-MM-DD/*.yaml`                             | `uv run aijournal ops pipeline normalize data/journal/YYYY/MM/DD/<entry>.md` |
 | 2     | summarize            | Generate `derived/summaries/<date>.yaml`                             | `uv run aijournal ops pipeline summarize --date YYYY-MM-DD` |
 | 3     | extract_facts        | Produce micro-facts/claim proposals                                   | `uv run aijournal ops pipeline extract-facts --date YYYY-MM-DD` |
