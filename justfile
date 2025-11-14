@@ -25,7 +25,7 @@ fake_on:
     echo "export AIJOURNAL_FAKE_OLLAMA=1"
 
 ci:
-    AIJOURNAL_FAKE_OLLAMA=1 uv run pytest -q && uv run mypy src
+    uv run pytest -q && uv run mypy src && uv run python scripts/check_schemas.py
 
 precommit_dry:
     uvx pre-commit run --all-files --show-diff-on-failure
