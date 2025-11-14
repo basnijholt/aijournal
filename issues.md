@@ -26,3 +26,23 @@
   **Actions:** wrap the current hook in a supported feature and document it.
 
 Update this list as fixes land so future agents know which items remain.
+
+---
+
+# Resolved / Historical Context
+
+## Date field not recognized from imports (✅ fixed in 390a352)
+- **Command:** `uv run aijournal capture --from ~/example-blog-entries`
+- **Stage:** Stage 0 (persist) misread Jekyll/WordPress `date` fields and fell back to filenames, so every imported entry landed under the wrong `YYYY/MM/DD` bucket. We now normalize common aliases (`date`, `published`, etc.) into `created_at` before inference and added tests in `test_stage_persist.py`.
+
+## Opaque LLM errors (✅ fixed in 52591cf)
+- Capture previously printed `stage exited with code 1` without the underlying `LLMResponseError`. Commands now chain `typer.Exit` and the graceful wrappers unwrap the cause, so operators see the real timeout/schema message.
+
+## Summaries duplicated full body (✅ fixed)
+- Stage 0 now synthesizes a ≤400‑char first paragraph when `summary` is absent, leaving existing summaries untouched. Tests: `tests/services/capture/test_summary_policy.py`.
+
+## Claim proposals reused IDs (✅ fixed)
+- `_proposal_claim_id` now appends an 8‑char SHA of the normalized statement, preventing overwrites when multiple proposals share the same `normalized_id`. Regression test: `tests/services/test_claim_id_generation.py`.
+
+## Characterize flakes on large entries (⚠ ongoing)
+- Live run 2025‑11‑13: 8KB Dutch entry timed out/hit JSON parse errors. Even after DTO fixes, long entries still require adaptive timeouts or chunking; see “Characterize resilience” above for acceptance criteria.
