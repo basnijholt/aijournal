@@ -140,6 +140,8 @@ missing, rerun Stage 2 (`aijournal ops pipeline summarize --date YYYY-MM-DD`).
 }
 ```
 
+> **Contributor note:** Stage 3 calls `_invoke_structured_llm` with `response_model=PromptMicroFacts` and converts the DTO via `convert_prompt_microfacts`. Keep prompts JSON-only and reject metadata-only statements (“entry created on…”, “title is…”). Micro-facts must cite paragraph content through `evidence_entry` / `evidence_para` before they become runtime `MicroFactsFile` entries.
+
 ---
 
 ## **Stage 4: Profile Update**
