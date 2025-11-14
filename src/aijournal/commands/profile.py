@@ -66,6 +66,7 @@ class ProfileSuggestPrepared:
     profile: dict[str, Any]
     claims: list[ClaimAtom]
     config: AppConfig
+    workspace: Path
 
 
 @dataclass(slots=True)
@@ -246,6 +247,7 @@ def run_profile_suggest_command(
             profile=profile,
             claims=claims,
             config=ctx.config,
+            workspace=ctx.workspace,
         )
 
     def _invoke(_: RunContext, prepared: ProfileSuggestPrepared) -> ProfileSuggestResult:
@@ -256,6 +258,7 @@ def run_profile_suggest_command(
                 prepared.claims,
                 prepared.date,
                 prepared.config,
+                workspace=prepared.workspace,
                 timeout=prepared.timeout,
                 retries=prepared.retries,
             )
@@ -417,6 +420,7 @@ def _profile_proposals_payload(
     date: str,
     config: AppConfig,
     *,
+    workspace: Path,
     timeout: float | None = None,
     retries: int = DEFAULT_PROFILE_RETRIES,
 ) -> ProfileUpdateProposals:
@@ -436,7 +440,7 @@ def _profile_proposals_payload(
                 "prompts/profile_suggest.md",
                 {
                     "date": date,
-                    "entries_json": _json_block(_entries_to_payload(entries)),
+                    "entries_json": _json_block(_entries_to_payload(entries, workspace)),
                     "profile_json": _json_block(profile),
                     "claims_json": _json_block(
                         {"claims": [claim.model_dump(mode="python") for claim in claims]}

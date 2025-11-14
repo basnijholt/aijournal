@@ -398,6 +398,7 @@ def normalized_from_structured(
     fallback_sections: list[dict[str, Any]] | None = None,
     fallback_tags: list[str] | None = None,
     fallback_summary: str | None = None,
+    paragraphs: list[str] | None = None,
 ) -> tuple[dict[str, Any], str]:
     _ = root  # kept for compatibility with original helper signature
     created_at = structured.created_at
@@ -423,6 +424,7 @@ def normalized_from_structured(
         "title": structured.title.strip() or entry_id,
         "tags": tags,
         "sections": merged_sections,
+        "paragraphs": paragraphs or [],
         "source_hash": digest,
         "source_type": source_type,
     }

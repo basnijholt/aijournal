@@ -754,7 +754,8 @@ def _summarize_day_payload(
     date: str,
     config: AppConfig,
     *,
-    timeout: float | None,
+    workspace: Path,
+    timeout: float | None = None,
     retries: int,
 ) -> Any:
     """Proxy to the summarize command helper with test-friendly overrides."""
@@ -763,6 +764,7 @@ def _summarize_day_payload(
         entries,
         date,
         config,
+        workspace=workspace,
         timeout=timeout,
         retries=retries,
         invoke_structured_llm=_invoke_structured_llm,
@@ -2011,7 +2013,7 @@ def interview(
                             "claims_json": _json_block(
                                 {"claims": [claim.model_dump(mode="python") for claim in claims]}
                             ),
-                            "entries_json": _json_block(_entries_to_payload(entries)),
+                            "entries_json": _json_block(_entries_to_payload(entries, workspace)),
                             "rankings_json": _json_block(rankings_payload),
                             "coaching_prefs_json": _json_block(profile.get("coaching_prefs", {})),
                         },

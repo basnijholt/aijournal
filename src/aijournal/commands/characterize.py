@@ -75,6 +75,7 @@ class CharacterizePrepared:
     profile: dict[str, Any]
     claim_models: Sequence[ClaimAtom]
     config: AppConfig
+    workspace: Path
 
 
 @dataclass(slots=True)
@@ -133,6 +134,7 @@ def run_characterize_command(
             profile=profile,
             claim_models=claim_models,
             config=ctx.config,
+            workspace=ctx.workspace,
         )
 
     def _invoke_pipeline(ctx: RunContext, prepared: CharacterizePrepared) -> CharacterizeResult:
@@ -145,6 +147,7 @@ def run_characterize_command(
                 prepared.claim_models,
                 prepared.manifest_index,
                 prepared.config,
+                workspace=prepared.workspace,
                 timeout=prepared.timeout,
                 retries=prepared.retries,
                 use_fake_llm=ctx.use_fake_llm,
@@ -333,6 +336,7 @@ def _characterize_payload(
     manifest_index: dict[str, ManifestEntry],
     config: AppConfig,
     *,
+    workspace: Path,
     timeout: float | None = None,
     retries: int,
     use_fake_llm: bool,
@@ -355,7 +359,7 @@ def _characterize_payload(
                 "prompts/characterize.md",
                 {
                     "date": target_date,
-                    "entries_json": _json_block(_entries_to_payload(entries)),
+                    "entries_json": _json_block(_entries_to_payload(entries, workspace)),
                     "profile_json": _json_block(profile),
                     "claims_json": _json_block(
                         {"claims": [claim.model_dump(mode="python") for claim in claims]}

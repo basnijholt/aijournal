@@ -107,6 +107,7 @@ class FactsPrepared:
         [Sequence[ClaimProposal], Sequence[ClaimAtom], str],
         ProfileUpdatePreview | None,
     ]
+    workspace: Path
 
 
 @dataclass(slots=True)
@@ -161,6 +162,7 @@ def prepare_inputs(ctx: RunContext, options: FactsOptions) -> FactsPrepared:
         manifest_index=manifest_index,
         claim_models=claim_models,
         preview_builder=preview_builder,
+        workspace=ctx.workspace,
     )
 
 
@@ -174,7 +176,9 @@ def invoke_pipeline(ctx: RunContext, prepared: FactsPrepared) -> FactsResult:
                 "prompts/extract_facts.md",
                 {
                     "date": prepared.date,
-                    "entries_json": _json_block(_entries_to_payload(prepared.entries)),
+                    "entries_json": _json_block(
+                        _entries_to_payload(prepared.entries, prepared.workspace)
+                    ),
                 },
                 response_model=PromptMicroFacts,
                 agent_name="aijournal-facts",
