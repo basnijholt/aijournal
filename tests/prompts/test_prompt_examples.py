@@ -9,9 +9,9 @@ from typing import Any
 
 import pytest
 
-from aijournal.domain.changes import ProfileUpdateProposals
 from aijournal.domain.facts import DailySummary, MicroFactsFile
 from aijournal.domain.persona import InterviewSet
+from aijournal.domain.prompts import PromptProfileUpdates
 from aijournal.models.derived import AdviceCard
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -30,8 +30,8 @@ def _load_example(name: str) -> dict[str, Any]:
     [
         ("summarize.json", DailySummary, DailySummary, None),
         ("extract_facts.json", MicroFactsFile, MicroFactsFile, None),
-        ("characterize.json", ProfileUpdateProposals, ProfileUpdateProposals, None),
-        ("profile_suggest.json", ProfileUpdateProposals, ProfileUpdateProposals, None),
+        ("characterize.json", PromptProfileUpdates, PromptProfileUpdates, None),
+        ("profile_suggest.json", PromptProfileUpdates, PromptProfileUpdates, None),
         ("advise.json", AdviceCard, AdviceCard, None),
     ],
 )
@@ -61,7 +61,7 @@ def test_prompt_examples_validate_against_models(
 
 def test_profile_suggest_example_matches_strict_schema() -> None:
     payload = _load_example("profile_suggest.json")
-    proposals = ProfileUpdateProposals.model_validate(payload)
+    proposals = PromptProfileUpdates.model_validate(payload)
     assert len(proposals.claims) == 1
     assert len(proposals.facets) == 1
 

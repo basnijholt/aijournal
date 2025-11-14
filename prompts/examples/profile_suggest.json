@@ -2,40 +2,19 @@
   "claims": [
     {
       "type": "goal",
+      "statement": "I protect 12 focus hours per week.",
       "subject": "quarterly outcomes",
       "predicate": "focus_hours_per_week",
       "value": "Protect 12 focus hours per week.",
-      "statement": "I protect 12 focus hours per week.",
-      "scope": {
-        "domain": "productivity",
-        "context": [
-          "planning"
-        ],
-        "conditions": []
-      },
       "strength": 0.65,
       "status": "tentative",
       "method": "inferred",
-      "user_verified": false,
-      "review_after_days": 90,
-      "normalized_ids": [
-        "2025-10-24-plan-review"
-      ],
-      "evidence": [
-        {
-          "entry_id": "2025-10-24-plan-review",
-          "spans": [
-            {
-              "type": "para",
-              "index": 0
-            }
-          ]
-        }
-      ],
-      "manifest_hashes": [
-        "plan-review-manifest"
-      ],
-      "rationale": "Weekly planning highlights protecting 12 focus hours."
+      "scope_domain": "productivity",
+      "scope_context": ["planning"],
+      "scope_conditions": [],
+      "reason": "Weekly planning highlights protecting 12 focus hours.",
+      "evidence_entry": "2025-10-24-plan-review",
+      "evidence_para": 0
     }
   ],
   "facets": [
@@ -43,22 +22,9 @@
       "path": "habits.focus_block.length_minutes",
       "operation": "set",
       "value": "45-minute focus blocks",
-      "method": "inferred",
-      "confidence": 0.7,
-      "review_after_days": 60,
-      "user_verified": false,
-      "evidence": [
-        {
-          "entry_id": "2025-10-24-plan-review",
-          "spans": [
-            {
-              "type": "para",
-              "index": 1
-            }
-          ]
-        }
-      ],
-      "rationale": "Reflection entries call 45 minutes the sustainable block length."
+      "reason": "Reflection entries call 45 minutes the sustainable block length.",
+      "evidence_entry": "2025-10-24-plan-review",
+      "evidence_para": 1
     }
   ]
 }

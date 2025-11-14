@@ -53,6 +53,12 @@ Read the inputs, form hypotheses, check the entries, and document only what the 
       "subject": "who or what the claim refers to (optional, ≤80 chars)",
       "predicate": "relationship or attribute (optional, ≤80 chars)",
       "value": "string value (optional, ≤160 chars)",
+      "strength": 0.0-1.0 (optional, defaults to 0.55 if omitted),
+      "status": "accepted|tentative|rejected (optional, defaults to tentative)",
+      "method": "self_report|inferred|behavioral (optional, defaults to inferred)",
+      "scope_domain": "domain context like 'work' or 'personal' (optional)",
+      "scope_context": ["weekday", "solo"] (optional list of context tags),
+      "scope_conditions": [] (optional list of conditional qualifiers),
       "reason": "≤25 word justification citing the evidence",
       "evidence_entry": "normalized-entry-id (optional)",
       "evidence_para": 0
@@ -73,15 +79,18 @@ Read the inputs, form hypotheses, check the entries, and document only what the 
 
 ### Allowed Values
 - `type`: preference, value, goal, boundary, trait, habit, aversion, skill.
+- `status`: accepted, tentative, rejected.
+- `method`: self_report, inferred, behavioral.
 - `operation`: set, remove.
 
 ### Constraints
-- Subject, predicate, value are **optional** for claims.
+- Subject, predicate, value, strength, status, method, scope fields are **optional** for claims.
 - Reason and evidence fields are **optional** (can be null/0).
 - Facet `value` must be a string or list of strings (never objects).
 - Keep `reason` ≤25 words.
 - Keep `statement` ≤160 chars, `subject`/`predicate` ≤80 chars, `value` ≤160 chars.
 - `evidence_para` is the paragraph index (0-based integer, default 0).
+- When omitted, strength defaults to 0.55, status to tentative, method to inferred, scope fields to empty.
 
 ## ⚠️ Critical Constraints (Violations = Rejection)
 1. Facet `operation` must be `set` or `remove` (never `merge`).
