@@ -113,6 +113,8 @@ missing, rerun Stage 2 (`aijournal ops pipeline summarize --date YYYY-MM-DD`).
 - Normalized entries (**derived** from Stage 1) — **verification source**
 **Outputs**: `derived/microfacts/YYYY-MM-DD.yaml`
 
+**Vector DB**: Each validated microfact is immediately embedded and stored in the Chroma-backed microfact index (`derived/microfacts/microfacts/index`). This index is used later (Stage 4+) for deduplication and retrieval of recurring insights.
+
 **Example Output**:
 ```json
 {
@@ -158,6 +160,8 @@ with a remediation hint when `derived/summaries/<date>.yaml` is missing.
 2. Scan consolidated microfacts for recurring evidence.
 3. Read existing profile and claims to understand baseline.
 4. Dive into normalized entries to verify summarized signals or discover missing evidence.
+
+**Vector DB usage**: Stage 4 consumes the consolidated microfacts produced by the Chroma index to ensure claims reference deduped, canonical statements; the same index also powers the retrieval that feeds interview, persona, and advice prompts.
 5. Propose new claims/facets only when entries provide durable support; strengthen or adjust existing claims when confirmed.
 6. Provide ≤25 word justifications with evidence references.
 
