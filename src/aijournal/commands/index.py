@@ -289,12 +289,20 @@ def _invoke_rebuild_pipeline(ctx: RunContext, prepared: IndexRebuildPrepared) ->
         index_meta_path=lambda root: _index_meta_path(root, ctx.workspace, ctx.config),
     )
 
-    message = f"Indexed {chunk_total} chunks across {entry_total} entries (mode: rebuild)."
+    summary_chunks = int(stats.get("summary_chunks", 0))
+    microfact_chunks = int(stats.get("microfact_chunks", 0))
+    message = (
+        f"Indexed {chunk_total} chunks "
+        f"({summary_chunks} summary chunks, {microfact_chunks} microfact chunks) "
+        f"across {entry_total} entries (mode: rebuild)."
+    )
     ctx.emit(
         event="index_rebuild_complete",
         chunks=chunk_total,
         entries=entry_total,
         dates=touched_dates,
+        summary_chunks=summary_chunks,
+        microfact_chunks=microfact_chunks,
     )
     return IndexRebuildResult(
         message=message,
@@ -410,19 +418,27 @@ def _invoke_tail_pipeline(ctx: RunContext, prepared: IndexTailPrepared) -> Index
         index_meta_path=lambda root: _index_meta_path(root, ctx.workspace, ctx.config),
     )
 
-    message = f"Indexed {stats['chunks']} chunks across {stats['entries']} entries (mode: tail)."
+    summary_chunks = int(stats.get("summary_chunks", 0))
+    microfact_chunks = int(stats.get("microfact_chunks", 0))
+    message = (
+        f"Indexed {chunk_total} chunks "
+        f"({summary_chunks} summary chunks, {microfact_chunks} microfact chunks) "
+        f"across {entry_total} entries (mode: tail)."
+    )
     ctx.emit(
         event="index_tail_complete",
-        chunks=stats.get("chunks", 0),
-        entries=stats.get("entries", 0),
+        chunks=chunk_total,
+        entries=entry_total,
         dates=touched_dates,
+        summary_chunks=summary_chunks,
+        microfact_chunks=microfact_chunks,
     )
     return IndexTailResult(
         message=message,
-        chunks=int(stats.get("chunks", 0)),
-        entries=int(stats.get("entries", 0)),
+        chunks=chunk_total,
+        entries=entry_total,
         touched_dates=touched_dates,
-        up_to_date=stats.get("entries", 0) == 0,
+        up_to_date=entry_total == 0,
     )
 
 
