@@ -18,6 +18,7 @@ ROLE_ORDER = [
     "normalized",
     "summaries",
     "microfacts",
+    "consolidated_microfacts",
     "advice",
     "profile_updates",
     "journal_raw",
@@ -30,6 +31,7 @@ TRIM_PRIORITY = [
     "advice",
     "profile_updates",
     "microfacts",
+    "consolidated_microfacts",
     "summaries",
     "normalized",
     "profile",
@@ -135,6 +137,10 @@ def collect_pack_entries(
 
     _add_path(entries, "profile", root / "profile" / "self_profile.yaml", required=True)
     _add_path(entries, "claims", root / "profile" / "claims.yaml", required=True)
+
+    if level in {"L3", "L4"}:
+        consolidated = root / "derived" / "microfacts" / "consolidated.yaml"
+        _add_path(entries, "consolidated_microfacts", consolidated)
 
     include_history = level == "L4"
     if level in {"L2", "L3", "L4"}:

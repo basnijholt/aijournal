@@ -97,14 +97,20 @@ sections:
 **Goal**: Mine atomic facts and claim proposals from journal entries
 
 **Prompt**: `prompts/extract_facts.md`
-**Summary**: "Extract atomic facts with confidence scores, plus optional claim proposals (habits/values/goals) with evidence."
+**Summary**: "Start from the day summary (bullets/highlights/todos) as your map, then extract atomic facts and claim proposals with evidence."
+
+**Prerequisite**: `derived/summaries/<date>.yaml` must exist. If the daily summary is
+missing, rerun Stage 2 (`aijournal ops pipeline summarize --date YYYY-MM-DD`).
 
 **LLM Task**:
-1. Create micro-facts (atomic observations) with confidence scores (0.0-1.0)
-2. Optionally propose claims (habits, values, preferences, etc.) with evidence references
-3. Reference specific entry IDs and paragraph indices
+1. Read the Stage 2 summary to understand what mattered most today.
+2. Verify each highlighted item against the normalized entries and create micro-facts (atomic observations) with confidence scores (0.0-1.0).
+3. Optionally propose claims (habits, values, preferences, etc.) with evidence references.
+4. Reference specific entry IDs and paragraph indices for every fact/claim.
 
-**Inputs**: Normalized entries (**derived** from Stage 1)
+**Inputs**:
+- Day summary (`derived/summaries/<date>.yaml`) — **primary map**
+- Normalized entries (**derived** from Stage 1) — **verification source**
 **Outputs**: `derived/microfacts/YYYY-MM-DD.yaml`
 
 **Example Output**:
@@ -142,18 +148,25 @@ sections:
 **Goal**: Suggest and apply profile updates based on evidence
 
 **Prompt**: `prompts/profile_update.md`
-**Summary**: "Review normalized entries (plus summaries + microfacts) and existing persona to propose claim/facet updates with evidence and interview prompts."
+**Summary**: "Review the day summary plus consolidated microfacts and existing persona to propose claim/facet updates with evidence and interview prompts."
+
+**Prerequisite**: Requires the same-day summary from Stage 2. The command aborts
+with a remediation hint when `derived/summaries/<date>.yaml` is missing.
 
 **LLM Task**:
-1. Read existing profile and claims to understand baseline
-2. Propose new claims or facet updates based on journal evidence
-3. Strengthen/adjust existing claims when new evidence confirms them
-4. Provide ≤25 word justifications with evidence references
+1. Read the Stage 2 summary to orient on key themes.
+2. Scan consolidated microfacts for recurring evidence.
+3. Read existing profile and claims to understand baseline.
+4. Dive into normalized entries to verify summarized signals or discover missing evidence.
+5. Propose new claims/facets only when entries provide durable support; strengthen or adjust existing claims when confirmed.
+6. Provide ≤25 word justifications with evidence references.
 
 **Inputs**:
-- Normalized entries (**derived** from Stage 1)
+- Day summary (`derived/summaries/<date>.yaml`) — **primary map**
+- Normalized entries (**derived** from Stage 1) — **verification source**
 - Current profile (`profile/self_profile.yaml`) (**raw**)
 - Current claims (`profile/claims.yaml`) (**raw**)
+- Consolidated microfacts (`derived/microfacts/consolidated.yaml` when present)
 
 **Outputs**: `derived/pending/profile_updates/<date>-<timestamp>.yaml`
 
@@ -308,20 +321,17 @@ uv run aijournal ops pipeline summarize --date YYYY-MM-DD
 uv run aijournal ops pipeline extract-facts --date YYYY-MM-DD
 
 # Stage 4
-uv run aijournal ops profile suggest --date YYYY-MM-DD
-uv run aijournal ops profile apply --date YYYY-MM-DD --yes
-
-# Stage 5
 uv run aijournal ops profile update --date YYYY-MM-DD
+uv run aijournal ops profile apply --date YYYY-MM-DD --yes
 uv run aijournal ops pipeline review --file <batch>.yaml --apply
 
-# Stage 6
+# Stage 5
 uv run aijournal ops index update --since 7d
 
-# Stage 7
+# Stage 6
 uv run aijournal ops persona build
 
-# Stage 8
+# Stage 7
 uv run aijournal export pack --level Lx [--date YYYY-MM-DD]
 ```
 

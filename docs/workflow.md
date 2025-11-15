@@ -55,7 +55,14 @@ The top-level CLI now covers the common lifetime loop:
    uv run aijournal capture --from notes/weekly --max-stage 1      # persist + normalize only
    uv run aijournal capture --from notes/weekly --min-stage 2      # rerun derived stages
    ```
-   Capture always revalidates stages 0–1 (persist/normalize) so the canonical files stay in sync, then executes any requested stages ≥2. The CLI prints remaining stages along with the equivalent `uv run aijournal ops ...` commands if you want to pick up manually.
+Capture always revalidates stages 0–1 (persist/normalize) so the canonical files stay in sync, then executes any requested stages ≥2. The CLI prints remaining stages along with the equivalent `uv run aijournal ops ...` commands if you want to pick up manually.
+
+> **Important**: Stages 3–4 (extract facts → profile update) and
+> `ops profile interview` start from the Stage 2 summary artifact
+> (`derived/summaries/<date>.yaml`). They read the summary as the map, then dive
+> into normalized entries to verify evidence. Each command aborts with a
+> remediation hint when the summary is missing, so rerun Stage 2 before touching
+> older dates.
 
 2. **Check workspace status**  
    ```bash
@@ -123,11 +130,12 @@ With the profile, index, and packs up to date you can use the interactive comman
 
 - `uv run aijournal ops pipeline ingest <path>` — run the legacy ingestion agent without invoking capture.
 - `uv run aijournal ops profile status` — detailed review priorities after applying updates.
-- `uv run aijournal ops profile interview --date YYYY-MM-DD` — generate follow-up questions for that day’s entries.
+- `uv run aijournal ops profile interview --date YYYY-MM-DD` — generate follow-up questions for that day’s entries (**requires the Stage 2 summary for that date; rerun `ops pipeline summarize` first if it’s missing**).
 - `uv run aijournal export pack --level L4 --date YYYY-MM-DD --history-days N --format json` — build a long-horizon pack for external assistants (default 3200 tokens).
 - `uv run aijournal export pack --level L4 --max-tokens 20000 --format yaml` — full context export with minimal trimming for sharing with external LLMs.
 - `uv run aijournal ops system ollama health` — verify available models on the Ollama host.
 - `uv run aijournal ops audit provenance [--fix]` — report (or redact with `--fix`) any persisted provenance spans that still carry raw text.
+- `uv run aijournal ops microfacts rebuild` — rebuild the consolidated microfact snapshot and Chroma index from daily artifacts.
 
 ---
 

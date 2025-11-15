@@ -73,6 +73,18 @@
   "additionalProperties": false,
   "description": "Machine-readable journal entry used throughout pipelines.",
   "properties": {
+    "content": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Content"
+    },
     "created_at": {
       "title": "Created At",
       "type": "string"

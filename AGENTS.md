@@ -124,7 +124,7 @@ Structured commands expect the model to mine existing fields (`summary`, `sectio
 - Model now mines structured fields even without paragraphs. Expect claims such as “weekly planning resets align meals with training goals.”
 - Validate with:
   ```bash
-  uv run -- bash -lc "cd $RUN_ROOT && aijournal ops profile suggest --date 2025-10-26"
+  uv run -- bash -lc "cd $RUN_ROOT && aijournal ops profile update --date 2025-10-26 --progress"
   ```
   Output lives at `derived/pending/profile_updates/<date>-<timestamp>.yaml`.
 
@@ -166,10 +166,9 @@ Advanced/manual checks (useful for troubleshooting specific stages):
 13. `uv run aijournal ops pipeline normalize data/journal/YYYY/MM/DD/<entry>.md`
 14. `uv run aijournal ops pipeline summarize --date YYYY-MM-DD`
 15. `uv run aijournal ops pipeline extract-facts --date YYYY-MM-DD`
-16. `uv run aijournal ops profile suggest --date YYYY-MM-DD`
+16. `uv run aijournal ops profile update --date YYYY-MM-DD --progress`
 17. `uv run aijournal ops profile apply --date YYYY-MM-DD --yes`
-18. `uv run aijournal ops profile update --date YYYY-MM-DD --progress`
-19. `uv run aijournal ops pipeline review --file derived/pending/profile_updates/<batch>.yaml --apply`
+18. `uv run aijournal ops pipeline review --file derived/pending/profile_updates/<batch>.yaml --apply`
 20. `uv run aijournal ops index rebuild` (refreshes `derived/index/meta.json` with the strict artifact envelope)
 21. `uv run aijournal ops index search 'deep work sprint focus' --top 3 --tags focus`
 22. `uv run aijournal ops persona build`

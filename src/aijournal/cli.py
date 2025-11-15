@@ -48,6 +48,10 @@ from aijournal.commands.ingest import (
     run_ingest,
 )
 from aijournal.commands.init import run_init
+from aijournal.commands.microfacts import (
+    MicrofactsRebuildOptions,
+    run_microfacts_rebuild,
+)
 from aijournal.commands.new import run_new
 from aijournal.commands.pack import run_pack
 from aijournal.commands.persona import persona_state, run_persona_build
@@ -92,6 +96,7 @@ from aijournal.domain.events import (
     FeedbackBatch,
 )
 from aijournal.domain.evidence import redact_source_text
+from aijournal.domain.facts import DailySummary
 from aijournal.domain.journal import NormalizedEntry
 from aijournal.domain.persona import InterviewQuestion, InterviewSet
 from aijournal.io.artifacts import load_artifact_data
@@ -128,12 +133,19 @@ from aijournal.services.persona_export import (
 from aijournal.services.persona_export import (
     PersonaExportOptions as PersonaExportOptions,
 )
+from aijournal.services.summaries import (
+    SummaryNotFoundError,
+    load_daily_summary,
+    load_summary_window,
+)
 from aijournal.utils import time as time_utils
 from aijournal.utils.coercion import coerce_int
 from aijournal.utils.paths import (
     find_data_root,
     normalized_entry_path,
 )
+
+INTERVIEW_SUMMARY_LOOKBACK_DAYS = 6
 
 
 def _get_workspace() -> Path:
@@ -195,11 +207,13 @@ ops_app = typer.Typer(help="Advanced operations namespace.")
 ops_pipeline_app = typer.Typer(help="Pipeline tools (normalize, summarize, derive).")
 ops_feedback_app = typer.Typer(help="Feedback processing utilities.")
 ops_logs_app = typer.Typer(help="Log utilities.")
+ops_microfacts_app = typer.Typer(help="Microfacts utilities.")
 ops_system_app = typer.Typer(help="System diagnostics and doctor helpers.")
 ops_dev_app = typer.Typer(help="Developer fixtures and helpers.")
 ops_audit_app = typer.Typer(help="Audit and governance utilities.")
 
 ops_app.add_typer(ops_pipeline_app, name="pipeline")
+ops_app.add_typer(ops_microfacts_app, name="microfacts")
 ops_app.add_typer(profile_app, name="profile")
 ops_app.add_typer(index_app, name="index")
 ops_app.add_typer(persona_app, name="persona")
@@ -384,6 +398,25 @@ def logs_tail(
             typer.secho(message, fg=color)
         else:
             typer.echo(message)
+
+
+@ops_microfacts_app.command("rebuild")
+def ops_microfacts_rebuild_command() -> None:
+    """Rebuild the consolidated microfacts snapshot and search index."""
+
+    workspace = _get_workspace()
+    config = load_config(workspace)
+    ctx = create_run_context(
+        command="ops.microfacts.rebuild",
+        workspace=workspace,
+        config=config,
+        use_fake_llm=use_fake_llm(),
+        trace=False,
+        verbose_json=False,
+    )
+    result = run_microfacts_rebuild(ctx, MicrofactsRebuildOptions())
+    typer.echo(f"Consolidated microfacts written to {result.consolidated_path}")
+    typer.echo(f"Consolidation log written to {result.log_path}")
 
 
 @app.command(help="Capture Markdown into the journal workspace and refresh derived artifacts.")
@@ -1930,6 +1963,23 @@ def interview(
         typer.secho(f"No normalized entries for {date}", fg=typer.colors.RED, err=True)
         raise typer.Exit(1)
 
+    try:
+        summary = cast(
+            DailySummary,
+            load_daily_summary(workspace, config, date),
+        )
+    except SummaryNotFoundError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        raise typer.Exit(1) from exc
+
+    summary_window = load_summary_window(
+        workspace,
+        config,
+        anchor_day=date,
+        lookback_days=INTERVIEW_SUMMARY_LOOKBACK_DAYS,
+        include_anchor=False,
+    )
+
     weights = config.impact_weights.model_dump(mode="python")
 
     max_questions = _coaching_max_questions(profile)
@@ -1963,6 +2013,10 @@ def interview(
             for target in rankings[: max(max_questions * 2, 6)]
         ]
         try:
+            summary_payload = summary.model_dump(mode="python")
+            summary_window_payload = [
+                window_summary.model_dump(mode="python") for _, window_summary in summary_window
+            ]
             interview_set = cast(
                 InterviewSet,
                 _structured_call_with_retry(
@@ -1976,6 +2030,8 @@ def interview(
                             ),
                             "entries_json": _json_block(_entries_to_payload(entries, workspace)),
                             "rankings_json": _json_block(rankings_payload),
+                            "summary_json": _json_block(summary_payload),
+                            "summary_window_json": _json_block(summary_window_payload),
                             "coaching_prefs_json": _json_block(profile.get("coaching_prefs", {})),
                         },
                         response_model=InterviewSet,

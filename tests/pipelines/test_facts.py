@@ -2,9 +2,11 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 
+from aijournal.common.app_config import AppConfig
 from aijournal.domain.changes import ClaimProposal
 from aijournal.domain.claims import ClaimSource, Scope
 from aijournal.domain.evidence import SourceRef
@@ -12,6 +14,7 @@ from aijournal.domain.facts import MicroFact, MicroFactsFile
 from aijournal.domain.journal import NormalizedEntry
 from aijournal.models.authoritative import ManifestEntry
 from aijournal.pipelines import facts as facts_pipeline
+from aijournal.services.microfacts import MicrofactIndex, MicrofactRecord
 
 
 def _normalized_entry(entry_id: str) -> NormalizedEntry:
@@ -59,6 +62,7 @@ def test_generate_microfacts_uses_fake_pipeline(monkeypatch: pytest.MonkeyPatch)
         retries=2,
         context=context,
         manifest_index={},
+        microfact_index=None,
     )
 
     assert not called["structured"]
@@ -137,6 +141,7 @@ def test_generate_microfacts_merges_llm_and_derived(monkeypatch: pytest.MonkeyPa
         retries=3,
         context=context,
         manifest_index={"entry-1": manifest_entry},
+        microfact_index=None,
     )
 
     assert call_args == {"retries": 3, "label": "facts 2024-01-02"}
@@ -149,3 +154,105 @@ def test_generate_microfacts_merges_llm_and_derived(monkeypatch: pytest.MonkeyPa
     assert proposal.normalized_ids == ["entry-1"]
     assert proposal.manifest_hashes == ["manifest-1"]
     assert proposal.evidence == [SourceRef(entry_id="entry-1", spans=[])]
+
+
+def _run_custom_microfacts(
+    entry: NormalizedEntry,
+    *,
+    date: str,
+    statement: str,
+    microfact_index: MicrofactIndex,
+) -> MicroFactsFile:
+    context = _characterization_context(entry.id or "entry-1")
+
+    def structured_call(
+        func: Callable[[], MicroFactsFile],
+        *,
+        retries: int,
+        label: str,
+    ) -> MicroFactsFile:
+        return func()
+
+    def request_factory() -> MicroFactsFile:
+        return MicroFactsFile(
+            facts=[
+                MicroFact(
+                    id=f"{entry.id}-fact",
+                    statement=statement,
+                    confidence=0.8,
+                    evidence=SourceRef(entry_id=entry.id, spans=[]),
+                    first_seen=date,
+                    last_seen=date,
+                )
+            ],
+            claim_proposals=[],
+        )
+
+    return facts_pipeline.generate_microfacts(
+        [entry],
+        date,
+        use_fake_llm=False,
+        structured_call=structured_call,
+        request_factory=request_factory,
+        retries=1,
+        context=context,
+        manifest_index={},
+        microfact_index=microfact_index,
+    )
+
+
+def test_generate_microfacts_consolidates_repeated_statements(tmp_path: Path) -> None:
+    config = AppConfig()
+    microfact_index = MicrofactIndex(tmp_path, config, fake_mode=True)
+    entry_day1 = _normalized_entry("entry-1")
+    entry_day2 = _normalized_entry("entry-2")
+
+    result_day1 = _run_custom_microfacts(
+        entry_day1,
+        date="2024-01-02",
+        statement="Morning deep work focus block",
+        microfact_index=microfact_index,
+    )
+    result_day2 = _run_custom_microfacts(
+        entry_day2,
+        date="2024-01-03",
+        statement="Morning deep work focus block",
+        microfact_index=microfact_index,
+    )
+
+    assert result_day1.facts[0].first_seen == "2024-01-02"
+    assert result_day2.facts[0].first_seen == "2024-01-02"
+    assert result_day2.facts[0].last_seen == "2024-01-03"
+
+    matches = microfact_index.query_similar("Morning deep work focus block", top_k=1)
+    assert matches
+    record = MicrofactRecord.from_match(matches[0])
+    assert record is not None
+    assert record.observation_count == 2
+
+
+def test_generate_microfacts_creates_new_records_for_unique_statements(tmp_path: Path) -> None:
+    config = AppConfig()
+    microfact_index = MicrofactIndex(tmp_path, config, fake_mode=True)
+    entry = _normalized_entry("entry-1")
+
+    _run_custom_microfacts(
+        entry,
+        date="2024-01-02",
+        statement="Morning deep work focus block",
+        microfact_index=microfact_index,
+    )
+    _run_custom_microfacts(
+        entry,
+        date="2024-01-03",
+        statement="Evening recovery walk",
+        microfact_index=microfact_index,
+    )
+
+    match_focus = microfact_index.query_similar("Morning deep work focus block", top_k=1)
+    match_walk = microfact_index.query_similar("Evening recovery walk", top_k=1)
+    assert match_focus and match_walk
+    focus_record = MicrofactRecord.from_match(match_focus[0])
+    walk_record = MicrofactRecord.from_match(match_walk[0])
+    assert focus_record is not None and walk_record is not None
+    assert focus_record.uid != walk_record.uid

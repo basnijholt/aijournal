@@ -49,8 +49,15 @@ from aijournal.models.authoritative import ManifestEntry
 from aijournal.models.derived import ProfileUpdateBatch, ProfileUpdateInput, ProfileUpdatePreview
 from aijournal.pipelines import facts as facts_pipeline
 from aijournal.pipelines import profile_update as profile_update_pipeline
+from aijournal.services.microfacts import (
+    load_consolidated_microfacts,
+    select_recurring_facts,
+)
 from aijournal.services.ollama import LLMResponseError
 from aijournal.utils import time as time_utils
+
+MAX_CONSOLIDATED_FACTS = 20
+MIN_CONSOLIDATED_OBSERVATIONS = 2
 
 
 class ProfileUpdateOptions(BaseModel):
@@ -69,6 +76,7 @@ class ProfileUpdatePrepared:
     entries_with_paths: list[tuple[NormalizedEntry, Path]]
     summary: DailySummary | None
     microfacts: MicroFactsFile | None
+    consolidated_facts_json: str
     manifest_index: dict[str, ManifestEntry]
     profile: dict[str, Any]
     claim_models: list[ClaimAtom]
@@ -153,6 +161,7 @@ def run_profile_update_command(
         profile_model, claim_models = load_profile_components(ctx.workspace, config=ctx.config)
         profile = profile_to_dict(profile_model)
         claims = [claim.model_copy(deep=True) for claim in claim_models]
+        consolidated_facts_json = _load_consolidated_facts_json(ctx.workspace, ctx.config)
 
         _log_entry_progress(f"Generating profile update for {opts.date}", entries, opts.progress)
 
@@ -174,6 +183,7 @@ def run_profile_update_command(
             entries_with_paths=entries_with_paths,
             summary=summary,
             microfacts=microfacts,
+            consolidated_facts_json=consolidated_facts_json,
             manifest_index=manifest_index,
             profile=profile,
             claim_models=claims,
@@ -214,6 +224,7 @@ def run_profile_update_command(
                         ),
                         "summary_json": summary_json,
                         "microfacts_json": microfacts_json,
+                        "consolidated_facts_json": prepared.consolidated_facts_json,
                         "profile_json": _json_block(prepared.profile or {}),
                         "claims_json": _json_block(
                             {
@@ -408,3 +419,19 @@ def _pending_profile_update_path(workspace: Path, config: AppConfig, batch_id: s
 def _sanitize_batch_id(batch_id: str) -> str:
     """Replace filesystem-hostile characters so pending batches work on Windows."""
     return batch_id.replace(":", "-")
+
+
+def _load_consolidated_facts_json(workspace: Path, config: AppConfig) -> str:
+    """Return JSON payload for recurring consolidated microfacts if available."""
+
+    snapshot = load_consolidated_microfacts(workspace, config)
+    if not snapshot:
+        return "{}"
+    recurring = select_recurring_facts(
+        snapshot,
+        min_observations=MIN_CONSOLIDATED_OBSERVATIONS,
+        limit=MAX_CONSOLIDATED_FACTS,
+    )
+    if not recurring:
+        return "{}"
+    return _json_block({"facts": recurring})

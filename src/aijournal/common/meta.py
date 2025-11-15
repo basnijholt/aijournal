@@ -31,6 +31,8 @@ class ArtifactKind(StrEnum):
     PERSONA_CORE = "persona.core"
     SUMMARY_DAILY = "summaries.daily"
     MICROFACTS_DAILY = "microfacts.daily"
+    MICROFACTS_CONSOLIDATED = "microfacts.consolidated"
+    MICROFACTS_LOG = "microfacts.log"
     PROFILE_PROPOSALS = "profile.proposals"
     PROFILE_UPDATES = "profile.updates"
     FEEDBACK_BATCH = "feedback.batch"

@@ -35,6 +35,16 @@ Return JSON with exactly the keys `facts` and `claim_proposals` (omit the claim 
 }
 ```
 
+## Daily Summary (read first)
+
+Treat the daily summary as a map of what mattered most before you dive into the
+full entries. Use it to seed hypotheses, then confirm every statement against
+the normalized text. Never emit a fact that contradicts the summary or the
+entries.
+
+SUMMARY_JSON:
+$summary_json
+
 Guidelines:
 - Use every structured field available. Pull supporting details from `summary`, `sections`, and `tags`; when paragraphs are absent, synthesize the most concrete statement implied by those fields.
 - Facts must be specific, non-trivial statements grounded in the provided entries. Never contradict the source metadata.

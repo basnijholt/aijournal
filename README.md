@@ -221,6 +221,12 @@ times (default 1). Use `--progress` to print each normalized entry before the re
 sent. If the model keeps returning invalid JSON after the configured retries, the
 command aborts with an actionable error so you can inspect the upstream output.
 
+> **Why this matters**: The Stage 2 summary is the **starting map** for every
+> downstream LLM stage (`extract-facts`, `ops profile update`, and
+> `ops profile interview`). Those commands read `SUMMARY_JSON` first and then
+> verify claims against normalized entries, so they fail fast with a remediation
+> hint when `derived/summaries/<date>.yaml` is missing.
+
 ### Micro-facts
 
 ```sh
@@ -238,6 +244,38 @@ resulting `preview.claim_events` mirror the output of `aijournal ops pipeline re
 Any conflicts are scope-split (weekday vs. weekend, solo vs. team) before falling
 back to tentative downgrades, and queued follow-up prompts surface in the CLI so
 you can jump straight into `aijournal ops profile interview`.
+
+Regenerate the global consolidated snapshot (and the Chroma index it rides on) at
+any time:
+
+```sh
+uv run aijournal ops microfacts rebuild
+```
+
+This command scans every daily `derived/microfacts/<DATE>.yaml`, deterministically
+merges repeated statements, writes `derived/microfacts/consolidated.yaml`, and
+records a structured log under `derived/microfacts/logs/` so you have an audit
+trail of the rebuild.
+
+> **Heads-up**: The extract-facts stage now depends on the Stage 2 summary for the
+> same date. If `derived/summaries/<date>.yaml` is missing, rerun
+> `aijournal ops pipeline summarize --date <date>` before extracting facts.
+
+Regenerate the global consolidated snapshot (and the Chroma index it rides on) at
+any time:
+
+```sh
+uv run aijournal ops microfacts rebuild
+```
+
+This command scans every daily `derived/microfacts/<DATE>.yaml`, deterministically
+merges repeated statements, writes `derived/microfacts/consolidated.yaml`, and
+records a structured log under `derived/microfacts/logs/` so you have an audit
+trail of the rebuild.
+
+> **Heads-up**: The extract-facts stage now depends on the Stage 2 summary for the
+> same date. If `derived/summaries/<date>.yaml` is missing, rerun
+> `aijournal ops pipeline summarize --date <date>` before extracting facts.
 
 Pass `--progress` to watch the entry-by-entry feed and `--retries` to control how many schema failures trigger a
 retry. Responses are validated against the `MicroFactsFile` schema; if
@@ -363,6 +401,10 @@ and the current profile/claims, then emits a `ProfileUpdateBatch` under
 same structured-output path as the other pipelines and enforces the domain
 schemas before persisting artifacts.
 
+> **Heads-up**: Profile updates require the same-day summary produced in
+> Stage 2. When `derived/summaries/<date>.yaml` is missing, rerun
+> `aijournal ops pipeline summarize --date <date>` before calling `ops profile update`.
+
 Use `--progress`, `--timeout`, and `--retries` to mirror the ergonomics of the
 other derivations. In fake mode the command still produces deterministic
 `ProfileUpdateBatch` envelopes so capture/tests remain consistent.
@@ -429,6 +471,10 @@ The command honours `coaching_prefs.probing.max_questions`: set it to `0` to sup
 or tweak the value to control how many concise questions are returned. Structured responses are
 validated against the `InterviewSet` schema, and any LLM failure gracefully reverts to the
 heuristic probes used previously.
+
+> **Heads-up**: `ops profile interview` also consumes the Stage 2 summary (plus a
+> short lookback window). It aborts with the same remediation hint as Stage 3–5
+> when `derived/summaries/<date>.yaml` is missing.
 
 ### Pack context bundles (L1–L4)
 
