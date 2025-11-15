@@ -45,7 +45,7 @@ uv sync
 uv run pytest -q
 ```
 
-- Runtime deps beyond Typer/PyYAML/httpx/pydantic/dateutil: `numpy`, `annoy`, `fastapi`, `uvicorn`, `orjson`. Install once via `uv add ...`; everything stays local-first.
+- Runtime deps beyond Typer/PyYAML/httpx/pydantic/dateutil: `numpy`, `chromadb`, `fastapi`, `uvicorn`, `orjson`. Install once via `uv add ...`; everything stays local-first.
 - Retrieval uses Ollama's `embeddinggemma:300m` embeddings by default. Override it with `AIJOURNAL_EMBEDDING_MODEL` env var or by setting `embedding_model` in `config.yaml`; the `AIJOURNAL_MODEL` env var only affects chat/advice, not embeddings.
 
 - `config.yaml` stores runtime defaults (model, host, temperature, advisor settings).
@@ -338,8 +338,8 @@ aijournal chat "What did I focus on last week?"
 Streams a short answer grounded in your persona core plus retrieved journal chunks. Each response
 includes inline `[entry:<normalized_id>#p<idx>]` citations, a telemetry summary, and—in live mode—an
 optional follow-up question that respects `coaching_prefs.probing`. The command exits early when
-prerequisites are missing—ensure `derived/persona/persona_core.yaml`, `derived/index/chroma`, and
-`derived/index/annoy.index` exist (rebuild them with `aijournal ops persona build` and
+prerequisites are missing—ensure `derived/persona/persona_core.yaml` and
+`derived/index/chroma` exist (rebuild them with `aijournal ops persona build` and
 `aijournal ops index rebuild`). Setting `AIJOURNAL_FAKE_OLLAMA=1` keeps the loop deterministic for
 tests/CI.
 
