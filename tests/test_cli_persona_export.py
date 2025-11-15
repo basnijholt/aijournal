@@ -155,8 +155,11 @@ def test_persona_export_validates_token_override(
 def test_persona_export_errors_when_persona_missing(tmp_path: Path, cli_runner: CliRunner) -> None:
     tmp_path.mkdir(parents=True, exist_ok=True)
     cli_runner.invoke(app, ["init", "--path", str(tmp_path)])
-    env = {"AIJOURNAL_WORKSPACE": str(tmp_path), "AIJOURNAL_FAKE_OLLAMA": "1"}
-    result = cli_runner.invoke(app, ["ops", "persona", "export"], env=env)
+    result = cli_runner.invoke(
+        app,
+        ["--path", str(tmp_path), "ops", "persona", "export"],
+        env={"AIJOURNAL_FAKE_OLLAMA": "1"},
+    )
     assert result.exit_code == 1
     combined = (result.stdout or "") + (result.stderr or "")
     assert "persona" in combined.lower()

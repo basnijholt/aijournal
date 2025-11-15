@@ -69,10 +69,9 @@ Run `aijournal init` inside a fresh directory to materialize `data/`, `derived/`
   built-in `http://127.0.0.1:11434`. Model selection follows the same ordering:
   explicit override → `AIJOURNAL_MODEL` → config → default.
   Commands retry schema issues (default 4 attempts via `llm.retries` in `config.yaml` or `--retries` flag) and then fail loudly with an error.
-- **Workspace selection:** set `AIJOURNAL_WORKSPACE=/path/to/workspace` (or pass `--workspace` on
-  any command) to run against a workspace outside the current directory. The default workspace is
-  `Path.cwd()`. Commands validate that the workspace contains a `config.yaml` file and provide helpful
-  error messages if initialization is needed.
+- **Workspace selection:** use the global `--path/-p` option to run against a workspace outside the
+  current directory. The default workspace is `Path.cwd()`. Commands validate that the workspace
+  contains a `config.yaml` file and provide helpful error messages if initialization is needed.
 - **Fake mode (tests/CI):** `export AIJOURNAL_FAKE_OLLAMA=1` to route every agent call through
   deterministic fixtures. This mode must be set explicitly; the CLI never auto-falls back from live mode.
 

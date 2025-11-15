@@ -150,27 +150,18 @@ INTERVIEW_SUMMARY_LOOKBACK_DAYS = 6
 
 
 def _get_workspace() -> Path:
-    """Get workspace directory from environment or default to current directory.
+    """Return the CLI workspace path, defaulting to the current directory.
 
-    Checks AIJOURNAL_WORKSPACE environment variable first, falls back to cwd.
-    Expands ~ and resolves relative paths, then validates that the directory
-    exists and contains a config.yaml file.
+    The global `--path/-p` option stored in :class:`CLISettings` selects the workspace.
+    When absent we fall back to ``Path.cwd()`` and still validate that the directory exists
+    and contains ``config.yaml``.
 
     Raises:
         RuntimeError: If the workspace directory doesn't exist, is not a directory,
                      or doesn't contain config.yaml
     """
     settings = _cli_settings()
-    workspace_override = settings.workspace
-    if workspace_override:
-        workspace = workspace_override
-    else:
-        workspace_env = os.getenv("AIJOURNAL_WORKSPACE")
-        if workspace_env:
-            # Expand ~ and make path absolute for better error messages
-            workspace = Path(workspace_env).expanduser().resolve()
-        else:
-            workspace = Path.cwd()
+    workspace = settings.workspace or Path.cwd()
 
     # Check workspace directory exists
     if not workspace.exists():
