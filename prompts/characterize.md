@@ -32,12 +32,13 @@ If you genuinely have nothing new to add, return `{"claims": [], "facets": [], "
 1. Read `SUMMARY_JSON` to understand the day's bullets, highlights, and todo candidates.
 2. Scan `SUMMARY_WINDOW_JSON` (when present) to see how recent themes evolved.
 3. Read `PROFILE_JSON` and `CLAIMS_JSON` to understand the baseline persona.
-4. Use the summaries to prioritize which portions of `ENTRIES_JSON` deserve deep inspection; always verify summary-derived hypotheses against the normalized entries and `MANIFEST_JSON`.
-5. Reinforce or adjust an existing claim/facet when entries confirm a summarized pattern.
-6. Introduce new claims or facets only when entries reveal durable behavior that summaries hint at (or that summaries missed but entries prove).
-7. Remove facets when entries contradict them or the summary trend shows they no longer apply.
-8. Queue interview prompts for ambiguities, summary/entry mismatches, or emerging questions rather than speculating.
-9. Fill out the schema precisely for every accepted insight and verify all constraints before emitting JSON.
+4. Review `CONSOLIDATED_FACTS_JSON` to spot recurring, multi-day patterns that should be reinforced or down-ranked.
+5. Use the summaries to prioritize which portions of `ENTRIES_JSON` deserve deep inspection; always verify summary-derived hypotheses against the normalized entries and `MANIFEST_JSON`.
+6. Reinforce or adjust an existing claim/facet when entries or consolidated facts confirm the trend.
+7. Introduce new claims or facets only when entries reveal durable behavior that summaries hint at (or that summaries missed but entries prove).
+8. Remove facets when entries contradict them or the summary trend shows they no longer apply.
+9. Queue interview prompts for ambiguities or gaps rather than speculating.
+10. Fill out the schema precisely for every accepted insight and verify all constraints before emitting JSON.
 
 ## Strength Calibration Reference
 - 0.30–0.40: Single ambiguous mention or inference only; treat as exploratory.
@@ -210,6 +211,7 @@ CLAIMS_JSON: $claims_json
 
 MANIFEST_JSON: $manifest_json
 
+CONSOLIDATED_FACTS_JSON: $consolidated_facts_json
 SUMMARY_JSON: $summary_json
 
 SUMMARY_WINDOW_JSON: $summary_window_json

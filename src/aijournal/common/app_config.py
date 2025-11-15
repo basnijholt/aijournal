@@ -106,6 +106,20 @@ class CaptureConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class MicrofactIndexConfig(BaseModel):
+    """Configuration for the Chroma-backed microfact index."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    subdir: str = "microfacts/index"
+    collection: str = "microfacts"
+    default_top_k: int = 5
+    embedding_model: str | None = None
+    merge_distance: float = 0.12
+    max_evidence_entries: int = 5
+    min_token_overlap: float = 0.6
+
+
 class LLMConfig(BaseModel):
     """LLM runtime configuration."""
 
@@ -148,6 +162,7 @@ class AppConfig(BaseModel):
     impact_weights: ImpactWeightsConfig = Field(default_factory=ImpactWeightsConfig)
     advisor: AdvisorConfig = Field(default_factory=AdvisorConfig)
     capture: CaptureConfig = Field(default_factory=CaptureConfig)
+    microfacts: MicrofactIndexConfig = Field(default_factory=MicrofactIndexConfig)
     llm: LLMConfig = Field(default_factory=LLMConfig)
 
     def to_dict(self, *, exclude_none: bool = False) -> dict[str, Any]:

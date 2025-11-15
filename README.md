@@ -246,6 +246,18 @@ Any conflicts are scope-split (weekday vs. weekend, solo vs. team) before fallin
 back to tentative downgrades, and queued follow-up prompts surface in the CLI so
 you can jump straight into `aijournal ops profile interview`.
 
+Regenerate the global consolidated snapshot (and the Chroma index it rides on) at
+any time:
+
+```sh
+uv run aijournal ops microfacts rebuild
+```
+
+This command scans every daily `derived/microfacts/<DATE>.yaml`, deterministically
+merges repeated statements, writes `derived/microfacts/consolidated.yaml`, and
+records a structured log under `derived/microfacts/logs/` so you have an audit
+trail of the rebuild.
+
 > **Heads-up**: The extract-facts stage now depends on the Stage 2 summary for the
 > same date. If `derived/summaries/<date>.yaml` is missing, rerun
 > `aijournal ops pipeline summarize --date <date>` before extracting facts.

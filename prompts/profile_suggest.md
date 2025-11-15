@@ -35,7 +35,8 @@ $summary_json
 ---
 ## Reasoning Checklist
 1. Read `PROFILE_JSON` and `CLAIMS_JSON` to understand the current baseline.
-2. Collect candidate signals from `ENTRIES_JSON` summaries, sections, tags, and paragraphs.
+2. Review `CONSOLIDATED_FACTS_JSON` for recurring, multi-day patterns you should reinforce or cross-check.
+3. Collect candidate signals from `ENTRIES_JSON` summaries, sections, tags, and paragraphs.
 3. Treat figurative, metaphorical, or speculative language as context only; only promote it into a claim when the entry states the fact plainly and unambiguously.
 4. Strengthen or refine an existing claim or facet when new evidence confirms it.
 5. Introduce a new claim or facet only when entries reveal a durable new pattern.
@@ -169,6 +170,8 @@ ENTRIES_JSON: $entries_json
 PROFILE_JSON: $profile_json
 
 CLAIMS_JSON: $claims_json
+
+CONSOLIDATED_FACTS_JSON: $consolidated_facts_json
 
 MANIFEST_JSON (when present): $manifest_json
 

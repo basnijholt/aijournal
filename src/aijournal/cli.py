@@ -53,6 +53,10 @@ from aijournal.commands.ingest import (
     run_ingest,
 )
 from aijournal.commands.init import run_init
+from aijournal.commands.microfacts import (
+    MicrofactsRebuildOptions,
+    run_microfacts_rebuild,
+)
 from aijournal.commands.new import run_new
 from aijournal.commands.pack import run_pack
 from aijournal.commands.persona import persona_state, run_persona_build
@@ -206,11 +210,13 @@ ops_app = typer.Typer(help="Advanced operations namespace.")
 ops_pipeline_app = typer.Typer(help="Pipeline tools (normalize, summarize, characterize).")
 ops_feedback_app = typer.Typer(help="Feedback processing utilities.")
 ops_logs_app = typer.Typer(help="Log utilities.")
+ops_microfacts_app = typer.Typer(help="Microfacts utilities.")
 ops_system_app = typer.Typer(help="System diagnostics and doctor helpers.")
 ops_dev_app = typer.Typer(help="Developer fixtures and helpers.")
 ops_audit_app = typer.Typer(help="Audit and governance utilities.")
 
 ops_app.add_typer(ops_pipeline_app, name="pipeline")
+ops_app.add_typer(ops_microfacts_app, name="microfacts")
 ops_app.add_typer(profile_app, name="profile")
 ops_app.add_typer(index_app, name="index")
 ops_app.add_typer(persona_app, name="persona")
@@ -395,6 +401,25 @@ def logs_tail(
             typer.secho(message, fg=color)
         else:
             typer.echo(message)
+
+
+@ops_microfacts_app.command("rebuild")
+def ops_microfacts_rebuild_command() -> None:
+    """Rebuild the consolidated microfacts snapshot and search index."""
+
+    workspace = _get_workspace()
+    config = load_config(workspace)
+    ctx = create_run_context(
+        command="ops.microfacts.rebuild",
+        workspace=workspace,
+        config=config,
+        use_fake_llm=use_fake_llm(),
+        trace=False,
+        verbose_json=False,
+    )
+    result = run_microfacts_rebuild(ctx, MicrofactsRebuildOptions())
+    typer.echo(f"Consolidated microfacts written to {result.consolidated_path}")
+    typer.echo(f"Consolidation log written to {result.log_path}")
 
 
 @app.command(help="Capture Markdown into the journal workspace and refresh derived artifacts.")

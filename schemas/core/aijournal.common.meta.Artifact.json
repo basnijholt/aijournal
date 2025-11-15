@@ -6,6 +6,8 @@
         "persona.core",
         "summaries.daily",
         "microfacts.daily",
+        "microfacts.consolidated",
+        "microfacts.log",
         "profile.proposals",
         "profile.updates",
         "feedback.batch",
