@@ -47,3 +47,35 @@ def use_fake_llm() -> bool:
         True if AIJOURNAL_FAKE_OLLAMA=1, False otherwise
     """
     return os.getenv("AIJOURNAL_FAKE_OLLAMA") == "1"
+
+
+def resolve_prompt_set(
+    *,
+    cli_override: str | None = None,
+    config: AppConfig | None = None,
+) -> str | None:
+    """Resolve the active prompt set for A/B/N testing.
+
+    Precedence (highest to lowest):
+    1. CLI flag (--prompt-set)
+    2. Environment variable (AIJOURNAL_PROMPT_SET)
+    3. Config file (prompts.active_set)
+
+    Args:
+        cli_override: Optional CLI flag value
+        config: App configuration
+
+    Returns:
+        Active prompt set name, or None for default prompts
+    """
+    if cli_override:
+        return cli_override
+
+    env_set = os.getenv("AIJOURNAL_PROMPT_SET")
+    if env_set:
+        return env_set
+
+    if config and config.prompts.active_set:
+        return config.prompts.active_set
+
+    return None

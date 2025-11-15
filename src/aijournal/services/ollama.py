@@ -450,6 +450,8 @@ def run_ollama_agent(
     retry_message: str | None = None,
     prompt_path: str | None = None,
     prompt_hash: str | None = None,
+    prompt_kind: str | None = None,
+    prompt_set: str | None = None,
     log_label: str | None = None,
 ) -> LLMResult[_PayloadT]:
     """Run a Pydantic AI agent and return the validated payload with metadata."""
@@ -556,6 +558,8 @@ def run_ollama_agent(
         model=config.model,
         prompt_path=prompt_path or "<inline>",
         prompt_hash=prompt_hash,
+        prompt_kind=prompt_kind,
+        prompt_set=prompt_set,
         created_at=created_at,
         payload=cast(_PayloadT, payload),
         attempts=attempts,
@@ -565,6 +569,8 @@ def run_ollama_agent(
 
     metrics_record = {
         "prompt_path": result_payload.prompt_path,
+        "prompt_kind": result_payload.prompt_kind,
+        "prompt_set": result_payload.prompt_set,
         "model": result_payload.model,
         "label": log_label or getattr(agent, "name", None),
         "attempts": result_payload.attempts,

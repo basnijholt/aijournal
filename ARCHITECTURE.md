@@ -91,6 +91,14 @@ aijournal/
 - There is no compatibility flag or legacy reader—the artifact envelopes are the only supported format moving forward.
 - JSON schema snapshots live under `schemas/core/`, and `scripts/check_schemas.py` blocks commits when a schema drift is detected without blessing.
 
+### 2.4 Prompt A/B/N Testing
+
+- Prompt variants live in `prompts/experiments/<set>/<kind>.md`, allowing multiple experiments without modifying default prompts.
+- The active prompt set is controlled via `prompts.active_set` in `config.yaml`, `AIJOURNAL_PROMPT_SET` environment variable, or CLI flag (precedence: CLI > env > config).
+- Every `LLMResult` and `ArtifactMeta` includes optional `prompt_kind` and `prompt_set` fields for tracking which prompt variant generated each output.
+- Analysis uses standard tools (jq, pandas) to compare performance across variants via structured logs in `derived/logs/structured_metrics.jsonl`.
+- See `docs/prompt-sets-abn.md` for usage examples and implementation details.
+
 ## 3. Core Concepts
 
 ### 3.1 Hierarchical Memory (L1→L4)

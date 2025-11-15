@@ -207,6 +207,7 @@ def invoke_pipeline(ctx: RunContext, prepared: FactsPrepared) -> FactsResult:
                 retry_message=(
                     "Return JSON with keys `facts`, `claim_proposals`, and optional `preview`."
                 ),
+                prompt_set=ctx.prompt_set,
             ),
         )
         return convert_prompt_microfacts(llm_response)
@@ -241,7 +242,11 @@ def persist_output(ctx: RunContext, result: FactsResult) -> FactsOutput:
     facts_path = _derived_microfacts_path(ctx.workspace, ctx.config, result.date)
     model_name = resolve_model_name(ctx.config, use_fake_llm=ctx.use_fake_llm)
     artifact_meta = _build_meta(
-        "prompts/extract_facts.md", model=model_name, use_fake_llm=ctx.use_fake_llm
+        "prompts/extract_facts.md",
+        model=model_name,
+        use_fake_llm=ctx.use_fake_llm,
+        prompt_kind="extract_facts",
+        prompt_set=ctx.prompt_set,
     )
     save_artifact(
         facts_path,

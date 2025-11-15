@@ -84,6 +84,18 @@
           "default": null,
           "title": "Prompt Hash"
         },
+        "prompt_kind": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Prompt Kind"
+        },
         "prompt_path": {
           "anyOf": [
             {
@@ -95,6 +107,18 @@
           ],
           "default": null,
           "title": "Prompt Path"
+        },
+        "prompt_set": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Prompt Set"
         },
         "sources": {
           "anyOf": [

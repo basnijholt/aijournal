@@ -226,11 +226,44 @@ def normalized_entry_path(
     return data_dir / "normalized" / date_str / f"{entry_id}.yaml"
 
 
-def resolve_prompt_path(prompt_path: str) -> Path:
-    """Resolve a prompt path relative to cwd or project scaffolding."""
+def resolve_prompt_path(prompt_path: str, *, prompt_set: str | None = None) -> Path:
+    """Resolve a prompt path relative to cwd or project scaffolding.
+
+    Args:
+        prompt_path: Relative or absolute path to the prompt file (e.g., "prompts/summarize_day.md")
+        prompt_set: Optional experiment set name for A/B/N testing
+
+    Returns:
+        Resolved path, checking (in order):
+        1. Absolute path if provided
+        2. experiments/<set>/<kind>.md override if prompt_set is specified
+        3. Default prompt in cwd
+        4. Default prompt in project root
+
+    Examples:
+        >>> resolve_prompt_path("prompts/summarize_day.md", prompt_set="variant-a")
+        # Returns prompts/experiments/variant-a/summarize_day.md if it exists
+        # Otherwise falls back to prompts/summarize_day.md
+    """
     candidate = Path(prompt_path)
     if candidate.is_absolute():
         return candidate
+
+    # Extract prompt kind (filename without directory)
+    prompt_kind = Path(prompt_path).name
+
+    # Try experiment override first if prompt_set is specified
+    if prompt_set:
+        # Check in cwd first
+        cwd_experiment = Path.cwd() / "prompts" / "experiments" / prompt_set / prompt_kind
+        if cwd_experiment.exists():
+            return cwd_experiment
+        # Check in project root
+        root_experiment = PROJECT_ROOT / "prompts" / "experiments" / prompt_set / prompt_kind
+        if root_experiment.exists():
+            return root_experiment
+
+    # Fall back to default path resolution
     cwd_candidate = Path.cwd() / prompt_path
     if cwd_candidate.exists():
         return cwd_candidate

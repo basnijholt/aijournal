@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from aijournal.common.app_config import AppConfig
+from aijournal.common.config_loader import resolve_prompt_set
 from aijournal.common.logging import (
     StructuredLogger,
     StructuredLogSink,
@@ -42,6 +43,7 @@ class RunContext:
     logger: StructuredLogger
     trace_enabled: bool = False
     verbose_json: bool = False
+    prompt_set: str | None = None
 
     def emit(self, **event: Any) -> None:
         self.logger.emit(**event)
@@ -59,6 +61,7 @@ def create_run_context(
     trace: bool,
     verbose_json: bool,
     sinks: Sequence[StructuredLogSink] | None = None,
+    prompt_set: str | None = None,
 ) -> RunContext:
     """Create a runtime context for command execution.
 
@@ -79,6 +82,8 @@ def create_run_context(
         config if isinstance(config, AppConfig) else AppConfig.model_validate(dict(config))
     )
 
+    resolved_prompt_set = resolve_prompt_set(cli_override=prompt_set, config=config_model)
+
     run_id = _run_id(command)
     sink_list: list[StructuredLogSink] = list(sinks or [])
     if trace:
@@ -88,7 +93,12 @@ def create_run_context(
 
     logger = StructuredLogger(
         path=_trace_path(workspace, config_model),
-        base={"run_id": run_id, "command": command, "workspace": str(workspace)},
+        base={
+            "run_id": run_id,
+            "command": command,
+            "workspace": str(workspace),
+            "prompt_set": resolved_prompt_set,
+        },
         sinks=sink_list,
         enabled=True,
     )
@@ -100,4 +110,5 @@ def create_run_context(
         logger=logger,
         trace_enabled=trace,
         verbose_json=verbose_json,
+        prompt_set=resolved_prompt_set,
     )
