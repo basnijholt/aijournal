@@ -12,6 +12,8 @@ from typer.testing import CliRunner
 from aijournal import cli
 from aijournal.cli import app
 from aijournal.common import config_loader
+from aijournal.common.app_config import AppConfig
+from aijournal.common.constants import DEFAULT_LLM_RETRIES
 from aijournal.common.meta import LLMResult
 from aijournal.domain.facts import DailySummary
 from aijournal.domain.journal import NormalizedEntry
@@ -206,9 +208,9 @@ def test_invoke_structured_llm_uses_shared_builder(monkeypatch: pytest.MonkeyPat
     captured: dict[str, object] = {}
 
     def fake_builder(
-        config: dict[str, object], *, timeout: float | None = None, **_: object
+        config: AppConfig, *, timeout: float | None = None, **_: object
     ) -> OllamaConfig:
-        captured["config"] = dict(config)
+        captured["config"] = config.model_dump(mode="python")
         captured["timeout"] = timeout
         return OllamaConfig(model="builder-model")
 
@@ -229,7 +231,7 @@ def test_invoke_structured_llm_uses_shared_builder(monkeypatch: pytest.MonkeyPat
         assert config.model == "builder-model"
         assert "summarize" in system_prompt.lower()
         assert "entries" in prompt
-        assert max_attempts == 2
+        assert max_attempts == DEFAULT_LLM_RETRIES + 1
         assert retry_message is not None
         assert prompt_kind == "summarize_day"
         assert prompt_set is None
@@ -255,10 +257,10 @@ def test_invoke_structured_llm_uses_shared_builder(monkeypatch: pytest.MonkeyPat
         {"date": DATE, "entries_json": "[]"},
         response_model=DailySummary,
         agent_name="unit-test",
-        config={"temperature": "0.3"},
+        config=AppConfig(temperature=0.3),
         timeout=45.0,
     )
 
     assert isinstance(response, DailySummary)
-    assert captured["config"] == {"temperature": "0.3"}
+    assert captured["config"]["temperature"] == 0.3
     assert captured["timeout"] == 45.0

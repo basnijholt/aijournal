@@ -85,7 +85,6 @@ class FactsOptions(BaseModel):
 
     date: str
     timeout: float
-    retries: int
     progress: bool
     claim_models: Sequence[ClaimAtom] | None = None
     preview_builder: (
@@ -134,6 +133,7 @@ def prepare_inputs(ctx: RunContext, options: FactsOptions) -> FactsPrepared:
         raise typer.Exit(1)
 
     timeout_value = _validate_timeout(options.timeout)
+    resolved_retries = ctx.config.llm.retries
     _log_entry_progress(
         f"Extracting micro-facts for {options.date}",
         entries,
@@ -164,14 +164,14 @@ def prepare_inputs(ctx: RunContext, options: FactsOptions) -> FactsPrepared:
         entries=len(entries),
         claims=len(claim_models),
         timeout=timeout_value,
-        retries=options.retries,
+        retries=resolved_retries,
     )
     return FactsPrepared(
         date=options.date,
         entries=list(entries),
         summary=summary,
         timeout=timeout_value,
-        retries=options.retries,
+        retries=resolved_retries,
         manifest_index=manifest_index,
         claim_models=claim_models,
         preview_builder=preview_builder,
@@ -203,7 +203,6 @@ def invoke_pipeline(ctx: RunContext, prepared: FactsPrepared) -> FactsResult:
                 agent_name="aijournal-facts",
                 config=ctx.config,
                 timeout=prepared.timeout,
-                max_attempts=max(1, prepared.retries + 1),
                 retry_message=(
                     "Return JSON with keys `facts`, `claim_proposals`, and optional `preview`."
                 ),
@@ -279,7 +278,6 @@ def run_facts(
     date: str,
     *,
     timeout: float,
-    retries: int,
     progress: bool,
     claim_models: Sequence[ClaimAtom],
     build_claim_preview: Callable[
@@ -303,7 +301,6 @@ def run_facts(
     options = FactsOptions(
         date=date,
         timeout=timeout,
-        retries=retries,
         progress=progress,
         claim_models=claim_models,
         preview_builder=build_claim_preview,

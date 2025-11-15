@@ -146,6 +146,12 @@ def resolve_model_name(
     return build_ollama_config_from_mapping(config).model
 
 
+def resolve_max_attempts(config: AppConfig, override: int | None = None) -> int:
+    if override is not None:
+        return override
+    return max(1, config.llm.retries + 1)
+
+
 def _model_settings_from_config(config: OllamaConfig) -> ModelSettings | None:
     kwargs: dict[str, Any] = {}
     if config.temperature is not None:

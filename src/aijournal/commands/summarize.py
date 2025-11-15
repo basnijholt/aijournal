@@ -26,6 +26,7 @@ from aijournal.pipelines import summarize as summarize_pipeline
 from aijournal.services.ollama import (
     LLMResponseError,
     build_ollama_config_from_mapping,
+    resolve_max_attempts,
     resolve_model_name,
     run_ollama_agent,
 )
@@ -97,7 +98,7 @@ def _invoke_structured_llm(
     agent_name: str,
     config: AppConfig,
     timeout: float | None = None,
-    max_attempts: int = 2,
+    max_attempts: int | None = None,
     retry_message: str | None = None,
     prompt_set: str | None = None,
 ) -> BaseModel:
@@ -117,7 +118,7 @@ def _invoke_structured_llm(
             prompt,
             system_prompt=_STRUCTURED_SYSTEM_PROMPT,
             output_type=response_model,
-            max_attempts=max_attempts,
+            max_attempts=resolve_max_attempts(config, max_attempts),
             retry_message=effective_retry_message,
             prompt_path=prompt_path,
             prompt_hash=prompt_hash,

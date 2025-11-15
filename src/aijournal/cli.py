@@ -790,7 +790,7 @@ def _invoke_structured_llm(
     agent_name: str,
     config: AppConfig,
     timeout: float | None = None,
-    max_attempts: int = 2,
+    max_attempts: int | None = None,
     retry_message: str | None = None,
     prompt_set: str | None = None,
 ) -> Any:
@@ -1101,6 +1101,12 @@ def summarize(
     typer.echo(str(summary_path))
 
 
+def _with_retries_override(config: AppConfig, retries: int) -> AppConfig:
+    if retries == config.llm.retries:
+        return config
+    return config.model_copy(update={"llm": config.llm.model_copy(update={"retries": retries})})
+
+
 @ops_pipeline_app.command("extract-facts", hidden=True)
 def facts(
     date: str = typer.Option(
@@ -1136,14 +1142,14 @@ def facts(
     _emit_deprecation("aijournal ops pipeline extract-facts", "aijournal capture --from/--text")
     workspace = _get_workspace()
     config = load_config(workspace)
-    _, claim_models = load_profile_components(workspace, config=config)
-    ctx = _run_context("facts", workspace=workspace, config=config)
+    effective_config = _with_retries_override(config, retries)
+    _, claim_models = load_profile_components(workspace, config=effective_config)
+    ctx = _run_context("facts", workspace=workspace, config=effective_config)
     output = run_facts_command(
         ctx,
         FactsOptions(
             date=date,
             timeout=timeout,
-            retries=retries,
             progress=progress,
             claim_models=claim_models,
             preview_builder=lambda proposals, claims, timestamp: _build_claim_preview(

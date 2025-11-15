@@ -47,14 +47,7 @@ def capture_pipeline_mocks(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> N
 
     monkeypatch.setattr(
         "aijournal.commands.facts.run_facts",
-        lambda date,
-        *,
-        timeout,
-        retries,
-        progress,
-        claim_models,
-        build_claim_preview,
-        workspace=None: (
+        lambda date, *, timeout, progress, claim_models, build_claim_preview, workspace=None: (
             None,
             _ensure_file(tmp_path / "derived" / "microfacts" / f"{date}.yaml", "facts"),
         ),

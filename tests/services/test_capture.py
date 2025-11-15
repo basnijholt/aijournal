@@ -182,13 +182,12 @@ def test_run_capture_records_telemetry(tmp_path: Path, monkeypatch: pytest.Monke
         date: str,
         *,
         timeout: float,
-        retries: int,
         progress: bool,
         claim_models,
         build_claim_preview,
         workspace: Path | None = None,
     ) -> tuple[None, Path]:
-        del timeout, retries, progress, claim_models, build_claim_preview, workspace
+        del timeout, progress, claim_models, build_claim_preview, workspace
         stage_calls.append(("facts", date))
         path = _write_microfacts_artifact(
             tmp_path / "derived" / "microfacts" / f"{date}.yaml",
@@ -371,7 +370,7 @@ def test_run_capture_rebuild_skip_skips_refresh(
     )
     monkeypatch.setattr(
         "aijournal.commands.facts.run_facts",
-        lambda date, *, timeout, retries, progress, claim_models, build_claim_preview: (
+        lambda date, *, timeout, progress, claim_models, build_claim_preview: (
             None,
             _ensure_file(tmp_path / "derived" / "microfacts" / f"{date}.yaml", "facts"),
         ),
@@ -446,7 +445,7 @@ def test_run_capture_rebuild_always_forces_refresh(
     )
     monkeypatch.setattr(
         "aijournal.commands.facts.run_facts",
-        lambda date, *, timeout, retries, progress, claim_models, build_claim_preview: (
+        lambda date, *, timeout, progress, claim_models, build_claim_preview: (
             None,
             _ensure_file(tmp_path / "derived" / "microfacts" / f"{date}.yaml", "facts"),
         ),
@@ -581,14 +580,7 @@ def test_run_capture_review_mode_skips_apply(
 
     monkeypatch.setattr(
         "aijournal.commands.facts.run_facts",
-        lambda date,
-        *,
-        timeout,
-        retries,
-        progress,
-        claim_models,
-        build_claim_preview,
-        workspace=None: (
+        lambda date, *, timeout, progress, claim_models, build_claim_preview, workspace=None: (
             None,
             _ensure_file(tmp_path / "derived" / "microfacts" / f"{date}.yaml", "facts"),
         ),

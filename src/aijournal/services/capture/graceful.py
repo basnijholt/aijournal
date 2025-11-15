@@ -83,7 +83,6 @@ def graceful_facts(
         _, facts_path = run_facts(
             date,
             timeout=timeout,
-            retries=retries,
             progress=progress,
             claim_models=claim_models,
             build_claim_preview=build_claim_preview,
