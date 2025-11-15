@@ -9,6 +9,7 @@ from typer.testing import CliRunner
 
 from aijournal.cli import app
 from aijournal.io.yaml_io import dump_yaml
+from tests.helpers import write_daily_summary
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -40,6 +41,15 @@ def _write_normalized(workspace: Path) -> Path:
     return normalized
 
 
+def _write_summary(workspace: Path) -> Path:
+    return write_daily_summary(
+        workspace,
+        date=DATE,
+        bullets=["Captured sync decisions"],
+        highlights=["Team committed to roadmap"],
+    )
+
+
 def _read_yaml(path: Path) -> dict[str, object]:
     return yaml.safe_load(path.read_text(encoding="utf-8"))
 
@@ -49,6 +59,7 @@ def test_facts_generates_microfacts(
     cli_runner: CliRunner,
 ) -> None:
     _write_normalized(cli_workspace)
+    _write_summary(cli_workspace)
 
     result = cli_runner.invoke(
         app,
@@ -98,6 +109,7 @@ def test_facts_is_idempotent(
     cli_runner: CliRunner,
 ) -> None:
     _write_normalized(cli_workspace)
+    _write_summary(cli_workspace)
 
     first = cli_runner.invoke(
         app,
@@ -123,6 +135,7 @@ def test_facts_progress_flag(
     cli_runner: CliRunner,
 ) -> None:
     _write_normalized(cli_workspace)
+    _write_summary(cli_workspace)
 
     result = cli_runner.invoke(
         app,
@@ -132,3 +145,19 @@ def test_facts_progress_flag(
     assert result.exit_code == 0, result.stdout
     assert "Extracting micro-facts" in result.stdout
     assert "[1/1]" in result.stdout
+
+
+def test_facts_requires_summary(
+    cli_workspace: Path,
+    cli_runner: CliRunner,
+) -> None:
+    _write_normalized(cli_workspace)
+
+    result = cli_runner.invoke(
+        app,
+        ["ops", "pipeline", "extract-facts", "--date", DATE],
+    )
+
+    assert result.exit_code != 0
+    assert "Daily summary for" in result.stderr
+    assert "ops pipeline summarize" in result.stderr

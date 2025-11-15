@@ -367,6 +367,7 @@ def _persist_file_entry(
         normalized_seed.tags = tags
         if summary_text:
             normalized_seed.summary = summary_text
+        normalized_seed.content = body.strip() if body.strip() else None
         normalized_payload = normalized_seed.model_dump(mode="python")
         normalized_changed = write_yaml_if_changed(normalized_path, normalized_payload)
     else:

@@ -10,7 +10,7 @@ from typer.testing import CliRunner
 
 from aijournal.cli import app
 from aijournal.io.yaml_io import dump_yaml
-from tests.helpers import make_claim_atom
+from tests.helpers import make_claim_atom, write_daily_summary
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -73,6 +73,15 @@ def _seed_profile(workspace: Path) -> None:
     _write_yaml(workspace / "profile" / "claims.yaml", claims)
 
 
+def _seed_summary(workspace: Path) -> None:
+    write_daily_summary(
+        workspace,
+        date=DATE,
+        bullets=["Captured sync notes"],
+        highlights=["Aligned on hiring"],
+    )
+
+
 def _invoke(
     workspace: Path,
     cli_runner: CliRunner,
@@ -96,6 +105,7 @@ def test_profile_suggest_writes_suggestions(
 ) -> None:
     _seed_normalized(cli_workspace)
     _seed_profile(cli_workspace)
+    _seed_summary(cli_workspace)
 
     _, suggestions_path, _ = _invoke(cli_workspace, cli_runner)
 
@@ -118,6 +128,7 @@ def test_profile_suggest_is_idempotent(
 ) -> None:
     _seed_normalized(cli_workspace)
     _seed_profile(cli_workspace)
+    _seed_summary(cli_workspace)
 
     _, suggestions_path, count_before = _invoke(cli_workspace, cli_runner)
     mtime_before = suggestions_path.stat().st_mtime
@@ -135,8 +146,25 @@ def test_profile_suggest_progress_flag(
 ) -> None:
     _seed_normalized(cli_workspace)
     _seed_profile(cli_workspace)
+    _seed_summary(cli_workspace)
 
     output, _, _ = _invoke(cli_workspace, cli_runner, ["--progress"])
 
     assert "Generating profile suggestions" in output
     assert "[1/1]" in output
+
+
+def test_profile_suggest_requires_summary(
+    cli_workspace: Path,
+    cli_runner: CliRunner,
+) -> None:
+    _seed_normalized(cli_workspace)
+    _seed_profile(cli_workspace)
+
+    result = cli_runner.invoke(
+        app,
+        ["ops", "profile", "suggest", "--date", DATE],
+    )
+
+    assert result.exit_code != 0
+    assert "Daily summary for" in result.stderr

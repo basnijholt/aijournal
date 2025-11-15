@@ -12,13 +12,22 @@ Never include prose outside the JSON payload.
 - Be respectful by honoring `COACHING_PREFS_JSON`; if `probing.max_questions` is 0, output must be empty.
 - Stay actionable by phrasing each question to elicit concrete details that strengthen or resolve claims or facets.
 
+## Daily Summary Context
+- `SUMMARY_JSON` is the Stage 2 artifact (`derived/summaries/<DATE>.yaml`) for the requested day.
+- `SUMMARY_WINDOW_JSON` (when available) contains recent daily summaries ordered oldest → newest.
+- Treat these summaries as your **map of what mattered recently**: read them first to understand persistent themes or emerging shifts.
+- Use summaries to prioritize which claims/facets need clarification; always verify summary-based hypotheses against `ENTRIES_JSON` before writing a question.
+- When summaries and entries diverge, prefer a question that asks the user to reconcile the difference instead of assuming either side is correct.
+
 ---
 ## Reasoning Workflow
-1. Review `RANKINGS_JSON` (kinds, reasons, missing_context, claim_id) and the latest `ENTRIES_JSON` to identify knowledge gaps.
-2. Inspect `PROFILE_JSON` and `CLAIMS_JSON` to avoid asking about facts that are already well established unless clarification is required.
-3. Choose up to `probing.max_questions` (hard cap 3) with preference for high-impact uncertainties or recently changed claims that still need confirmation.
-4. Write each question in ≤20 words, reference a specific target facet or claim, and focus on who, what, when, how, or why.
-5. Assign a priority (`high`, `medium`, or `low`) that reflects urgency or impact.
+1. Read `SUMMARY_JSON` to understand the day's key bullets, highlights, and todo candidates.
+2. Scan `SUMMARY_WINDOW_JSON` (when provided) to spot recurring trends or recent shifts that might require confirmation.
+3. Review `RANKINGS_JSON` (kinds, reasons, missing_context, claim_id) plus `PROFILE_JSON`/`CLAIMS_JSON` to locate gaps between the persona and recent behavior.
+4. Consult `ENTRIES_JSON` to verify any summary-derived hypotheses and capture concrete evidence for each proposed question.
+5. Choose up to `probing.max_questions` (hard cap 3) with preference for high-impact uncertainties, summary/entry mismatches, or newly emerging habits/goals.
+6. Write each question in ≤20 words, reference a specific target facet or claim, and focus on who, what, when, how, or why.
+7. Assign a priority (`high`, `medium`, or `low`) that reflects urgency or impact.
 
 ---
 ## Output Schema
@@ -93,6 +102,10 @@ ENTRIES_JSON: $entries_json
 RANKINGS_JSON: $rankings_json
 
 COACHING_PREFS_JSON: $coaching_prefs_json
+
+SUMMARY_JSON: $summary_json
+
+SUMMARY_WINDOW_JSON: $summary_window_json
 
 ---
 ## Final Instruction

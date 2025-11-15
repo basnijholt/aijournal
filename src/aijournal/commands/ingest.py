@@ -161,12 +161,12 @@ def _scan_headings(text: str) -> list[dict[str, Any]]:
     return sections
 
 
-def _parse_entry(entry_path: Path) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+def _parse_entry(entry_path: Path) -> tuple[dict[str, Any], list[dict[str, Any]], str]:
     text = entry_path.read_text(encoding="utf-8")
     frontmatter_raw, body = _split_frontmatter(text)
     data = yaml.safe_load(frontmatter_raw) or {}
     sections = _scan_headings(body)
-    return data, sections
+    return data, sections, body.lstrip("\n")
 
 
 def _relative_source_path(entry_path: Path, root: Path) -> str:
@@ -203,7 +203,7 @@ def _parse_datetime(value: str) -> datetime | None:
 
 def _fake_structured_entry(entry_path: Path) -> IngestResult:
     try:
-        frontmatter, sections_raw = _parse_entry(entry_path)
+        frontmatter, sections_raw, _ = _parse_entry(entry_path)
     except (ValueError, yaml.YAMLError):
         frontmatter = {}
         sections_raw = []
@@ -419,7 +419,7 @@ def _invoke_ingest_pipeline(ctx: RunContext, prepared: IngestPrepared) -> Ingest
             continue
 
         try:
-            frontmatter_data, fallback_sections = _parse_entry(file)
+            frontmatter_data, fallback_sections, _ = _parse_entry(file)
         except ValueError:
             frontmatter_data = {}
             fallback_sections = _scan_headings(text)
