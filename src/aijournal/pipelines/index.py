@@ -2,18 +2,15 @@
 
 from __future__ import annotations
 
-import json
-import sqlite3
-from array import array
-from collections.abc import Callable, Iterable, Sequence
+from collections import defaultdict
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from hashlib import sha256
 from math import ceil
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 
 import numpy as np
-from annoy import AnnoyIndex
 
 from aijournal.common.meta import Artifact, ArtifactKind, ArtifactMeta
 from aijournal.domain.index import Chunk, ChunkBatch, IndexMeta
@@ -27,7 +24,6 @@ from aijournal.utils import time as time_utils
 
 CHUNK_TARGET_CHARS = 900
 CHUNK_MAX_CHARS = 1200
-ANN_METRIC: Literal["angular", "euclidean", "manhattan", "hamming", "dot"] = "angular"
 
 
 @dataclass
@@ -47,19 +43,6 @@ class ChunkRecord:
     source_hash: str | None
     manifest_hash: str | None
     embedding: list[float] | None = None
-
-
-@dataclass
-class SourceRecord:
-    """Bookkeeping entry for indexed normalized files."""
-
-    normalized_path: str
-    normalized_id: str
-    date: str
-    source_hash: str | None
-    manifest_hash: str | None
-    chunk_count: int
-    updated_at: str
 
 
 @dataclass
@@ -119,23 +102,6 @@ def prepare_index_tasks(
             ),
         )
     return tasks
-
-
-def filter_tasks_for_tail(
-    conn: sqlite3.Connection,
-    tasks: Sequence[IndexTask],
-) -> list[IndexTask]:
-    pending: list[IndexTask] = []
-    for task in tasks:
-        stored = conn.execute(
-            "SELECT source_hash FROM sources WHERE normalized_path = ?",
-            (task.normalized_path,),
-        ).fetchone()
-        stored_hash = stored[0] if stored else None
-        if stored_hash and task.source_hash and stored_hash == task.source_hash:
-            continue
-        pending.append(task)
-    return pending
 
 
 def entry_paragraphs(entry: NormalizedEntry) -> list[str]:
@@ -234,102 +200,16 @@ def build_chunk_records(
     return chunk_records
 
 
-def delete_chunks_for_entry(conn: sqlite3.Connection, normalized_id: str) -> None:
-    rows = conn.execute(
-        "SELECT chunk_id FROM chunks WHERE normalized_id = ?",
-        (normalized_id,),
-    ).fetchall()
-    if rows:
-        conn.executemany(
-            "DELETE FROM chunk_fts WHERE chunk_id = ?",
-            ((row[0],) for row in rows),
-        )
-    conn.execute("DELETE FROM chunks WHERE normalized_id = ?", (normalized_id,))
-
-
-def vector_to_blob(vector: Sequence[float]) -> memoryview:
-    arr = array("f", vector)
-    return memoryview(arr.tobytes())
-
-
-def blob_to_vector(blob: bytes) -> list[float]:
-    arr = array("f")
-    arr.frombytes(blob)
-    return list(arr)
-
-
-def insert_chunk_record(conn: sqlite3.Connection, chunk: ChunkRecord) -> None:
-    if chunk.embedding is None:
-        msg = "Chunk embedding missing"
-        raise RuntimeError(msg)
-    tags_json = json.dumps(chunk.tags, sort_keys=True)
-    conn.execute(
-        """
-        INSERT INTO chunks (
-            chunk_id, normalized_id, normalized_path, chunk_index, chunk_text,
-            date, tags, source_type, source_path, tokens, source_hash,
-            manifest_hash, embedding
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        (
-            chunk.chunk_id,
-            chunk.normalized_id,
-            chunk.normalized_path,
-            chunk.chunk_index,
-            chunk.chunk_text,
-            chunk.date,
-            tags_json,
-            chunk.source_type,
-            chunk.source_path,
-            chunk.tokens,
-            chunk.source_hash,
-            chunk.manifest_hash,
-            vector_to_blob(chunk.embedding),
-        ),
-    )
-    conn.execute(
-        "INSERT INTO chunk_fts (chunk_id, chunk_text) VALUES (?, ?)",
-        (chunk.chunk_id, chunk.chunk_text),
-    )
-
-
-def upsert_source_record(conn: sqlite3.Connection, record: SourceRecord) -> None:
-    conn.execute(
-        """
-        INSERT INTO sources (
-            normalized_path, normalized_id, date, source_hash, manifest_hash,
-            chunk_count, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(normalized_path) DO UPDATE SET
-            normalized_id=excluded.normalized_id,
-            date=excluded.date,
-            source_hash=excluded.source_hash,
-            manifest_hash=excluded.manifest_hash,
-            chunk_count=excluded.chunk_count,
-            updated_at=excluded.updated_at
-        """,
-        (
-            record.normalized_path,
-            record.normalized_id,
-            record.date,
-            record.source_hash,
-            record.manifest_hash,
-            record.chunk_count,
-            record.updated_at,
-        ),
-    )
-
-
 def index_entries(
-    conn: sqlite3.Connection,
     tasks: Sequence[IndexTask],
+    chunk_index,
     embedder: EmbeddingBackend,
     char_per_token: float,
-) -> dict[str, Any]:
+) -> tuple[dict[str, Any], Mapping[str, list[ChunkRecord]]]:
     touched_dates: set[str] = set()
     processed_entries = 0
     processed_chunks = 0
-    timestamp = time_utils.format_timestamp(time_utils.now())
+    records_by_day: dict[str, list[ChunkRecord]] = defaultdict(list)
 
     for task in tasks:
         chunk_records = build_chunk_records(
@@ -342,96 +222,51 @@ def index_entries(
         if not chunk_records:
             continue
         vectors = embedder.embed([chunk.chunk_text for chunk in chunk_records])
-        delete_chunks_for_entry(conn, task.normalized_id)
         for chunk, vector in zip(chunk_records, vectors, strict=False):
             chunk.embedding = vector
-            insert_chunk_record(conn, chunk)
-        upsert_source_record(
-            conn,
-            SourceRecord(
-                normalized_path=task.normalized_path,
-                normalized_id=task.normalized_id,
-                date=chunk_records[0].date,
-                source_hash=task.source_hash,
-                manifest_hash=chunk_records[0].manifest_hash,
-                chunk_count=len(chunk_records),
-                updated_at=timestamp,
-            ),
-        )
+        chunk_index.replace_entry(task.normalized_id, chunk_records)
+        for record in chunk_records:
+            records_by_day[record.date].append(record)
         touched_dates.add(task.day)
         processed_entries += 1
         processed_chunks += len(chunk_records)
 
-    return {"entries": processed_entries, "chunks": processed_chunks, "dates": touched_dates}
-
-
-def rebuild_annoy_index(
-    conn: sqlite3.Connection,
-    dimension: int,
-    ann_trees: int,
-    output_path: Path,
-) -> None:
-    rows = conn.execute(
-        "SELECT chunk_id, embedding FROM chunks ORDER BY chunk_id",
-    ).fetchall()
-    if not rows:
-        if output_path.exists():
-            output_path.unlink()
-        conn.execute("DELETE FROM annoy_map")
-        return
-
-    index = AnnoyIndex(dimension, metric=ANN_METRIC)
-    for idx, row in enumerate(rows):
-        vector = blob_to_vector(row["embedding"])
-        index.add_item(idx, vector)
-    index.build(ann_trees)
-    index.save(str(output_path))
-
-    conn.execute("DELETE FROM annoy_map")
-    conn.executemany(
-        "INSERT INTO annoy_map (annoy_idx, chunk_id) VALUES (?, ?)",
-        ((idx, row["chunk_id"]) for idx, row in enumerate(rows)),
-    )
+    stats = {"entries": processed_entries, "chunks": processed_chunks, "dates": touched_dates}
+    return stats, records_by_day
 
 
 def write_chunk_manifests(
-    conn: sqlite3.Connection,
     chunk_dir: Path,
-    days: Iterable[str],
+    records_by_day: Mapping[str, list[ChunkRecord]],
     embedder: EmbeddingBackend,
 ) -> None:
     chunk_dir.mkdir(parents=True, exist_ok=True)
-    for day in sorted(set(days)):
-        rows = conn.execute(
-            """
-            SELECT chunk_id, normalized_id, chunk_index, chunk_text, tags,
-                   source_type, source_path, tokens, source_hash, manifest_hash, embedding
-            FROM chunks
-            WHERE date = ?
-            ORDER BY normalized_id, chunk_index
-            """,
-            (day,),
-        ).fetchall()
+    for day in sorted(records_by_day.keys()):
+        day_records = records_by_day[day]
+        if not day_records:
+            continue
         chunks: list[Chunk] = []
         vectors: list[list[float]] = []
-        for row in rows:
-            tags = json.loads(row["tags"] or "[]")
+        for record in sorted(
+            day_records,
+            key=lambda item: (item.normalized_id, item.chunk_index),
+        ):
             chunks.append(
                 Chunk(
-                    chunk_id=str(row["chunk_id"]),
-                    normalized_id=str(row["normalized_id"]),
-                    chunk_index=int(row["chunk_index"]),
-                    text=str(row["chunk_text"] or ""),
-                    date=day,
-                    tags=list(tags),
-                    source_type=row["source_type"],
-                    source_path=str(row["source_path"] or ""),
-                    tokens=int(row["tokens"] or 0),
-                    source_hash=row["source_hash"],
-                    manifest_hash=row["manifest_hash"],
-                ),
+                    chunk_id=record.chunk_id,
+                    normalized_id=record.normalized_id,
+                    chunk_index=record.chunk_index,
+                    text=record.chunk_text,
+                    date=record.date,
+                    tags=record.tags,
+                    source_type=record.source_type,
+                    source_path=record.source_path,
+                    tokens=record.tokens,
+                    source_hash=record.source_hash,
+                    manifest_hash=record.manifest_hash,
+                )
             )
-            vectors.append(blob_to_vector(row["embedding"]))
+            vectors.append(record.embedding or [])
 
         timestamp = time_utils.format_timestamp(time_utils.now())
         artifact = Artifact[ChunkBatch](
@@ -457,12 +292,6 @@ def write_chunk_manifests(
         np.save(chunk_dir / f"{day}.npy", vector_array)
 
 
-def gather_index_stats(conn: sqlite3.Connection) -> tuple[int, int]:
-    chunk_total = conn.execute("SELECT COUNT(*) FROM chunks").fetchone()[0]
-    entry_total = conn.execute("SELECT COUNT(*) FROM sources").fetchone()[0]
-    return int(chunk_total), int(entry_total)
-
-
 def write_index_meta(
     root: Path,
     *,
@@ -471,7 +300,6 @@ def write_index_meta(
     entry_total: int,
     mode: str,
     fake_mode: bool,
-    ann_trees: int,
     search_k_factor: float,
     char_per_token: float,
     since: str | None,
@@ -487,7 +315,6 @@ def write_index_meta(
         entry_count=entry_total,
         mode=mode,
         fake_mode=fake_mode,
-        annoy_trees=ann_trees,
         search_k_factor=search_k_factor,
         char_per_token=char_per_token,
         since=since,

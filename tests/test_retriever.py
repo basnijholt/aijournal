@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import threading
 from pathlib import Path
 
@@ -82,7 +83,7 @@ def test_retriever_parity_with_fixture(
     retriever.close()
 
 
-def test_retriever_annoy_mode_returns_chunks(
+def test_retriever_returns_chunks(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -103,7 +104,7 @@ def test_retriever_annoy_mode_returns_chunks(
     retriever = Retriever(tmp_path, config)
     result = retriever.search("focus blocks", k=3)
 
-    assert result.meta.mode == "annoy"
+    assert result.meta.mode == "chroma"
     assert result.chunks
     assert result.chunks[0].normalized_id == entry_id
     retriever.close()
@@ -126,8 +127,9 @@ def test_retriever_errors_when_index_missing(
     )
 
     index_dir = tmp_path / "derived" / "index"
-    (index_dir / "index.db").unlink()
-    (index_dir / "annoy.index").unlink()
+    chroma_dir = index_dir / "chroma"
+    if chroma_dir.exists():
+        shutil.rmtree(chroma_dir)
 
     config_dict = yaml.safe_load((tmp_path / "config.yaml").read_text(encoding="utf-8"))
     config = AppConfig.model_validate(config_dict)

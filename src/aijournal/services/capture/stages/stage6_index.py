@@ -29,12 +29,12 @@ def run_index_stage_6(
     force_rebuild = rebuild_mode == "always"
     changed_dates_list = list(changed_dates)
     try:
-        index_db = root / "derived" / "index" / "index.db"
+        chroma_dir = root / "derived" / "index" / "chroma"
         if force_rebuild:
             index_message = run_index_rebuild(since=None, limit=None)
             rebuilt = True
             index_updated = True
-        elif not index_db.exists():
+        elif not chroma_dir.exists():
             index_message = run_index_rebuild(since=None, limit=None)
             rebuilt = True
             index_updated = True
@@ -63,8 +63,8 @@ def run_index_stage_6(
         )
     elif index_updated:
         index_artifacts = [
-            relative_path(root / "derived" / "index" / "index.db", root),
-            relative_path(root / "derived" / "index" / "annoy.index", root),
+            relative_path(root / "derived" / "index" / "chroma", root),
+            relative_path(root / "derived" / "index" / "meta.json", root),
         ]
         op_result = OperationResult.wrote(
             index_artifacts,

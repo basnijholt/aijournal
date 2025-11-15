@@ -15,13 +15,11 @@ from aijournal.io.artifacts import save_artifact
 def test_run_system_doctor_happy_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("AIJOURNAL_FAKE_OLLAMA", "1")
 
-    monkeypatch.setattr(system, "_check_sqlite_fts5", lambda: (True, None))
     monkeypatch.setattr(
         system,
         "_check_index_artifacts",
         lambda workspace, config: {
-            "index_db_exists": True,
-            "annoy_index_exists": True,
+            "has_chroma_dir": True,
             "meta": {"chunk_count": 1},
             "meta_error": None,
         },
@@ -41,7 +39,6 @@ def test_run_system_doctor_happy_path(tmp_path: Path, monkeypatch: pytest.Monkey
 
     assert result["ok"] is True
     names = [check["name"] for check in result["checks"]]
-    assert "sqlite_fts5" in names
     assert "ollama_reachable" in names
 
 
@@ -51,8 +48,7 @@ def test_run_status_summary(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
 
     index_dir = tmp_path / "derived" / "index"
     index_dir.mkdir(parents=True)
-    (index_dir / "index.db").touch()
-    (index_dir / "annoy.index").touch()
+    (index_dir / "chroma").mkdir()
     meta_path = index_dir / "meta.json"
     meta_payload = {
         "embedding_model": "embeddinggemma:300m",
@@ -61,7 +57,6 @@ def test_run_status_summary(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
         "entry_count": 2,
         "mode": "rebuild",
         "fake_mode": True,
-        "annoy_trees": 50,
         "search_k_factor": 3.0,
         "char_per_token": 4.2,
         "touched_dates": ["2025-10-28"],
@@ -90,8 +85,7 @@ def test_run_status_summary(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
     summary = system.run_status_summary(tmp_path)
 
     assert summary["persona"]["status"] == "fresh"
-    assert summary["index"]["has_index_db"] is True
-    assert summary["index"]["has_annoy_index"] is True
+    assert summary["index"]["has_chroma_dir"] is True
     assert summary["index"]["meta"]["chunk_count"] == 2
     assert summary["pending_updates"]["count"] == 3
     assert summary["ollama"]["host"].startswith("http")

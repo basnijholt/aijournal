@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import os
-import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -28,29 +27,9 @@ from aijournal.services.ollama import (
 from aijournal.utils.paths import resolve_path
 
 
-def _check_sqlite_fts5() -> tuple[bool, str | None]:
-    """Return (ok, hint) indicating whether SQLite has FTS5 support."""
-
-    try:
-        conn = sqlite3.connect(":memory:")
-        conn.execute("CREATE VIRTUAL TABLE __fts5_test USING fts5(content)")
-        conn.execute("DROP TABLE IF EXISTS __fts5_test")
-    except sqlite3.OperationalError as exc:  # pragma: no cover - depends on python build
-        return False, str(exc)
-    except Exception as exc:  # pragma: no cover - defensive
-        return False, str(exc)
-    finally:
-        try:
-            conn.close()
-        except Exception:  # pragma: no cover - defensive
-            pass
-    return True, None
-
-
 def _check_index_artifacts(workspace: Path, config: AppConfig) -> dict[str, Any]:
     index_dir = resolve_path(workspace, config, "derived/index")
-    db_path = index_dir / "index.db"
-    annoy_path = index_dir / "annoy.index"
+    chroma_dir = index_dir / "chroma"
     meta_path = index_dir / "meta.json"
 
     meta_payload: dict[str, Any] | None = None
@@ -63,8 +42,8 @@ def _check_index_artifacts(workspace: Path, config: AppConfig) -> dict[str, Any]
 
     return {
         "index_dir": str(index_dir),
-        "index_db_exists": db_path.exists(),
-        "annoy_index_exists": annoy_path.exists(),
+        "has_chroma_dir": chroma_dir.exists(),
+        "chroma_dir": str(chroma_dir),
         "meta_path": str(meta_path),
         "meta": meta_payload,
         "meta_error": meta_error,
@@ -137,12 +116,8 @@ def run_system_doctor(workspace: Path, *, fake_mode: bool) -> dict[str, Any]:
     checks: list[dict[str, Any]] = []
     overall_ok = True
 
-    fts_ok, fts_hint = _check_sqlite_fts5()
-    checks.append({"name": "sqlite_fts5", "ok": fts_ok, "hint": fts_hint})
-    overall_ok &= fts_ok
-
     index_info = _check_index_artifacts(workspace, config)
-    index_ok = bool(index_info["index_db_exists"] and index_info["annoy_index_exists"])
+    index_ok = bool(index_info["has_chroma_dir"])
     checks.append({"name": "index_artifacts", "ok": index_ok, "details": index_info})
     overall_ok &= index_ok
 
@@ -185,8 +160,7 @@ def run_status_summary(workspace: Path) -> dict[str, Any]:
 
     index_dir = resolve_path(workspace, config, "derived/index")
     index_info = {
-        "has_index_db": (index_dir / "index.db").exists(),
-        "has_annoy_index": (index_dir / "annoy.index").exists(),
+        "has_chroma_dir": (index_dir / "chroma").exists(),
         "meta_path": str(index_dir / "meta.json"),
         "meta": None,
         "meta_error": None,
@@ -344,7 +318,7 @@ def run_system_status_cli(workspace: Path | None = None) -> None:
                 typer.echo(f"  - {reason}")
 
         index_messages: list[str] = []
-        if index_info.get("has_index_db") and index_info.get("has_annoy_index"):
+        if index_info.get("has_chroma_dir"):
             typer.secho("Index artifacts: present", fg=typer.colors.GREEN)
         else:
             typer.secho("Index artifacts: missing", fg=typer.colors.RED)
@@ -355,9 +329,9 @@ def run_system_status_cli(workspace: Path | None = None) -> None:
             typer.secho(f"  meta error: {meta_error}", fg=typer.colors.RED)
             exit_code = 1
         elif isinstance(meta, dict):
-            chunk_count = meta.get("chunk_total")
-            entry_count = meta.get("entry_total")
-            updated_at = meta.get("generated_at")
+            chunk_count = meta.get("chunk_count")
+            entry_count = meta.get("entry_count")
+            updated_at = meta.get("updated_at")
             pieces = []
             if chunk_count is not None:
                 pieces.append(f"chunks={chunk_count}")

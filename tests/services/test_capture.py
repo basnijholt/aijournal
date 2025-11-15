@@ -476,8 +476,7 @@ def test_run_capture_rebuild_always_forces_refresh(
         index_rebuild_calls.append((since, limit))
         index_root = tmp_path / "derived" / "index"
         index_root.mkdir(parents=True, exist_ok=True)
-        (index_root / "index.db").write_text("db", encoding="utf-8")
-        (index_root / "annoy.index").write_text("ann", encoding="utf-8")
+        (index_root / "chroma").mkdir(exist_ok=True)
         return "rebuild"
 
     monkeypatch.setattr(

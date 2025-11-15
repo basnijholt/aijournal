@@ -2,18 +2,6 @@
   "additionalProperties": false,
   "description": "Metadata describing the current retrieval index state.",
   "properties": {
-    "annoy_trees": {
-      "anyOf": [
-        {
-          "type": "integer"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null,
-      "title": "Annoy Trees"
-    },
     "char_per_token": {
       "anyOf": [
         {

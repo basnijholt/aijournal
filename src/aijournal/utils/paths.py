@@ -92,7 +92,6 @@ SEED_FILES: Mapping[str, str] = {
         chat:
           max_retrieved_chunks: 12
         index:
-          ann_trees: 50
           search_k_factor: 3.0
         llm:
           retries: 4
