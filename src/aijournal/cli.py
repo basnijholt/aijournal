@@ -8,6 +8,7 @@ terminal IO.
 
 from __future__ import annotations
 
+import importlib.metadata
 import json
 import os
 import sys
@@ -197,6 +198,22 @@ app = typer.Typer(
     invoke_without_command=True,
     no_args_is_help=True,
 )
+
+
+@app.command("version", help="Print the current aijournal version and source root.")
+def show_version() -> None:
+    """Display package version and repository source path."""
+
+    try:
+        version = importlib.metadata.version("aijournal")
+    except importlib.metadata.PackageNotFoundError:
+        version = "(editable source)"
+
+    source_root = Path(__file__).resolve().parents[2]
+    typer.echo(f"aijournal version: {version}")
+    typer.echo(f"source root: {source_root}")
+
+
 profile_app = typer.Typer(help="Profile utilities.")
 ollama_app = typer.Typer(help="Ollama helpers.")
 index_app = typer.Typer(help="Retrieval index utilities.")
