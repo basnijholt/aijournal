@@ -4,7 +4,7 @@ _Last updated: 2025-11-14_
 
 ## Goals
 
-- Replace the overlapping **Stage 4 `profile_suggest`** and **Stage 5 `characterize`** passes with a **single authoritative `profile_update` stage** per prompt3.md.
+- Replace the overlapping **Stage 4 `profile_suggest`** and **Stage 5 `characterize`** passes with a **single authoritative `profile_update` stage** per `docs/archive/2025-11-15_prompt3.md`.
 - Feed the LLM richer context (normalized entries, daily summaries, microfacts, recent history, current persona) so it can emit claims, facet updates, and interview prompts in one shot.
 - Keep the **existing persistence layer** (`ProfileUpdateProposals`, `ProfileUpdateBatch`, `profile/claims.yaml`, `profile/self_profile.yaml`) and **review/apply semantics** intact while deleting legacy entry points.
 
@@ -97,4 +97,4 @@ We reuse the current `PromptProfileUpdates` DTO for outputs; no schema migration
 2. **Phase B (validation)**: migrate tests/docs, ensure fake-mode fixtures cover the new prompt, remove wrappers.
 3. **Phase C (cleanup)**: delete legacy prompt files, stage modules, directories, and CLI commands once the unified stage is green in live-mode rehearsal.
 
-This design satisfies prompt3.md by consolidating the profile update logic into a single, richer stage without destabilizing downstream persistence or review workflows.
+This design satisfies `docs/archive/2025-11-15_prompt3.md` by consolidating the profile update logic into a single, richer stage without destabilizing downstream persistence or review workflows.
