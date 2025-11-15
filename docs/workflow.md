@@ -90,7 +90,7 @@ That’s the entire daily workflow—no manual normalization or staged pipeline 
 `capture` already refreshes the index, persona core, and packs when inputs change. You can re-run
 individual stages manually via the `ops` namespace when debugging or scripting:
 
-- `uv run aijournal ops index rebuild` — rebuild Annoy/SQLite artifacts from scratch and refresh `derived/index/meta.json`.
+- `uv run aijournal ops index rebuild` — rebuild the Chroma retrieval index from scratch and refresh `derived/index/meta.json`.
 - `uv run aijournal ops index search "deep work" --top 3` — smoke-test the index.  
 - `uv run aijournal ops persona build` — regenerate `derived/persona/persona_core.yaml`.  
 - `uv run aijournal export pack --level L4 --history-days 1` — assemble a context bundle (top-level everyday command).

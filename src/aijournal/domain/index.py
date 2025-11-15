@@ -38,7 +38,6 @@ class IndexMeta(StrictModel):
     entry_count: int | None = None
     mode: str | None = None
     fake_mode: bool | None = None
-    annoy_trees: int | None = None
     search_k_factor: float | None = None
     char_per_token: float | None = None
     since: str | None = None

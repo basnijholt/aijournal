@@ -2145,7 +2145,7 @@ def index_rebuild(
         help="Maximum number of normalized files to index (debug/testing).",
     ),
 ) -> None:
-    """Rebuild the Annoy+SQLite retrieval index from normalized YAML."""
+    """Rebuild the Chroma-backed retrieval index from normalized YAML."""
     message = run_index_rebuild(since, limit=limit)
     typer.echo(message)
 

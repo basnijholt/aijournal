@@ -112,7 +112,7 @@ def prepare_inputs(ctx: RunContext, options: PackOptions) -> PackPrepared:
     ensure_persona_ready_for_pack(ctx.workspace, ctx.workspace, ctx.config)
     resolved_date = _resolve_pack_date(normalized_level, options.date, ctx.workspace, ctx.config)
 
-    _, _, char_per_token = _index_settings(ctx.config)
+    _, char_per_token = _index_settings(ctx.config)
 
     ctx.emit(
         event="prepare_summary",

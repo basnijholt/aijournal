@@ -150,9 +150,8 @@ All outputs include `meta.{llm_model, prompt_path, prompt_hash, created_at}` and
 ### 4.4 Retrieval and Conversational Loop
 
 - `aijournal ops index rebuild` transforms normalized entries into deterministic chunks (700–1200 characters, sentence-aware, including section headings) and stores:
-  - SQLite FTS5 database (`derived/index/index.db`) with chunk metadata.
-  - Annoy index (`derived/index/annoy.index`) keyed by SQLite row IDs.
-  - Chunk artifacts (`ArtifactKind.INDEX_CHUNKS`) in `derived/index/chunks/YYYY-MM-DD.yaml`, wrapping `ChunkBatch` payloads plus optional `.npy` vector shards for inspection.
+  - A Chroma collection under `derived/index/chroma/` with chunk vectors + metadata.
+  - Chunk artifacts (`ArtifactKind.INDEX_CHUNKS`) in `derived/index/chunks/YYYY-MM-DD.yaml`, wrapping `ChunkBatch` payloads plus `.npy` vector shards for inspection.
 - Incremental refreshes call `aijournal ops index update` with the dates touched during the last capture run (fallback `--since` window) so rebuilds stay fast.
 - Chat and advisor mode share the same orchestrator:
   1. Load the persona core and rank claims by effective strength (bounded by `chat.max_claims`).
@@ -200,9 +199,9 @@ All structured prompts go through `run_ollama_agent`, which sanitizes JSON, retr
 ## 7. Retrieval Architecture
 
 - **Chunking:** Deterministic boundaries (700–1200 characters) with sentence awareness and section headings for context.
-- **Storage:** SQLite FTS5 database for metadata & text (`fts5` is a required compile option) and an Annoy index for vectors.
-- **Vectors:** Embeddings generated via `embeddinggemma:300m` served by Ollama. `derived/index/meta.json` records embedding dimension, build time, ann_trees, search_k_factor, and whether fake mode ran.
-- **Search:** `Retriever.search` loads the Annoy neighbors with `search_k = search_k_factor * k * ann_trees`, filters by tags/date/source, then reranks using cosine similarity and recency.
+- **Storage:** A Chroma (DuckDB-backed) collection at `derived/index/chroma/` stores chunk vectors plus metadata; chunk manifests remain available for audits.
+- **Vectors:** Embeddings generated via `embeddinggemma:300m` served by Ollama. `derived/index/meta.json` records embedding dimension, build time, search_k_factor, and whether fake mode ran.
+- **Search:** `Retriever.search` queries Chroma for top-k semantic matches (`search_k = search_k_factor * k`), filters by tags/date/source, then reranks using cosine similarity and recency.
 - **Inspection:** Chunk manifests mirror the indexed content for human audits or external tooling.
 - **Failure Modes:** Missing indexes result in explicit errors directing operators to run `aijournal ops index rebuild`.
 
@@ -221,10 +220,10 @@ All structured prompts go through `run_ollama_agent`, which sanitizes JSON, retr
 
 ## 9. Performance Considerations
 
-- Journals are small and YAML parsing is fast. Retrieval performance hinges on the Annoy index; rebuilding remains quick even with tens of thousands of chunks.
+- Journals are small and YAML parsing is fast. Retrieval performance hinges on the Chroma store; rebuilding remains quick even with tens of thousands of chunks.
 - Structured-output commands (summaries, facts, profile update, advise) run sequentially and typically complete within seconds under `gpt-oss:20b`.
 - Caching hooks (`derived/cache/`) can capture prompt outputs keyed by `(model, prompt_hash, inputs_hash)` if future workloads demand reuse.
-- Keep an eye on retrieval latency via chat telemetry; maintaining `index.meta.json` helps correlate ANN parameters (`ann_trees`, `search_k_factor`) with observed timings.
+- Keep an eye on retrieval latency via chat telemetry; maintaining `index.meta.json` helps correlate search fan-out (`search_k_factor`) with observed timings.
 
 ## 10. Development Workflow
 

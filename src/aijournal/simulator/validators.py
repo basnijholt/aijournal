@@ -454,28 +454,16 @@ class Stage5Validator:
         failures: list[ValidationFailure] = []
         expected_dates = _changed_dates(ctx)
         index_root = ctx.workspace / "derived" / "index"
-        index_db = index_root / "index.db"
-        annoy_index = index_root / "annoy.index"
+        chroma_dir = index_root / "chroma"
         meta_file = index_root / "meta.json"
 
-        if not index_db.exists():
+        if not chroma_dir.exists():
             failures.append(
                 ValidationFailure(
                     stage_id=self.stage_id,
-                    invariant="index-db-exists",
-                    message="Index database missing",
-                    file=str(index_db.relative_to(ctx.workspace)),
-                    severity="warning",
-                ),
-            )
-
-        if not annoy_index.exists():
-            failures.append(
-                ValidationFailure(
-                    stage_id=self.stage_id,
-                    invariant="annoy-index-exists",
-                    message="Annoy index missing",
-                    file=str(annoy_index.relative_to(ctx.workspace)),
+                    invariant="chroma-index-exists",
+                    message="Chroma index missing",
+                    file=str(chroma_dir.relative_to(ctx.workspace)),
                     severity="warning",
                 ),
             )

@@ -4,11 +4,9 @@ from __future__ import annotations
 
 import os
 import re
-import sqlite3
 from dataclasses import dataclass
 from datetime import timedelta
 from pathlib import Path
-from typing import Any
 
 import typer
 from pydantic import BaseModel
@@ -24,13 +22,12 @@ from aijournal.common.command_runner import run_command_pipeline
 from aijournal.common.config_loader import load_config, use_fake_llm
 from aijournal.common.context import RunContext, create_run_context
 from aijournal.pipelines import index as index_pipeline
+from aijournal.services.chunk_index import ChunkIndex
 from aijournal.services.embedding import EmbeddingBackend
 from aijournal.services.retriever import RetrievalFilters, RetrievalResult, Retriever
 from aijournal.utils import time as time_utils
 from aijournal.utils.paths import resolve_path
 
-INDEX_DB_FILENAME = "index.db"
-ANNOY_FILENAME = "annoy.index"
 INDEX_META_FILENAME = "meta.json"
 
 
@@ -104,7 +101,7 @@ class IndexSearchResult:
 def run_index_rebuild(
     since: str | None, *, limit: int | None, workspace: Path | None = None
 ) -> str:
-    """Rebuild the Annoy + SQLite retrieval index."""
+    """Rebuild the Chroma-backed retrieval index."""
 
     workspace = workspace or Path.cwd()
     config = load_config(workspace)
@@ -250,43 +247,30 @@ def _prepare_rebuild_inputs(ctx: RunContext, options: IndexRebuildOptions) -> In
 
 def _invoke_rebuild_pipeline(ctx: RunContext, prepared: IndexRebuildPrepared) -> IndexRebuildResult:
     embedder = _build_embedding_backend(prepared.config, fake_mode=ctx.use_fake_llm)
-    ann_trees, search_k_factor, char_per_token = _index_settings(prepared.config)
-
-    stats: dict[str, Any] = {"entries": 0, "chunks": 0, "dates": []}
-    chunk_total = 0
-    entry_total = 0
-    touched_dates: list[str] = []
+    search_k_factor, char_per_token = _index_settings(prepared.config)
 
     index_dir = _index_dir(ctx.workspace, ctx.config)
     index_dir.mkdir(parents=True, exist_ok=True)
-    conn = _connect_index_db(_index_db_path(ctx.workspace, ctx.config), overwrite=True)
-    try:
-        with conn:
-            _prepare_index_schema(conn)
-            stats = index_pipeline.index_entries(
-                conn,
-                prepared.tasks,
-                embedder,
-                char_per_token,
-            )
-        chunk_total, entry_total = index_pipeline.gather_index_stats(conn)
-        index_pipeline.rebuild_annoy_index(
-            conn,
-            embedder.dim,
-            ann_trees,
-            _annoy_index_path(ctx.workspace, ctx.config),
+    chunk_index = ChunkIndex(ctx.workspace, ctx.config)
+    chunk_index.reset()
+
+    stats, records_by_day = index_pipeline.index_entries(
+        prepared.tasks,
+        chunk_index,
+        embedder,
+        char_per_token,
+    )
+    touched_dates = sorted(stats.get("dates", []))
+    if touched_dates:
+        filtered_records = {day: records_by_day.get(day, []) for day in touched_dates}
+        index_pipeline.write_chunk_manifests(
+            _chunk_manifest_dir(ctx.workspace, ctx.config),
+            filtered_records,
+            embedder,
         )
-        conn.commit()
-        touched_dates = sorted(stats.get("dates", []))
-        if touched_dates:
-            index_pipeline.write_chunk_manifests(
-                conn,
-                _chunk_manifest_dir(ctx.workspace, ctx.config),
-                touched_dates,
-                embedder,
-            )
-    finally:
-        conn.close()
+
+    chunk_total = chunk_index.count_chunks()
+    entry_total = chunk_index.count_entries()
 
     index_pipeline.write_index_meta(
         ctx.workspace,
@@ -295,7 +279,6 @@ def _invoke_rebuild_pipeline(ctx: RunContext, prepared: IndexRebuildPrepared) ->
         entry_total=entry_total,
         mode="rebuild",
         fake_mode=ctx.use_fake_llm,
-        ann_trees=ann_trees,
         search_k_factor=search_k_factor,
         char_per_token=char_per_token,
         since=prepared.since_filter,
@@ -339,16 +322,6 @@ def _prepare_tail_inputs(ctx: RunContext, options: IndexTailOptions) -> IndexTai
         ctx.emit(event="invalid_option", option="limit")
         raise typer.Exit(1)
 
-    db_path = _index_db_path(ctx.workspace, ctx.config)
-    if not db_path.exists():
-        typer.secho(
-            "Index database not found. Run `aijournal index rebuild` first.",
-            fg=typer.colors.RED,
-            err=True,
-        )
-        ctx.emit(event="missing_index_db", path=str(db_path))
-        raise typer.Exit(1)
-
     since_filter = _resolve_since_filter(options.since, fallback_days=options.days)
     entries = _collect_normalized_files(ctx.workspace, ctx.config, since_filter)
     if options.limit is not None:
@@ -385,78 +358,68 @@ def _prepare_tail_inputs(ctx: RunContext, options: IndexTailOptions) -> IndexTai
 
 
 def _invoke_tail_pipeline(ctx: RunContext, prepared: IndexTailPrepared) -> IndexTailResult:
-    db_path = _index_db_path(ctx.workspace, ctx.config)
-    conn = _connect_index_db(db_path)
-    try:
-        pending = index_pipeline.filter_tasks_for_tail(conn, prepared.tasks)
-        if not pending:
-            ctx.emit(event="index_up_to_date")
-            return IndexTailResult(
-                message="Index already up to date for requested window.",
-                chunks=0,
-                entries=0,
-                touched_dates=[],
-                up_to_date=True,
-            )
-
-        embedder = _build_embedding_backend(prepared.config, fake_mode=ctx.use_fake_llm)
-        ann_trees, search_k_factor, char_per_token = _index_settings(prepared.config)
-
-        stats: dict[str, Any] = {"entries": 0, "chunks": 0, "dates": []}
-        with conn:
-            _prepare_index_schema(conn)
-            stats = index_pipeline.index_entries(conn, pending, embedder, char_per_token)
-
-        chunk_total, entry_total = index_pipeline.gather_index_stats(conn)
-        index_pipeline.rebuild_annoy_index(
-            conn,
-            embedder.dim,
-            ann_trees,
-            _annoy_index_path(ctx.workspace, ctx.config),
-        )
-        conn.commit()
-        touched_dates = sorted(stats.get("dates", []))
-        if touched_dates:
-            index_pipeline.write_chunk_manifests(
-                conn,
-                _chunk_manifest_dir(ctx.workspace, ctx.config),
-                touched_dates,
-                embedder,
-            )
-
-        index_pipeline.write_index_meta(
-            ctx.workspace,
-            embedder=embedder,
-            chunk_total=chunk_total,
-            entry_total=entry_total,
-            mode="tail",
-            fake_mode=ctx.use_fake_llm,
-            ann_trees=ann_trees,
-            search_k_factor=search_k_factor,
-            char_per_token=char_per_token,
-            since=prepared.since_filter,
-            limit=prepared.limit,
-            touched_dates=touched_dates,
-            index_meta_path=lambda root: _index_meta_path(root, ctx.workspace, ctx.config),
-        )
-
-        message = (
-            f"Indexed {stats['chunks']} chunks across {stats['entries']} entries (mode: tail)."
-        )
-        ctx.emit(
-            event="index_tail_complete",
-            chunks=stats.get("chunks", 0),
-            entries=stats.get("entries", 0),
-            dates=touched_dates,
-        )
+    if not prepared.tasks:
+        ctx.emit(event="index_up_to_date")
         return IndexTailResult(
-            message=message,
-            chunks=int(stats.get("chunks", 0)),
-            entries=int(stats.get("entries", 0)),
-            touched_dates=touched_dates,
+            message="No normalized entries matched the requested window.",
+            chunks=0,
+            entries=0,
+            touched_dates=[],
+            up_to_date=True,
         )
-    finally:
-        conn.close()
+
+    embedder = _build_embedding_backend(prepared.config, fake_mode=ctx.use_fake_llm)
+    search_k_factor, char_per_token = _index_settings(prepared.config)
+    chunk_index = ChunkIndex(ctx.workspace, ctx.config)
+
+    stats, records_by_day = index_pipeline.index_entries(
+        prepared.tasks,
+        chunk_index,
+        embedder,
+        char_per_token,
+    )
+
+    touched_dates = sorted(stats.get("dates", []))
+    if touched_dates:
+        filtered_records = {day: records_by_day.get(day, []) for day in touched_dates}
+        index_pipeline.write_chunk_manifests(
+            _chunk_manifest_dir(ctx.workspace, ctx.config),
+            filtered_records,
+            embedder,
+        )
+
+    chunk_total = chunk_index.count_chunks()
+    entry_total = chunk_index.count_entries()
+
+    index_pipeline.write_index_meta(
+        ctx.workspace,
+        embedder=embedder,
+        chunk_total=chunk_total,
+        entry_total=entry_total,
+        mode="tail",
+        fake_mode=ctx.use_fake_llm,
+        search_k_factor=search_k_factor,
+        char_per_token=char_per_token,
+        since=prepared.since_filter,
+        limit=prepared.limit,
+        touched_dates=touched_dates,
+        index_meta_path=lambda root: _index_meta_path(root, ctx.workspace, ctx.config),
+    )
+
+    message = f"Indexed {stats['chunks']} chunks across {stats['entries']} entries (mode: tail)."
+    ctx.emit(
+        event="index_tail_complete",
+        chunks=stats.get("chunks", 0),
+        entries=stats.get("entries", 0),
+        dates=touched_dates,
+    )
+    return IndexTailResult(
+        message=message,
+        chunks=int(stats.get("chunks", 0)),
+        entries=int(stats.get("entries", 0)),
+        touched_dates=touched_dates,
+        up_to_date=stats.get("entries", 0) == 0,
+    )
 
 
 def _persist_tail_output(ctx: RunContext, result: IndexTailResult) -> str:
@@ -533,14 +496,6 @@ def _persist_search_output(ctx: RunContext, search_result: IndexSearchResult) ->
 
 def _index_dir(workspace: Path, config: AppConfig) -> Path:
     return resolve_path(workspace, config, "derived/index")
-
-
-def _index_db_path(workspace: Path, config: AppConfig) -> Path:
-    return _index_dir(workspace, config) / INDEX_DB_FILENAME
-
-
-def _annoy_index_path(workspace: Path, config: AppConfig) -> Path:
-    return _index_dir(workspace, config) / ANNOY_FILENAME
 
 
 def _chunk_manifest_dir(workspace: Path, config: AppConfig) -> Path:
@@ -622,73 +577,7 @@ def _build_embedding_backend(config: AppConfig, *, fake_mode: bool) -> Embedding
     return EmbeddingBackend(model, host=host, fake_mode=fake_mode)
 
 
-def _index_settings(config: AppConfig) -> tuple[int, float, float]:
-    ann_trees = config.index.ann_trees
+def _index_settings(config: AppConfig) -> tuple[float, float]:
     search_k_factor = config.index.search_k_factor
     char_per_token = config.token_estimator.char_per_token
-    return ann_trees, search_k_factor, char_per_token
-
-
-def _connect_index_db(path: Path, *, overwrite: bool = False) -> sqlite3.Connection:
-    if overwrite and path.exists():
-        path.unlink()
-    conn = sqlite3.connect(path)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL;")
-    conn.execute("PRAGMA foreign_keys=ON;")
-    return conn
-
-
-def _prepare_index_schema(conn: sqlite3.Connection) -> None:
-    try:
-        conn.executescript(
-            """
-            CREATE TABLE IF NOT EXISTS chunks (
-                chunk_id TEXT PRIMARY KEY,
-                normalized_id TEXT NOT NULL,
-                normalized_path TEXT NOT NULL,
-                chunk_index INTEGER NOT NULL,
-                chunk_text TEXT NOT NULL,
-                date TEXT NOT NULL,
-                tags TEXT NOT NULL,
-                source_type TEXT,
-                source_path TEXT,
-                tokens INTEGER NOT NULL,
-                source_hash TEXT,
-                manifest_hash TEXT,
-                embedding BLOB NOT NULL
-            );
-
-            CREATE VIRTUAL TABLE IF NOT EXISTS chunk_fts
-            USING fts5(
-                chunk_id UNINDEXED,
-                chunk_text,
-                content=''
-            );
-
-            CREATE TABLE IF NOT EXISTS sources (
-                normalized_path TEXT PRIMARY KEY,
-                normalized_id TEXT NOT NULL,
-                date TEXT NOT NULL,
-                source_hash TEXT,
-                manifest_hash TEXT,
-                chunk_count INTEGER NOT NULL,
-                updated_at TEXT NOT NULL
-            );
-
-            CREATE TABLE IF NOT EXISTS annoy_map (
-                annoy_idx INTEGER PRIMARY KEY,
-                chunk_id TEXT NOT NULL
-            );
-            """,
-        )
-    except sqlite3.OperationalError as exc:
-        message = str(exc).lower()
-        if "fts5" in message:
-            msg = (
-                "SQLite runtime does not support FTS5, which is required for the retrieval index. "
-                "Install a Python build with FTS5 enabled (e.g., the system sqlite3 on macOS via Homebrew) "
-                "or rebuild Python against an FTS5-capable SQLite."
-            )
-            raise RuntimeError(msg) from exc
-        raise
+    return search_k_factor, char_per_token

@@ -40,7 +40,6 @@ class IndexConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    ann_trees: int = 50
     search_k_factor: float = 3.0
 
 

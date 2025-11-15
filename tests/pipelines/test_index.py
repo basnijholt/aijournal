@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import json
-import sqlite3
 from pathlib import Path
 
 import numpy as np
@@ -14,6 +12,14 @@ from aijournal.io.yaml_io import write_yaml_model
 from aijournal.models.authoritative import ManifestEntry
 from aijournal.pipelines import index as index_pipeline
 from aijournal.services.embedding import EmbeddingBackend
+
+
+class FakeChunkIndex:
+    def __init__(self) -> None:
+        self.entries: dict[str, list[index_pipeline.ChunkRecord]] = {}
+
+    def replace_entry(self, normalized_id: str, records: list[index_pipeline.ChunkRecord]) -> None:
+        self.entries[normalized_id] = list(records)
 
 
 def _normalized_entry(entry_id: str) -> NormalizedEntry:
@@ -63,47 +69,7 @@ def test_prepare_index_tasks_uses_relative_path(tmp_path: Path) -> None:
     assert task.source_hash == index_pipeline.hash_file(entry_path)
 
 
-def _prepare_schema(conn: sqlite3.Connection) -> None:
-    conn.executescript(
-        """
-        CREATE TABLE chunks (
-            chunk_id TEXT PRIMARY KEY,
-            normalized_id TEXT NOT NULL,
-            normalized_path TEXT NOT NULL,
-            chunk_index INTEGER NOT NULL,
-            chunk_text TEXT NOT NULL,
-            date TEXT NOT NULL,
-            tags TEXT NOT NULL,
-            source_type TEXT,
-            source_path TEXT,
-            tokens INTEGER NOT NULL,
-            source_hash TEXT,
-            manifest_hash TEXT,
-            embedding BLOB NOT NULL
-        );
-        CREATE VIRTUAL TABLE chunk_fts USING fts5(chunk_id UNINDEXED, chunk_text, content='');
-        CREATE TABLE sources (
-            normalized_path TEXT PRIMARY KEY,
-            normalized_id TEXT NOT NULL,
-            date TEXT NOT NULL,
-            source_hash TEXT,
-            manifest_hash TEXT,
-            chunk_count INTEGER NOT NULL,
-            updated_at TEXT NOT NULL
-        );
-        CREATE TABLE annoy_map (
-            annoy_idx INTEGER PRIMARY KEY,
-            chunk_id TEXT NOT NULL
-        );
-        """
-    )
-
-
-def test_index_entries_and_annoy(tmp_path: Path) -> None:
-    conn = sqlite3.connect(":memory:")
-    conn.row_factory = sqlite3.Row
-    _prepare_schema(conn)
-
+def test_index_entries_upserts_records(tmp_path: Path) -> None:
     entry = _normalized_entry("entry-1")
     tasks = [
         index_pipeline.IndexTask(
@@ -118,16 +84,17 @@ def test_index_entries_and_annoy(tmp_path: Path) -> None:
     ]
 
     embedder = EmbeddingBackend(model="fake", fake_mode=True)
-    stats = index_pipeline.index_entries(conn, tasks, embedder, char_per_token=4.0)
+    chunk_index = FakeChunkIndex()
+    stats, records_by_day = index_pipeline.index_entries(
+        tasks,
+        chunk_index,
+        embedder,
+        char_per_token=4.0,
+    )
     assert stats["entries"] == 1
-
-    chunk_total, entry_total = index_pipeline.gather_index_stats(conn)
-    assert chunk_total == 1
-    assert entry_total == 1
-
-    index_path = tmp_path / "annoy.index"
-    index_pipeline.rebuild_annoy_index(conn, embedder.dim, ann_trees=2, output_path=index_path)
-    assert index_path.exists()
+    assert stats["chunks"] >= 1
+    assert "entry-1" in chunk_index.entries
+    assert "2024-01-02" in records_by_day
 
 
 def test_write_index_meta(tmp_path: Path) -> None:
@@ -142,7 +109,6 @@ def test_write_index_meta(tmp_path: Path) -> None:
         entry_total=5,
         mode="rebuild",
         fake_mode=True,
-        ann_trees=10,
         search_k_factor=3.0,
         char_per_token=4.2,
         since="2024-01-01",
@@ -153,51 +119,37 @@ def test_write_index_meta(tmp_path: Path) -> None:
 
     meta = load_artifact_data(meta_path, IndexMeta)
     assert meta.chunk_count == 10
-    assert meta.annoy_trees == 10
+    assert meta.search_k_factor == 3.0
 
 
 def test_write_chunk_manifests(tmp_path: Path) -> None:
-    conn = sqlite3.connect(":memory:")
-    conn.row_factory = sqlite3.Row
-    _prepare_schema(conn)
-
-    entry_id = "entry-1"
     embedder = EmbeddingBackend(model="fake", fake_mode=True)
     base_vector = np.arange(0, min(16, embedder.dim), dtype=float)
     if base_vector.size < embedder.dim:
         base_vector = np.pad(base_vector, (0, embedder.dim - base_vector.size))
     vector = base_vector.tolist()
 
-    conn.execute(
-        """
-        INSERT INTO chunks (
-            chunk_id, normalized_id, normalized_path, chunk_index, chunk_text,
-            date, tags, source_type, source_path, tokens, source_hash, manifest_hash, embedding
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        (
-            "chunk-1",
-            entry_id,
-            "normalized/path.yaml",
-            0,
-            "Focus chunk",
-            "2024-01-02",
-            json.dumps(["focus"]),
-            "markdown",
-            "data/entry.md",
-            120,
-            "source-hash",
-            "manifest-hash",
-            index_pipeline.vector_to_blob(vector),
-        ),
+    record = index_pipeline.ChunkRecord(
+        chunk_id="chunk-1",
+        normalized_id="entry-1",
+        normalized_path="normalized/path.yaml",
+        chunk_index=0,
+        chunk_text="Focus chunk",
+        date="2024-01-02",
+        tags=["focus"],
+        source_type="markdown",
+        source_path="data/entry.md",
+        tokens=120,
+        source_hash="source-hash",
+        manifest_hash="manifest-hash",
     )
+    record.embedding = vector
 
     chunk_dir = tmp_path / "chunks"
     index_pipeline.write_chunk_manifests(
-        conn,
         chunk_dir,
-        days={"2024-01-02"},
-        embedder=embedder,
+        {"2024-01-02": [record]},
+        embedder,
     )
 
     artifact_path = chunk_dir / "2024-01-02.yaml"

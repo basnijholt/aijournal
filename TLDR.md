@@ -219,14 +219,14 @@ Capture can **apply** these batches immediately (`--apply-profile=auto`) or queu
 **What it does**:
 - Chunks normalized entries (700-1200 chars, sentence-aware)
 - Generates embeddings via Ollama (`embeddinggemma:300m`)
-- Updates SQLite FTS5 database + Annoy index
+- Upserts vectors + metadata into the Chroma collection under `derived/index/chroma`
 - Writes `derived/index/meta.json`
 
 **Inputs**: Normalized entries (**derived** from Stage 1)
 **Outputs**:
-- `derived/index/index.db` (SQLite with FTS5)
-- `derived/index/annoy.index` (vector embeddings)
-- `derived/index/chunks/YYYY-MM-DD.yaml` (chunk manifests)
+- `derived/index/chroma/` (Chroma persistent store)
+- `derived/index/meta.json` (index metadata)
+- `derived/index/chunks/YYYY-MM-DD.yaml` (chunk manifests + vector shards)
 
 ---
 

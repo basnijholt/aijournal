@@ -45,7 +45,7 @@ uv sync
 uv run pytest -q
 ```
 
-- Runtime deps beyond Typer/PyYAML/httpx/pydantic/dateutil: `numpy`, `annoy`, `fastapi`, `uvicorn`, `orjson`. Install once via `uv add ...`; everything stays local-first.
+- Runtime deps beyond Typer/PyYAML/httpx/pydantic/dateutil: `numpy`, `chromadb`, `fastapi`, `uvicorn`, `orjson`. Install once via `uv add ...`; everything stays local-first.
 - Retrieval uses Ollama's `embeddinggemma:300m` embeddings by default. Override it with `AIJOURNAL_EMBEDDING_MODEL` env var or by setting `embedding_model` in `config.yaml`; the `AIJOURNAL_MODEL` env var only affects chat/advice, not embeddings.
 
 - `config.yaml` stores runtime defaults (model, host, temperature, advisor settings).
@@ -159,14 +159,14 @@ Produces three Markdown files with full frontmatter (`id`, `created_at`, `title`
 ### Build or tail the retrieval index
 
 ```sh
-aijournal ops index rebuild               # one-shot rebuild (SQLite + Annoy) from normalized YAML
+aijournal ops index rebuild               # one-shot rebuild (Chroma chunk index) from normalized YAML
 aijournal ops index update --since 7d     # optional helper: follow manifest entries and index new files
 aijournal ops index search "deep work ideas" --tags focus --date-from 2025-02-01
 ```
 
-- Index lives under `derived/index/` (`index.db`, `annoy.index`, `meta.json`).
+- Index lives under `derived/index/` (`chroma/`, `meta.json`, `chunks/`).
 - Chunking is deterministic (700–1200 characters, sentence boundaries) and every chunk stores normalized_id/date/tags.
-- Retrieval relies on Annoy + SQLite FTS5; if those artifacts are missing, commands error loudly so you can rebuild with `aijournal ops index rebuild`.
+- Retrieval relies on a Chroma vector store under `derived/index/chroma`; if those artifacts are missing, commands error loudly so you can rebuild with `aijournal ops index rebuild`.
 - `aijournal ops index search` reuses the Retriever service to stream scored snippets with source path/date metadata, honoring `--tags`, `--source`, `--date-from`, and `--date-to` filters.
 - FTS5 is a hard requirement: verify with `python - <<'PY'\nimport sqlite3\nprint('fts5' in sqlite3.connect(':memory:').execute(\"pragma compile_options\").fetchall().__str__().lower())\nPY`. If it prints `False`, install an FTS5-enabled SQLite and rebuild Python (macOS: `brew install sqlite` then reinstall Python via `pyenv` or `uv`; Linux: `sudo apt install libsqlite3-dev` before building Python).
 - After editing retrieval-related code run `uv run pytest -q` to ensure the CLI and retriever fixtures remain deterministic.
@@ -338,8 +338,8 @@ aijournal chat "What did I focus on last week?"
 Streams a short answer grounded in your persona core plus retrieved journal chunks. Each response
 includes inline `[entry:<normalized_id>#p<idx>]` citations, a telemetry summary, and—in live mode—an
 optional follow-up question that respects `coaching_prefs.probing`. The command exits early when
-prerequisites are missing—ensure `derived/persona/persona_core.yaml`, `derived/index/index.db`, and
-`derived/index/annoy.index` exist (rebuild them with `aijournal ops persona build` and
+prerequisites are missing—ensure `derived/persona/persona_core.yaml` and
+`derived/index/chroma` exist (rebuild them with `aijournal ops persona build` and
 `aijournal ops index rebuild`). Setting `AIJOURNAL_FAKE_OLLAMA=1` keeps the loop deterministic for
 tests/CI.
 
@@ -526,10 +526,10 @@ aijournal ops index rebuild
 aijournal ops index update
 ```
 
-- `derived/index/index.db` stores chunk metadata + FTS5 virtual table; `derived/index/annoy.index` stores embeddings; `meta.json` records embedding model/dim/build timestamp and whether fake mode ran.
+- `derived/index/chroma/` stores chunk metadata plus vectors; `meta.json` records embedding model/dim/build timestamp and whether fake mode ran.
 - Chunking is deterministic (700–1200 chars, sentence boundaries) and each chunk stores `{normalized_id, date, tags, source_type, chunk_index, tokens}`.
-- Human-friendly chunk artifacts (`ArtifactKind.INDEX_CHUNKS`) under `derived/index/chunks/YYYY-MM-DD.yaml` wrap a `ChunkBatch` payload (day + chunk list) so you can inspect or reuse the indexed data. Matching `.npy` shards store the raw vectors. The built-in retriever still depends on the Annoy/SQLite pair.
-- `Retriever.search("question about deep work", k=12, filters=...)` (see `src/aijournal/services/retriever.py`) powers chat/advice and the `aijournal ops index search` CLI, combining Annoy cosine scores with a light recency boost. If the index artifacts are missing, retrieval fails fast and prompts you to rebuild.
+- Human-friendly chunk artifacts (`ArtifactKind.INDEX_CHUNKS`) under `derived/index/chunks/YYYY-MM-DD.yaml` wrap a `ChunkBatch` payload (day + chunk list) so you can inspect or reuse the indexed data. Matching `.npy` shards store the raw vectors. The built-in retriever depends on the persisted Chroma collection and these manifests for auditing.
+- `Retriever.search("question about deep work", k=12, filters=...)` (see `src/aijournal/services/retriever.py`) powers chat/advice and the `aijournal ops index search` CLI, combining Chroma similarity scores with a light recency boost. If the index artifacts are missing, retrieval fails fast and prompts you to rebuild.
 
 ### Configuration quick reference
 
@@ -537,7 +537,7 @@ aijournal ops index update
 
 - `embedding_model: "<model-name>"` to change the embedding model (defaults to `embeddinggemma:300m` when omitted). Can also be overridden with `AIJOURNAL_EMBEDDING_MODEL` env var.
 - `llm: {retries: 4, timeout: 120.0}` to customize LLM retry behavior and request timeouts.
-- `index: {ann_trees: 50, search_k_factor: 3.0}` to tweak ANN settings.
+- `index: {search_k_factor: 3.0}` to tweak retrieval fan-out.
 - `chat: {max_retrieved_chunks: 12, max_claims: 16, follow_up_enabled: true, write_back_facts: true}` for retrieval/chat behaviour.
 - Custom `impact_weights.claim_types` if certain claim types should rank higher.
 - Adjusted `persona.{token_budget,max_claims,min_claims}` if you need a larger or smaller persona core.
