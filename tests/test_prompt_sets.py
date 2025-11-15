@@ -146,10 +146,10 @@ class TestPromptsConfig:
         config = PromptsConfig(active_set="experiment-1")
         assert config.active_set == "experiment-1"
 
-    def test_forbids_extra_fields(self) -> None:
-        """Should forbid extra fields."""
-        with pytest.raises(Exception):  # ValidationError
-            PromptsConfig(active_set="test", unknown_field="value")  # type: ignore[call-arg]
+    def test_ignore_extra_fields(self) -> None:
+        """Should ignore extra fields."""
+        config = PromptsConfig(active_set="test", unknown_field="value")  # type: ignore[call-arg]
+        assert config.model_dump() == {"active_set": "test"}
 
 
 class TestAppConfigIntegration:

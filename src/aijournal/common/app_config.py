@@ -13,7 +13,7 @@ class PathsConfig(BaseModel):
     All paths are relative to the workspace root directory.
     """
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
     data: str = "data"
     profile: str = "profile"
@@ -24,7 +24,7 @@ class PathsConfig(BaseModel):
 class PromptsConfig(BaseModel):
     """Prompts configuration for A/B/N testing."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
     active_set: str | None = None
 
@@ -32,7 +32,7 @@ class PromptsConfig(BaseModel):
 class ChatConfig(BaseModel):
     """Chat service configuration."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
     model: str | None = None
     host: str | None = None
@@ -46,7 +46,7 @@ class ChatConfig(BaseModel):
 class IndexConfig(BaseModel):
     """Vector index configuration."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
     search_k_factor: float = 3.0
 
@@ -54,7 +54,7 @@ class IndexConfig(BaseModel):
 class PersonaConfig(BaseModel):
     """Persona generation configuration."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
     token_budget: int = 1200
     max_claims: int = 24
@@ -64,7 +64,7 @@ class PersonaConfig(BaseModel):
 class TokenEstimatorConfig(BaseModel):
     """Token estimation configuration."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
     char_per_token: float = 4.2
 
@@ -72,7 +72,7 @@ class TokenEstimatorConfig(BaseModel):
 class ClaimTypesWeights(BaseModel):
     """Weights for different claim types."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
     value: float = 1.4
     goal: float = 1.4
@@ -87,7 +87,7 @@ class ClaimTypesWeights(BaseModel):
 class ImpactWeightsConfig(BaseModel):
     """Impact weights for persona characteristics."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
     values_goals: float = 1.5
     decision_style: float = 1.3
@@ -101,7 +101,7 @@ class ImpactWeightsConfig(BaseModel):
 class AdvisorConfig(BaseModel):
     """Advisor service configuration."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
     max_recos: int = 3
     include_risks: bool = True
@@ -110,13 +110,13 @@ class AdvisorConfig(BaseModel):
 class CaptureConfig(BaseModel):
     """Capture service configuration."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
 
 class MicrofactIndexConfig(BaseModel):
     """Configuration for the Chroma-backed microfact index."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
     subdir: str = "microfacts/index"
     collection: str = "microfacts"
@@ -130,7 +130,7 @@ class MicrofactIndexConfig(BaseModel):
 class LLMConfig(BaseModel):
     """LLM runtime configuration."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
     retries: int = Field(
         default=4,
@@ -149,7 +149,7 @@ class LLMConfig(BaseModel):
 class AppConfig(BaseModel):
     """Project configuration backed by Pydantic validation."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
     # Global LLM settings
     model: str | None = None

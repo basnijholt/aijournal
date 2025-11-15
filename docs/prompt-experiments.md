@@ -70,13 +70,13 @@ experiments:
 
 ```python
 class VariantConfig(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
     label: str
     weight: float = 1.0
 
 class ExperimentConfig(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
     enabled: bool = True
     strategy: Literal["round_robin", "random", "weighted", "fixed"] = "round_robin"
