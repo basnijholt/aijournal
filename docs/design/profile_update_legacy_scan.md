@@ -14,7 +14,7 @@ rg -n "profile_suggest|characterize" --glob '!docs/archive/**' --glob '!.code/**
 
 ## Results
 
-- **Active code/tests**: ✅ Clean. The only matches are within historical design docs (`docs/design/profile_update_*.md`) and the Prompt3 spec (`docs/archive/2025-11-15_prompt3.md`, `PROMPT3_DESIGN_SUMMARY.md`).
+- **Active code/tests**: ✅ Clean. The only matches are within historical design docs (`docs/design/profile_update_*.md`) and the Prompt3 spec (`docs/archive/2025-11-15_prompt3.md`, `docs/archive/2025-11-15_PROMPT3_DESIGN_SUMMARY.md`).
 - **Operator docs (README, TLDR, workflow, AGENTS, simulator, risk analysis)**: ✅ Updated to describe the unified `profile_update` stage and `derived/pending/profile_updates/` outputs.
 - **Pipelines/CLI**: ✅ `src/aijournal/pipelines/profile_update.py`, the capture stage, simulator validators, CLI commands, and audit tooling now reference only `profile_update`.
 - **Legacy mention policy**: Any remaining references appear only inside design documents retained for historical/audit purposes. Each doc includes an explicit status note.
