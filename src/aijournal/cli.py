@@ -652,6 +652,7 @@ def capture(
         resolved_paths = []
         source_mode = "stdin"
 
+    workspace = _get_workspace()
     capture_request = CaptureRequest(
         source=source_mode,
         text=effective_text,
@@ -678,7 +679,7 @@ def capture(
         max_stage=max_stage,
     )
 
-    result = run_capture(capture_input)
+    result = run_capture(capture_input, root=workspace)
 
     if result.errors:
         for error in result.errors:

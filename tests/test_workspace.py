@@ -13,6 +13,7 @@ from aijournal.cli import (
     _resolve_workspace_option,
     app,
 )
+from aijournal.services.capture import CAPTURE_MAX_STAGE
 
 
 def _set_cli_workspace(monkeypatch: pytest.MonkeyPatch, workspace: Path | None) -> None:
@@ -128,3 +129,38 @@ def test_status_command_respects_workspace_option(
         env={"AIJOURNAL_FAKE_OLLAMA": "1"},
     )
     assert result.exit_code in (0, 1), f"Unexpected exit code: {result.exit_code}\n{result.output}"
+
+
+def test_capture_uses_workspace_option(
+    tmp_path: Path, cli_runner: CliRunner, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    workspace = tmp_path / "journal"
+    result = cli_runner.invoke(app, ["--path", str(workspace), "init"])
+    assert result.exit_code == 0, result.stdout
+
+    captured: dict[str, Path | None] = {"root": None}
+
+    class DummyResult:
+        errors: list[str] = []
+        warnings: list[str] = []
+        entries: list[object] = []
+        stages_completed: list[int] = []
+        min_stage: int = 0
+        max_stage: int = CAPTURE_MAX_STAGE
+        run_id: str = "capture-test"
+
+    def fake_run_capture(
+        inputs: object, *, root: Path | None = None, **kwargs: object
+    ) -> DummyResult:
+        captured["root"] = root
+        return DummyResult()
+
+    monkeypatch.setattr("aijournal.cli.run_capture", fake_run_capture)
+
+    capture = cli_runner.invoke(
+        app,
+        ["--path", str(workspace), "capture", "--text", "checkpoint"],
+        env={"AIJOURNAL_FAKE_OLLAMA": "1"},
+    )
+    assert capture.exit_code == 0, capture.stdout
+    assert captured["root"] == workspace
