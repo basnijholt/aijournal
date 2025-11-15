@@ -8,7 +8,6 @@ terminal IO.
 
 from __future__ import annotations
 
-import importlib.metadata
 import json
 import os
 import sys
@@ -23,6 +22,7 @@ import typer
 from pydantic import ValidationError
 from typer.models import CommandInfo
 
+from aijournal._version import __version__
 from aijournal.api.capture import CaptureRequest
 from aijournal.commands import summarize as summarize_commands
 from aijournal.commands.advise import (
@@ -204,13 +204,8 @@ app = typer.Typer(
 def show_version() -> None:
     """Display package version and repository source path."""
 
-    try:
-        version = importlib.metadata.version("aijournal")
-    except importlib.metadata.PackageNotFoundError:
-        version = "(editable source)"
-
     source_root = Path(__file__).resolve().parents[2]
-    typer.echo(f"aijournal version: {version}")
+    typer.echo(f"aijournal version: {__version__}")
     typer.echo(f"source root: {source_root}")
 
 

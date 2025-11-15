@@ -19,6 +19,7 @@ dependencies = [
     "typer>=0.20.0",
     "pydantic-ai>=1.6.0",
     "uvicorn>=0.30.6",
+    "versioningit>=0.4.0",
 ]
 
 [project.scripts]
@@ -57,3 +58,16 @@ python_version = "3.12"
 show_error_codes = true
 strict = false
 packages = ["aijournal"]
+
+[tool.versioningit]
+default-version = "0.0.0"
+
+[tool.versioningit.vcs]
+method = "git"
+match = ["v*"]
+default-tag = "0.0.0"
+
+[tool.versioningit.format]
+dirty = "{version}.dev{distance}+{branch}.{vcs}{rev}.dirty"
+distance = "{version}.dev{distance}+{branch}.{vcs}{rev}"
+distance-dirty = "{version}.dev{distance}+{branch}.{vcs}{rev}.dirty"
