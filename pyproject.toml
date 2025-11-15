@@ -63,7 +63,7 @@ packages = ["aijournal"]
 source = "versioningit"
 
 [tool.hatch.build.targets.wheel]
-packages = ["aijournal"]
+packages = ["src/aijournal"]
 
 [tool.hatch.build.hooks.versioningit-onbuild]
 build-file = "src/aijournal/_version.py"

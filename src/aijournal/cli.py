@@ -160,12 +160,17 @@ def _get_workspace() -> Path:
         RuntimeError: If the workspace directory doesn't exist, is not a directory,
                      or doesn't contain config.yaml
     """
-    workspace_env = os.getenv("AIJOURNAL_WORKSPACE")
-    if workspace_env:
-        # Expand ~ and make path absolute for better error messages
-        workspace = Path(workspace_env).expanduser().resolve()
+    settings = _cli_settings()
+    workspace_override = settings.workspace
+    if workspace_override:
+        workspace = workspace_override
     else:
-        workspace = Path.cwd()
+        workspace_env = os.getenv("AIJOURNAL_WORKSPACE")
+        if workspace_env:
+            # Expand ~ and make path absolute for better error messages
+            workspace = Path(workspace_env).expanduser().resolve()
+        else:
+            workspace = Path.cwd()
 
     # Check workspace directory exists
     if not workspace.exists():
@@ -251,6 +256,13 @@ class CLISettings:
     trace: bool = False
     verbose_json: bool = False
     prompt_set: str | None = None
+    workspace: Path | None = None
+
+
+def _resolve_workspace_option(value: Path | None) -> Path | None:
+    if not value:
+        return None
+    return value.expanduser().resolve(strict=False)
 
 
 @app.callback()
@@ -274,10 +286,27 @@ def _main_callback(
             "and config prompts.active_set)."
         ),
     ),
+    workspace: Path | None = typer.Option(
+        None,
+        "--path",
+        "-p",
+        file_okay=False,
+        dir_okay=True,
+        resolve_path=False,
+        help="Workspace directory to operate inside (defaults to the current working directory).",
+    ),
 ) -> None:
     if prompt_set:
         os.environ["AIJOURNAL_PROMPT_SET"] = prompt_set
-    ctx.obj = CLISettings(trace=trace, verbose_json=verbose_json, prompt_set=prompt_set)
+
+    resolved_workspace = _resolve_workspace_option(workspace)
+
+    ctx.obj = CLISettings(
+        trace=trace,
+        verbose_json=verbose_json,
+        prompt_set=prompt_set,
+        workspace=resolved_workspace,
+    )
 
 
 def _cli_settings() -> CLISettings:
@@ -745,13 +774,6 @@ def audit_provenance_command(
     run_audit_provenance_cli(fix=fix)
 
 
-@app.callback()
-def main() -> None:
-    """Aijournal command-line interface."""
-    # Intentionally empty; commands provide functionality.
-    return
-
-
 HIGH_IMPACT_PROBES = [
     "- Top 3 values you refuse to trade off—rank them.",
     "- One long-term goal that matters most this year—and why now?",
@@ -863,7 +885,9 @@ def init(
     ),
 ) -> None:
     """Initialize the local aijournal layout."""
-    summary = run_init(path)
+    workspace_override = _resolve_workspace_option(path)
+    effective_workspace = workspace_override or _cli_settings().workspace
+    summary = run_init(effective_workspace)
     typer.echo(summary)
 
 
