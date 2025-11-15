@@ -34,6 +34,7 @@ class ChunkRecord:
     normalized_id: str
     normalized_path: str
     chunk_index: int
+    chunk_type: str
     chunk_text: str
     date: str
     tags: list[str]
@@ -186,6 +187,7 @@ def build_chunk_records(
                 normalized_id=entry_id,
                 normalized_path=normalized_path,
                 chunk_index=idx,
+                chunk_type="entry",
                 chunk_text=text,
                 date=date_value,
                 tags=[str(tag) for tag in tags],
@@ -256,6 +258,7 @@ def write_chunk_manifests(
                     chunk_id=record.chunk_id,
                     normalized_id=record.normalized_id,
                     chunk_index=record.chunk_index,
+                    chunk_type=record.chunk_type,
                     text=record.chunk_text,
                     date=record.date,
                     tags=record.tags,

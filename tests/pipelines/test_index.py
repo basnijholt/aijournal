@@ -134,6 +134,7 @@ def test_write_chunk_manifests(tmp_path: Path) -> None:
         normalized_id="entry-1",
         normalized_path="normalized/path.yaml",
         chunk_index=0,
+        chunk_type="entry",
         chunk_text="Focus chunk",
         date="2024-01-02",
         tags=["focus"],

@@ -10,6 +10,11 @@
       "title": "Chunk Index",
       "type": "integer"
     },
+    "chunk_type": {
+      "default": "entry",
+      "title": "Chunk Type",
+      "type": "string"
+    },
     "date": {
       "title": "Date",
       "type": "string"

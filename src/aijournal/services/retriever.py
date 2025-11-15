@@ -145,6 +145,7 @@ class Retriever:
                     tokens=chunk.tokens,
                     source_hash=chunk.source_hash,
                     manifest_hash=chunk.manifest_hash,
+                    chunk_type=chunk.chunk_type,
                     score=final_score,
                 )
             )
