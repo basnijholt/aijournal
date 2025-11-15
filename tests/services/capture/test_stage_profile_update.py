@@ -37,13 +37,12 @@ def test_stage_profile_update_success(tmp_path: Path, monkeypatch) -> None:
     def fake_run(
         date: str,
         *,
-        timeout: float,
-        retries: int,
         progress: bool,
         build_claim_preview,
         workspace: Path | None = None,
+        config: AppConfig | None = None,
     ) -> Path:
-        del timeout, retries, progress, build_claim_preview, workspace
+        del progress, build_claim_preview, workspace, config
         called.append(date)
         batch_path.write_text("batch", encoding="utf-8")
         return batch_path

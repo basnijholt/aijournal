@@ -81,7 +81,12 @@ from aijournal.commands.summarize import (
 )
 from aijournal.commands.system import run_system_doctor_cli, run_system_status_cli
 from aijournal.common.app_config import AppConfig
-from aijournal.common.config_loader import load_config, resolve_prompt_set, use_fake_llm
+from aijournal.common.config_loader import (
+    load_config,
+    load_config_with_overrides,
+    resolve_prompt_set,
+    use_fake_llm,
+)
 from aijournal.common.constants import (
     DEFAULT_LLM_RETRIES,
     DEFAULT_TIMEOUT_SECONDS,
@@ -348,6 +353,28 @@ def _run_context(
         verbose_json=settings.verbose_json,
         prompt_set=prompt_set,
     )
+
+
+def _load_config_with_llm_overrides(
+    workspace: Path,
+    *,
+    llm_retries: int | None = None,
+    llm_timeout: float | None = None,
+) -> AppConfig:
+    try:
+        return load_config_with_overrides(
+            workspace,
+            llm_retries=llm_retries,
+            llm_timeout=llm_timeout,
+        )
+    except ValidationError as exc:
+        if llm_timeout is not None and llm_timeout <= 0:
+            typer.secho("--timeout must be positive.", fg=typer.colors.RED, err=False)
+        elif llm_retries is not None and llm_retries < 0:
+            typer.secho("--retries must be 0 or greater.", fg=typer.colors.RED, err=False)
+        else:
+            typer.secho(f"Invalid LLM override: {exc}", fg=typer.colors.RED, err=False)
+        raise typer.Exit(2) from exc
 
 
 CAPTURE_STAGE_LOOKUP = {stage.stage_id: stage for stage in CAPTURE_STAGES}
@@ -1088,23 +1115,21 @@ def summarize(
 ) -> None:
     """Generate a daily summary from normalized entries."""
     _emit_deprecation("aijournal ops pipeline summarize", "aijournal capture --from/--text")
-    ctx = _run_context("summarize")
+    workspace = _get_workspace()
+    config = _load_config_with_llm_overrides(
+        workspace,
+        llm_retries=retries,
+        llm_timeout=timeout,
+    )
+    ctx = _run_context("summarize", workspace=workspace, config=config)
     summary_path = run_summarize_command(
         ctx,
         DailySummaryOptions(
             date=date,
-            timeout=timeout,
-            retries=retries,
             progress=progress,
         ),
     )
     typer.echo(str(summary_path))
-
-
-def _with_retries_override(config: AppConfig, retries: int) -> AppConfig:
-    if retries == config.llm.retries:
-        return config
-    return config.model_copy(update={"llm": config.llm.model_copy(update={"retries": retries})})
 
 
 @ops_pipeline_app.command("extract-facts", hidden=True)
@@ -1141,15 +1166,17 @@ def facts(
     """Generate micro-facts from normalized entries."""
     _emit_deprecation("aijournal ops pipeline extract-facts", "aijournal capture --from/--text")
     workspace = _get_workspace()
-    config = load_config(workspace)
-    effective_config = _with_retries_override(config, retries)
-    _, claim_models = load_profile_components(workspace, config=effective_config)
-    ctx = _run_context("facts", workspace=workspace, config=effective_config)
+    config = _load_config_with_llm_overrides(
+        workspace,
+        llm_retries=retries,
+        llm_timeout=timeout,
+    )
+    _, claim_models = load_profile_components(workspace, config=config)
+    ctx = _run_context("facts", workspace=workspace, config=config)
     output = run_facts_command(
         ctx,
         FactsOptions(
             date=date,
-            timeout=timeout,
             progress=progress,
             claim_models=claim_models,
             preview_builder=lambda proposals, claims, timestamp: _build_claim_preview(
@@ -1188,16 +1215,22 @@ def profile_update_cli(
     ),
 ) -> None:
     """Derive pending profile updates using the unified Prompt 3 contract."""
+    workspace = _get_workspace()
+    config = _load_config_with_llm_overrides(
+        workspace,
+        llm_retries=retries,
+        llm_timeout=timeout,
+    )
     path = run_profile_update(
         date,
-        timeout=timeout,
-        retries=retries,
         progress=progress,
         build_claim_preview=lambda proposals, claims, ts: _build_claim_preview(
             proposals,
             claims,
             timestamp=ts,
         ),
+        workspace=workspace,
+        config=config,
     )
     typer.echo(str(path))
 

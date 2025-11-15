@@ -22,7 +22,6 @@ from aijournal.commands.summarize import (
     _json_block,
     _load_normalized_entries,
     _log_entry_progress,
-    _validate_timeout,
 )
 from aijournal.common.app_config import AppConfig
 from aijournal.common.command_runner import run_command_pipeline
@@ -38,7 +37,7 @@ from aijournal.models.authoritative import ManifestEntry
 from aijournal.models.derived import ProfileUpdatePreview
 from aijournal.pipelines import facts as facts_pipeline
 from aijournal.services.microfacts import MicrofactIndex
-from aijournal.services.ollama import LLMResponseError, resolve_model_name
+from aijournal.services.ollama import LLMResponseError, resolve_max_attempts, resolve_model_name
 from aijournal.services.summaries import SummaryNotFoundError, load_daily_summary
 from aijournal.utils import time as time_utils
 
@@ -84,7 +83,6 @@ class FactsOptions(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     date: str
-    timeout: float
     progress: bool
     claim_models: Sequence[ClaimAtom] | None = None
     preview_builder: (
@@ -101,8 +99,6 @@ class FactsPrepared:
     date: str
     entries: list[NormalizedEntry]
     summary: DailySummary
-    timeout: float
-    retries: int
     manifest_index: dict[str, ManifestEntry]
     claim_models: list[ClaimAtom]
     preview_builder: Callable[
@@ -132,7 +128,7 @@ def prepare_inputs(ctx: RunContext, options: FactsOptions) -> FactsPrepared:
         ctx.emit(event="command_failed", reason="missing_entries")
         raise typer.Exit(1)
 
-    timeout_value = _validate_timeout(options.timeout)
+    timeout_value = ctx.config.llm.timeout
     resolved_retries = ctx.config.llm.retries
     _log_entry_progress(
         f"Extracting micro-facts for {options.date}",
@@ -170,8 +166,6 @@ def prepare_inputs(ctx: RunContext, options: FactsOptions) -> FactsPrepared:
         date=options.date,
         entries=list(entries),
         summary=summary,
-        timeout=timeout_value,
-        retries=resolved_retries,
         manifest_index=manifest_index,
         claim_models=claim_models,
         preview_builder=preview_builder,
@@ -202,7 +196,8 @@ def invoke_pipeline(ctx: RunContext, prepared: FactsPrepared) -> FactsResult:
                 response_model=PromptMicroFacts,
                 agent_name="aijournal-facts",
                 config=ctx.config,
-                timeout=prepared.timeout,
+                timeout=ctx.config.llm.timeout,
+                max_attempts=resolve_max_attempts(ctx.config, ctx.config.llm.retries),
                 retry_message=(
                     "Return JSON with keys `facts`, `claim_proposals`, and optional `preview`."
                 ),
@@ -217,7 +212,7 @@ def invoke_pipeline(ctx: RunContext, prepared: FactsPrepared) -> FactsResult:
         use_fake_llm=ctx.use_fake_llm,
         structured_call=lambda func, *, retries, label: func(),
         request_factory=request_microfacts,
-        retries=prepared.retries,
+        retries=ctx.config.llm.retries,
         context=context,
         manifest_index=prepared.manifest_index,
         microfact_index=microfact_index,
@@ -277,19 +272,19 @@ def run_facts_command(ctx: RunContext, options: FactsOptions) -> FactsOutput:
 def run_facts(
     date: str,
     *,
-    timeout: float,
     progress: bool,
     claim_models: Sequence[ClaimAtom],
     build_claim_preview: Callable[
         [Sequence[ClaimProposal], Sequence[ClaimAtom], str], ProfileUpdatePreview | None
     ],
     workspace: Path | None = None,
+    config: AppConfig | None = None,
 ) -> tuple[ProfileUpdatePreview | None, Path]:
     from aijournal.common.config_loader import load_config, use_fake_llm
     from aijournal.common.context import create_run_context
 
     workspace = workspace or Path.cwd()
-    config = load_config(workspace)
+    config = config or load_config(workspace)
     ctx = create_run_context(
         command="facts",
         workspace=workspace,
@@ -300,7 +295,6 @@ def run_facts(
     )
     options = FactsOptions(
         date=date,
-        timeout=timeout,
         progress=progress,
         claim_models=claim_models,
         preview_builder=build_claim_preview,

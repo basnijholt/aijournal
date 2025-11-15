@@ -28,7 +28,6 @@ from aijournal.commands.summarize import (
     _invoke_structured_llm,
     _json_block,
     _log_entry_progress,
-    _validate_timeout,
 )
 from aijournal.common.app_config import AppConfig
 from aijournal.common.command_runner import run_command_pipeline
@@ -53,7 +52,7 @@ from aijournal.services.microfacts import (
     load_consolidated_microfacts,
     select_recurring_facts,
 )
-from aijournal.services.ollama import LLMResponseError
+from aijournal.services.ollama import LLMResponseError, resolve_max_attempts
 from aijournal.utils import time as time_utils
 
 MAX_CONSOLIDATED_FACTS = 20
@@ -62,16 +61,12 @@ MIN_CONSOLIDATED_OBSERVATIONS = 2
 
 class ProfileUpdateOptions(BaseModel):
     date: str
-    timeout: float
-    retries: int
     progress: bool
 
 
 @dataclass(slots=True)
 class ProfileUpdatePrepared:
     date: str
-    timeout: float
-    retries: int
     progress: bool
     entries_with_paths: list[tuple[NormalizedEntry, Path]]
     summary: DailySummary | None
@@ -93,19 +88,18 @@ class ProfileUpdateResult:
 def run_profile_update(
     date: str,
     *,
-    timeout: float,
-    retries: int,
     progress: bool,
     workspace: Path | None = None,
     build_claim_preview: Callable[
         [Sequence[ClaimProposal], Sequence[ClaimAtom], str], ProfileUpdatePreview | None
     ]
     | None = None,
+    config: AppConfig | None = None,
 ) -> Path:
     """Derive profile update batches using the unified prompt."""
 
     workspace = workspace or Path.cwd()
-    config = load_config(workspace)
+    config = config or load_config(workspace)
     ctx = create_run_context(
         command="profile.update",
         workspace=workspace,
@@ -117,8 +111,6 @@ def run_profile_update(
 
     options = ProfileUpdateOptions(
         date=date,
-        timeout=timeout,
-        retries=retries,
         progress=progress,
     )
 
@@ -153,7 +145,7 @@ def run_profile_update_command(
             raise typer.Exit(1)
         entries = [entry for entry, _ in entries_with_paths]
 
-        timeout_value = _validate_timeout(opts.timeout)
+        timeout_value = ctx.config.llm.timeout
         summary = _load_daily_summary(ctx.workspace, ctx.config, opts.date)
         microfacts = _load_daily_microfacts(ctx.workspace, ctx.config, opts.date)
         manifest_entries = _load_manifest(_manifest_path(ctx.workspace, ctx.config))
@@ -170,15 +162,13 @@ def run_profile_update_command(
             entries=len(entries),
             claims=len(claims),
             timeout=timeout_value,
-            retries=opts.retries,
+            retries=ctx.config.llm.retries,
             summary=bool(summary),
             microfacts=bool(microfacts),
         )
 
         return ProfileUpdatePrepared(
             date=opts.date,
-            timeout=timeout_value,
-            retries=opts.retries,
             progress=opts.progress,
             entries_with_paths=entries_with_paths,
             summary=summary,
@@ -239,8 +229,8 @@ def run_profile_update_command(
                     response_model=PromptProfileUpdates,
                     agent_name="aijournal-profile-update",
                     config=prepared.config,
-                    timeout=prepared.timeout,
-                    max_attempts=max(1, prepared.retries + 1),
+                    timeout=ctx.config.llm.timeout,
+                    max_attempts=resolve_max_attempts(ctx.config, ctx.config.llm.retries),
                     retry_message=(
                         "Return JSON with exactly the keys `claims`, `facets`, `interview_prompts`."
                     ),
@@ -262,7 +252,7 @@ def run_profile_update_command(
                 use_fake_llm=ctx.use_fake_llm,
                 structured_call=structured_call,
                 request_factory=request_profile_update,
-                retries=prepared.retries,
+                retries=ctx.config.llm.retries,
                 label=f"profile_update {prepared.date}",
                 context=context,
                 claim_timestamp=claim_timestamp,

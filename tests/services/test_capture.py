@@ -166,12 +166,11 @@ def test_run_capture_records_telemetry(tmp_path: Path, monkeypatch: pytest.Monke
     def fake_run_summarize(
         date: str,
         *,
-        timeout: float,
-        retries: int,
         progress: bool,
         workspace: Path | None = None,
+        config: AppConfig | None = None,
     ) -> Path:
-        del timeout, retries, progress, workspace
+        del progress, workspace, config
         stage_calls.append(("summarize", date))
         return _write_summary_artifact(
             tmp_path / "derived" / "summaries" / f"{date}.yaml",
@@ -181,13 +180,13 @@ def test_run_capture_records_telemetry(tmp_path: Path, monkeypatch: pytest.Monke
     def fake_run_facts(
         date: str,
         *,
-        timeout: float,
         progress: bool,
         claim_models,
         build_claim_preview,
         workspace: Path | None = None,
+        config: AppConfig | None = None,
     ) -> tuple[None, Path]:
-        del timeout, progress, claim_models, build_claim_preview, workspace
+        del progress, claim_models, build_claim_preview, workspace, config
         stage_calls.append(("facts", date))
         path = _write_microfacts_artifact(
             tmp_path / "derived" / "microfacts" / f"{date}.yaml",
@@ -198,13 +197,12 @@ def test_run_capture_records_telemetry(tmp_path: Path, monkeypatch: pytest.Monke
     def fake_run_profile_update(
         date: str,
         *,
-        timeout: float,
-        retries: int,
         progress: bool,
         build_claim_preview,
         workspace: Path | None = None,
+        config: AppConfig | None = None,
     ) -> Path:
-        del timeout, retries, progress, build_claim_preview, workspace
+        del progress, build_claim_preview, workspace, config
         stage_calls.append(("profile_update", date))
         return _write_profile_update_batch_artifact(
             tmp_path / "derived" / "pending" / "profile_updates" / f"{date}-batch.yaml",

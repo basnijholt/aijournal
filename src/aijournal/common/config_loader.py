@@ -8,7 +8,7 @@ from typing import Any
 
 import yaml
 
-from aijournal.common.app_config import AppConfig
+from aijournal.common.app_config import AppConfig, LLMConfig
 
 
 def load_yaml(path: Path) -> dict[str, Any]:
@@ -38,6 +38,42 @@ def load_config(workspace: Path) -> AppConfig:
 
     data = load_yaml(config_path)
     return AppConfig.model_validate(data)
+
+
+def load_config_with_overrides(
+    workspace: Path,
+    *,
+    llm_retries: int | None = None,
+    llm_timeout: float | None = None,
+) -> AppConfig:
+    """Load workspace config and apply runtime LLM overrides."""
+
+    config = load_config(workspace)
+    return apply_llm_overrides(config, retries=llm_retries, timeout=llm_timeout)
+
+
+def apply_llm_overrides(
+    config: AppConfig,
+    *,
+    retries: int | None = None,
+    timeout: float | None = None,
+) -> AppConfig:
+    """Return a copy of the config with CLI LLM overrides applied."""
+
+    updates: dict[str, Any] = {}
+    llm_updates: dict[str, Any] = {}
+    if retries is not None:
+        llm_updates["retries"] = retries
+    if timeout is not None:
+        llm_updates["timeout"] = timeout
+    if llm_updates:
+        llm_data = config.llm.model_dump(mode="python")
+        llm_data.update(llm_updates)
+        validated_llm = LLMConfig.model_validate(llm_data)
+        updates["llm"] = validated_llm
+    if updates:
+        return config.model_copy(update=updates)
+    return config
 
 
 def use_fake_llm() -> bool:

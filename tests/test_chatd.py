@@ -40,14 +40,14 @@ def capture_pipeline_mocks(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> N
 
     monkeypatch.setattr(
         "aijournal.commands.summarize.run_summarize",
-        lambda date, *, timeout, retries, progress, workspace=None: _ensure_file(
+        lambda date, *, progress, workspace=None, config=None: _ensure_file(
             tmp_path / "derived" / "summaries" / f"{date}.yaml", "summary"
         ),
     )
 
     monkeypatch.setattr(
         "aijournal.commands.facts.run_facts",
-        lambda date, *, timeout, progress, claim_models, build_claim_preview, workspace=None: (
+        lambda date, *, progress, claim_models, build_claim_preview, workspace=None, config=None: (
             None,
             _ensure_file(tmp_path / "derived" / "microfacts" / f"{date}.yaml", "facts"),
         ),
@@ -62,11 +62,10 @@ def capture_pipeline_mocks(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> N
         "aijournal.commands.profile_update.run_profile_update",
         lambda date,
         *,
-        timeout,
-        retries,
         progress,
         workspace=None,
-        build_claim_preview=None: _ensure_file(
+        build_claim_preview=None,
+        config=None: _ensure_file(
             tmp_path / "derived" / "pending" / "profile_updates" / f"{date}-batch.yaml",
             "batch",
         ),

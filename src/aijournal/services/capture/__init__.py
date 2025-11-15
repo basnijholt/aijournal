@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field
 
 from aijournal.api.capture import CaptureInput
 from aijournal.common.app_config import AppConfig
-from aijournal.common.config_loader import load_config
+from aijournal.common.config_loader import load_config_with_overrides
 from aijournal.common.logging import StructuredLogger
 from aijournal.models.authoritative import ManifestEntry
 from aijournal.services.capture.results import OperationResult, StageResult
@@ -330,7 +330,7 @@ def run_capture(
         raise ValueError(msg)
 
     root = root or Path.cwd()
-    config = load_config(root)
+    config = load_config_with_overrides(root, llm_retries=inputs.retries)
 
     ollama_config = build_ollama_config_from_mapping(config)
     config_host = config.host
@@ -486,6 +486,7 @@ def run_capture(
             changed_dates,
             inputs,
             root,
+            config,
         )
         summarize_result = summarize_outputs.result
         summarize_duration = summarize_outputs.duration_ms

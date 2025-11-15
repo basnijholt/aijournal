@@ -4,9 +4,9 @@ from pathlib import Path
 from time import perf_counter
 from typing import TYPE_CHECKING
 
-if TYPE_CHECKING:
-    from aijournal.common.app_config import AppConfig
+from aijournal.common.app_config import AppConfig
 
+if TYPE_CHECKING:
     from .. import CaptureInput, FactsStage3Outputs
 
 
@@ -17,7 +17,6 @@ def run_facts_stage_3(
     config: AppConfig,
 ) -> FactsStage3Outputs:
     from aijournal.commands.profile import load_profile_components
-    from aijournal.common.constants import DEFAULT_TIMEOUT_SECONDS
 
     from .. import FactsStage3Outputs, OperationResult
     from ..graceful import graceful_facts
@@ -30,12 +29,11 @@ def run_facts_stage_3(
     for date in changed_dates:
         facts_path, error = graceful_facts(
             date,
-            timeout=DEFAULT_TIMEOUT_SECONDS,
-            retries=inputs.retries,
             progress=inputs.progress,
             claim_models=claim_models,
             build_claim_preview=noop_preview,
             workspace=root,
+            config=config,
         )
         if error:
             facts_errors.append(f"{date}: {error}")

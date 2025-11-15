@@ -54,8 +54,6 @@ _STRUCTURED_SYSTEM_PROMPT = (
 
 class DailySummaryOptions(BaseModel):
     date: str
-    timeout: float
-    retries: int
     progress: bool
 
 
@@ -63,8 +61,6 @@ class DailySummaryOptions(BaseModel):
 class DailySummaryPrepared:
     date: str
     entries: list[NormalizedEntry]
-    timeout: float
-    retries: int
     workspace: Path
 
 
@@ -130,13 +126,6 @@ def _invoke_structured_llm(
     except Exception as exc:  # pragma: no cover - runtime dependent
         msg = f"Structured output generation failed for {prompt_path}: {exc}"
         raise LLMResponseError(msg) from exc
-
-
-def _validate_timeout(value: float) -> float:
-    if value <= 0:
-        typer.secho("--timeout must be positive.", fg=typer.colors.RED)
-        raise typer.Exit(1)
-    return value
 
 
 def _log_entry_progress(action: str, entries: Sequence[NormalizedEntry], enabled: bool) -> None:
@@ -249,7 +238,8 @@ def prepare_inputs(ctx: RunContext, options: DailySummaryOptions) -> DailySummar
         ctx.emit(event="command_failed", reason="missing_entries")
         raise typer.Exit(1)
 
-    timeout_value = _validate_timeout(options.timeout)
+    timeout_value = ctx.config.llm.timeout
+    retries_value = ctx.config.llm.retries
     _log_entry_progress(
         f"Summarizing entries for {options.date}",
         entries,
@@ -259,25 +249,25 @@ def prepare_inputs(ctx: RunContext, options: DailySummaryOptions) -> DailySummar
         event="prepare_summary",
         entries=len(entries),
         timeout=timeout_value,
-        retries=options.retries,
+        retries=retries_value,
     )
     return DailySummaryPrepared(
         date=options.date,
         entries=list(entries),
-        timeout=timeout_value,
-        retries=options.retries,
         workspace=ctx.workspace,
     )
 
 
 def invoke_pipeline(ctx: RunContext, prepared: DailySummaryPrepared) -> DailySummaryResult:
+    timeout_value = ctx.config.llm.timeout
+    retries_value = ctx.config.llm.retries
     summary = _summarize_day_payload(
         prepared.entries,
         prepared.date,
         ctx.config,
         workspace=prepared.workspace,
-        timeout=prepared.timeout,
-        retries=prepared.retries,
+        timeout=timeout_value,
+        retries=retries_value,
         use_fake_llm_override=ctx.use_fake_llm,
         prompt_set=ctx.prompt_set,
     )
@@ -339,7 +329,7 @@ def _summarize_day_payload(
                 agent_name="aijournal-summarize",
                 config=config,
                 timeout=timeout,
-                max_attempts=max(1, retries + 1),
+                max_attempts=resolve_max_attempts(config, retries),
                 retry_message=(
                     "Return JSON with keys `day`, `bullets`, `highlights`, `todo_candidates` "
                     "and no additional fields or commentary."
@@ -359,13 +349,17 @@ def _summarize_day_payload(
 
 
 def run_summarize(
-    date: str, *, timeout: float, retries: int, progress: bool, workspace: Path | None = None
+    date: str,
+    *,
+    progress: bool,
+    workspace: Path | None = None,
+    config: AppConfig | None = None,
 ) -> Path:
     """Backward-compatible entrypoint using current working directory."""
     from aijournal.common.context import create_run_context
 
     workspace = workspace or Path.cwd()
-    config = load_config(workspace)
+    config = config or load_config(workspace)
     ctx = create_run_context(
         command="summarize",
         workspace=workspace,
@@ -376,8 +370,6 @@ def run_summarize(
     )
     options = DailySummaryOptions(
         date=date,
-        timeout=timeout,
-        retries=retries,
         progress=progress,
     )
     return run_summarize_command(ctx, options)

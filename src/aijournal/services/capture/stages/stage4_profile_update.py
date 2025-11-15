@@ -4,9 +4,9 @@ from pathlib import Path
 from time import perf_counter
 from typing import TYPE_CHECKING
 
-if TYPE_CHECKING:
-    from aijournal.common.app_config import AppConfig
+from aijournal.common.app_config import AppConfig
 
+if TYPE_CHECKING:
     from .. import CaptureInput, ProfileUpdateStageOutputs
 
 
@@ -16,8 +16,6 @@ def run_profile_update_stage(
     root: Path,
     config: AppConfig,
 ) -> ProfileUpdateStageOutputs:
-    from aijournal.common.constants import DEFAULT_TIMEOUT_SECONDS
-
     from .. import OperationResult, ProfileUpdateStageOutputs
     from ..graceful import graceful_profile_update
     from ..utils import (
@@ -39,11 +37,10 @@ def run_profile_update_stage(
         before = pending_batches(root, config)
         batch_path, error = graceful_profile_update(
             date,
-            timeout=DEFAULT_TIMEOUT_SECONDS,
-            retries=inputs.retries,
             progress=inputs.progress,
             build_claim_preview=noop_preview,
             workspace=root,
+            config=config,
         )
         if error:
             run_errors.append(f"{date}: {error}")

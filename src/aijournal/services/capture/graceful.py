@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, TypeVar
 import typer
 
 if TYPE_CHECKING:
+    from aijournal.common.app_config import AppConfig
     from aijournal.domain.changes import ClaimProposal
     from aijournal.domain.claims import ClaimAtom
     from aijournal.models.derived import ProfileUpdatePreview
@@ -25,10 +26,9 @@ T = TypeVar("T")
 def graceful_summarize(
     date: str,
     *,
-    timeout: float,
-    retries: int,
     progress: bool,
     workspace: Path,
+    config: AppConfig | None = None,
 ) -> tuple[Path | None, str | None]:
     """Gracefully run summarize, catching typer.Exit and returning None on failure.
 
@@ -41,10 +41,9 @@ def graceful_summarize(
     try:
         summary_path = run_summarize(
             date,
-            timeout=timeout,
-            retries=retries,
             progress=progress,
             workspace=workspace,
+            config=config,
         )
         return summary_path, None
     except typer.Exit as exc:
@@ -62,14 +61,13 @@ def graceful_summarize(
 def graceful_facts(
     date: str,
     *,
-    timeout: float,
-    retries: int,
     progress: bool,
     claim_models: Sequence[ClaimAtom],
     build_claim_preview: Callable[
         [Sequence[ClaimProposal], Sequence[ClaimAtom], str], ProfileUpdatePreview | None
     ],
     workspace: Path,
+    config: AppConfig | None = None,
 ) -> tuple[Path | None, str | None]:
     """Gracefully run facts extraction, catching typer.Exit and returning None on failure.
 
@@ -82,11 +80,11 @@ def graceful_facts(
     try:
         _, facts_path = run_facts(
             date,
-            timeout=timeout,
             progress=progress,
             claim_models=claim_models,
             build_claim_preview=build_claim_preview,
             workspace=workspace,
+            config=config,
         )
         return facts_path, None
     except typer.Exit as exc:
@@ -103,13 +101,12 @@ def graceful_facts(
 def graceful_profile_update(
     date: str,
     *,
-    timeout: float,
-    retries: int,
     progress: bool,
     build_claim_preview: Callable[
         [Sequence[ClaimProposal], Sequence[ClaimAtom], str], ProfileUpdatePreview | None
     ],
     workspace: Path,
+    config: AppConfig | None = None,
 ) -> tuple[Path | None, str | None]:
     """Gracefully run the unified profile update pipeline."""
 
@@ -118,11 +115,10 @@ def graceful_profile_update(
     try:
         batch_path = run_profile_update(
             date,
-            timeout=timeout,
-            retries=retries,
             progress=progress,
             build_claim_preview=build_claim_preview,
             workspace=workspace,
+            config=config,
         )
         return batch_path, None
     except typer.Exit as exc:
