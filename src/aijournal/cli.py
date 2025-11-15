@@ -22,7 +22,7 @@ import typer
 from pydantic import ValidationError
 from typer.models import CommandInfo
 
-from aijournal._version import __version__
+import aijournal._version as version_module
 from aijournal.api.capture import CaptureRequest
 from aijournal.commands import summarize as summarize_commands
 from aijournal.commands.advise import (
@@ -205,7 +205,7 @@ def show_version() -> None:
     """Display package version and repository source path."""
 
     source_root = Path(__file__).resolve().parents[2]
-    typer.echo(f"aijournal version: {__version__}")
+    typer.echo(f"aijournal version: {version_module.__version__}")
     typer.echo(f"source root: {source_root}")
 
 

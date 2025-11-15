@@ -27,8 +27,8 @@ aijournal = "aijournal.cli:app"
 aij = "aijournal.cli:app"
 
 [build-system]
-requires = ["uv_build>=0.9.5,<0.10.0"]
-build-backend = "uv_build"
+requires = ["hatchling", "versioningit>=0.4.0"]
+build-backend = "hatchling.build"
 
 [dependency-groups]
 dev = [
@@ -58,6 +58,16 @@ python_version = "3.12"
 show_error_codes = true
 strict = false
 packages = ["aijournal"]
+
+[tool.hatch.version]
+source = "versioningit"
+
+[tool.hatch.build.targets.wheel]
+packages = ["aijournal"]
+
+[tool.hatch.build.hooks.versioningit-onbuild]
+build-file = "src/aijournal/_version.py"
+source-file = "src/aijournal/_version.py"
 
 [tool.versioningit]
 default-version = "0.0.0"
