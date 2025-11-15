@@ -185,6 +185,11 @@ def run_profile_update_command(
         entries = [entry for entry, _ in prepared.entries_with_paths]
         claim_timestamp = time_utils.format_timestamp(time_utils.now())
         context = _characterization_context(entries, prepared.manifest_index)
+        entry_hash_lookup = {
+            entry_id: str(entry.hash)
+            for entry_id, entry in prepared.manifest_index.items()
+            if entry.hash
+        }
         summary_json = (
             _json_block(prepared.summary.model_dump(mode="python")) if prepared.summary else "null"
         )
@@ -234,6 +239,7 @@ def run_profile_update_command(
                 llm_response,
                 normalized_ids=context[0],
                 manifest_hashes=context[1],
+                entry_hash_lookup=entry_hash_lookup,
             )
 
         try:
@@ -396,4 +402,9 @@ def _pending_profile_update_path(workspace: Path, config: AppConfig, batch_id: s
     if not derived.is_absolute():
         derived = workspace / derived
     pending_dir = derived / "pending" / "profile_updates"
-    return pending_dir / f"{batch_id}.yaml"
+    return pending_dir / f"{_sanitize_batch_id(batch_id)}.yaml"
+
+
+def _sanitize_batch_id(batch_id: str) -> str:
+    """Replace filesystem-hostile characters so pending batches work on Windows."""
+    return batch_id.replace(":", "-")

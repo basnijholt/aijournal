@@ -28,37 +28,58 @@ def _write_yaml(path: Path, payload: dict) -> None:
     path.write_text(dump_yaml(payload, sort_keys=False), encoding="utf-8")
 
 
-def _seed_normalized(tmp_path: Path) -> None:
+def _seed_normalized(
+    tmp_path: Path,
+    *,
+    entry_id: str = ENTRY_ID,
+    date: str = DATE,
+    source_hash: str = SOURCE_HASH,
+    title: str | None = None,
+    tags: list[str] | None = None,
+) -> None:
     normalized = {
-        "id": ENTRY_ID,
-        "created_at": f"{DATE}T09:13:00Z",
-        "source_path": f"data/journal/2025/02/03/{ENTRY_ID}.md",
-        "title": "Focus Notes",
-        "tags": ["focus", "planning"],
+        "id": entry_id,
+        "created_at": f"{date}T09:13:00Z",
+        "source_path": f"data/journal/{date.replace('-', '/')}/{entry_id}.md",
+        "title": title or "Focus Notes",
+        "tags": tags or ["focus", "planning"],
         "sections": [
             {"heading": "Morning Focus", "level": 1},
             {"heading": "Decisions", "level": 2},
         ],
-        "source_hash": SOURCE_HASH,
+        "source_hash": source_hash,
     }
-    _write_yaml(tmp_path / "data" / "normalized" / DATE / f"{ENTRY_ID}.yaml", normalized)
+    _write_yaml(tmp_path / "data" / "normalized" / date / f"{entry_id}.yaml", normalized)
 
 
-def _seed_manifest(tmp_path: Path) -> None:
+def _seed_manifest(
+    tmp_path: Path,
+    *,
+    entry_id: str = ENTRY_ID,
+    date: str = DATE,
+    source_hash: str = SOURCE_HASH,
+    tags: list[str] | None = None,
+) -> None:
     manifest = [
         {
-            "hash": SOURCE_HASH,
-            "path": f"data/journal/2025/02/03/{ENTRY_ID}.md",
-            "normalized": f"data/normalized/{DATE}/{ENTRY_ID}.yaml",
+            "hash": source_hash,
+            "path": f"data/journal/{date.replace('-', '/')}/{entry_id}.md",
+            "normalized": f"data/normalized/{date}/{entry_id}.yaml",
             "source_type": "journal",
-            "ingested_at": f"{DATE}T10:00:00Z",
-            "created_at": f"{DATE}T09:13:00Z",
-            "id": ENTRY_ID,
-            "tags": ["focus"],
+            "ingested_at": f"{date}T10:00:00Z",
+            "created_at": f"{date}T09:13:00Z",
+            "id": entry_id,
+            "tags": tags or ["focus"],
             "model": "fake-ollama",
         },
     ]
-    _write_yaml(tmp_path / "data" / "manifest" / "ingested.yaml", manifest)
+    manifest_path = tmp_path / "data" / "manifest" / "ingested.yaml"
+    if manifest_path.exists():
+        existing = yaml.safe_load(manifest_path.read_text(encoding="utf-8")) or []
+    else:
+        existing = []
+    existing.extend(manifest)
+    _write_yaml(manifest_path, existing)
 
 
 def _seed_profile(tmp_path: Path) -> None:
@@ -192,3 +213,96 @@ def test_profile_update_uses_summary_and_microfacts(
     }
     microfacts_payload = json.loads(captured["microfacts_json"])
     assert microfacts_payload["facts"][0]["statement"].startswith("Protects 8-10am")
+
+
+def test_profile_update_sanitizes_batch_filename(
+    cli_workspace: Path,
+    cli_runner: CliRunner,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _seed_normalized(cli_workspace)
+    _seed_manifest(cli_workspace)
+    _seed_profile(cli_workspace)
+
+    monkeypatch.setenv("AIJOURNAL_FAKE_OLLAMA", "0")
+
+    example_payload = {"claims": [], "facets": [], "interview_prompts": []}
+
+    def fake_invoke(*_args, **_kwargs) -> PromptProfileUpdates:
+        return PromptProfileUpdates.model_validate(example_payload)
+
+    monkeypatch.setattr(profile_update_module, "_invoke_structured_llm", fake_invoke)
+    monkeypatch.setattr(
+        profile_update_module.time_utils,
+        "format_timestamp",
+        lambda *_args, **_kwargs: "2025-11-15T10:32:11Z",
+    )
+
+    result = cli_runner.invoke(app, ["ops", "profile", "update", "--date", DATE])
+
+    assert result.exit_code == 0, result.stdout
+
+    pending_dir = cli_workspace / "derived" / "pending" / "profile_updates"
+    batches = sorted(pending_dir.glob("*.yaml"))
+    assert batches, "Profile update should emit a batch"
+    filename = batches[-1].name
+    assert ":" not in filename
+    assert filename == f"{DATE}-2025-11-15T10-32-11Z.yaml"
+
+
+def test_profile_update_claims_use_entry_manifest_hash(
+    cli_workspace: Path,
+    cli_runner: CliRunner,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    second_entry = f"{DATE}-second"
+    second_hash = "secondhash987"
+
+    _seed_normalized(cli_workspace)
+    _seed_manifest(cli_workspace)
+    _seed_normalized(
+        cli_workspace,
+        entry_id=second_entry,
+        source_hash=second_hash,
+        title="Second Entry",
+        tags=["focus"],
+    )
+    _seed_manifest(
+        cli_workspace,
+        entry_id=second_entry,
+        source_hash=second_hash,
+        tags=["focus"],
+    )
+    _seed_profile(cli_workspace)
+
+    example_payload = {
+        "claims": [
+            {
+                "type": "habit",
+                "statement": "Reinforces second entry",
+                "reason": "LLM cites explicit entry",
+                "evidence_entry": second_entry,
+                "evidence_para": 0,
+            }
+        ],
+        "facets": [],
+        "interview_prompts": [],
+    }
+
+    def fake_invoke(*_args, **_kwargs) -> PromptProfileUpdates:
+        return PromptProfileUpdates.model_validate(example_payload)
+
+    monkeypatch.setenv("AIJOURNAL_FAKE_OLLAMA", "0")
+    monkeypatch.setattr(profile_update_module, "_invoke_structured_llm", fake_invoke)
+
+    result = cli_runner.invoke(app, ["ops", "profile", "update", "--date", DATE])
+
+    assert result.exit_code == 0, result.stdout
+
+    pending_dir = cli_workspace / "derived" / "pending" / "profile_updates"
+    batches = sorted(pending_dir.glob("*.yaml"))
+    assert batches, "Profile update should emit a batch"
+    artifact = yaml.safe_load(batches[-1].read_text(encoding="utf-8"))
+    claim = artifact["data"]["proposals"]["claims"][0]
+    assert claim["normalized_ids"] == [second_entry]
+    assert claim["manifest_hashes"] == [second_hash]
