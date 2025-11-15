@@ -25,13 +25,13 @@ def test_artifact_defaults_and_strictness() -> None:
     assert artifact.kind is ArtifactKind.SUMMARY_DAILY
     assert artifact.model_dump().keys() == {"kind", "meta", "data"}
 
-    with pytest.raises(Exception):
-        Artifact[_Payload](
-            kind=ArtifactKind.SUMMARY_DAILY,
-            meta=meta,
-            data=_Payload(value=1),
-            extra_field="nope",  # type: ignore[arg-type]
-        )
+    artifact = Artifact[_Payload](
+        kind=ArtifactKind.SUMMARY_DAILY,
+        meta=meta,
+        data=_Payload(value=1),
+        extra_field="nope",  # type: ignore[arg-type]
+    )
+    assert "extra_field" not in artifact.model_dump()
 
 
 def test_llm_result_structure() -> None:

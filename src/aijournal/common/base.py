@@ -6,10 +6,10 @@ from pydantic import BaseModel, ConfigDict
 
 
 class StrictModel(BaseModel):
-    """Pydantic model with strict settings and forbidden extras."""
+    """Pydantic model with strict settings and ignored extras."""
 
     model_config = ConfigDict(
-        extra="forbid",
+        extra="ignore",
         validate_assignment=True,
         arbitrary_types_allowed=False,
         populate_by_name=True,
