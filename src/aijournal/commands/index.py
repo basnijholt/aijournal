@@ -259,6 +259,8 @@ def _invoke_rebuild_pipeline(ctx: RunContext, prepared: IndexRebuildPrepared) ->
         chunk_index,
         embedder,
         char_per_token,
+        workspace=ctx.workspace,
+        config=ctx.config,
     )
     touched_dates = sorted(stats.get("dates", []))
     if touched_dates:
@@ -377,6 +379,8 @@ def _invoke_tail_pipeline(ctx: RunContext, prepared: IndexTailPrepared) -> Index
         chunk_index,
         embedder,
         char_per_token,
+        workspace=ctx.workspace,
+        config=ctx.config,
     )
 
     touched_dates = sorted(stats.get("dates", []))

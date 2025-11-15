@@ -12,14 +12,17 @@ from typing import Any
 
 import numpy as np
 
+from aijournal.common.app_config import AppConfig
 from aijournal.common.meta import Artifact, ArtifactKind, ArtifactMeta
+from aijournal.domain.facts import DailySummary, MicroFactsFile
 from aijournal.domain.index import Chunk, ChunkBatch, IndexMeta
 from aijournal.domain.journal import NormalizedEntry
-from aijournal.io.artifacts import save_artifact
+from aijournal.io.artifacts import load_artifact_data, save_artifact
 from aijournal.io.yaml_io import load_yaml_model
 from aijournal.models.authoritative import ManifestEntry
 from aijournal.pipelines import normalization
 from aijournal.services.embedding import EmbeddingBackend
+from aijournal.services.summaries import load_daily_summary, summary_artifact_path
 from aijournal.utils import time as time_utils
 
 CHUNK_TARGET_CHARS = 900
@@ -155,6 +158,169 @@ def token_estimate(text: str, char_per_token: float) -> int:
     return max(1, ceil(len(text) / divisor))
 
 
+def _derived_artifact_root(workspace: Path, config: AppConfig) -> Path:
+    derived = Path(config.paths.derived)
+    if not derived.is_absolute():
+        derived = workspace / derived
+    return derived
+
+
+def _derived_microfacts_path(workspace: Path, config: AppConfig, day: str) -> Path:
+    return _derived_artifact_root(workspace, config) / "microfacts" / f"{day}.yaml"
+
+
+def _relative_workspace_path(workspace: Path, path: Path) -> str:
+    try:
+        return str(path.relative_to(workspace))
+    except ValueError:
+        return str(path)
+
+
+def _load_daily_microfacts(workspace: Path, config: AppConfig, day: str) -> MicroFactsFile | None:
+    path = _derived_microfacts_path(workspace, config, day)
+    if not path.exists():
+        return None
+    try:
+        return load_artifact_data(path, MicroFactsFile)
+    except Exception:  # pragma: no cover - defensive
+        return None
+
+
+def _summary_chunk_records(
+    day: str,
+    summary: DailySummary,
+    *,
+    source_path: str,
+    char_per_token: float,
+) -> list[ChunkRecord]:
+    normalized_id = f"summary-{day}"
+    records: list[ChunkRecord] = []
+    items: list[tuple[str, str]] = []
+    for kind, texts in (
+        ("bullet", summary.bullets),
+        ("highlight", summary.highlights),
+        ("todo", summary.todo_candidates),
+    ):
+        for text in texts:
+            value = (text or "").strip()
+            if not value:
+                continue
+            label = kind.capitalize()
+            items.append((kind, f"{label}: {value}"))
+
+    for idx, (kind, text) in enumerate(items):
+        records.append(
+            ChunkRecord(
+                chunk_id=f"{normalized_id}#c{idx}",
+                normalized_id=normalized_id,
+                normalized_path=source_path,
+                chunk_index=idx,
+                chunk_type="summary",
+                chunk_text=text,
+                date=day,
+                tags=["summary", kind],
+                source_type="summary",
+                source_path=source_path,
+                tokens=token_estimate(text, char_per_token),
+                source_hash=None,
+                manifest_hash=None,
+            )
+        )
+    return records
+
+
+def _microfact_chunk_records(
+    day: str,
+    facts: MicroFactsFile,
+    *,
+    source_path: str,
+    char_per_token: float,
+) -> list[ChunkRecord]:
+    normalized_id = f"microfacts-{day}"
+    records: list[ChunkRecord] = []
+    for idx, fact in enumerate(facts.facts):
+        statement = (fact.statement or "").strip()
+        if not statement:
+            continue
+        prefix = f"{fact.id}: " if fact.id else ""
+        text = f"{prefix}{statement}"
+        records.append(
+            ChunkRecord(
+                chunk_id=f"{normalized_id}#c{idx}",
+                normalized_id=normalized_id,
+                normalized_path=source_path,
+                chunk_index=idx,
+                chunk_type="microfact",
+                chunk_text=text,
+                date=day,
+                tags=["microfact"],
+                source_type="microfact",
+                source_path=source_path,
+                tokens=token_estimate(text, char_per_token),
+                source_hash=None,
+                manifest_hash=None,
+            )
+        )
+    return records
+
+
+def _embed_chunk_records(embedder: EmbeddingBackend, records: list[ChunkRecord]) -> None:
+    if not records:
+        return
+    texts = [record.chunk_text for record in records]
+    vectors = embedder.embed(texts)
+    for record, vector in zip(records, vectors, strict=False):
+        record.embedding = vector
+
+
+def _index_derived_chunks(
+    workspace: Path,
+    config: AppConfig,
+    days: Iterable[str],
+    chunk_index: Any,
+    embedder: EmbeddingBackend,
+    char_per_token: float,
+    records_by_day: dict[str, list[ChunkRecord]],
+    include_summaries: bool,
+    include_microfacts: bool,
+) -> tuple[int, int]:
+    summary_count = 0
+    microfact_count = 0
+    for day in sorted(days):
+        day_records = records_by_day.setdefault(day, [])
+        if include_summaries:
+            summary = load_daily_summary(workspace, config, day, required=False)
+            if summary is not None:
+                summary_path = summary_artifact_path(workspace, config, day)
+                relative_path = _relative_workspace_path(workspace, summary_path)
+                summary_records = _summary_chunk_records(
+                    day,
+                    summary,
+                    source_path=relative_path,
+                    char_per_token=char_per_token,
+                )
+                _embed_chunk_records(embedder, summary_records)
+                chunk_index.replace_entry(f"summary-{day}", summary_records)
+                day_records.extend(summary_records)
+                summary_count += len(summary_records)
+        if include_microfacts:
+            microfacts = _load_daily_microfacts(workspace, config, day)
+            if microfacts is not None:
+                microfacts_path = _derived_microfacts_path(workspace, config, day)
+                relative_path = _relative_workspace_path(workspace, microfacts_path)
+                microfact_records = _microfact_chunk_records(
+                    day,
+                    microfacts,
+                    source_path=relative_path,
+                    char_per_token=char_per_token,
+                )
+                _embed_chunk_records(embedder, microfact_records)
+                chunk_index.replace_entry(f"microfacts-{day}", microfact_records)
+                day_records.extend(microfact_records)
+                microfact_count += len(microfact_records)
+    return summary_count, microfact_count
+
+
 def build_chunk_records(
     entry: NormalizedEntry,
     normalized_path: str,
@@ -207,6 +373,9 @@ def index_entries(
     chunk_index,
     embedder: EmbeddingBackend,
     char_per_token: float,
+    *,
+    workspace: Path,
+    config: AppConfig,
 ) -> tuple[dict[str, Any], Mapping[str, list[ChunkRecord]]]:
     touched_dates: set[str] = set()
     processed_entries = 0
@@ -233,7 +402,22 @@ def index_entries(
         processed_entries += 1
         processed_chunks += len(chunk_records)
 
-    stats = {"entries": processed_entries, "chunks": processed_chunks, "dates": touched_dates}
+    base_chunk_total = processed_chunks
+    stats = {"entries": processed_entries, "chunks": base_chunk_total, "dates": touched_dates}
+    summary_count, microfact_count = _index_derived_chunks(
+        workspace,
+        config,
+        touched_dates,
+        chunk_index,
+        embedder,
+        char_per_token,
+        records_by_day,
+        include_summaries=config.index.include_summaries,
+        include_microfacts=config.index.include_microfacts,
+    )
+    stats["summary_chunks"] = summary_count
+    stats["microfact_chunks"] = microfact_count
+    stats["chunks"] = base_chunk_total + summary_count + microfact_count
     return stats, records_by_day
 
 

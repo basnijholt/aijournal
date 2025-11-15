@@ -49,6 +49,8 @@ class IndexConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     search_k_factor: float = 3.0
+    include_summaries: bool = True
+    include_microfacts: bool = True
 
 
 class PersonaConfig(BaseModel):
