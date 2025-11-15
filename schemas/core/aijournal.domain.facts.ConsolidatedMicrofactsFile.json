@@ -1,0 +1,114 @@
+{
+  "$defs": {
+    "ConsolidatedMicroFact": {
+      "additionalProperties": false,
+      "description": "Global microfact entry that survives consolidation runs.",
+      "properties": {
+        "canonical_statement": {
+          "title": "Canonical Statement",
+          "type": "string"
+        },
+        "confidence": {
+          "title": "Confidence",
+          "type": "number"
+        },
+        "contexts": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Contexts",
+          "type": "array"
+        },
+        "domain": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Domain"
+        },
+        "evidence_entries": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Evidence Entries",
+          "type": "array"
+        },
+        "first_seen": {
+          "title": "First Seen",
+          "type": "string"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "last_seen": {
+          "title": "Last Seen",
+          "type": "string"
+        },
+        "observation_count": {
+          "title": "Observation Count",
+          "type": "integer"
+        },
+        "source_fact_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Source Fact Ids",
+          "type": "array"
+        },
+        "statement": {
+          "title": "Statement",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "statement",
+        "canonical_statement",
+        "confidence",
+        "first_seen",
+        "last_seen",
+        "observation_count"
+      ],
+      "title": "ConsolidatedMicroFact",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Artifact capturing the global consolidated microfact snapshot.",
+  "properties": {
+    "embedding_model": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Embedding Model"
+    },
+    "facts": {
+      "items": {
+        "$ref": "#/$defs/ConsolidatedMicroFact"
+      },
+      "title": "Facts",
+      "type": "array"
+    },
+    "generated_at": {
+      "title": "Generated At",
+      "type": "string"
+    }
+  },
+  "required": [
+    "generated_at"
+  ],
+  "title": "ConsolidatedMicrofactsFile",
+  "type": "object"
+}

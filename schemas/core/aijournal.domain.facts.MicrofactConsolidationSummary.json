@@ -1,0 +1,30 @@
+{
+  "additionalProperties": false,
+  "description": "Per-day summary emitted during rebuild operations.",
+  "properties": {
+    "day": {
+      "title": "Day",
+      "type": "string"
+    },
+    "merged_records": {
+      "title": "Merged Records",
+      "type": "integer"
+    },
+    "new_records": {
+      "title": "New Records",
+      "type": "integer"
+    },
+    "processed": {
+      "title": "Processed",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "day",
+    "processed",
+    "new_records",
+    "merged_records"
+  ],
+  "title": "MicrofactConsolidationSummary",
+  "type": "object"
+}
