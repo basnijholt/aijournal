@@ -35,12 +35,11 @@ def test_stage3_facts_success(tmp_path: Path, monkeypatch) -> None:
     def fake_run(
         date: str,
         *,
-        timeout: float,
-        retries: int,
         progress: bool,
         claim_models,
         build_claim_preview,
         workspace: Path | None = None,
+        config: AppConfig | None = None,
     ) -> tuple[None, Path]:
         called.append(date)
         facts_path.write_text("facts", encoding="utf-8")

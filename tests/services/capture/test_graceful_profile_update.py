@@ -6,6 +6,7 @@ from pathlib import Path
 
 import typer
 
+from aijournal.common.app_config import AppConfig
 from aijournal.services.capture.graceful import graceful_profile_update
 
 
@@ -16,13 +17,12 @@ def test_graceful_profile_update_success(tmp_path: Path, monkeypatch) -> None:
     def fake_run(
         date: str,
         *,
-        timeout: float,
-        retries: int,
         progress: bool,
         build_claim_preview,
         workspace: Path | None = None,
+        config: AppConfig | None = None,
     ) -> Path:
-        del date, timeout, retries, progress, build_claim_preview, workspace
+        del date, progress, build_claim_preview, workspace, config
         batch_path.write_text("batch", encoding="utf-8")
         return batch_path
 
@@ -30,11 +30,10 @@ def test_graceful_profile_update_success(tmp_path: Path, monkeypatch) -> None:
 
     path, error = graceful_profile_update(
         "2025-10-27",
-        timeout=30.0,
-        retries=1,
         progress=False,
         build_claim_preview=lambda *_args, **_kwargs: None,
         workspace=tmp_path,
+        config=AppConfig(),
     )
 
     assert error is None
@@ -49,11 +48,10 @@ def test_graceful_profile_update_failure(tmp_path: Path, monkeypatch) -> None:
 
     path, error = graceful_profile_update(
         "2025-10-27",
-        timeout=30.0,
-        retries=1,
         progress=False,
         build_claim_preview=lambda *_args, **_kwargs: None,
         workspace=tmp_path,
+        config=AppConfig(),
     )
 
     assert path is None

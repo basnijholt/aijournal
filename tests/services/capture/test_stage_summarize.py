@@ -4,6 +4,7 @@ from pathlib import Path
 
 import typer
 
+from aijournal.common.app_config import AppConfig
 from aijournal.services.capture import CaptureInput
 from aijournal.services.capture.stages import stage2_summarize
 
@@ -21,10 +22,9 @@ def test_stage2_summarize_success(tmp_path: Path, monkeypatch) -> None:
     def fake_run(
         date: str,
         *,
-        timeout: float,
-        retries: int,
         progress: bool,
         workspace: Path | None = None,
+        config: AppConfig | None = None,
     ) -> Path:
         called.append(date)
         summary_path.write_text("summary", encoding="utf-8")
@@ -32,7 +32,9 @@ def test_stage2_summarize_success(tmp_path: Path, monkeypatch) -> None:
 
     monkeypatch.setattr("aijournal.commands.summarize.run_summarize", fake_run)
 
-    outputs = stage2_summarize.run_summarize_stage_2(["2025-10-27"], _make_inputs(), tmp_path)
+    outputs = stage2_summarize.run_summarize_stage_2(
+        ["2025-10-27"], _make_inputs(), tmp_path, AppConfig()
+    )
 
     assert called == ["2025-10-27"]
     assert outputs.result.ok is True
@@ -46,7 +48,9 @@ def test_stage2_summarize_handles_failure(tmp_path: Path, monkeypatch) -> None:
 
     monkeypatch.setattr("aijournal.commands.summarize.run_summarize", failing_run)
 
-    outputs = stage2_summarize.run_summarize_stage_2(["2025-10-27"], _make_inputs(), tmp_path)
+    outputs = stage2_summarize.run_summarize_stage_2(
+        ["2025-10-27"], _make_inputs(), tmp_path, AppConfig()
+    )
 
     assert outputs.result.ok is False
     assert outputs.result.changed is False
