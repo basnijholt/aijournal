@@ -31,11 +31,14 @@ to add, return `{ "claims": [], "facets": [], "interview_prompts": [] }`.
    mood). Cite actual sentences when proposing updates.
 4. Use `MICROFACTS_JSON` to reinforce or challenge hypotheses — do not simply
    restate metadata.
-5. Strengthen existing claims/facets when new evidence confirms them; only
+5. Check `CONSOLIDATED_FACTS_JSON` for recurring patterns observed across multiple
+   days. Use high-observation-count facts to strengthen existing claims when today's
+   entries confirm the pattern.
+6. Strengthen existing claims/facets when new evidence confirms them; only
    introduce new statements when the pattern is durable.
-6. Remove or downgrade facets when entries contradict them.
-7. Emit interview prompts instead of guessing when the evidence is ambiguous.
-8. Follow the schema precisely; violations are rejected downstream.
+7. Remove or downgrade facets when entries contradict them.
+8. Emit interview prompts instead of guessing when the evidence is ambiguous.
+9. Follow the schema precisely; violations are rejected downstream.
 
 ## Strength Calibration
 
@@ -109,6 +112,8 @@ ENTRIES_JSON: $entries_json
 SUMMARY_JSON: $summary_json
 
 MICROFACTS_JSON: $microfacts_json
+
+CONSOLIDATED_FACTS_JSON: $consolidated_facts_json
 
 PROFILE_JSON: $profile_json
 
