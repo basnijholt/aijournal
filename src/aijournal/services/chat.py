@@ -264,12 +264,11 @@ class ChatService:
             intent=intent,
             allow_follow_up=allow_follow_up,
         )
-        max_attempts = self._config.llm.retries + 1
         result: LLMResult[ChatResponse] = run_ollama_agent(
             self._build_ollama_config(),
             prompt,
             output_type=ChatResponse,
-            max_attempts=max_attempts,
+            retries=self._config.llm.retries,
         )
         response = result.payload
         timestamp_str = datetime.now(tz=UTC).isoformat()

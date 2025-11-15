@@ -52,7 +52,7 @@ from aijournal.services.microfacts import (
     load_consolidated_microfacts,
     select_recurring_facts,
 )
-from aijournal.services.ollama import LLMResponseError, resolve_max_attempts
+from aijournal.services.ollama import LLMResponseError
 from aijournal.utils import time as time_utils
 
 MAX_CONSOLIDATED_FACTS = 20
@@ -229,11 +229,6 @@ def run_profile_update_command(
                     response_model=PromptProfileUpdates,
                     agent_name="aijournal-profile-update",
                     config=prepared.config,
-                    timeout=ctx.config.llm.timeout,
-                    max_attempts=resolve_max_attempts(ctx.config, ctx.config.llm.retries),
-                    retry_message=(
-                        "Return JSON with exactly the keys `claims`, `facets`, `interview_prompts`."
-                    ),
                     prompt_set=ctx.prompt_set,
                 ),
             )

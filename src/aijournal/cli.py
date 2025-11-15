@@ -816,9 +816,6 @@ def _invoke_structured_llm(
     response_model: type[Any],
     agent_name: str,
     config: AppConfig,
-    timeout: float | None = None,
-    max_attempts: int | None = None,
-    retry_message: str | None = None,
     prompt_set: str | None = None,
 ) -> Any:
     """Proxy to summarize command helper while honoring patched runners."""
@@ -834,23 +831,11 @@ def _invoke_structured_llm(
             response_model=response_model,
             agent_name=agent_name,
             config=config,
-            timeout=timeout,
-            max_attempts=max_attempts,
-            retry_message=retry_message,
             prompt_set=prompt_set,
         )
     finally:
         summarize_commands.build_ollama_config_from_mapping = original_builder
         summarize_commands.run_ollama_agent = original_runner
-
-
-def _structured_call_with_retry(
-    func: Any,
-    *,
-    retries: int,
-    label: str,
-) -> Any:
-    return func()
 
 
 def _summarize_day_payload(
@@ -870,10 +855,9 @@ def _summarize_day_payload(
         date,
         config,
         workspace=workspace,
-        timeout=timeout,
         retries=retries,
         invoke_structured_llm=_invoke_structured_llm,
-        structured_call=_structured_call_with_retry,
+        structured_call=lambda func, *, retries, label: func(),
         use_fake_llm_override=use_fake_llm(),
         prompt_set=prompt_set,
     )
@@ -2109,28 +2093,24 @@ def interview(
             ]
             interview_set = cast(
                 InterviewSet,
-                _structured_call_with_retry(
-                    lambda: _invoke_structured_llm(
-                        "prompts/interview.md",
-                        {
-                            "date": date,
-                            "profile_json": _json_block(profile),
-                            "claims_json": _json_block(
-                                {"claims": [claim.model_dump(mode="python") for claim in claims]}
-                            ),
-                            "entries_json": _json_block(_entries_to_payload(entries, workspace)),
-                            "rankings_json": _json_block(rankings_payload),
-                            "summary_json": _json_block(summary_payload),
-                            "summary_window_json": _json_block(summary_window_payload),
-                            "coaching_prefs_json": _json_block(profile.get("coaching_prefs", {})),
-                        },
-                        response_model=InterviewSet,
-                        agent_name="aijournal-interview",
-                        config=config,
-                        prompt_set=_active_prompt_set(config),
-                    ),
-                    retries=0,
-                    label="interview",
+                _invoke_structured_llm(
+                    "prompts/interview.md",
+                    {
+                        "date": date,
+                        "profile_json": _json_block(profile),
+                        "claims_json": _json_block(
+                            {"claims": [claim.model_dump(mode="python") for claim in claims]}
+                        ),
+                        "entries_json": _json_block(_entries_to_payload(entries, workspace)),
+                        "rankings_json": _json_block(rankings_payload),
+                        "summary_json": _json_block(summary_payload),
+                        "summary_window_json": _json_block(summary_window_payload),
+                        "coaching_prefs_json": _json_block(profile.get("coaching_prefs", {})),
+                    },
+                    response_model=InterviewSet,
+                    agent_name="aijournal-interview",
+                    config=config,
+                    prompt_set=_active_prompt_set(config),
                 ),
             )
         except LLMResponseError as exc:

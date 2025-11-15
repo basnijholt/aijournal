@@ -37,7 +37,7 @@ from aijournal.models.authoritative import ManifestEntry
 from aijournal.models.derived import ProfileUpdatePreview
 from aijournal.pipelines import facts as facts_pipeline
 from aijournal.services.microfacts import MicrofactIndex
-from aijournal.services.ollama import LLMResponseError, resolve_max_attempts, resolve_model_name
+from aijournal.services.ollama import LLMResponseError, resolve_model_name
 from aijournal.services.summaries import SummaryNotFoundError, load_daily_summary
 from aijournal.utils import time as time_utils
 
@@ -128,8 +128,6 @@ def prepare_inputs(ctx: RunContext, options: FactsOptions) -> FactsPrepared:
         ctx.emit(event="command_failed", reason="missing_entries")
         raise typer.Exit(1)
 
-    timeout_value = ctx.config.llm.timeout
-    resolved_retries = ctx.config.llm.retries
     _log_entry_progress(
         f"Extracting micro-facts for {options.date}",
         entries,
@@ -159,8 +157,8 @@ def prepare_inputs(ctx: RunContext, options: FactsOptions) -> FactsPrepared:
         event="prepare_summary",
         entries=len(entries),
         claims=len(claim_models),
-        timeout=timeout_value,
-        retries=resolved_retries,
+        timeout=ctx.config.llm.timeout,
+        retries=ctx.config.llm.retries,
     )
     return FactsPrepared(
         date=options.date,
@@ -196,11 +194,6 @@ def invoke_pipeline(ctx: RunContext, prepared: FactsPrepared) -> FactsResult:
                 response_model=PromptMicroFacts,
                 agent_name="aijournal-facts",
                 config=ctx.config,
-                timeout=ctx.config.llm.timeout,
-                max_attempts=resolve_max_attempts(ctx.config, ctx.config.llm.retries),
-                retry_message=(
-                    "Return JSON with keys `facts`, `claim_proposals`, and optional `preview`."
-                ),
                 prompt_set=ctx.prompt_set,
             ),
         )

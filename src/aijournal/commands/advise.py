@@ -242,11 +242,6 @@ def _advice_payload(
                 response_model=AdviceCard,
                 agent_name="aijournal-advise",
                 config=config,
-                max_attempts=2,
-                retry_message=(
-                    "Return JSON with keys `query`, `assumptions`, `recommendations`, "
-                    "`tradeoffs`, `next_actions`, `confidence`, `alignment`, `style`."
-                ),
                 prompt_set=prompt_set,
             ),
         )

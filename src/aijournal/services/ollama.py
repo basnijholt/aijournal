@@ -146,12 +146,6 @@ def resolve_model_name(
     return build_ollama_config_from_mapping(config).model
 
 
-def resolve_max_attempts(config: AppConfig, override: int | None = None) -> int:
-    if override is not None:
-        return override
-    return max(1, config.llm.retries + 1)
-
-
 def _model_settings_from_config(config: OllamaConfig) -> ModelSettings | None:
     kwargs: dict[str, Any] = {}
     if config.temperature is not None:
@@ -267,15 +261,12 @@ def _compose_attempt_prompt(
     base_prompt: str,
     *,
     skeleton: str | None,
-    retry_message: str | None,
     previous_payload: str | None,
     validation_summary: str | None,
 ) -> str:
     parts: list[str] = [base_prompt.rstrip()]
     if skeleton:
         parts.append("\nJSON_SKELETON (fill without removing keys):\n" + skeleton.strip())
-    if retry_message:
-        parts.append(f"\nReminder: {retry_message.strip()}")
     if previous_payload or validation_summary:
         parts.append("\nThe prior JSON failed validation. Correct it and return only valid JSON.")
         if previous_payload:
@@ -411,7 +402,7 @@ def _write_failure_log(
     label: str | None,
     prompt: str,
     prompt_path: str | None,
-    attempt: int,
+    retries: int,
     error: Exception,
     raw_payload: str | None,
 ) -> None:
@@ -423,7 +414,7 @@ def _write_failure_log(
 
     timestamp = time_utils.format_timestamp(time_utils.now()).replace(":", "-")
     payload: dict[str, Any] = {
-        "attempt": attempt,
+        "retries": retries,
         "prompt_path": prompt_path,
         "prompt": prompt,
         "error": str(error),
@@ -452,8 +443,7 @@ def run_ollama_agent(
     *,
     system_prompt: str = _JSON_SYSTEM_PROMPT,
     output_type: type[Any] | None = None,
-    max_attempts: int = 2,
-    retry_message: str | None = None,
+    retries: int = 0,
     prompt_path: str | None = None,
     prompt_hash: str | None = None,
     prompt_kind: str | None = None,
@@ -462,10 +452,6 @@ def run_ollama_agent(
 ) -> LLMResult[_PayloadT]:
     """Run a Pydantic AI agent and return the validated payload with metadata."""
 
-    if max_attempts < 1:
-        msg = "max_attempts must be at least 1"
-        raise ValueError(msg)
-
     target_model: type[BaseModel] | None = None
     if isinstance(output_type, type) and issubclass(output_type, BaseModel):
         target_model = output_type
@@ -473,12 +459,8 @@ def run_ollama_agent(
     else:
         resolved_output = output_type or dict
 
-    retries = max(0, max_attempts - 1)
     agent = build_ollama_agent(
-        config,
-        system_prompt=system_prompt,
-        output_type=resolved_output,
-        retries=retries,
+        config, system_prompt=system_prompt, output_type=resolved_output, retries=retries
     )
 
     skeleton_json: str | None = None
@@ -488,7 +470,6 @@ def run_ollama_agent(
     base_prompt = _compose_attempt_prompt(
         prompt.rstrip(),
         skeleton=skeleton_json,
-        retry_message=retry_message,
         previous_payload=None,
         validation_summary=None,
     )
@@ -501,7 +482,7 @@ def run_ollama_agent(
             label=log_label or getattr(agent, "name", None),
             prompt=base_prompt,
             prompt_path=prompt_path,
-            attempt=max_attempts,
+            retries=retries,
             error=exc,
             raw_payload=raw_payload_text,
         )
@@ -538,7 +519,7 @@ def run_ollama_agent(
                 label=log_label or getattr(agent, "name", None),
                 prompt=base_prompt,
                 prompt_path=prompt_path,
-                attempt=max_attempts,
+                retries=retries,
                 error=ValueError(f"Validation failed for {target_model.__name__}"),
                 raw_payload=raw_display,
             )

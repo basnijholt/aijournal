@@ -150,15 +150,10 @@ def test_summarize_structured_success(monkeypatch: pytest.MonkeyPatch) -> None:
         todo_candidates=["todo"],
     )
 
-    def fake_retry(func, *, retries: int, label: str) -> DailySummary:
-        assert "summarize" in label
-        return func()
-
     def fake_invoke(*_args, **_kwargs) -> DailySummary:
         return fake_response
 
     monkeypatch.setattr(config_loader, "use_fake_llm", lambda: False)
-    monkeypatch.setattr(cli, "_structured_call_with_retry", fake_retry)
     monkeypatch.setattr(cli, "_invoke_structured_llm", fake_invoke)
 
     summary = cli._summarize_day_payload(
@@ -166,7 +161,6 @@ def test_summarize_structured_success(monkeypatch: pytest.MonkeyPatch) -> None:
         DATE,
         {},
         workspace=Path("."),
-        timeout=30.0,
         retries=1,
     )
 
@@ -187,11 +181,11 @@ def test_summarize_structured_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
         summary=None,
     )
 
-    def fake_retry(func, *, retries: int, label: str) -> DailySummary:
+    def fake_invoke(*_args, **_kwargs) -> DailySummary:
         raise LLMResponseError("bad schema")
 
     monkeypatch.setattr(config_loader, "use_fake_llm", lambda: False)
-    monkeypatch.setattr(cli, "_structured_call_with_retry", fake_retry)
+    monkeypatch.setattr(cli, "_invoke_structured_llm", fake_invoke)
 
     with pytest.raises(LLMResponseError):
         cli._summarize_day_payload(
@@ -199,7 +193,6 @@ def test_summarize_structured_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
             DATE,
             {},
             workspace=Path("."),
-            timeout=30.0,
             retries=0,
         )
 
@@ -207,11 +200,8 @@ def test_summarize_structured_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_invoke_structured_llm_uses_shared_builder(monkeypatch: pytest.MonkeyPatch) -> None:
     captured: dict[str, object] = {}
 
-    def fake_builder(
-        config: AppConfig, *, timeout: float | None = None, **_: object
-    ) -> OllamaConfig:
+    def fake_builder(config: AppConfig, **_: object) -> OllamaConfig:
         captured["config"] = config.model_dump(mode="python")
-        captured["timeout"] = timeout
         return OllamaConfig(model="builder-model")
 
     def fake_runner(
@@ -220,21 +210,19 @@ def test_invoke_structured_llm_uses_shared_builder(monkeypatch: pytest.MonkeyPat
         *,
         system_prompt: str,
         output_type: type[DailySummary],
-        max_attempts: int,
-        retry_message: str | None,
         prompt_path: str | None = None,
         prompt_hash: str | None = None,
         prompt_kind: str | None = None,
         prompt_set: str | None = None,
         log_label: str | None = None,
+        retries: int,
     ) -> LLMResult[DailySummary]:
         assert config.model == "builder-model"
         assert "summarize" in system_prompt.lower()
         assert "entries" in prompt
-        assert max_attempts == DEFAULT_LLM_RETRIES + 1
-        assert retry_message is not None
         assert prompt_kind == "summarize_day"
         assert prompt_set is None
+        assert retries == DEFAULT_LLM_RETRIES
         payload = output_type(
             day=DATE,
             bullets=["bullet"],
@@ -258,9 +246,7 @@ def test_invoke_structured_llm_uses_shared_builder(monkeypatch: pytest.MonkeyPat
         response_model=DailySummary,
         agent_name="unit-test",
         config=AppConfig(temperature=0.3),
-        timeout=45.0,
     )
 
     assert isinstance(response, DailySummary)
     assert captured["config"]["temperature"] == 0.3
-    assert captured["timeout"] == 45.0

@@ -26,7 +26,6 @@ from aijournal.pipelines import summarize as summarize_pipeline
 from aijournal.services.ollama import (
     LLMResponseError,
     build_ollama_config_from_mapping,
-    resolve_max_attempts,
     resolve_model_name,
     run_ollama_agent,
 )
@@ -93,29 +92,20 @@ def _invoke_structured_llm(
     response_model: type[BaseModel],
     agent_name: str,
     config: AppConfig,
-    timeout: float | None = None,
-    max_attempts: int | None = None,
-    retry_message: str | None = None,
     prompt_set: str | None = None,
 ) -> BaseModel:
     prompt = _render_prompt(prompt_path, variables, prompt_set=prompt_set)
     prompt_hash = _hash_prompt(prompt_path, prompt_set=prompt_set)
     prompt_kind = Path(prompt_path).stem
     try:
-        ollama_config = build_ollama_config_from_mapping(
-            config,
-            timeout=float(timeout) if timeout is not None else None,
-        )
-        effective_retry_message = retry_message or (
-            "Return JSON that matches the expected schema with no extra keys or text."
-        )
+        ollama_config = build_ollama_config_from_mapping(config)
+
         result: LLMResult[BaseModel] = run_ollama_agent(
             ollama_config,
             prompt,
             system_prompt=_STRUCTURED_SYSTEM_PROMPT,
             output_type=response_model,
-            max_attempts=resolve_max_attempts(config, max_attempts),
-            retry_message=effective_retry_message,
+            retries=config.llm.retries,
             prompt_path=prompt_path,
             prompt_hash=prompt_hash,
             prompt_kind=prompt_kind,
@@ -328,12 +318,6 @@ def _summarize_day_payload(
                 response_model=DailySummary,
                 agent_name="aijournal-summarize",
                 config=config,
-                timeout=timeout,
-                max_attempts=resolve_max_attempts(config, retries),
-                retry_message=(
-                    "Return JSON with keys `day`, `bullets`, `highlights`, `todo_candidates` "
-                    "and no additional fields or commentary."
-                ),
                 prompt_set=prompt_set,
             ),
         )
