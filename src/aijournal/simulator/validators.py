@@ -10,14 +10,13 @@ from typing import Protocol
 
 import yaml
 
-from aijournal.domain.changes import ProfileUpdateProposals
 from aijournal.domain.facts import DailySummary, MicroFactsFile
 from aijournal.domain.journal import NormalizedEntry
 from aijournal.domain.packs import PackBundle
 from aijournal.domain.persona import PersonaCore
 from aijournal.io.artifacts import load_artifact_data
 from aijournal.io.yaml_io import load_yaml_model
-from aijournal.models.authoritative import ClaimsFile, ManifestEntry, SelfProfile
+from aijournal.models.authoritative import ManifestEntry
 from aijournal.models.derived import ProfileUpdateBatch
 from aijournal.services.capture import CaptureResult
 
@@ -26,11 +25,10 @@ STAGE_NAMES = {
     1: "normalize",
     2: "derive.summarize",
     3: "derive.extract_facts",
-    4: "derive.profile",
-    5: "derive.characterize",
-    6: "refresh.index",
-    7: "refresh.persona",
-    8: "pack",
+    4: "derive.profile_update",
+    5: "refresh.index",
+    6: "refresh.persona",
+    7: "derive.pack",
 }
 
 
@@ -349,89 +347,6 @@ class Stage4Validator:
         if not expected_dates:
             return failures
 
-        derived_root = ctx.workspace / "derived" / "profile_proposals"
-        for date in sorted(expected_dates):
-            proposals_path = derived_root / f"{date}.yaml"
-            if not proposals_path.exists():
-                failures.append(
-                    ValidationFailure(
-                        stage_id=self.stage_id,
-                        invariant="proposals-written",
-                        message="Profile proposals file missing",
-                        date=date,
-                        file=str(proposals_path.relative_to(ctx.workspace)),
-                        severity="warning",
-                    ),
-                )
-                continue
-
-            try:
-                proposals = load_artifact_data(proposals_path, ProfileUpdateProposals)
-            except Exception as exc:  # noqa: BLE001
-                failures.append(
-                    ValidationFailure(
-                        stage_id=self.stage_id,
-                        invariant="proposals-valid",
-                        message=f"Failed to load profile proposals: {exc}",
-                        date=date,
-                        file=str(proposals_path.relative_to(ctx.workspace)),
-                    ),
-                )
-                continue
-
-            if not proposals.claims and not proposals.facets:
-                failures.append(
-                    ValidationFailure(
-                        stage_id=self.stage_id,
-                        invariant="proposals-nonempty",
-                        message="Profile proposals file contains no claims or facets",
-                        date=date,
-                        file=str(proposals_path.relative_to(ctx.workspace)),
-                        severity="warning",
-                    ),
-                )
-
-        claims_path = ctx.workspace / "profile" / "claims.yaml"
-        profile_path = ctx.workspace / "profile" / "self_profile.yaml"
-        for path, model, invariant in (
-            (claims_path, ClaimsFile, "claims-valid"),
-            (profile_path, SelfProfile, "profile-valid"),
-        ):
-            try:
-                load_yaml_model(path, model)
-            except Exception as exc:  # noqa: BLE001
-                failures.append(
-                    ValidationFailure(
-                        stage_id=self.stage_id,
-                        invariant=invariant,
-                        message=f"Failed to load {path.name}: {exc}",
-                        file=str(path.relative_to(ctx.workspace)),
-                    ),
-                )
-
-        profile_changes = ctx.capture.artifacts_changed.get("profile", 0)
-        apply_stage = _stage_result_by_name(ctx, "derive.profile_apply")
-        if profile_changes and (apply_stage is None or not apply_stage.result.changed):
-            failures.append(
-                ValidationFailure(
-                    stage_id=self.stage_id,
-                    invariant="profile-apply-recorded",
-                    message="Profile changes detected but auto-apply did not report a change",
-                ),
-            )
-
-        return failures
-
-
-class Stage5Validator:
-    stage_id = 5
-
-    def validate(self, ctx: ValidatorContext) -> list[ValidationFailure]:
-        failures: list[ValidationFailure] = []
-        expected_dates = _changed_dates(ctx)
-        if not expected_dates:
-            return failures
-
         pending_root = ctx.workspace / "derived" / "pending" / "profile_updates"
         if not pending_root.exists():
             return failures
@@ -449,7 +364,7 @@ class Stage5Validator:
                     ValidationFailure(
                         stage_id=self.stage_id,
                         invariant="batch-valid",
-                        message=f"Failed to load characterize batch: {exc}",
+                        message=f"Failed to load profile update batch: {exc}",
                         file=str(batch_path.relative_to(ctx.workspace)),
                     ),
                 )
@@ -458,26 +373,26 @@ class Stage5Validator:
             if batch.date not in expected_dates:
                 continue
 
-                if not batch.batch_id:
-                    failures.append(
-                        ValidationFailure(
-                            stage_id=self.stage_id,
-                            invariant="batch-has-id",
-                            message="Characterize batch missing batch_id",
-                            date=batch.date,
-                            file=str(batch_path.relative_to(ctx.workspace)),
-                        ),
-                    )
+            if not batch.batch_id:
+                failures.append(
+                    ValidationFailure(
+                        stage_id=self.stage_id,
+                        invariant="batch-has-id",
+                        message="Profile update batch missing batch_id",
+                        date=batch.date,
+                        file=str(batch_path.relative_to(ctx.workspace)),
+                    ),
+                )
 
-        characterize_stage = _stage_result_by_name(ctx, "derive.characterize")
-        if characterize_stage:
-            recorded = characterize_stage.result.details.get("new_batches", [])
+        profile_stage = _stage_result_by_name(ctx, "derive.profile_update")
+        if profile_stage:
+            recorded = profile_stage.result.details.get("new_batches", [])
             if len(recorded) != len(set(recorded)):
                 failures.append(
                     ValidationFailure(
                         stage_id=self.stage_id,
                         invariant="batch-unique",
-                        message="Characterize stage reported duplicate batches",
+                        message="Profile update stage reported duplicate batches",
                     ),
                 )
             for rel_path in recorded:
@@ -487,7 +402,7 @@ class Stage5Validator:
                         ValidationFailure(
                             stage_id=self.stage_id,
                             invariant="batch-files-exist",
-                            message="Characterize result references a missing batch file",
+                            message="Profile update result references a missing batch file",
                             file=rel_path,
                         ),
                     )
@@ -524,7 +439,7 @@ class Stage5Validator:
                     ValidationFailure(
                         stage_id=self.stage_id,
                         invariant="batch-auto-apply",
-                        message="Auto review mode did not apply any characterize batches",
+                        message="Auto review mode did not apply any profile update batches",
                         severity="warning",
                     ),
                 )
@@ -532,8 +447,8 @@ class Stage5Validator:
         return failures
 
 
-class Stage6Validator:
-    stage_id = 6
+class Stage5Validator:
+    stage_id = 5
 
     def validate(self, ctx: ValidatorContext) -> list[ValidationFailure]:
         failures: list[ValidationFailure] = []
@@ -612,8 +527,8 @@ class Stage6Validator:
         return failures
 
 
-class Stage7Validator:
-    stage_id = 7
+class Stage6Validator:
+    stage_id = 6
 
     def validate(self, ctx: ValidatorContext) -> list[ValidationFailure]:
         failures: list[ValidationFailure] = []
@@ -669,8 +584,8 @@ class Stage7Validator:
         return failures
 
 
-class Stage8Validator:
-    stage_id = 8
+class Stage7Validator:
+    stage_id = 7
 
     def validate(self, ctx: ValidatorContext) -> list[ValidationFailure]:
         failures: list[ValidationFailure] = []
@@ -759,7 +674,6 @@ class StageValidatorRegistry:
             Stage5Validator(),
             Stage6Validator(),
             Stage7Validator(),
-            Stage8Validator(),
         )
         self._validators = {
             validator.stage_id: validator for validator in (validators or default_validators)

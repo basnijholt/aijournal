@@ -30,7 +30,7 @@ For a deep dive into core concepts, memory layers, claim atoms, and system inter
 Use the following everyday flow to keep your workspace fresh (see [CLI_MIGRATION.md](CLI_MIGRATION.md) for the full legacy → new command map):
 
 1. `aijournal init` — scaffold a new workspace (idempotent).  
-2. `aijournal capture ...` — collect new material (free-form text, `$EDITOR`, files, or whole directories). Capture writes canonical Markdown, records snapshots/manifest rows, and automatically runs normalize → summarize → facts → profile suggest/apply → characterize/review, plus index/persona refreshes as needed.  
+2. `aijournal capture ...` — collect new material (free-form text, `$EDITOR`, files, or whole directories). Capture writes canonical Markdown, records snapshots/manifest rows, and automatically runs normalize → summarize → facts → profile update/review, plus index/persona refreshes as needed.  
 3. `aijournal status` — confirm persona/index freshness, pending feedback, and Ollama connectivity.  
 4. Use conversational surfaces (`aijournal chat`, `aijournal advise`, `aijournal serve chat`, `aijournal export pack --level ...`) to consume the latest context.
 
@@ -50,7 +50,7 @@ uv run pytest -q
 
 - `config.yaml` stores runtime defaults (model, host, temperature, advisor settings).
 - `src/aijournal/commands/` contains orchestration logic for each Typer command (I/O, retries, progress logging). Most CLI work happens here now; `cli.py` is intentionally thin glue.
-- `src/aijournal/pipelines/` hosts deterministic workflows that combine services, prompts, and normalization for a single feature (summaries, facts, persona, packs, characterize, advise).
+- `src/aijournal/pipelines/` hosts deterministic workflows that combine services, prompts, and normalization for a single feature (summaries, facts, persona, packs, profile_update, advise).
 - `src/aijournal/models/` defines the Pydantic schemas the CLI enforces on every write.
 - `src/aijournal/services/` keeps reusable integrations (Ollama client, retriever, chat daemon, feedback).
 - `prompts/*.md` contains the Ollama prompt templates for summarize/facts/profile/advise.
@@ -117,7 +117,7 @@ cd ~/journal
 aijournal capture --text "Blocked on hiring ops; need to queue backlog." --tags focus
 ```
 
-Writes a canonical Markdown file under `data/journal/YYYY/MM/DD/<slug>.md`, records a manifest row with the entry hash, stores a raw snapshot (`data/raw/<hash>.md`), and refreshes summaries, micro-facts, profile proposals, persona/index, and optional packs in one shot.
+Writes a canonical Markdown file under `data/journal/YYYY/MM/DD/<slug>.md`, records a manifest row with the entry hash, stores a raw snapshot (`data/raw/<hash>.md`), and refreshes summaries, micro-facts, profile updates, persona/index, and optional packs in one shot.
 
 You can also pipe raw Markdown straight into the command:
 
@@ -141,11 +141,10 @@ Capture now supports staged execution so you can stop early or resume manual pip
 | 1     | normalize            | Emit `data/normalized/YYYY-MM-DD/*.yaml`                             | `uv run aijournal ops pipeline normalize data/journal/YYYY/MM/DD/<entry>.md` |
 | 2     | summarize            | Generate `derived/summaries/<date>.yaml`                             | `uv run aijournal ops pipeline summarize --date YYYY-MM-DD` |
 | 3     | extract_facts        | Produce micro-facts/claim proposals                                   | `uv run aijournal ops pipeline extract-facts --date YYYY-MM-DD` |
-| 4     | profile_update       | Suggest (and optionally apply) profile changes                        | `uv run aijournal ops profile suggest --date YYYY-MM-DD`<br>`uv run aijournal ops profile apply --date YYYY-MM-DD --yes` |
-| 5     | characterize_review  | Characterize entries and review pending batches                       | `uv run aijournal ops pipeline characterize --date YYYY-MM-DD`<br>`uv run aijournal ops pipeline review --file <batch>.yaml --apply` |
-| 6     | index_refresh        | Update/rebuild retrieval index                                        | `uv run aijournal ops index update --since 7d` |
-| 7     | persona_refresh      | Rebuild persona core when profile data changes                        | `uv run aijournal ops persona build` |
-| 8     | pack                 | Emit packs when `--pack` is provided                                  | `uv run aijournal export pack --level Lx [--date YYYY-MM-DD]` |
+| 4     | profile_update       | Generate profile update batches (optionally auto-apply)               | `uv run aijournal ops profile update --date YYYY-MM-DD` |
+| 5     | index_refresh        | Update/rebuild retrieval index                                        | `uv run aijournal ops index update --since 7d` |
+| 6     | persona_refresh      | Rebuild persona core when profile data changes                        | `uv run aijournal ops persona build` |
+| 7     | pack                 | Emit packs when `--pack` is provided                                  | `uv run aijournal export pack --level Lx [--date YYYY-MM-DD]` |
 
 Use `--max-stage` to stop after a given stage (e.g., `aijournal capture --from notes --max-stage 1` to normalize only). `--min-stage` lets you request a subset of downstream stages, while stages 0–1 always re-run to keep canonical files in sync (existing entries dedupe quickly). After every run the CLI prints any pending stages and the manual commands to finish them if you prefer the classic step-by-step workflow.
 
@@ -187,7 +186,7 @@ Ollama daemon is listening on a non-default address, set `AIJOURNAL_OLLAMA_HOST`
 directories can take a couple of minutes to process—let the command run to completion or increase
 your wrapper's timeout if you're invoking it from automation.
 
-Downstream LLM-backed commands (`summarize`, `facts`, `profile suggest`, `characterize`) now share a
+Downstream LLM-backed commands (`summarize`, `facts`, `profile update`) now share a
 consistent ergonomics layer: `--progress` surfaces per-entry logging and `--retries` controls
 structured-output retries before surfacing an explicit failure. All
 of them resolve model/temperature/host via `build_ollama_config_from_mapping` before delegating to
@@ -223,7 +222,7 @@ sent. If the model keeps returning invalid JSON after the configured retries, th
 command aborts with an actionable error so you can inspect the upstream output.
 
 > **Why this matters**: The Stage 2 summary is the **starting map** for every
-> downstream LLM stage (`extract-facts`, `profile suggest`, `characterize`, and
+> downstream LLM stage (`extract-facts`, `ops profile update`, and
 > `ops profile interview`). Those commands read `SUMMARY_JSON` first and then
 > verify claims against normalized entries, so they fail fast with a remediation
 > hint when `derived/summaries/<date>.yaml` is missing.
@@ -245,6 +244,22 @@ resulting `preview.claim_events` mirror the output of `aijournal ops pipeline re
 Any conflicts are scope-split (weekday vs. weekend, solo vs. team) before falling
 back to tentative downgrades, and queued follow-up prompts surface in the CLI so
 you can jump straight into `aijournal ops profile interview`.
+
+Regenerate the global consolidated snapshot (and the Chroma index it rides on) at
+any time:
+
+```sh
+uv run aijournal ops microfacts rebuild
+```
+
+This command scans every daily `derived/microfacts/<DATE>.yaml`, deterministically
+merges repeated statements, writes `derived/microfacts/consolidated.yaml`, and
+records a structured log under `derived/microfacts/logs/` so you have an audit
+trail of the rebuild.
+
+> **Heads-up**: The extract-facts stage now depends on the Stage 2 summary for the
+> same date. If `derived/summaries/<date>.yaml` is missing, rerun
+> `aijournal ops pipeline summarize --date <date>` before extracting facts.
 
 Regenerate the global consolidated snapshot (and the Chroma index it rides on) at
 any time:
@@ -374,34 +389,37 @@ aijournal ops feedback apply
 
 Applies pending feedback batches generated by chat, updates `profile/claims.yaml`, and archives processed files under `derived/pending/profile_updates/applied_feedback/`. The command exits non-zero when no batches were applied so scripts can detect no-op runs.
 
-### Profile proposals
+### Profile update batches
 
 ```sh
-aijournal ops profile suggest --date 2025-02-03
+aijournal ops profile update --date 2025-02-03 --progress
 ```
 
-Runs `prompts/profile_suggest.md` with the current profile + claims and stores
-`derived/profile_proposals/<DATE>.yaml`. Outputs are validated against the
-`ProfileUpdateProposals` schema before being written. Fake mode returns the same
-typed structures (claim proposals + facet changes) to keep pipelines and tests consistent.
+Runs `prompts/profile_update.md` with normalized entries, summaries, microfacts,
+and the current profile/claims, then emits a `ProfileUpdateBatch` under
+`derived/pending/profile_updates/<DATE>-<timestamp>.yaml`. The command uses the
+same structured-output path as the other pipelines and enforces the domain
+schemas before persisting artifacts.
 
-> **Heads-up**: Profile suggestions require the same-day summary produced in
+> **Heads-up**: Profile updates require the same-day summary produced in
 > Stage 2. When `derived/summaries/<date>.yaml` is missing, rerun
-> `aijournal ops pipeline summarize --date <date>` before calling `profile suggest`.
+> `aijournal ops pipeline summarize --date <date>` before calling `ops profile update`.
 
-The live command asks the model for claim/facet proposals via Pydantic AI's
-structured output support. Use `--progress` and
-`--retries` to mirror the ergonomics of the other pipelines; if schema validation
-fails after the configured retries, the CLI exits with an error so upstream
-prompt/debugging is explicit.
+Use `--progress`, `--timeout`, and `--retries` to mirror the ergonomics of the
+other derivations. In fake mode the command still produces deterministic
+`ProfileUpdateBatch` envelopes so capture/tests remain consistent.
 
-### Apply profile proposals
+### Apply profile updates
 
 ```sh
 aijournal ops profile apply --date 2025-02-03 --yes
 ```
 
-Applies the derived proposals into `profile/self_profile.yaml` and `profile/claims.yaml`, updating `last_updated` stamps only when something changes.
+Applies the most recent pending batch for that date (or a specific
+`--file derived/pending/profile_updates/<DATE>-<timestamp>.yaml`) by calling the
+same consolidation logic capture uses. Legacy `ProfileUpdateProposals` YAMLs are
+still accepted for backwards compatibility, but newly generated artifacts live
+exclusively under `derived/pending/profile_updates/`.
 
 ### Regenerate persona core (L1)
 
@@ -430,26 +448,6 @@ aijournal ops persona status
 The status command compares the recorded mtimes for `profile/*.yaml` against the
 current filesystem and prints a yellow reminder (without blocking) when you need
 to re-run `persona build`.
-
-### Characterize normalized entries
-
-```sh
-aijournal ops pipeline characterize --date 2025-02-03
-```
-
-Runs the characterization agent (or deterministic fake mode) and emits a batch
-under `derived/pending/profile_updates/<DATE>-<TIMESTAMP>.yaml`. Each batch
-captures claim/facet proposals plus the manifest hashes that justify them.
-`--progress` and `--retries` mirror the other commands. The structured response must satisfy the `CharacterizeResponse` schema; otherwise
-the CLI prints a warning, retries if configured, and finally falls back to the
-deterministic profile-updater when schema validation keeps failing. Interview
-prompts returned by the model are merged with the consolidation preview so they
-surface in the pending batch.
-
-> **Heads-up**: Characterize now requires the Stage 2 summary (and optionally a
-> short summary window) for the requested date. Run
-> `aijournal ops pipeline summarize --date <date>` before characterizing if the
-> summary artifact is missing.
 
 ### Review pending updates
 
@@ -487,7 +485,7 @@ aijournal export pack --level L2 --dry-run
 # Persist a reusable bundle (rewrites only when content changes)
 aijournal export pack --level L1 --output derived/packs/l1.yaml
 
-# Include advice + profile proposals (optional) in an L3 pack
+# Include advice + profile updates (optional) in an L3 pack
 aijournal export pack --level L3 --date 2025-02-03 --max-tokens 2800
 
 # L4 with 2 days of history, prompts, config, and raw journals

@@ -38,11 +38,10 @@ DEFAULT_PROMPTS = {
         "todo_candidates."
     ),
     "extract_facts.md": 'Extract atomic facts as JSON {"facts":[...]}.',
-    "profile_suggest.md": (
-        "Propose JSON with upserts and updates grounded in the entries and profile."
+    "profile_update.md": (
+        "Propose JSON with claim/facet updates grounded in entries, summaries, and microfacts."
     ),
     "advise.md": "Return an advice card JSON with recommendations citing facets and claims.",
-    "characterize.md": ("Return JSON with claims and facets describing pending profile updates."),
 }
 
 _STRUCTURED_SYSTEM_PROMPT = (

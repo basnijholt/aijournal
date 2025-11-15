@@ -67,7 +67,6 @@ DERIVED_DIRS: tuple[str, ...] = (
     "derived",
     "derived/summaries",
     "derived/microfacts",
-    "derived/profile_proposals",
     "derived/interviews",
     "derived/advice",
     "derived/persona",

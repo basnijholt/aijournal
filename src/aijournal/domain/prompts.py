@@ -1,4 +1,4 @@
-"""Lightweight DTOs for LLM-facing prompts (characterize, profile_suggest)."""
+"""Lightweight DTOs for LLM-facing profile_update and extract_facts prompts."""
 
 from __future__ import annotations
 

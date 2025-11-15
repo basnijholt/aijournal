@@ -25,8 +25,7 @@ from .stages.stage0_persist import run_persist_stage_0
 from .stages.stage1_normalize import run_normalize_stage_1
 from .stages.stage2_summarize import run_summarize_stage_2
 from .stages.stage3_facts import run_facts_stage_3
-from .stages.stage4_profile import run_profile_stage_4
-from .stages.stage5_characterize import run_characterize_stage_5
+from .stages.stage4_profile_update import run_profile_update_stage
 from .stages.stage6_index import run_index_stage_6
 from .stages.stage7_persona import run_persona_stage_7
 from .stages.stage8_pack import run_pack_stage_8
@@ -72,29 +71,23 @@ CAPTURE_STAGES: list[CaptureStage] = [
     CaptureStage(
         4,
         "profile_update",
-        "Generate profile suggestions and optionally apply them.",
-        "uv run aijournal ops profile suggest --date YYYY-MM-DD\nuv run aijournal ops profile apply --date YYYY-MM-DD --yes",
+        "Generate profile update batches and optionally auto-apply them.",
+        "uv run aijournal ops profile update --date YYYY-MM-DD",
     ),
     CaptureStage(
         5,
-        "characterize_review",
-        "Characterize entries and review new batches (auto-applied in capture).",
-        "uv run aijournal ops pipeline characterize --date YYYY-MM-DD\nuv run aijournal ops pipeline review --file <batch>.yaml --apply",
-    ),
-    CaptureStage(
-        6,
         "index_refresh",
         "Refresh the retrieval index for new evidence.",
         "uv run aijournal ops index update --since 7d",
     ),
     CaptureStage(
-        7,
+        6,
         "persona_refresh",
         "Rebuild persona core when profile data changes.",
         "uv run aijournal ops persona build",
     ),
     CaptureStage(
-        8,
+        7,
         "pack",
         "Emit context packs when requested (depends on --pack option).",
         "uv run aijournal export pack --level Lx [--date YYYY-MM-DD]",
@@ -138,16 +131,6 @@ def _emit_stage_event(
     log_event(payload)
 
 
-class CharacterizeStage5Outputs(NamedTuple):
-    result: OperationResult
-    review_result: OperationResult | None
-    duration_ms: float
-    new_batches: list[str]
-    applied_batches: list[str]
-    pending_batches: list[str]
-    review_candidates: list[str]
-
-
 class PersistStage0Outputs(NamedTuple):
     entries: list[EntryResult]
     result: OperationResult
@@ -173,12 +156,14 @@ class FactsStage3Outputs(NamedTuple):
     paths: list[str]
 
 
-class ProfileStage4Outputs(NamedTuple):
-    suggest_result: OperationResult
-    apply_result: OperationResult | None
+class ProfileUpdateStageOutputs(NamedTuple):
+    result: OperationResult
+    review_result: OperationResult | None
     duration_ms: float
-    suggestion_paths: list[str]
-    applied_count: int
+    new_batches: list[str]
+    applied_batches: list[str]
+    pending_batches: list[str]
+    review_candidates: list[str]
 
 
 class IndexStage6Outputs(NamedTuple):
@@ -566,108 +551,56 @@ def run_capture(
             )
 
     if changed_dates and stage_enabled(4):
-        profile_outputs = run_profile_stage_4(
+        update_outputs = run_profile_update_stage(
             changed_dates,
             inputs,
             root,
             config,
         )
-        profile_result = profile_outputs.suggest_result
-        apply_result = profile_outputs.apply_result
-        profile_duration = profile_outputs.duration_ms
-        suggestion_paths = profile_outputs.suggestion_paths
-        applied_count = profile_outputs.applied_count
-        for _ in suggestion_paths:
-            artifacts_changed["profile_proposals"] = (
-                artifacts_changed.get("profile_proposals", 0) + 1
+        update_result = update_outputs.result
+        review_result = update_outputs.review_result
+        update_duration = update_outputs.duration_ms
+        update_paths = update_outputs.new_batches
+        applied_batches = update_outputs.applied_batches
+        review_candidates.extend(update_outputs.review_candidates)
+        for _ in update_paths:
+            artifacts_changed["profile_updates"] = artifacts_changed.get("profile_updates", 0) + 1
+        if review_result and review_result.changed:
+            artifacts_changed["profile"] = artifacts_changed.get("profile", 0) + len(
+                applied_batches
             )
-        if apply_result and apply_result.changed:
-            artifacts_changed["profile"] = artifacts_changed.get("profile", 0) + applied_count
         record_stage_outcome(
             stage_id=4,
-            stage_name="derive.profile_suggest",
-            duration_key="derive.profile_suggest",
-            result=profile_result,
-            duration=profile_duration,
-        )
-        if apply_result is not None:
-            record_stage_outcome(
-                stage_id=4,
-                stage_name="derive.profile_apply",
-                duration_key="derive.profile_apply",
-                result=apply_result,
-                duration=profile_duration,
-            )
-    else:
-        if not stage_enabled(4):
-            profile_result = record_skipped_stage(
-                4,
-                "derive.profile_suggest",
-                "derive.profile_suggest",
-            )
-        else:
-            profile_result = OperationResult.noop(
-                "no dates required profile proposals",
-                details={"dates": []},
-            )
-            record_stage_outcome(
-                stage_id=4,
-                stage_name="derive.profile_suggest",
-                duration_key="derive.profile_suggest",
-                result=profile_result,
-                duration=0.0,
-            )
-
-    if changed_dates and stage_enabled(5):
-        characterize_outputs = run_characterize_stage_5(
-            changed_dates,
-            inputs,
-            root,
-            config,
-        )
-        characterize_result = characterize_outputs.result
-        review_result = characterize_outputs.review_result
-        characterize_duration = characterize_outputs.duration_ms
-        characterize_paths = characterize_outputs.new_batches
-        review_applied = characterize_outputs.applied_batches
-        review_candidates_generated = characterize_outputs.review_candidates
-        for path in characterize_paths:
-            artifacts_changed["characterize"] = artifacts_changed.get("characterize", 0) + 1
-        review_candidates.extend(review_candidates_generated)
-        if review_result and review_result.changed:
-            artifacts_changed["profile"] = artifacts_changed.get("profile", 0) + len(review_applied)
-        record_stage_outcome(
-            stage_id=5,
-            stage_name="derive.characterize",
-            duration_key="derive.characterize",
-            result=characterize_result,
-            duration=characterize_duration,
+            stage_name="derive.profile_update",
+            duration_key="derive.profile_update",
+            result=update_result,
+            duration=update_duration,
         )
         if review_result is not None:
             record_stage_outcome(
-                stage_id=5,
+                stage_id=4,
                 stage_name="derive.review",
                 duration_key="derive.review",
                 result=review_result,
-                duration=characterize_duration,
+                duration=update_duration,
             )
     else:
-        if not stage_enabled(5):
-            characterize_result = record_skipped_stage(
-                5,
-                "derive.characterize",
-                "derive.characterize",
+        if not stage_enabled(4):
+            update_result = record_skipped_stage(
+                4,
+                "derive.profile_update",
+                "derive.profile_update",
             )
         else:
-            characterize_result = OperationResult.noop(
-                "no dates required characterization",
+            update_result = OperationResult.noop(
+                "no dates required profile updates",
                 details={"dates": []},
             )
             record_stage_outcome(
-                stage_id=5,
-                stage_name="derive.characterize",
-                duration_key="derive.characterize",
-                result=characterize_result,
+                stage_id=4,
+                stage_name="derive.profile_update",
+                duration_key="derive.profile_update",
+                result=update_result,
                 duration=0.0,
             )
 
@@ -683,7 +616,7 @@ def run_capture(
     persona_error: str | None = None
     status_before = "unknown"
     status_after = "unknown"
-    if stage_enabled(6):
+    if stage_enabled(5):
         if inputs.rebuild == "skip":
             index_result = record_skipped_stage(
                 6,
@@ -706,7 +639,7 @@ def run_capture(
                 if index_updated:
                     artifacts_changed["index"] = artifacts_changed.get("index", 0) + 1
                 record_stage_outcome(
-                    stage_id=6,
+                    stage_id=5,
                     stage_name="refresh.index",
                     duration_key="refresh.index",
                     result=index_result,
@@ -719,14 +652,14 @@ def run_capture(
                     details={"mode": inputs.rebuild, "reason": "no changed dates"},
                 )
                 record_stage_outcome(
-                    stage_id=6,
+                    stage_id=5,
                     stage_name="refresh.index",
                     duration_key="refresh.index",
                     result=index_result,
                     duration=0.0,
                 )
     else:
-        index_result = record_skipped_stage(6, "refresh.index", "refresh.index")
+        index_result = record_skipped_stage(5, "refresh.index", "refresh.index")
     emit_operation_event(
         log_event,
         event="index.rebuild",
@@ -734,7 +667,7 @@ def run_capture(
         result=index_result,
     )
 
-    if stage_enabled(7):
+    if stage_enabled(6):
         if inputs.rebuild == "skip":
             persona_result = record_skipped_stage(
                 7,
@@ -755,14 +688,14 @@ def run_capture(
             if persona_changed:
                 artifacts_changed["persona"] = artifacts_changed.get("persona", 0) + 1
             record_stage_outcome(
-                stage_id=7,
+                stage_id=6,
                 stage_name="refresh.persona",
                 duration_key="refresh.persona",
                 result=persona_result,
                 duration=persona_duration,
             )
     else:
-        persona_result = record_skipped_stage(7, "refresh.persona", "refresh.persona")
+        persona_result = record_skipped_stage(6, "refresh.persona", "refresh.persona")
     persona_event_details = dict(persona_result.details or {})
     persona_event_details.update(
         {
@@ -779,7 +712,7 @@ def run_capture(
         extra={"error": persona_error} if persona_error else None,
     )
 
-    if stage_enabled(8):
+    if stage_enabled(7):
         pack_outputs = run_pack_stage_8(
             inputs,
             root,
@@ -791,14 +724,14 @@ def run_capture(
         if pack_result.changed:
             artifacts_changed["pack"] = artifacts_changed.get("pack", 0) + 1
         record_stage_outcome(
-            stage_id=8,
-            stage_name="pack",
-            duration_key="refresh.pack",
+            stage_id=7,
+            stage_name="derive.pack",
+            duration_key="derive.pack",
             result=pack_result,
             duration=pack_duration,
         )
     else:
-        pack_result = record_skipped_stage(8, "pack", "refresh.pack")
+        pack_result = record_skipped_stage(7, "derive.pack", "derive.pack")
 
     telemetry_rel = relative_path(telemetry_path, root)
     log_event(

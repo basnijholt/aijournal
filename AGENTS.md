@@ -48,9 +48,9 @@ Read these in order to understand the surfaces you will exercise. Each document 
 4. `CONTRIBUTING.md` — development environment setup, testing, linting.
 5. `docs/archive/PLAN-v0.3.md` — historical roadmap reference (skim only if you need context on past milestones).
 6. `CHANGELOG.md` — review “Unreleased” for behaviour changes since the last tagged run.
-7. `prompts/characterize.md`, `prompts/interview.md`, `prompts/advise.md` — structured-output contracts.
+7. `prompts/profile_update.md`, `prompts/interview.md`, `prompts/advise.md` — structured-output contracts.
 8. `src/aijournal/commands/` & `src/aijournal/cli.py` — command runners now live under `commands/`, with `cli.py` providing thin Typer glue for `init`, `capture`, `chat`, `advise`, `status`, `serve chat`, `export pack`, and the `ops.*` namespaces (pipeline/profile/index/persona/feedback/system/dev).
-9. `src/aijournal/pipelines/` — deterministic workflows backing summaries, facts, persona, characterize, packs, and advise.
+9. `src/aijournal/pipelines/` — deterministic workflows backing summaries, facts, persona, profile_update, packs, and advise.
 10. `src/aijournal/services/{chat.py, chat_api.py, feedback.py}` — chat orchestration, API streaming, feedback adjustments, telemetry.
 
 Read these first to avoid surprises mid-run.
@@ -103,7 +103,7 @@ Read these first to avoid surprises mid-run.
 
 ### 3.2 LLM & Prompt Warmups
 
-- Confirm `gpt-oss:20b` responds to structured prompts (`facts`, `profile_suggest`, `characterize`). If outputs are empty, add summaries to normalized entries or adjust wording per §4 below.
+- Confirm `gpt-oss:20b` responds to structured prompts (`facts`, `profile_update`). If outputs are empty, add summaries to normalized entries or adjust wording per §4 below.
 
 ---
 
@@ -120,16 +120,16 @@ Structured commands expect the model to mine existing fields (`summary`, `sectio
   ```
   The file `derived/microfacts/<date>.yaml` should contain facts plus claim proposals. If spans are empty, that's acceptable; we log the raw text upstream.
 
-### Profile Suggestions (`prompts/profile_suggest.md`)
+### Profile Update (`prompts/profile_update.md`)
 - Model now mines structured fields even without paragraphs. Expect claims such as “weekly planning resets align meals with training goals.”
 - Validate with:
   ```bash
-  uv run -- bash -lc "cd $RUN_ROOT && aijournal ops profile suggest --date 2025-10-26"
+  uv run -- bash -lc "cd $RUN_ROOT && aijournal ops profile update --date 2025-10-26 --progress"
   ```
-  Output lives at `derived/profile_proposals/<date>.yaml`.
+  Output lives at `derived/pending/profile_updates/<date>-<timestamp>.yaml`.
 
 ### Characterize
-- After prompts produce meaningful payloads, run `aijournal ops pipeline characterize --date … --progress` to produce batches in `derived/pending/profile_updates/`.
+- After prompts produce meaningful payloads, run `aijournal ops profile update --date … --progress` to produce batches in `derived/pending/profile_updates/`.
 - `aijournal ops pipeline review --file … --apply` now succeeds after extending `SelfProfile` with `planning`, `dashboard`, and `habits` facets.
 
 ### Chat Prompt
@@ -166,10 +166,9 @@ Advanced/manual checks (useful for troubleshooting specific stages):
 13. `uv run aijournal ops pipeline normalize data/journal/YYYY/MM/DD/<entry>.md`
 14. `uv run aijournal ops pipeline summarize --date YYYY-MM-DD`
 15. `uv run aijournal ops pipeline extract-facts --date YYYY-MM-DD`
-16. `uv run aijournal ops profile suggest --date YYYY-MM-DD`
+16. `uv run aijournal ops profile update --date YYYY-MM-DD --progress`
 17. `uv run aijournal ops profile apply --date YYYY-MM-DD --yes`
-18. `uv run aijournal ops pipeline characterize --date YYYY-MM-DD --progress`
-19. `uv run aijournal ops pipeline review --file derived/pending/profile_updates/<batch>.yaml --apply`
+18. `uv run aijournal ops pipeline review --file derived/pending/profile_updates/<batch>.yaml --apply`
 20. `uv run aijournal ops index rebuild` (refreshes `derived/index/meta.json` with the strict artifact envelope)
 21. `uv run aijournal ops index search 'deep work sprint focus' --top 3 --tags focus`
 22. `uv run aijournal ops persona build`
@@ -237,7 +236,7 @@ The commands update `derived/persona/persona_core.yaml` and write pack outputs u
 1. Read required docs (README, workflow, architecture, prompts, key services).
 2. `aijournal init` into `/tmp/aijournal_live_run_*`; capture at least five detailed entries with `aijournal capture --edit/--text` (or `--from`).
 3. Let capture drive normalization and derivations automatically; rerun specific stages with `--min/--max-stage` or `aijournal ops pipeline …` when inspecting issues.
-4. Verify downstream artifacts as needed (summaries, micro-facts, profile proposals, characterize/review) via the `ops pipeline` commands.
+4. Verify downstream artifacts as needed (summaries, micro-facts, profile updates/review) via the `ops` commands.
 5. Regenerate index/persona when troubleshooting (`aijournal ops index rebuild`, `aijournal ops persona build`) and confirm searches succeed.
 6. Export packs with `aijournal export pack --level …` once persona is fresh.
 7. Exercise chat (`chat`, `chat --feedback`, `serve chat` + POST), confirm claim markers, apply feedback (`ops feedback apply`).

@@ -4,7 +4,7 @@ This guide summarizes the deterministic simulator that stress-tests aijournal's 
 
 ## Why it exists
 
-- Exercise every capture stage (persist → normalize → summaries → facts → profile → characterize → index → persona → pack) with realistic Markdown quirks.
+- Exercise every capture stage (persist → normalize → summaries → facts → profile_update → index → persona → pack) with realistic Markdown quirks.
 - Catch brittle assumptions early via invariant validators (manifest integrity, schema checks, persona/pack freshness, etc.).
 - Provide a one-command developer workflow for verifying tolerant ingestion and downstream artifacts without touching production data.
 
@@ -54,7 +54,7 @@ The generator is deterministic, so rerunning the simulator recreates the same fi
 - **Stage 2**: summaries exist for every changed date and contain bullets.
 - **Stage 3**: microfacts load, statements stay concise, evidence references valid entries, claim proposals reference real normalized IDs.
 - **Stage 4**: profile proposals exist/parse; auto-apply bookkeeping matches artifacts and `profile/claims.yaml` remains valid.
-- **Stage 5**: characterize batches load, auto-review tracking avoids duplicate/applied conflicts, pending files actually exist.
+- **Stage 4**: profile update batches load, auto-review tracking avoids duplicate/applied conflicts, pending files actually exist.
 - **Stage 6**: index db/annoy/meta files exist, touched dates cover changes, metadata contains `updated_at`.
 - **Stage 7**: persona core loads with content and rebuilds when profile changes.
 - **Stage 8**: pack artifacts exist, match requested level, and respect token budgets (or explain why they were skipped).

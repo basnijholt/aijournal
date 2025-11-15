@@ -114,7 +114,7 @@ Result: (1.0×0.82 + 1.0×0.30) / 2.0 = 0.56  ❌ 32% strength DROP from ONE ent
 | Stage | Name | Artifacts | Risk |
 |-------|------|-----------|------|
 | 4 | profile_update | `profile/claims.yaml`, `profile/self_profile.yaml` | 🔴 Merges claims, can add/modify/conflict |
-| 5 | characterize_review | `profile/*.yaml` (via auto-apply) | 🔴 Can downgrade existing claims |
+| 5 | profile_update | `profile/*.yaml` (via auto-apply) | 🔴 Can downgrade existing claims |
 | 6 | index_refresh | `derived/index/*` | 🟡 Additive unless `--rebuild` |
 | 7 | persona_refresh | `derived/persona/persona_core.yaml` | 🔴 Complete rebuild, displacement risk |
 | 8 | pack | `derived/packs/*.yaml` | 🟢 Read-only snapshot |
@@ -338,7 +338,7 @@ if index is None:  # new claim
 ---
 
 #### 4. Strengthen LLM Prompt Conservatism
-**Files:** `prompts/profile_suggest.md`, `prompts/characterize.md`, `prompts/extract_facts.md`
+**Files:** `prompts/profile_update.md`, `prompts/extract_facts.md`
 
 **Find and replace:**
 ```markdown

@@ -20,6 +20,9 @@ from aijournal.models.derived import (
     AdviceCard,
     AdviceRecommendation,
     AdviceReference,
+    ProfileUpdateBatch,
+    ProfileUpdateInput,
+    ProfileUpdatePreview,
 )
 from tests.helpers import make_claim_atom
 
@@ -132,12 +135,13 @@ def _seed_advice(tmp_path: Path, day: str = DATE, question: str = ADVICE_QUESTIO
     return advice_path
 
 
-def _seed_profile_proposals(tmp_path: Path, day: str = DATE) -> Path:
-    proposals_path = tmp_path / "derived" / "profile_proposals" / f"{day}.yaml"
+def _seed_profile_update_batch(tmp_path: Path, day: str = DATE) -> Path:
+    pending_dir = tmp_path / "derived" / "pending" / "profile_updates"
+    path = pending_dir / f"{day}-batch.yaml"
     meta = ArtifactMeta(
         created_at=f"{day}T10:00:00Z",
         model="fake-ollama",
-        prompt_path="prompts/profile_suggest.md",
+        prompt_path="prompts/profile_update.md",
         prompt_hash="seed",
     )
     claim_model = ClaimAtom.model_validate(
@@ -180,14 +184,29 @@ def _seed_profile_proposals(tmp_path: Path, day: str = DATE) -> Path:
     payload = ProfileUpdateProposals(
         claims=[claim_proposal],
         facets=[],
+        interview_prompts=["When do you recharge?"],
     )
-    artifact = Artifact[ProfileUpdateProposals](
-        kind=ArtifactKind.PROFILE_PROPOSALS,
+    batch = ProfileUpdateBatch(
+        batch_id=f"{day}-batch",
+        created_at=f"{day}T10:00:00Z",
+        date=day,
+        inputs=[
+            ProfileUpdateInput(
+                id=ENTRY_ID,
+                normalized_path=f"data/normalized/{day}/{ENTRY_ID}.yaml",
+                source_hash="hash",
+            )
+        ],
+        proposals=payload,
+        preview=ProfileUpdatePreview(),
+    )
+    artifact = Artifact[ProfileUpdateBatch](
+        kind=ArtifactKind.PROFILE_UPDATES,
         meta=meta,
-        data=payload,
+        data=batch,
     )
-    save_artifact(proposals_path, artifact)
-    return proposals_path
+    save_artifact(path, artifact)
+    return path
 
 
 def _seed_config(tmp_path: Path, *, char_per_token: float | None = None) -> Path:
@@ -429,7 +448,7 @@ def test_pack_json_format(
     assert payload["data"]["level"] == "L1"
 
 
-def test_pack_l3_includes_advice_and_profile_proposals(
+def test_pack_l3_includes_advice_and_profile_updates(
     cli_workspace: Path,
     cli_runner: CliRunner,
 ) -> None:
@@ -437,7 +456,7 @@ def test_pack_l3_includes_advice_and_profile_proposals(
     _ensure_persona_core(cli_workspace, cli_runner)
     _seed_daily_artifacts(cli_workspace)
     advice_path = _seed_advice(cli_workspace)
-    suggestions_path = _seed_profile_proposals(cli_workspace)
+    suggestions_path = _seed_profile_update_batch(cli_workspace)
 
     result = cli_runner.invoke(
         app,
@@ -579,7 +598,7 @@ def test_pack_l4_handles_missing_optional_artifacts(
     assert result.exit_code == 0
     artifact = yaml.safe_load(result.stdout)
     paths = [entry["path"] for entry in artifact["data"].get("files", [])]
-    assert all("profile_proposals" not in path for path in paths)
+    assert all("profile_updates" not in path for path in paths)
 
 
 def test_pack_l4_supports_json_output(
@@ -624,7 +643,7 @@ def test_pack_l4_dry_run_lists_expected_files(
     _seed_daily_artifacts(cli_workspace)
     _seed_daily_artifacts(cli_workspace, day=PRIOR_DATE, entry_id=PRIOR_ENTRY_ID)
     _seed_advice(cli_workspace)
-    _seed_profile_proposals(cli_workspace)
+    _seed_profile_update_batch(cli_workspace)
     _seed_config(cli_workspace)
     _seed_prompt(cli_workspace)
     _seed_journal_entry(cli_workspace, DATE, "focus-journal")
@@ -647,4 +666,4 @@ def test_pack_l4_dry_run_lists_expected_files(
     assert "Planned files:" in result.output
     assert "profile/self_profile.yaml" in result.output
     assert "derived/advice" in result.output
-    assert "derived/profile_proposals" in result.output
+    assert "derived/pending/profile_updates" in result.output

@@ -37,6 +37,9 @@ from aijournal.models.derived import (
     AdviceCard,
     AdviceRecommendation,
     AdviceReference,
+    ProfileUpdateBatch,
+    ProfileUpdateInput,
+    ProfileUpdatePreview,
 )
 from aijournal.schema import validate_schema
 
@@ -315,12 +318,12 @@ def test_journal_entry_serialization(tmp_path: Path) -> None:
     _assert_schema(path, "journal_entry")
 
 
-def test_profile_proposals_schema(tmp_path: Path) -> None:
-    path = _fixture_path(tmp_path, "profile_proposals")
+def test_profile_update_batch_schema(tmp_path: Path) -> None:
+    path = _fixture_path(tmp_path, "profile_updates")
     meta = ArtifactMeta(
         created_at="2025-10-25T12:15:00Z",
         model="llama3.1:8b-instruct",
-        prompt_path="prompts/profile_suggest.md",
+        prompt_path="prompts/profile_update.md",
         prompt_hash="meta",
     )
     claim_input = ClaimAtomInput(
@@ -364,13 +367,27 @@ def test_profile_proposals_schema(tmp_path: Path) -> None:
         facets=[facet_change],
         interview_prompts=["How often does afternoon fatigue show up?"],
     )
-    artifact = Artifact[ProfileUpdateProposals](
-        kind=ArtifactKind.PROFILE_PROPOSALS,
+    batch = ProfileUpdateBatch(
+        batch_id="2025-10-25-batch",
+        created_at="2025-10-25T12:15:00Z",
+        date="2025-10-25",
+        inputs=[
+            ProfileUpdateInput(
+                id="2025-10-25-entry",
+                normalized_path="data/normalized/2025-10-25/2025-10-25-entry.yaml",
+                source_hash="hash",
+            )
+        ],
+        proposals=proposals,
+        preview=ProfileUpdatePreview(),
+    )
+    artifact = Artifact[ProfileUpdateBatch](
+        kind=ArtifactKind.PROFILE_UPDATES,
         meta=meta,
-        data=proposals,
+        data=batch,
     )
     save_artifact(path, artifact)
-    _assert_schema(path, "profile_proposals")
+    _assert_schema(path, "profile_updates")
 
 
 def test_self_profile_schema(tmp_path: Path) -> None:

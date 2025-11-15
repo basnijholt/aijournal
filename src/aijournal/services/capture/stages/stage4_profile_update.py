@@ -7,19 +7,19 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from aijournal.common.app_config import AppConfig
 
-    from .. import CaptureInput, CharacterizeStage5Outputs
+    from .. import CaptureInput, ProfileUpdateStageOutputs
 
 
-def run_characterize_stage_5(
+def run_profile_update_stage(
     changed_dates: list[str],
     inputs: CaptureInput,
     root: Path,
     config: AppConfig,
-) -> CharacterizeStage5Outputs:
+) -> ProfileUpdateStageOutputs:
     from aijournal.common.constants import DEFAULT_TIMEOUT_SECONDS
 
-    from .. import CharacterizeStage5Outputs, OperationResult
-    from ..graceful import graceful_characterize
+    from .. import OperationResult, ProfileUpdateStageOutputs
+    from ..graceful import graceful_profile_update
     from ..utils import (
         apply_profile_update_batch,
         noop_preview,
@@ -28,15 +28,16 @@ def run_characterize_stage_5(
     )
 
     stage_start = perf_counter()
-    characterize_paths: list[str] = []
-    characterize_errors: list[str] = []
-    review_applied: list[str] = []
-    review_pending: list[str] = []
-    review_candidates: list[str] = []
+    batch_paths: list[str] = []
+    run_errors: list[str] = []
     review_errors: list[str] = []
+    applied_batches: list[str] = []
+    pending_batches_rel: list[str] = []
+    review_candidates: list[str] = []
+
     for date in changed_dates:
-        pending_before = pending_batches(root, config)
-        batch_path, error = graceful_characterize(
+        before = pending_batches(root, config)
+        batch_path, error = graceful_profile_update(
             date,
             timeout=DEFAULT_TIMEOUT_SECONDS,
             retries=inputs.retries,
@@ -45,94 +46,96 @@ def run_characterize_stage_5(
             workspace=root,
         )
         if error:
-            characterize_errors.append(f"{date}: {error}")
+            run_errors.append(f"{date}: {error}")
             continue
         if batch_path is None:
             continue
-        rel_batch = relative_path(batch_path, root)
-        characterize_paths.append(rel_batch)
 
-        pending_after = pending_batches(root, config)
-        new_batches = sorted(pending_after - pending_before)
+        rel_batch = relative_path(batch_path, root)
+        batch_paths.append(rel_batch)
+
+        after = pending_batches(root, config)
+        new_batches = sorted(after - before)
         if batch_path not in new_batches:
             new_batches.append(batch_path)
 
         for pending_path in new_batches:
-            rel_pending = relative_path(pending_path, root)
-            review_candidates.append(rel_pending)
+            review_candidates.append(relative_path(pending_path, root))
 
         if inputs.apply_profile == "auto":
             for pending_path in new_batches:
+                rel_path = relative_path(pending_path, root)
                 try:
                     if apply_profile_update_batch(root, config, pending_path):
-                        review_applied.append(relative_path(pending_path, root))
+                        applied_batches.append(rel_path)
                     else:
-                        review_pending.append(relative_path(pending_path, root))
+                        pending_batches_rel.append(rel_path)
                 except Exception as exc:  # pragma: no cover - defensive
-                    review_errors.append(f"{relative_path(pending_path, root)}: {exc}")
+                    review_errors.append(f"{rel_path}: {exc}")
         else:
-            review_pending.extend(relative_path(path, root) for path in new_batches)
+            pending_batches_rel.extend(relative_path(path, root) for path in new_batches)
 
     duration_ms = (perf_counter() - stage_start) * 1000.0
-    characterize_details: dict[str, object] = {
+
+    profile_update_details: dict[str, object] = {
         "dates": changed_dates,
-        "new_batches": characterize_paths,
+        "new_batches": batch_paths,
         "apply_mode": inputs.apply_profile,
     }
-    if characterize_errors:
+    if run_errors:
         message = (
-            "characterize/review completed with errors"
-            if characterize_paths or review_applied
-            else "characterize stage failed"
+            "profile update completed with errors"
+            if batch_paths or applied_batches
+            else "profile update stage failed"
         )
-        characterize_result = OperationResult(
-            ok=bool(characterize_paths or review_applied),
-            changed=bool(characterize_paths or review_applied),
+        update_result = OperationResult(
+            ok=bool(batch_paths or applied_batches),
+            changed=bool(batch_paths or applied_batches),
             message=message,
-            artifacts=characterize_paths,
-            warnings=characterize_errors,
-            details=characterize_details,
+            artifacts=batch_paths,
+            warnings=run_errors,
+            details=profile_update_details,
         )
-    elif characterize_paths or review_applied:
-        characterize_result = OperationResult.wrote(
-            characterize_paths,
-            message="characterization batches generated",
-            details=characterize_details,
+    elif batch_paths or applied_batches:
+        update_result = OperationResult.wrote(
+            batch_paths,
+            message="profile updates generated",
+            details=profile_update_details,
         )
     else:
-        characterize_result = OperationResult.noop(
-            "no characterization updates needed",
-            details=characterize_details,
+        update_result = OperationResult.noop(
+            "no profile updates required",
+            details=profile_update_details,
         )
 
     review_result: OperationResult | None = None
     if inputs.apply_profile == "auto":
         review_details: dict[str, object] = {
             "apply_mode": inputs.apply_profile,
-            "applied_batches": review_applied,
-            "pending_batches": review_pending,
+            "applied_batches": applied_batches,
+            "pending_batches": pending_batches_rel,
         }
         if review_errors:
             message = (
                 "profile batches applied with errors"
-                if review_applied
+                if applied_batches
                 else "profile review stage failed"
             )
             review_result = OperationResult(
-                ok=bool(review_applied),
-                changed=bool(review_applied),
+                ok=bool(applied_batches),
+                changed=bool(applied_batches),
                 message=message,
-                artifacts=review_applied,
+                artifacts=applied_batches,
                 warnings=review_errors,
                 details=review_details,
             )
-        elif review_applied:
+        elif applied_batches:
             review_result = OperationResult.wrote(
-                review_applied,
+                applied_batches,
                 message="profile batches applied",
                 details=review_details,
             )
-        elif review_pending:
+        elif pending_batches_rel:
             review_result = OperationResult.noop(
                 "profile batches pending manual review",
                 details=review_details,
@@ -143,12 +146,12 @@ def run_characterize_stage_5(
                 details=review_details,
             )
 
-    return CharacterizeStage5Outputs(
-        result=characterize_result,
+    return ProfileUpdateStageOutputs(
+        result=update_result,
         review_result=review_result,
         duration_ms=duration_ms,
-        new_batches=characterize_paths,
-        applied_batches=review_applied,
-        pending_batches=review_pending,
+        new_batches=batch_paths,
+        applied_batches=applied_batches,
+        pending_batches=pending_batches_rel,
         review_candidates=review_candidates,
     )

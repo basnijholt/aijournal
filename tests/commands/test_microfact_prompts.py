@@ -1,22 +1,13 @@
-"""Tests ensuring consolidated microfacts flow into downstream prompts."""
+"""Tests ensuring consolidated microfacts flow into profile update prompts."""
 
 from __future__ import annotations
 
 import json
 from pathlib import Path
 
-import pytest
-
-from aijournal.commands import characterize, profile
+from aijournal.commands import profile_update as profile_update_module
 from aijournal.common.app_config import AppConfig
-from aijournal.domain.facts import (
-    ConsolidatedMicroFact,
-    ConsolidatedMicrofactsFile,
-    DailySummary,
-)
-from aijournal.domain.journal import NormalizedEntry
-from aijournal.domain.prompts import PromptProfileUpdates
-from aijournal.models.authoritative import ManifestEntry
+from aijournal.domain.facts import ConsolidatedMicroFact, ConsolidatedMicrofactsFile
 
 
 def _sample_consolidated() -> ConsolidatedMicrofactsFile:
@@ -41,109 +32,39 @@ def _sample_consolidated() -> ConsolidatedMicrofactsFile:
     )
 
 
-def _sample_entry() -> NormalizedEntry:
-    return NormalizedEntry(
-        id="entry-1",
-        created_at="2025-01-05T08:00:00Z",
-        source_path="data/journal/entry.md",
-        title="Focus Log",
-    )
-
-
-def _sample_summary(day: str = "2025-01-05") -> DailySummary:
-    return DailySummary(
-        day=day,
-        bullets=["Tracked focus rituals"],
-        highlights=["Early deep work block"],
-        todo_candidates=["Refine planning block"],
-    )
-
-
-def test_profile_payload_includes_consolidated_snapshot(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    captured: dict[str, str] = {}
-
-    monkeypatch.setattr(profile, "use_fake_llm", lambda: False)
+def test_profile_update_consolidated_payload(monkeypatch):
     monkeypatch.setattr(
-        profile,
+        profile_update_module,
         "load_consolidated_microfacts",
         lambda workspace, config: _sample_consolidated(),
     )
-
-    def fake_invoke(
-        prompt_path: str, variables: dict[str, str], **_: object
-    ) -> PromptProfileUpdates:
-        captured.update(variables)
-        return PromptProfileUpdates()
-
-    monkeypatch.setattr(profile, "_invoke_structured_llm", fake_invoke)
-
-    profile._profile_proposals_payload(
-        [_sample_entry()],
-        summary=_sample_summary(),
-        profile={},
-        claims=[],
-        date="2025-01-05",
-        config=AppConfig(),
-        workspace=tmp_path,
-        timeout=5.0,
+    monkeypatch.setattr(
+        profile_update_module,
+        "select_recurring_facts",
+        lambda snapshot, **_: [
+            {
+                "statement": fact.statement,
+                "observation_count": fact.observation_count,
+                "first_seen": fact.first_seen,
+                "last_seen": fact.last_seen,
+                "contexts": fact.contexts,
+                "evidence_entries": fact.evidence_entries,
+            }
+            for fact in snapshot.facts
+        ],
     )
 
-    consolidated_payload = json.loads(captured["consolidated_facts_json"])
+    payload = profile_update_module._load_consolidated_facts_json(Path("/tmp"), AppConfig())
+    consolidated_payload = json.loads(payload)
     assert consolidated_payload["facts"][0]["observation_count"] == 3
 
 
-def test_characterize_payload_includes_consolidated_snapshot(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    captured: dict[str, str] = {}
-
-    monkeypatch.setattr(characterize, "use_fake_llm", lambda: False)
+def test_profile_update_consolidated_payload_missing_snapshot(monkeypatch):
     monkeypatch.setattr(
-        characterize,
+        profile_update_module,
         "load_consolidated_microfacts",
-        lambda workspace, config: _sample_consolidated(),
+        lambda workspace, config: None,
     )
 
-    def fake_invoke(
-        prompt_path: str, variables: dict[str, str], **_: object
-    ) -> PromptProfileUpdates:
-        captured.update(variables)
-        return PromptProfileUpdates()
-
-    def fake_structured_call(func, *, retries: int, label: str):  # noqa: ANN001
-        return func()
-
-    monkeypatch.setattr(characterize, "_invoke_structured_llm", fake_invoke)
-
-    characterize._characterize_payload(
-        date="2025-01-05",
-        entries=[_sample_entry()],
-        profile={},
-        claims=[],
-        manifest_index={
-            "entry-1": ManifestEntry(
-                hash="hash",
-                path="path.md",
-                normalized="normalized.yaml",
-                source_type="journal",
-                ingested_at="2025-01-05T08:00:00Z",
-                created_at="2025-01-05T08:00:00Z",
-                id="entry-1",
-            )
-        },
-        config=AppConfig(),
-        workspace=tmp_path,
-        timeout=5.0,
-        retries=1,
-        use_fake_llm=False,
-        normalize_claims=lambda *args, **kwargs: [],
-        invoke_structured_llm=fake_invoke,
-        structured_call=fake_structured_call,
-        summary=_sample_summary(),
-        summary_window=[("2025-01-04", _sample_summary("2025-01-04"))],
-    )
-
-    consolidated_payload = json.loads(captured["consolidated_facts_json"])
-    assert consolidated_payload["facts"][0]["statement"].startswith("Blocks 8-10am")
+    payload = profile_update_module._load_consolidated_facts_json(Path("/tmp"), AppConfig())
+    assert payload == "{}"

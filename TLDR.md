@@ -147,26 +147,28 @@ missing, rerun Stage 2 (`aijournal ops pipeline summarize --date YYYY-MM-DD`).
 ## **Stage 4: Profile Update**
 **Goal**: Suggest and apply profile updates based on evidence
 
-**Prompt**: `prompts/profile_suggest.md`
-**Summary**: "Review the day summary and existing persona first, then verify insights against normalized entries before proposing claim/facet updates."
+**Prompt**: `prompts/profile_update.md`
+**Summary**: "Review the day summary plus consolidated microfacts and existing persona to propose claim/facet updates with evidence and interview prompts."
 
 **Prerequisite**: Requires the same-day summary from Stage 2. The command aborts
 with a remediation hint when `derived/summaries/<date>.yaml` is missing.
 
 **LLM Task**:
 1. Read the Stage 2 summary to orient on key themes.
-2. Read existing profile and claims to understand baseline.
-3. Dive into normalized entries to verify summarized signals or discover missing evidence.
-4. Propose new claims/facets only when entries provide durable support; strengthen or adjust existing claims when confirmed.
-5. Provide ≤25 word justifications with evidence references.
+2. Scan consolidated microfacts for recurring evidence.
+3. Read existing profile and claims to understand baseline.
+4. Dive into normalized entries to verify summarized signals or discover missing evidence.
+5. Propose new claims/facets only when entries provide durable support; strengthen or adjust existing claims when confirmed.
+6. Provide ≤25 word justifications with evidence references.
 
 **Inputs**:
 - Day summary (`derived/summaries/<date>.yaml`) — **primary map**
 - Normalized entries (**derived** from Stage 1) — **verification source**
 - Current profile (`profile/self_profile.yaml`) (**raw**)
 - Current claims (`profile/claims.yaml`) (**raw**)
+- Consolidated microfacts (`derived/microfacts/consolidated.yaml` when present)
 
-**Outputs**: `derived/profile_proposals/YYYY-MM-DD.yaml`
+**Outputs**: `derived/pending/profile_updates/<date>-<timestamp>.yaml`
 
 **Example Output**:
 ```json
@@ -193,34 +195,19 @@ with a remediation hint when `derived/summaries/<date>.yaml` is missing.
 }
 ```
 
-Then **applies** these suggestions to `profile/self_profile.yaml` and `profile/claims.yaml` (when `--apply-profile=auto`).
+Capture can **apply** these batches immediately (`--apply-profile=auto`) or queue them for `aijournal ops profile apply`/`ops pipeline review` later.
 
 ---
 
-## **Stage 5: Characterize & Review**
-**Goal**: Generate comprehensive profile updates and optionally auto-apply them
+## **Stage 5: Index Refresh**
+**Goal**: Keep retrieval/search artifacts aligned with the latest entries and applied profile updates
 
-**Prompt**: `prompts/characterize.md`
-**Summary**: "Read entries, compare with existing persona, propose claim/facet updates + interview questions. More comprehensive than profile_suggest."
+**Commands**: `aijournal ops index rebuild`, `aijournal ops index tail`
 
-**LLM Task**:
-1. Generate claims, facets, and interview_prompts
-2. Create batches for human review
-3. System auto-applies batches generated during current capture run (when `--apply-profile=auto`)
-
-**Inputs**: Same as Stage 4 (normalized entries + existing profile/claims)
-**Outputs**: `derived/pending/profile_updates/<date>-<timestamp>.yaml`
-
-**Example Output**:
-```json
-{
-  "claims": [...],
-  "facets": [...],
-  "interview_prompts": [
-    "What triggers changes to the 8-10am deep work block?"
-  ]
-}
-```
+**What happens**:
+1. Rebuilds ANN + SQLite indexes for normalized entries referenced in Stage 4 outputs
+2. Captures manifest hashes + metadata for reproducibility
+3. Surfaces warnings when embeddings are stale or missing
 
 ---
 
@@ -334,20 +321,17 @@ uv run aijournal ops pipeline summarize --date YYYY-MM-DD
 uv run aijournal ops pipeline extract-facts --date YYYY-MM-DD
 
 # Stage 4
-uv run aijournal ops profile suggest --date YYYY-MM-DD
+uv run aijournal ops profile update --date YYYY-MM-DD
 uv run aijournal ops profile apply --date YYYY-MM-DD --yes
-
-# Stage 5
-uv run aijournal ops pipeline characterize --date YYYY-MM-DD
 uv run aijournal ops pipeline review --file <batch>.yaml --apply
 
-# Stage 6
+# Stage 5
 uv run aijournal ops index update --since 7d
 
-# Stage 7
+# Stage 6
 uv run aijournal ops persona build
 
-# Stage 8
+# Stage 7
 uv run aijournal export pack --level Lx [--date YYYY-MM-DD]
 ```
 

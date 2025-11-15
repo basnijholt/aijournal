@@ -29,7 +29,7 @@
       "type": "boolean"
     },
     "max_stage": {
-      "default": 8,
+      "default": 7,
       "minimum": 0,
       "title": "Max Stage",
       "type": "integer"

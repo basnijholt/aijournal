@@ -20,8 +20,7 @@ Fields: <no fields>
 
 Fields: date: str, timeout: float, retries: int, progress: bool
 
-- aijournal.commands.characterize.CharacterizeOptions (src/aijournal/commands/characterize.py)
-- aijournal.commands.profile.ProfileSuggestOptions (src/aijournal/commands/profile.py)
+- aijournal.commands.profile_update.ProfileUpdateOptions (src/aijournal/commands/profile_update.py)
 - aijournal.commands.summarize.DailySummaryOptions (src/aijournal/commands/summarize.py)
 
 ### Group 3 (2 classes)
@@ -538,13 +537,7 @@ Fields: artifact: 'Artifact[PersonaCore]', path: 'Path', changed: 'bool'
 
 Fields: artifact: 'Artifact[ProfileUpdateBatch]', batch_path: 'Path'
 
-- aijournal.commands.characterize.CharacterizeResult (src/aijournal/commands/characterize.py)
-
-### Group 4 (1 classes)
-
-Fields: artifact: 'Artifact[ProfileUpdateProposals]', path: 'Path'
-
-- aijournal.commands.profile.ProfileSuggestResult (src/aijournal/commands/profile.py)
+- aijournal.commands.profile_update.ProfileUpdateResult (src/aijournal/commands/profile_update.py)
 
 ### Group 5 (1 classes)
 
@@ -608,15 +601,9 @@ Fields: date: 'str', entries: 'list[NormalizedEntry]', timeout: 'float', retries
 
 ### Group 15 (1 classes)
 
-Fields: date: 'str', timeout: 'float', retries: 'int', progress: 'bool', entries: 'list[NormalizedEntry]', profile: 'dict[str, Any]', claims: 'list[ClaimAtom]', config: 'dict[str, Any]'
-
-- aijournal.commands.profile.ProfileSuggestPrepared (src/aijournal/commands/profile.py)
-
-### Group 16 (1 classes)
-
 Fields: date: 'str', timeout: 'float', retries: 'int', progress: 'bool', entries_with_paths: 'list[tuple[NormalizedEntry, Path]]', manifest_index: 'dict[str, ManifestEntry]', profile: 'dict[str, Any]', claim_models: 'Sequence[ClaimAtom]', config: 'dict[str, Any]'
 
-- aijournal.commands.characterize.CharacterizePrepared (src/aijournal/commands/characterize.py)
+- aijournal.commands.profile_update.ProfileUpdatePrepared (src/aijournal/commands/profile_update.py)
 
 ### Group 17 (1 classes)
 
@@ -857,4 +844,3 @@ Fields: trace: 'bool', verbose_json: 'bool'
 Fields: turn: 'ChatTurn', prepared: 'ChatPrepared'
 
 - aijournal.commands.chat.ChatResult (src/aijournal/commands/chat.py)
-
