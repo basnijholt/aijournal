@@ -14,6 +14,7 @@ class Chunk(StrictModel):
     normalized_id: str
     chunk_index: int
     text: str
+    chunk_type: str = "entry"
     date: str
     tags: list[str] = Field(default_factory=list)
     source_type: str | None = None

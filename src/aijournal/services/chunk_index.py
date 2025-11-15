@@ -40,6 +40,7 @@ def _metadata_from_record(record: Any) -> dict[str, MetadataValue]:
         "tokens": getattr(record, "tokens", 0),
         "source_hash": getattr(record, "source_hash", None),
         "manifest_hash": getattr(record, "manifest_hash", None),
+        "chunk_type": getattr(record, "chunk_type", "entry"),
     }
     return meta
 
@@ -180,6 +181,7 @@ class ChunkIndex:
                 tokens=int(metadata.get("tokens") or 0),
                 source_hash=metadata.get("source_hash"),
                 manifest_hash=metadata.get("manifest_hash"),
+                chunk_type=str(metadata.get("chunk_type") or "entry"),
             )
             hits.append(
                 ChunkIndexHit(

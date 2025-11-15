@@ -21,10 +21,12 @@ class ChatCitation(StrictModel):
     date: str
     tags: list[str] = Field(default_factory=list)
     score: float
+    chunk_type: str
 
     @property
     def marker(self) -> str:
-        return f"[entry:{self.code}]"
+        label = self.chunk_type or "entry"
+        return f"[{label}:{self.code}]"
 
     @classmethod
     def from_chunk(cls, chunk: RetrievedChunk) -> ChatCitation:
@@ -38,6 +40,7 @@ class ChatCitation(StrictModel):
             date=chunk.date,
             tags=list(chunk.tags),
             score=chunk.score,
+            chunk_type=chunk.chunk_type or "entry",
         )
 
 

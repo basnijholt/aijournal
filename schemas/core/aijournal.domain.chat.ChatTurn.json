@@ -12,6 +12,10 @@
           "title": "Chunk Index",
           "type": "integer"
         },
+        "chunk_type": {
+          "title": "Chunk Type",
+          "type": "string"
+        },
         "code": {
           "title": "Code",
           "type": "string"
@@ -47,7 +51,8 @@
         "chunk_index",
         "source_path",
         "date",
-        "score"
+        "score",
+        "chunk_type"
       ],
       "title": "ChatCitation",
       "type": "object"
@@ -324,6 +329,11 @@
         "chunk_index": {
           "title": "Chunk Index",
           "type": "integer"
+        },
+        "chunk_type": {
+          "default": "entry",
+          "title": "Chunk Type",
+          "type": "string"
         },
         "date": {
           "title": "Date",

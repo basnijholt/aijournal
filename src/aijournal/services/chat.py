@@ -326,6 +326,7 @@ class ChatService:
                 "date": chunk.date,
                 "tags": chunk.tags,
                 "text": chunk.text,
+                "chunk_type": chunk.chunk_type,
                 "source_path": chunk.source_path,
             }
             for chunk in chunks
@@ -340,9 +341,11 @@ class ChatService:
         instructions = (
             "You are the aijournal chat assistant. Use the persona summary and "
             "retrieved journal chunks to answer the user's question. Always cite "
-            "supporting chunks inline using [entry:<citation>] markers. Whenever `persona.claims` "
-            "is non-empty, include at least one [claim:<id>] marker that references the most relevant "
-            "persona claim (use the IDs provided) so feedback can adjust it. "
+            "supporting chunks inline using markers that match their chunk_type (e.g., "
+            "[entry:<citation>], [summary:<citation>], or [microfact:<citation>]) and prefer "
+            "the exact prefix supplied in the chunk metadata so downstream feedback can work. "
+            "Whenever `persona.claims` is non-empty, include at least one [claim:<id>] marker that references "
+            "the most relevant persona claim (use the IDs provided) so feedback can adjust it. "
             "If a follow-up question would materially clarify intent and the caller allows probing, "
             "include it in the response. Keep follow-ups short and focused."
         )
