@@ -80,7 +80,7 @@ from aijournal.commands.summarize import (
 )
 from aijournal.commands.system import run_system_doctor_cli, run_system_status_cli
 from aijournal.common.app_config import AppConfig
-from aijournal.common.config_loader import load_config, use_fake_llm
+from aijournal.common.config_loader import load_config, resolve_prompt_set, use_fake_llm
 from aijournal.common.constants import (
     DEFAULT_LLM_RETRIES,
     DEFAULT_TIMEOUT_SECONDS,
@@ -238,6 +238,7 @@ app.add_typer(serve_app, name="serve")
 class CLISettings:
     trace: bool = False
     verbose_json: bool = False
+    prompt_set: str | None = None
 
 
 @app.callback()
@@ -253,8 +254,18 @@ def _main_callback(
         "--verbose-json",
         help="Mirror structured trace events as JSON to stdout.",
     ),
+    prompt_set: str | None = typer.Option(
+        None,
+        "--prompt-set",
+        help=(
+            "Active prompt set to use for LLM calls (overrides AIJOURNAL_PROMPT_SET "
+            "and config prompts.active_set)."
+        ),
+    ),
 ) -> None:
-    ctx.obj = CLISettings(trace=trace, verbose_json=verbose_json)
+    if prompt_set:
+        os.environ["AIJOURNAL_PROMPT_SET"] = prompt_set
+    ctx.obj = CLISettings(trace=trace, verbose_json=verbose_json, prompt_set=prompt_set)
 
 
 def _cli_settings() -> CLISettings:
@@ -269,6 +280,12 @@ def _cli_settings() -> CLISettings:
     if context is not None:
         context.obj = settings
     return settings
+
+
+def _active_prompt_set(config: AppConfig | None = None) -> str | None:
+    """Resolve the prompt set using CLI settings, env vars, and config."""
+    settings = _cli_settings()
+    return resolve_prompt_set(cli_override=settings.prompt_set, config=config)
 
 
 def _run_context(
@@ -289,6 +306,7 @@ def _run_context(
     settings = _cli_settings()
     actual_workspace = workspace or _get_workspace()
     config_model = config or load_config(actual_workspace)
+    prompt_set = resolve_prompt_set(cli_override=settings.prompt_set, config=config_model)
     return create_run_context(
         command=command,
         workspace=actual_workspace,
@@ -296,6 +314,7 @@ def _run_context(
         use_fake_llm=use_fake_llm(),
         trace=settings.trace,
         verbose_json=settings.verbose_json,
+        prompt_set=prompt_set,
     )
 
 
@@ -747,6 +766,7 @@ def _invoke_structured_llm(
     timeout: float | None = None,
     max_attempts: int = 2,
     retry_message: str | None = None,
+    prompt_set: str | None = None,
 ) -> Any:
     """Proxy to summarize command helper while honoring patched runners."""
 
@@ -764,6 +784,7 @@ def _invoke_structured_llm(
             timeout=timeout,
             max_attempts=max_attempts,
             retry_message=retry_message,
+            prompt_set=prompt_set,
         )
     finally:
         summarize_commands.build_ollama_config_from_mapping = original_builder
@@ -787,6 +808,7 @@ def _summarize_day_payload(
     workspace: Path,
     timeout: float | None = None,
     retries: int,
+    prompt_set: str | None = None,
 ) -> Any:
     """Proxy to the summarize command helper with test-friendly overrides."""
 
@@ -800,6 +822,7 @@ def _summarize_day_payload(
         invoke_structured_llm=_invoke_structured_llm,
         structured_call=_structured_call_with_retry,
         use_fake_llm_override=use_fake_llm(),
+        prompt_set=prompt_set,
     )
 
 
@@ -2037,6 +2060,7 @@ def interview(
                         response_model=InterviewSet,
                         agent_name="aijournal-interview",
                         config=config,
+                        prompt_set=_active_prompt_set(config),
                     ),
                     retries=0,
                     label="interview",

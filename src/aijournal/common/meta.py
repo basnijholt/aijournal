@@ -20,6 +20,8 @@ class ArtifactMeta(StrictModel):
     model: str | None = None
     prompt_path: str | None = None
     prompt_hash: str | None = None
+    prompt_kind: str | None = None
+    prompt_set: str | None = None
     char_per_token: float | None = None
     sources: dict[str, str] | None = None
     notes: dict[str, str] | None = None
@@ -62,6 +64,8 @@ class LLMResult(StrictModel, Generic[T]):
     model: str
     prompt_path: str
     prompt_hash: str | None = None
+    prompt_kind: str | None = None
+    prompt_set: str | None = None
     created_at: TimestampStr
     payload: T
     attempts: int = 1

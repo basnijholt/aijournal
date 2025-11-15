@@ -244,6 +244,7 @@ def run_profile_update_command(
                     retry_message=(
                         "Return JSON with exactly the keys `claims`, `facets`, `interview_prompts`."
                     ),
+                    prompt_set=ctx.prompt_set,
                 ),
             )
             return convert_prompt_updates_to_proposals(
@@ -312,6 +313,8 @@ def run_profile_update_command(
             "prompts/profile_update.md",
             config=prepared.config,
             use_fake_llm=ctx.use_fake_llm,
+            prompt_kind="profile_update",
+            prompt_set=ctx.prompt_set,
         )
         artifact = Artifact(kind=ArtifactKind.PROFILE_UPDATES, meta=artifact_meta, data=batch)
 

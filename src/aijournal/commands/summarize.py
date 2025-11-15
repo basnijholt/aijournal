@@ -74,16 +74,18 @@ class DailySummaryResult:
     model_name: str
 
 
-def _load_prompt_template(prompt_path: str) -> str:
-    path = resolve_prompt_path(prompt_path)
+def _load_prompt_template(prompt_path: str, *, prompt_set: str | None = None) -> str:
+    path = resolve_prompt_path(prompt_path, prompt_set=prompt_set)
     if path.exists():
         return path.read_text(encoding="utf-8")
     key = Path(prompt_path).name
     return DEFAULT_PROMPTS.get(prompt_path) or DEFAULT_PROMPTS.get(key, "")
 
 
-def _render_prompt(prompt_path: str, variables: dict[str, str]) -> str:
-    template = Template(_load_prompt_template(prompt_path))
+def _render_prompt(
+    prompt_path: str, variables: dict[str, str], *, prompt_set: str | None = None
+) -> str:
+    template = Template(_load_prompt_template(prompt_path, prompt_set=prompt_set))
     return template.safe_substitute(**variables)
 
 
@@ -97,9 +99,11 @@ def _invoke_structured_llm(
     timeout: float | None = None,
     max_attempts: int = 2,
     retry_message: str | None = None,
+    prompt_set: str | None = None,
 ) -> BaseModel:
-    prompt = _render_prompt(prompt_path, variables)
-    prompt_hash = _hash_prompt(prompt_path)
+    prompt = _render_prompt(prompt_path, variables, prompt_set=prompt_set)
+    prompt_hash = _hash_prompt(prompt_path, prompt_set=prompt_set)
+    prompt_kind = Path(prompt_path).stem
     try:
         ollama_config = build_ollama_config_from_mapping(
             config,
@@ -117,6 +121,8 @@ def _invoke_structured_llm(
             retry_message=effective_retry_message,
             prompt_path=prompt_path,
             prompt_hash=prompt_hash,
+            prompt_kind=prompt_kind,
+            prompt_set=prompt_set,
             log_label=agent_name,
         )
         return cast(BaseModel, result.payload)
@@ -201,8 +207,8 @@ def _derived_summary_path(workspace: Path, config: AppConfig, day: str) -> Path:
     return derived / "summaries" / f"{day}.yaml"
 
 
-def _hash_prompt(prompt_path: str) -> str | None:
-    path = resolve_prompt_path(prompt_path)
+def _hash_prompt(prompt_path: str, *, prompt_set: str | None = None) -> str | None:
+    path = resolve_prompt_path(prompt_path, prompt_set=prompt_set)
     try:
         data = path.read_bytes()
     except FileNotFoundError:
@@ -216,6 +222,8 @@ def _build_meta(
     model: str | None = None,
     config: AppConfig | None = None,
     use_fake_llm: bool,
+    prompt_kind: str | None = None,
+    prompt_set: str | None = None,
 ) -> ArtifactMeta:
     resolved_model: str
     if model:
@@ -227,7 +235,9 @@ def _build_meta(
         created_at=created_at,
         model=resolved_model,
         prompt_path=prompt_path,
-        prompt_hash=_hash_prompt(prompt_path),
+        prompt_hash=_hash_prompt(prompt_path, prompt_set=prompt_set),
+        prompt_kind=prompt_kind,
+        prompt_set=prompt_set,
     )
 
 
@@ -268,6 +278,7 @@ def invoke_pipeline(ctx: RunContext, prepared: DailySummaryPrepared) -> DailySum
         timeout=prepared.timeout,
         retries=prepared.retries,
         use_fake_llm_override=ctx.use_fake_llm,
+        prompt_set=ctx.prompt_set,
     )
     model_name = resolve_model_name(ctx.config, use_fake_llm=ctx.use_fake_llm)
     ctx.emit(
@@ -281,7 +292,11 @@ def invoke_pipeline(ctx: RunContext, prepared: DailySummaryPrepared) -> DailySum
 def persist_output(ctx: RunContext, result: DailySummaryResult) -> Path:
     summary_path = _derived_summary_path(ctx.workspace, ctx.config, result.date)
     artifact_meta = _build_meta(
-        "prompts/summarize_day.md", model=result.model_name, use_fake_llm=ctx.use_fake_llm
+        "prompts/summarize_day.md",
+        model=result.model_name,
+        use_fake_llm=ctx.use_fake_llm,
+        prompt_kind="summarize_day",
+        prompt_set=ctx.prompt_set,
     )
     artifact = Artifact[DailySummary](
         kind=ArtifactKind.SUMMARY_DAILY,
@@ -304,6 +319,7 @@ def _summarize_day_payload(
     invoke_structured_llm: Callable[..., BaseModel] | None = None,
     structured_call: Callable[..., BaseModel] | None = None,
     use_fake_llm_override: bool | None = None,
+    prompt_set: str | None = None,
 ) -> DailySummary:
     invoke = invoke_structured_llm or _invoke_structured_llm
     structured = structured_call or (lambda func, *, retries, label: func())
@@ -327,6 +343,7 @@ def _summarize_day_payload(
                     "Return JSON with keys `day`, `bullets`, `highlights`, `todo_candidates` "
                     "and no additional fields or commentary."
                 ),
+                prompt_set=prompt_set,
             ),
         )
 

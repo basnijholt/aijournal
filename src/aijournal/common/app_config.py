@@ -21,6 +21,14 @@ class PathsConfig(BaseModel):
     prompts: str = "prompts"
 
 
+class PromptsConfig(BaseModel):
+    """Prompts configuration for A/B/N testing."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    active_set: str | None = None
+
+
 class ChatConfig(BaseModel):
     """Chat service configuration."""
 
@@ -154,6 +162,7 @@ class AppConfig(BaseModel):
 
     # Nested configurations with typed models and defaults
     paths: PathsConfig = Field(default_factory=PathsConfig)
+    prompts: PromptsConfig = Field(default_factory=PromptsConfig)
     chat: ChatConfig = Field(default_factory=ChatConfig)
     index: IndexConfig = Field(default_factory=IndexConfig)
     persona: PersonaConfig = Field(default_factory=PersonaConfig)

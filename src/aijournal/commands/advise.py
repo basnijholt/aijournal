@@ -103,6 +103,7 @@ def invoke_pipeline(ctx: RunContext, prepared: AdvicePrepared) -> AdviceResult:
         rankings=prepared.rankings,
         pending_prompts=prepared.pending_prompts,
         use_fake_llm=ctx.use_fake_llm,
+        prompt_set=ctx.prompt_set,
     )
     model_name = resolve_model_name(ctx.config, use_fake_llm=ctx.use_fake_llm)
     day = time_utils.created_date(time_utils.format_timestamp(time_utils.now()))
@@ -122,7 +123,11 @@ def invoke_pipeline(ctx: RunContext, prepared: AdvicePrepared) -> AdviceResult:
 def persist_output(ctx: RunContext, result: AdviceResult) -> Path:
     advice_path = _derived_advice_path(ctx.workspace, ctx.config, result.day, result.question)
     artifact_meta = _build_meta(
-        "prompts/advise.md", model=result.model_name, use_fake_llm=ctx.use_fake_llm
+        "prompts/advise.md",
+        model=result.model_name,
+        use_fake_llm=ctx.use_fake_llm,
+        prompt_kind="advise",
+        prompt_set=ctx.prompt_set,
     )
     save_artifact(
         advice_path,
@@ -205,6 +210,7 @@ def _advice_payload(
     rankings: Sequence[InterviewTarget],
     pending_prompts: Sequence[str],
     use_fake_llm: bool,
+    prompt_set: str | None = None,
 ) -> AdviceCard:
     rankings_payload = [
         {
@@ -241,6 +247,7 @@ def _advice_payload(
                     "Return JSON with keys `query`, `assumptions`, `recommendations`, "
                     "`tradeoffs`, `next_actions`, `confidence`, `alignment`, `style`."
                 ),
+                prompt_set=prompt_set,
             ),
         )
 
