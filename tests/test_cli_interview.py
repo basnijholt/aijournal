@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -10,6 +11,7 @@ from typer.testing import CliRunner
 from aijournal.cli import app
 from aijournal.domain.persona import InterviewQuestion, InterviewSet
 from aijournal.io.yaml_io import dump_yaml
+from tests.helpers import write_daily_summary
 
 DATE = "2025-02-03"
 
@@ -60,12 +62,22 @@ def _seed_normalized(tmp_path) -> None:
     )
 
 
+def _seed_summary(tmp_path: Path, *, date: str = DATE, **kwargs) -> None:
+    write_daily_summary(
+        tmp_path,
+        date=date,
+        bullets=kwargs.get("bullets", ["Synced priorities"]),
+        highlights=kwargs.get("highlights", ["Team alignment"]),
+    )
+
+
 def test_interview_emits_ranked_probes(
     cli_workspace: Path,
     cli_runner: CliRunner,
 ) -> None:
     _seed_profile(cli_workspace)
     _seed_normalized(cli_workspace)
+    _seed_summary(cli_workspace)
 
     result = cli_runner.invoke(app, ["ops", "profile", "interview", "--date", DATE])
     assert result.exit_code == 0, result.output
@@ -84,11 +96,25 @@ def test_interview_fallback_when_no_stale(
     _write(cli_workspace / "profile" / "self_profile.yaml", dump_yaml(fresh_profile))
     _write(cli_workspace / "profile" / "claims.yaml", dump_yaml({"claims": []}))
     _seed_normalized(cli_workspace)
+    _seed_summary(cli_workspace)
 
     result = cli_runner.invoke(app, ["ops", "profile", "interview", "--date", DATE])
     assert result.exit_code == 0
     probes = [line for line in result.output.splitlines() if line.startswith("- ")]
     assert len(probes) == 3
+
+
+def test_interview_requires_summary(
+    cli_workspace: Path,
+    cli_runner: CliRunner,
+) -> None:
+    _seed_profile(cli_workspace)
+    _seed_normalized(cli_workspace)
+
+    result = cli_runner.invoke(app, ["ops", "profile", "interview", "--date", DATE])
+
+    assert result.exit_code != 0
+    assert "Daily summary for" in result.stderr
 
 
 def test_interview_missing_profile(
@@ -124,9 +150,18 @@ def test_interview_live_mode_structured(
 ) -> None:  # type: ignore[name-defined]
     _seed_profile(cli_workspace)
     _seed_normalized(cli_workspace)
+    _seed_summary(cli_workspace)
+    _seed_summary(
+        cli_workspace,
+        date="2025-02-02",
+        bullets=["Captured travel blockers"],
+    )
     monkeypatch.setenv("AIJOURNAL_FAKE_OLLAMA", "0")
 
-    def _fake_structured(*_args, **_kwargs) -> InterviewSet:
+    captured_blocks: dict[str, str] = {}
+
+    def _fake_structured(_prompt_path, prompt_vars, **_kwargs) -> InterviewSet:
+        captured_blocks.update(prompt_vars)
         return InterviewSet(
             questions=[
                 InterviewQuestion(
@@ -138,7 +173,10 @@ def test_interview_live_mode_structured(
             ],
         )
 
-    monkeypatch.setattr("aijournal.cli._invoke_structured_llm", lambda *a, **k: _fake_structured())
+    monkeypatch.setattr(
+        "aijournal.cli._invoke_structured_llm",
+        lambda *a, **k: _fake_structured(*a, **k),
+    )
 
     result = cli_runner.invoke(
         app,
@@ -147,3 +185,7 @@ def test_interview_live_mode_structured(
     )
     assert result.exit_code == 0, result.output
     assert "focus routines" in result.output
+    summary_payload = json.loads(captured_blocks.get("summary_json", "{}"))
+    assert summary_payload.get("bullets"), "Expected summary payload to be present"
+    window_payload = json.loads(captured_blocks.get("summary_window_json", "[]"))
+    assert any(item.get("day") == "2025-02-02" for item in window_payload)

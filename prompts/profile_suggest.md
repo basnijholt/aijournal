@@ -23,6 +23,15 @@ If you have nothing grounded to add, return the empty payload `{ "claims": [], "
 Think like a careful researcher.
 Read the inputs, form hypotheses, check the entries, and document only what the evidence supports.
 
+## Daily Summary context
+The capture pipeline already distilled the day's entries into a concise summary.
+Read it before anything else, then verify the highlighted items against the
+full normalized entries. Only promote a bullet/highlight to a claim or facet
+when the underlying paragraphs provide concrete evidence.
+
+SUMMARY_JSON:
+$summary_json
+
 ---
 ## Reasoning Checklist
 1. Read `PROFILE_JSON` and `CLAIMS_JSON` to understand the current baseline.

@@ -12,6 +12,7 @@ from aijournal.common.app_config import AppConfig
 from aijournal.domain.facts import (
     ConsolidatedMicroFact,
     ConsolidatedMicrofactsFile,
+    DailySummary,
 )
 from aijournal.domain.journal import NormalizedEntry
 from aijournal.domain.prompts import PromptProfileUpdates
@@ -49,6 +50,15 @@ def _sample_entry() -> NormalizedEntry:
     )
 
 
+def _sample_summary(day: str = "2025-01-05") -> DailySummary:
+    return DailySummary(
+        day=day,
+        bullets=["Tracked focus rituals"],
+        highlights=["Early deep work block"],
+        todo_candidates=["Refine planning block"],
+    )
+
+
 def test_profile_payload_includes_consolidated_snapshot(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -71,6 +81,7 @@ def test_profile_payload_includes_consolidated_snapshot(
 
     profile._profile_proposals_payload(
         [_sample_entry()],
+        summary=_sample_summary(),
         profile={},
         claims=[],
         date="2025-01-05",
@@ -130,6 +141,8 @@ def test_characterize_payload_includes_consolidated_snapshot(
         normalize_claims=lambda *args, **kwargs: [],
         invoke_structured_llm=fake_invoke,
         structured_call=fake_structured_call,
+        summary=_sample_summary(),
+        summary_window=[("2025-01-04", _sample_summary("2025-01-04"))],
     )
 
     consolidated_payload = json.loads(captured["consolidated_facts_json"])

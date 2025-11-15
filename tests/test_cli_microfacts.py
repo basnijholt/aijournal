@@ -8,7 +8,7 @@ import yaml
 from typer.testing import CliRunner
 
 from aijournal.cli import app
-from tests.test_cli_facts import DATE, _write_normalized
+from tests.test_cli_facts import DATE, _write_normalized, _write_summary
 
 
 def _load_yaml(path: Path) -> dict[str, object]:
@@ -20,6 +20,7 @@ def test_microfacts_rebuild_command_writes_artifacts(
     cli_runner: CliRunner,
 ) -> None:
     _write_normalized(cli_workspace)
+    _write_summary(cli_workspace)
 
     # Generate daily microfacts first.
     first = cli_runner.invoke(

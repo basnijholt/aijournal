@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import yaml
@@ -9,6 +10,7 @@ from typer.testing import CliRunner
 
 from aijournal.cli import app
 from aijournal.io.yaml_io import dump_yaml
+from tests.helpers import write_daily_summary
 
 DATE = "2025-02-03"
 ENTRY_ID = "2025-02-03-focus-notes"
@@ -66,6 +68,15 @@ def _seed_profile(tmp_path: Path) -> None:
     _write_yaml(tmp_path / "profile" / "claims.yaml", claims)
 
 
+def _seed_summary(tmp_path: Path, *, date: str = DATE, **kwargs) -> None:
+    write_daily_summary(
+        tmp_path,
+        date=date,
+        bullets=kwargs.get("bullets", ["Focus cadence"]),
+        highlights=kwargs.get("highlights", ["Momentum"]),
+    )
+
+
 def _seed_conflicting_claim(tmp_path: Path) -> None:
     conflict_claim = {
         "id": "focus-notes-conflict",
@@ -114,6 +125,7 @@ def test_characterize_generates_pending_batch(
     _seed_normalized(cli_workspace)
     _seed_manifest(cli_workspace)
     _seed_profile(cli_workspace)
+    _seed_summary(cli_workspace)
 
     batch_path, _ = _run_characterize(cli_workspace, cli_runner)
     artifact = yaml.safe_load(batch_path.read_text(encoding="utf-8"))
@@ -146,6 +158,7 @@ def test_review_updates_applies_batch(
     _seed_normalized(cli_workspace)
     _seed_manifest(cli_workspace)
     _seed_profile(cli_workspace)
+    _seed_summary(cli_workspace)
 
     batch_path, _ = _run_characterize(cli_workspace, cli_runner)
     result = cli_runner.invoke(
@@ -171,6 +184,7 @@ def test_characterize_preview_flags_conflict(
     _seed_manifest(cli_workspace)
     _seed_profile(cli_workspace)
     _seed_conflicting_claim(cli_workspace)
+    _seed_summary(cli_workspace)
 
     batch_path, _ = _run_characterize(cli_workspace, cli_runner)
     artifact = yaml.safe_load(batch_path.read_text(encoding="utf-8"))
@@ -183,6 +197,23 @@ def test_characterize_preview_flags_conflict(
     assert prompts, "Expected interview prompt queued for conflict"
 
 
+def test_characterize_requires_summary(
+    cli_workspace: Path,
+    cli_runner: CliRunner,
+) -> None:
+    _seed_normalized(cli_workspace)
+    _seed_manifest(cli_workspace)
+    _seed_profile(cli_workspace)
+
+    result = cli_runner.invoke(
+        app,
+        ["ops", "pipeline", "characterize", "--date", DATE],
+    )
+
+    assert result.exit_code != 0
+    assert "Daily summary for" in result.stderr
+
+
 def test_characterize_progress_flag(
     cli_workspace: Path,
     cli_runner: CliRunner,
@@ -190,6 +221,7 @@ def test_characterize_progress_flag(
     _seed_normalized(cli_workspace)
     _seed_manifest(cli_workspace)
     _seed_profile(cli_workspace)
+    _seed_summary(cli_workspace)
 
     _, output = _run_characterize(cli_workspace, cli_runner, ["--progress"])
 
@@ -205,11 +237,20 @@ def test_characterize_live_mode_structured(
     _seed_normalized(cli_workspace)
     _seed_manifest(cli_workspace)
     _seed_profile(cli_workspace)
+    _seed_summary(cli_workspace)
+    _seed_summary(
+        cli_workspace,
+        date="2025-02-02",
+        bullets=["Reinforced planning themes"],
+    )
     monkeypatch.setenv("AIJOURNAL_FAKE_OLLAMA", "0")
 
-    def _fake_structured(*_args, **_kwargs):
+    captured_blocks: dict[str, str] = {}
+
+    def _fake_structured(_prompt_path, prompt_vars, **_kwargs):
         from aijournal.domain.prompts import PromptProfileUpdates
 
+        captured_blocks.update(prompt_vars)
         return PromptProfileUpdates.model_validate(
             {
                 "claims": [
@@ -243,7 +284,7 @@ def test_characterize_live_mode_structured(
     monkeypatch.setattr("aijournal.cli._normalize_claim_proposals", _capture_claims)
     monkeypatch.setattr(
         "aijournal.cli._invoke_structured_llm",
-        lambda *a, **k: _fake_structured(),
+        lambda *a, **k: _fake_structured(*a, **k),
     )
 
     batch_path, _ = _run_characterize(
@@ -262,3 +303,9 @@ def test_characterize_live_mode_structured(
     assert any("Focus routines hold" in stmt for stmt in statements)
     prompts = data.get("preview", {}).get("interview_prompts") or []
     assert "travel" in prompts[0]
+
+    summary_payload = json.loads(captured_blocks.get("summary_json", "{}"))
+    assert summary_payload.get("bullets"), "Expected summary JSON to be provided"
+    assert any("Focus cadence" in bullet for bullet in summary_payload.get("bullets", []))
+    window_payload = json.loads(captured_blocks.get("summary_window_json", "[]"))
+    assert any(item.get("day") == "2025-02-02" for item in window_payload)

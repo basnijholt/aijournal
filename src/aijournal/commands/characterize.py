@@ -38,6 +38,7 @@ from aijournal.domain.changes import (
     ProfileUpdateProposals,
 )
 from aijournal.domain.claims import ClaimAtom
+from aijournal.domain.facts import DailySummary
 from aijournal.domain.journal import NormalizedEntry
 from aijournal.domain.prompts import (
     PromptProfileUpdates,
@@ -58,7 +59,14 @@ from aijournal.services.microfacts import (
     select_recurring_facts,
 )
 from aijournal.services.ollama import LLMResponseError
+from aijournal.services.summaries import (
+    SummaryNotFoundError,
+    load_daily_summary,
+    load_summary_window,
+)
 from aijournal.utils import time as time_utils
+
+SUMMARY_LOOKBACK_DAYS = 6
 
 
 class CharacterizeOptions(BaseModel):
@@ -78,6 +86,8 @@ class CharacterizePrepared:
     manifest_index: dict[str, ManifestEntry]
     profile: dict[str, Any]
     claim_models: Sequence[ClaimAtom]
+    summary: DailySummary
+    summary_window: list[tuple[str, DailySummary]]
     config: AppConfig
     workspace: Path
 
@@ -123,6 +133,28 @@ def run_characterize_command(
         entries = [entry for entry, _ in entries_with_paths]
         _log_entry_progress(f"Characterizing entries for {opts.date}", entries, opts.progress)
 
+        try:
+            summary = cast(
+                DailySummary,
+                load_daily_summary(ctx.workspace, ctx.config, opts.date),
+            )
+        except SummaryNotFoundError as exc:
+            typer.secho(str(exc), fg=typer.colors.RED, err=True)
+            ctx.emit(
+                event="command_failed",
+                reason="missing_summary",
+                date=opts.date,
+            )
+            raise typer.Exit(1) from exc
+
+        summary_window = load_summary_window(
+            ctx.workspace,
+            ctx.config,
+            anchor_day=opts.date,
+            lookback_days=SUMMARY_LOOKBACK_DAYS,
+            include_anchor=False,
+        )
+
         ctx.emit(
             event="prepare_summary",
             entry_count=len(entries_with_paths),
@@ -141,6 +173,8 @@ def run_characterize_command(
             manifest_index=manifest_index,
             profile=profile,
             claim_models=claim_models,
+            summary=summary,
+            summary_window=summary_window,
             config=ctx.config,
             workspace=ctx.workspace,
         )
@@ -162,6 +196,8 @@ def run_characterize_command(
                 normalize_claims=normalize_fn,
                 invoke_structured_llm=invoke_structured_llm,
                 structured_call=structured_call,
+                summary=prepared.summary,
+                summary_window=prepared.summary_window,
             )
         except LLMResponseError as exc:
             error_msg = f"LLM response error: {exc}"
@@ -351,6 +387,8 @@ def _characterize_payload(
     normalize_claims: Callable[..., list[ClaimProposal]],
     invoke_structured_llm: Callable[..., BaseModel],
     structured_call: Callable[..., BaseModel],
+    summary: DailySummary,
+    summary_window: Sequence[tuple[str, DailySummary]],
 ) -> tuple[ProfileUpdateProposals, list[str]]:
     claim_timestamp = time_utils.format_timestamp(time_utils.now())
     context = _characterization_context(entries, manifest_index)
@@ -363,6 +401,10 @@ def _characterize_payload(
     manifest_payload = _json_block(
         {key: entry.model_dump(mode="python") for key, entry in manifest_index.items()},
     )
+    summary_payload = summary.model_dump(mode="python")
+    summary_window_payload = [
+        window_summary.model_dump(mode="python") for _, window_summary in summary_window
+    ]
     consolidated_facts_json = "{}"
     consolidated = load_consolidated_microfacts(workspace, config)
     if consolidated:
@@ -383,6 +425,8 @@ def _characterize_payload(
                 {
                     "date": target_date,
                     "entries_json": _json_block(_entries_to_payload(entries, workspace)),
+                    "summary_json": _json_block(summary_payload),
+                    "summary_window_json": _json_block(summary_window_payload),
                     "profile_json": _json_block(profile),
                     "claims_json": _json_block(
                         {"claims": [claim.model_dump(mode="python") for claim in claims]}

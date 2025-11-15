@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from hashlib import sha256
@@ -407,12 +408,14 @@ class MicrofactIndex:
             self.reset()
             return MicrofactRebuildResult(facts=[], stats=[])
 
-        records: list[MicrofactRecord] = []
+        aggregated: dict[str, MicrofactRecord] = {}
         stats: list[MicrofactConsolidationStats] = []
-        seen_uids: set[str] = set()
+        max_evidence_entries = max(1, self._microfacts_config.max_evidence_entries)
 
         for path in sorted(location.glob("*.yaml")):
             day = path.stem
+            if not _DAY_FILENAME.fullmatch(day):
+                continue
             processed = 0
             new_records = 0
             merged_records = 0
@@ -432,12 +435,21 @@ class MicrofactIndex:
                 )
                 if not record.statement:
                     continue
-                records.append(record)
                 processed += 1
-                if record.uid in seen_uids:
+                existing = aggregated.get(record.uid)
+                if existing:
+                    evidence_entry = fact.evidence.entry_id if fact.evidence else None
+                    existing.merge_observation(
+                        confidence=fact.confidence,
+                        date=day,
+                        fact_id=fact.id,
+                        evidence_entry=evidence_entry,
+                        max_evidence_entries=max_evidence_entries,
+                        fact_key=_fact_key(day, fact.id),
+                    )
                     merged_records += 1
                 else:
-                    seen_uids.add(record.uid)
+                    aggregated[record.uid] = record
                     new_records += 1
             stats.append(
                 MicrofactConsolidationStats(
@@ -449,7 +461,11 @@ class MicrofactIndex:
             )
 
         self.reset()
-        for batch in _batched(records, size=chunk_size):
+        ordered_records = sorted(
+            aggregated.values(),
+            key=lambda record: (record.first_seen, record.uid),
+        )
+        for batch in _batched(ordered_records, size=chunk_size):
             self.upsert(batch)
 
         consolidated = self.export_all_records()
@@ -467,3 +483,6 @@ def _batched(items: Sequence[MicrofactRecord], *, size: int) -> Iterable[list[Mi
             batch = []
     if batch:
         yield batch
+
+
+_DAY_FILENAME = re.compile(r"^\d{4}-\d{2}-\d{2}$")

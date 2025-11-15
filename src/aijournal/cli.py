@@ -99,6 +99,7 @@ from aijournal.domain.events import (
     FeedbackBatch,
 )
 from aijournal.domain.evidence import redact_source_text
+from aijournal.domain.facts import DailySummary
 from aijournal.domain.journal import NormalizedEntry
 from aijournal.domain.persona import InterviewQuestion, InterviewSet
 from aijournal.io.artifacts import load_artifact_data
@@ -135,12 +136,19 @@ from aijournal.services.persona_export import (
 from aijournal.services.persona_export import (
     PersonaExportOptions as PersonaExportOptions,
 )
+from aijournal.services.summaries import (
+    SummaryNotFoundError,
+    load_daily_summary,
+    load_summary_window,
+)
 from aijournal.utils import time as time_utils
 from aijournal.utils.coercion import coerce_int
 from aijournal.utils.paths import (
     find_data_root,
     normalized_entry_path,
 )
+
+INTERVIEW_SUMMARY_LOOKBACK_DAYS = 6
 
 
 def _get_workspace() -> Path:
@@ -1996,6 +2004,23 @@ def interview(
         typer.secho(f"No normalized entries for {date}", fg=typer.colors.RED, err=True)
         raise typer.Exit(1)
 
+    try:
+        summary = cast(
+            DailySummary,
+            load_daily_summary(workspace, config, date),
+        )
+    except SummaryNotFoundError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        raise typer.Exit(1) from exc
+
+    summary_window = load_summary_window(
+        workspace,
+        config,
+        anchor_day=date,
+        lookback_days=INTERVIEW_SUMMARY_LOOKBACK_DAYS,
+        include_anchor=False,
+    )
+
     weights = config.impact_weights.model_dump(mode="python")
 
     max_questions = _coaching_max_questions(profile)
@@ -2029,6 +2054,10 @@ def interview(
             for target in rankings[: max(max_questions * 2, 6)]
         ]
         try:
+            summary_payload = summary.model_dump(mode="python")
+            summary_window_payload = [
+                window_summary.model_dump(mode="python") for _, window_summary in summary_window
+            ]
             interview_set = cast(
                 InterviewSet,
                 _structured_call_with_retry(
@@ -2042,6 +2071,8 @@ def interview(
                             ),
                             "entries_json": _json_block(_entries_to_payload(entries, workspace)),
                             "rankings_json": _json_block(rankings_payload),
+                            "summary_json": _json_block(summary_payload),
+                            "summary_window_json": _json_block(summary_window_payload),
                             "coaching_prefs_json": _json_block(profile.get("coaching_prefs", {})),
                         },
                         response_model=InterviewSet,
