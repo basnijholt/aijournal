@@ -249,24 +249,29 @@ def _load_auditable_artifact(
 ) -> tuple[ArtifactKind, Artifact[Any]] | None:
     try:
         raw = yaml.safe_load(path.read_text(encoding="utf-8"))
-    except Exception:
+    except (OSError, yaml.YAMLError):
         return None
-    if not isinstance(raw, dict):
-        return None
-    kind_raw = raw.get("kind")
-    if not isinstance(kind_raw, str):
-        return None
+
     try:
+        if not isinstance(raw, dict):
+            msg = "Artifact must deserialize to a mapping"
+            raise ValueError(msg)
+        kind_raw = raw.get("kind")
+        if not isinstance(kind_raw, str):
+            msg = "Artifact is missing a valid 'kind' field"
+            raise ValueError(msg)
         kind = ArtifactKind(kind_raw)
+        model = _AUDIT_ARTIFACT_MODELS.get(kind)
+        if model is None:
+            msg = f"Unsupported artifact kind: {kind.value}"
+            raise ValueError(msg)
+        artifact = load_artifact(path, model)
     except ValueError:
         return None
-    model = _AUDIT_ARTIFACT_MODELS.get(kind)
-    if model is None:
-        return None
-    try:
-        return kind, load_artifact(path, model)
     except Exception:
         return None
+
+    return kind, artifact
 
 
 def _scan_model_for_spans(value: Any, *, fix: bool) -> list[IssueDetail]:
