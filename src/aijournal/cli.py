@@ -22,7 +22,7 @@ from pydantic import ValidationError
 from typer.models import CommandInfo
 
 import aijournal._version as version_module
-from aijournal.api.capture import CaptureRequest
+from aijournal.api.capture import CaptureInput, CaptureRequest
 from aijournal.commands.advise import (
     AdviceOptions,
     _collect_pending_interview_prompts,
@@ -97,7 +97,7 @@ from aijournal.models.authoritative import ClaimsFile, SelfProfile
 from aijournal.models.derived import ProfileUpdateBatch, ProfileUpdatePreview
 from aijournal.pipelines import normalization
 from aijournal.services import ollama
-from aijournal.services.capture import CAPTURE_MAX_STAGE, CAPTURE_STAGES, CaptureInput, run_capture
+from aijournal.services.capture import CAPTURE_MAX_STAGE, CAPTURE_STAGES, run_capture
 from aijournal.services.consolidator import (
     ClaimConsolidator,
     ClaimMergeOutcome,

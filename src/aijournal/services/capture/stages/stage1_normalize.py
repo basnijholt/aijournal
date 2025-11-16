@@ -17,7 +17,8 @@ def run_normalize_stage_1(
     root: Path,
     config: AppConfig,
 ) -> NormalizeStageOutputs:
-    from aijournal.services.capture import NormalizeStageOutputs, OperationResult, normalize_entries
+    from aijournal.services.capture import NormalizeStageOutputs, normalize_entries
+    from aijournal.services.capture.results import OperationResult
 
     normalize_start = perf_counter()
     artifact_counts = normalize_entries(entry_results, root, config) if entry_results else {}

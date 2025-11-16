@@ -17,7 +17,7 @@ from aijournal.domain.facts import (
     MicrofactConsolidationSummary,
 )
 from aijournal.io.artifacts import save_artifact
-from aijournal.services.microfacts import (
+from aijournal.services.microfacts.index import (
     MicrofactConsolidationStats,
     MicrofactIndex,
     MicrofactRecord,

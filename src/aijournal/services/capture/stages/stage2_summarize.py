@@ -6,8 +6,9 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from aijournal.api.capture import CaptureInput
     from aijournal.common.app_config import AppConfig
-    from aijournal.services.capture import CaptureInput, SummarizeStage2Outputs
+    from aijournal.services.capture import SummarizeStage2Outputs
 
 
 def run_summarize_stage_2(
@@ -16,8 +17,9 @@ def run_summarize_stage_2(
     root: Path,
     config: AppConfig,
 ) -> SummarizeStage2Outputs:
-    from aijournal.services.capture import OperationResult, SummarizeStage2Outputs
+    from aijournal.services.capture import SummarizeStage2Outputs
     from aijournal.services.capture.graceful import graceful_summarize
+    from aijournal.services.capture.results import OperationResult
     from aijournal.services.capture.utils import relative_path
 
     stage_start = perf_counter()

@@ -10,12 +10,10 @@ from aijournal.domain.claims import (
     ClaimAtom,
     ClaimSource,
     ClaimSourceSpan,
-    ClaimStatus,
     Provenance,
     Scope,
 )
-from aijournal.domain.enums import ClaimMethod, ClaimType
-from aijournal.domain.enums import ClaimStatus as ClaimStatusEnum
+from aijournal.domain.enums import ClaimMethod, ClaimStatus, ClaimType
 from aijournal.domain.evidence import redact_source_text
 from aijournal.utils import time as time_utils
 from aijournal.utils.coercion import coerce_float, coerce_int
@@ -23,14 +21,15 @@ from aijournal.utils.coercion import coerce_float, coerce_int
 if TYPE_CHECKING:
     from collections.abc import Iterable, Sequence
 
-    from aijournal.ingest_agent import IngestResult, IngestSection
+    from aijournal.domain.journal import Section as IngestSection
+    from aijournal.ingest_agent import IngestResult
 
 
 def normalize_status(value: str | None) -> ClaimStatus:
     status = (value or "tentative").strip().lower()
     if status not in {"accepted", "tentative", "rejected"}:
         status = "tentative"
-    return ClaimStatusEnum(status)
+    return ClaimStatus(status)
 
 
 def _clamp_strength(value: float | None, default: float = 0.6) -> float:
@@ -275,9 +274,9 @@ def normalize_claim_atom(
     strength = max(0.0, min(1.0, strength_numeric if strength_numeric is not None else 0.6))
 
     status_raw = str(base.get("status") or "tentative").strip().lower()
-    valid_status = {item.value for item in ClaimStatusEnum}
-    status_value = status_raw if status_raw in valid_status else ClaimStatusEnum.TENTATIVE.value
-    status = ClaimStatusEnum(status_value)
+    valid_status = {item.value for item in ClaimStatus}
+    status_value = status_raw if status_raw in valid_status else ClaimStatus.TENTATIVE.value
+    status = ClaimStatus(status_value)
 
     method_raw = str(base.get("method") or "inferred").strip().lower()
     valid_methods = {item.value for item in ClaimMethod}

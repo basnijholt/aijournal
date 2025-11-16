@@ -44,8 +44,9 @@ from aijournal.utils.paths import normalized_entry_path
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Sequence
 
+    from aijournal.api.capture import CaptureInput
     from aijournal.common.app_config import AppConfig
-    from aijournal.services.capture import CaptureInput, PersistStage0Outputs
+    from aijournal.services.capture import PersistStage0Outputs
 
 
 SUMMARY_CHAR_LIMIT = 400
@@ -521,7 +522,8 @@ def run_persist_stage_0(
     manifest_entries: list[ManifestEntry],
     log_event: Callable[[dict[str, object]], None],
 ) -> PersistStage0Outputs:
-    from aijournal.services.capture import OperationResult, PersistStage0Outputs
+    from aijournal.services.capture import PersistStage0Outputs
+    from aijournal.services.capture.results import OperationResult
     from aijournal.services.capture.utils import discover_markdown_files, ensure_manifest
     from aijournal.services.capture.utils import manifest_index as _manifest_index
 

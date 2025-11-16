@@ -17,7 +17,7 @@ from aijournal.domain.evidence import SourceRef, redact_source_text
 from aijournal.domain.facts import MicroFact, MicroFactsFile
 from aijournal.fakes import fake_microfacts
 from aijournal.pipelines import normalization
-from aijournal.services.microfacts import MicrofactIndex, MicrofactRecord
+from aijournal.services.microfacts.index import MicrofactIndex, MicrofactRecord
 from aijournal.utils import time as time_utils
 
 if TYPE_CHECKING:

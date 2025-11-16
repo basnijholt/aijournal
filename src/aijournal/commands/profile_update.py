@@ -40,7 +40,7 @@ from aijournal.io.artifacts import load_artifact_data, save_artifact
 from aijournal.io.yaml_io import load_yaml_model
 from aijournal.models.derived import ProfileUpdateBatch, ProfileUpdateInput
 from aijournal.pipelines import profile_update as profile_update_pipeline
-from aijournal.services.microfacts import (
+from aijournal.services.microfacts.snapshot import (
     load_consolidated_microfacts,
     select_recurring_facts,
 )

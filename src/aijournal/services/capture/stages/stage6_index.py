@@ -18,7 +18,8 @@ def run_index_stage_6(
     rebuild_mode: Literal["auto", "always", "skip"] = "auto",
 ) -> IndexStage6Outputs:
     from aijournal.commands.index import run_index_rebuild, run_index_tail
-    from aijournal.services.capture import IndexStage6Outputs, OperationResult
+    from aijournal.services.capture import IndexStage6Outputs
+    from aijournal.services.capture.results import OperationResult
     from aijournal.services.capture.utils import relative_path
 
     stage_start = perf_counter()

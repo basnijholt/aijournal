@@ -6,8 +6,9 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from aijournal.api.capture import CaptureInput
     from aijournal.common.app_config import AppConfig
-    from aijournal.services.capture import CaptureInput, ProfileUpdateStageOutputs
+    from aijournal.services.capture import ProfileUpdateStageOutputs
 
 
 def run_profile_update_stage(
@@ -16,8 +17,9 @@ def run_profile_update_stage(
     root: Path,
     config: AppConfig,
 ) -> ProfileUpdateStageOutputs:
-    from aijournal.services.capture import OperationResult, ProfileUpdateStageOutputs
+    from aijournal.services.capture import ProfileUpdateStageOutputs
     from aijournal.services.capture.graceful import graceful_profile_update
+    from aijournal.services.capture.results import OperationResult
     from aijournal.services.capture.utils import (
         apply_profile_update_batch,
         pending_batches,

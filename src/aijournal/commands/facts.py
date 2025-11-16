@@ -29,7 +29,7 @@ from aijournal.domain.facts import DailySummary, MicroFactsFile
 from aijournal.domain.prompts import PromptMicroFacts, convert_prompt_microfacts
 from aijournal.io.artifacts import save_artifact
 from aijournal.pipelines import facts as facts_pipeline
-from aijournal.services.microfacts import MicrofactIndex
+from aijournal.services.microfacts.index import MicrofactIndex
 from aijournal.services.ollama import LLMResponseError, invoke_structured_llm, resolve_model_name
 from aijournal.services.profile_preview import build_claim_preview
 from aijournal.services.summaries import SummaryNotFoundError, load_daily_summary

@@ -8,7 +8,8 @@ import typer
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from aijournal.services.capture import CaptureInput, PackStage8Outputs
+    from aijournal.api.capture import CaptureInput
+    from aijournal.services.capture import PackStage8Outputs
 
 
 def run_pack_stage_8(
@@ -18,7 +19,8 @@ def run_pack_stage_8(
     persona_changed: bool,
 ) -> PackStage8Outputs:
     from aijournal.commands.pack import run_pack
-    from aijournal.services.capture import OperationResult, PackStage8Outputs
+    from aijournal.services.capture import PackStage8Outputs
+    from aijournal.services.capture.results import OperationResult
     from aijournal.services.capture.utils import relative_path
 
     if not inputs.pack:

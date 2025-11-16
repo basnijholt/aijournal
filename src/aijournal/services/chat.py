@@ -14,6 +14,7 @@ from pydantic import ValidationError
 from aijournal.api.chat import ChatCitation, ChatCitationRef, ChatResponse
 from aijournal.common.app_config import AppConfig
 from aijournal.domain.chat import ChatTelemetry, ChatTurn
+from aijournal.domain.index import RetrievedChunk
 from aijournal.domain.persona import PersonaCore
 from aijournal.io.artifacts import load_artifact
 from aijournal.services.ollama import (
@@ -22,11 +23,7 @@ from aijournal.services.ollama import (
     build_ollama_config_from_mapping,
     run_ollama_agent,
 )
-from aijournal.services.retriever import (
-    RetrievalFilters,
-    RetrievedChunk,
-    Retriever,
-)
+from aijournal.services.retriever import RetrievalFilters, Retriever
 from aijournal.utils.coercion import coerce_int
 
 if TYPE_CHECKING:

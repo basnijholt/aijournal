@@ -6,8 +6,9 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from aijournal.api.capture import CaptureInput
     from aijournal.common.app_config import AppConfig
-    from aijournal.services.capture import CaptureInput, FactsStage3Outputs
+    from aijournal.services.capture import FactsStage3Outputs
 
 
 def run_facts_stage_3(
@@ -17,8 +18,9 @@ def run_facts_stage_3(
     config: AppConfig,
 ) -> FactsStage3Outputs:
     from aijournal.commands.profile import load_profile_components
-    from aijournal.services.capture import FactsStage3Outputs, OperationResult
+    from aijournal.services.capture import FactsStage3Outputs
     from aijournal.services.capture.graceful import graceful_facts
+    from aijournal.services.capture.results import OperationResult
     from aijournal.services.capture.utils import relative_path
 
     stage_start = perf_counter()

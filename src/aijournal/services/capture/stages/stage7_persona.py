@@ -7,8 +7,9 @@ from typing import TYPE_CHECKING
 import typer
 
 if TYPE_CHECKING:
+    from aijournal.api.capture import CaptureInput
     from aijournal.common.app_config import AppConfig
-    from aijournal.services.capture import CaptureInput, PersonaStage7Outputs
+    from aijournal.services.capture import PersonaStage7Outputs
 
 
 def run_persona_stage_7(
@@ -25,7 +26,8 @@ def run_persona_stage_7(
         load_profile_components,
         profile_to_dict,
     )
-    from aijournal.services.capture import OperationResult, PersonaStage7Outputs
+    from aijournal.services.capture import PersonaStage7Outputs
+    from aijournal.services.capture.results import OperationResult
     from aijournal.services.capture.utils import relative_path
 
     stage_start = perf_counter()

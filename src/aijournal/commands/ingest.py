@@ -17,9 +17,9 @@ from aijournal.common.command_runner import run_command_pipeline
 from aijournal.common.config_loader import load_config, use_fake_llm
 from aijournal.common.constants import MARKDOWN_SUFFIXES
 from aijournal.common.context import RunContext, create_run_context
+from aijournal.domain.journal import Section as IngestSection
 from aijournal.ingest_agent import (
     IngestResult,
-    IngestSection,
     build_ingest_agent,
     ingest_with_agent,
 )

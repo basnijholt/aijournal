@@ -6,13 +6,12 @@ from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, ValidationError
 
-from aijournal.domain.facts import DailySummary
+from aijournal.domain.facts import DailySummary, MicroFactsFile
 from aijournal.domain.journal import NormalizedEntry
 from aijournal.domain.persona import InterviewSet, PersonaCore
 from aijournal.models.authoritative import ClaimsFile, JournalEntry, SelfProfile
 from aijournal.models.derived import (
     AdviceCard,
-    MicroFactsFile,
     ProfileUpdateBatch,
 )
 

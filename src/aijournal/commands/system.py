@@ -15,11 +15,11 @@ from pydantic import BaseModel
 from aijournal.commands.persona import persona_state
 from aijournal.common.command_runner import run_command_pipeline
 from aijournal.common.config_loader import load_config, use_fake_llm
+from aijournal.common.constants import DEFAULT_OLLAMA_HOST
 from aijournal.common.context import RunContext, create_run_context
 from aijournal.domain.index import IndexMeta
 from aijournal.io.artifacts import load_artifact_data
 from aijournal.services.ollama import (
-    DEFAULT_OLLAMA_HOST,
     build_ollama_config_from_mapping,
     resolve_ollama_host,
 )
