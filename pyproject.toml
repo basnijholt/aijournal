@@ -1,12 +1,12 @@
 [project]
 name = "aijournal"
-version = "0.2.0"
+dynamic = ["version"]
 description = "Local-first, YAML-centric personal self-modeling agent"
 readme = "README.md"
 authors = [
     { name = "Bas Nijholt", email = "bas@nijho.lt" }
 ]
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = [
     "chromadb>=0.5.3",
     "httpx>=0.28.1",

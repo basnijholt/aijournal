@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path
 from string import Template
-from typing import Any, cast
+from typing import Any, TypeVar, cast
 
 import typer
 from pydantic import BaseModel
@@ -70,6 +70,9 @@ class DailySummaryResult:
     model_name: str
 
 
+StructuredModelT = TypeVar("StructuredModelT", bound=BaseModel)
+
+
 def _load_prompt_template(prompt_path: str, *, prompt_set: str | None = None) -> str:
     path = resolve_prompt_path(prompt_path, prompt_set=prompt_set)
     if path.exists():
@@ -89,11 +92,11 @@ def _invoke_structured_llm(
     prompt_path: str,
     variables: dict[str, str],
     *,
-    response_model: type[BaseModel],
+    response_model: type[StructuredModelT],
     agent_name: str,
     config: AppConfig,
     prompt_set: str | None = None,
-) -> BaseModel:
+) -> StructuredModelT:
     prompt = _render_prompt(prompt_path, variables, prompt_set=prompt_set)
     prompt_hash = _hash_prompt(prompt_path, prompt_set=prompt_set)
     prompt_kind = Path(prompt_path).stem
@@ -112,7 +115,7 @@ def _invoke_structured_llm(
             prompt_set=prompt_set,
             log_label=agent_name,
         )
-        return cast(BaseModel, result.payload)
+        return cast(StructuredModelT, result.payload)
     except Exception as exc:  # pragma: no cover - runtime dependent
         msg = f"Structured output generation failed for {prompt_path}: {exc}"
         raise LLMResponseError(msg) from exc
