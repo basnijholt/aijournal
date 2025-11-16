@@ -78,6 +78,7 @@ class PromptFacetItem(StrictModel):
     value: Any | None = None
     reason: str | None = None
     evidence_entry: str | None = None
+    evidence_chunk_ids: list[str] = Field(default_factory=list)
 
     @field_validator("path")
     @classmethod
@@ -289,11 +290,15 @@ def convert_prompt_facet_to_change(item: PromptFacetItem) -> Any:  # Returns Fac
     """Convert lightweight prompt DTO to full FacetChange with system metadata."""
     from aijournal.domain.changes import FacetChange
 
-    # Build evidence from simple references
+    # Build evidence from both entry and chunk references
     evidence: list[SourceRef] = []
+
+    # Add entry-based evidence
     if item.evidence_entry:
-        source = SourceRef(entry_id=item.evidence_entry)
-        evidence = [source]
+        evidence.append(SourceRef(entry_id=item.evidence_entry))
+
+    # Add chunk-based evidence
+    evidence.extend(SourceRef(chunk_id=chunk_id) for chunk_id in item.evidence_chunk_ids)
 
     return FacetChange(
         path=item.path,

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -54,6 +54,7 @@ if TYPE_CHECKING:
     from aijournal.common.app_config import AppConfig
     from aijournal.domain.changes import ProfileUpdateProposals
     from aijournal.domain.claims import ClaimAtom
+    from aijournal.domain.index import RetrievedChunk
     from aijournal.models.authoritative import ManifestEntry
 
 MAX_CONSOLIDATED_FACTS = 20
@@ -78,6 +79,8 @@ class ProfileUpdatePrepared:
     claim_models: list[ClaimAtom]
     config: AppConfig
     workspace: Path
+    retrieved_chunks: list[RetrievedChunk] = field(default_factory=list)
+    consolidation_triggered: bool = False
 
 
 @dataclass(slots=True)
@@ -230,8 +233,6 @@ def run_profile_update_command(
         try:
             proposals_model, interview_prompts = profile_update_pipeline.generate_profile_update(
                 entries,
-                prepared.profile,
-                prepared.claim_models,
                 use_fake_llm=ctx.use_fake_llm,
                 llm_proposals=llm_proposals,
                 context=context,
@@ -292,7 +293,6 @@ def run_profile_update_command(
         ctx.emit(
             event="pipeline_complete",
             claims=len(batch.proposals.claims),
-            facets=len(batch.proposals.facets),
             interview_prompts=len(batch.proposals.interview_prompts),
         )
         return ProfileUpdateResult(artifact=artifact, path=path)
