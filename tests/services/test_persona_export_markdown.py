@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import pytest
-from tests.helpers import make_claim_atom
 
 from aijournal.common.app_config import AppConfig
 from aijournal.domain.claims import ClaimAtom
@@ -14,6 +13,7 @@ from aijournal.services.persona_export import (
     PersonaVariant,
     export_persona_markdown,
 )
+from tests.helpers import make_claim_atom
 
 
 def _sample_persona() -> PersonaCore:

@@ -74,6 +74,7 @@ ignore = [
     "D102",    # Missing docstring in public method
     "D103",    # Missing docstring in public function
     "RUF001",  # String contains ambiguous `–` (EN DASH).
+    "FBT003",  # Boolean-typed positional argument in function definition
 ]
 
 [tool.ruff.lint.per-file-ignores]
