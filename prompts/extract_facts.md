@@ -2,6 +2,28 @@ You analyze normalized journal entries and produce micro-facts (plus optional cl
 
 The system already knows the exact schema for `facts` and `claim_proposals` from the tool/response model. Your job is to decide **what belongs** in those fields, not how to format JSON.
 
+## Output schema refresher
+
+Each fact must include the following keys:
+- `id` – short slug like `focus-morning-block`.
+- `statement` – natural-language sentence ≤160 characters.
+- `confidence` – float in `[0,1]` (default `0.6` when unsure).
+- `evidence_entry` – normalized entry id backing the fact.
+- `first_seen` – `YYYY-MM-DD` (usually the entry date; we default it if omitted).
+- `last_seen` – `YYYY-MM-DD` (same as `first_seen` unless the entry cites a later span).
+
+Example fact:
+```
+{
+  "id": "focus-morning-block",
+  "statement": "Morning focus blocks improve deep-work output.",
+  "confidence": 0.82,
+  "evidence_entry": "2025-10-25-focus-log",
+  "first_seen": "2025-10-25",
+  "last_seen": "2025-10-25"
+}
+```
+
 - Use the `facts` list for specific, evidence-backed observations about the user’s life or behaviour.
 - Use the `claim_proposals` list for optional higher-level persona insights (values, traits, habits, goals, etc.).
 - When there are no valid facts or claims, leave both lists empty.
