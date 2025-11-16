@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any, NamedTuple
 
 from pydantic import BaseModel, Field
 
-from aijournal.api.capture import CaptureInput
+from aijournal.api.capture import CaptureInput  # noqa: TC001
 from aijournal.common.config_loader import load_config_with_overrides
 from aijournal.common.logging import StructuredLogger
 from aijournal.services.capture.results import OperationResult, StageResult

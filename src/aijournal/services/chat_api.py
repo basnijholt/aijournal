@@ -11,7 +11,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
 
 from aijournal.api.capture import CaptureInput, CaptureRequest
-from aijournal.api.chat import ChatRequest
+from aijournal.api.chat import ChatRequest  # noqa: TC001
 from aijournal.services.chat import ChatService
 from aijournal.services.feedback import FeedbackAdjustment, apply_chat_feedback
 from aijournal.services.retriever import RetrievalFilters

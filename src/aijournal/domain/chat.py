@@ -4,11 +4,11 @@ from __future__ import annotations
 
 from pydantic import Field
 
-from aijournal.api.chat import ChatCitation, ChatResponse
+from aijournal.api.chat import ChatCitation, ChatResponse  # noqa: TC001
 from aijournal.common.base import StrictModel
-from aijournal.common.types import TimestampStr
-from aijournal.domain.index import RetrievedChunk
-from aijournal.domain.persona import PersonaCore
+from aijournal.common.types import TimestampStr  # noqa: TC001
+from aijournal.domain.index import RetrievedChunk  # noqa: TC001
+from aijournal.domain.persona import PersonaCore  # noqa: TC001
 
 
 class ChatTelemetry(StrictModel):

@@ -6,7 +6,7 @@ from typing import Any
 
 from pydantic import ConfigDict, Field
 
-from aijournal.domain.claims import ClaimAtom
+from aijournal.domain.claims import ClaimAtom  # noqa: TC001
 from aijournal.domain.journal import Section
 
 from .base import AijournalModel

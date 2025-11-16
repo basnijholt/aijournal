@@ -15,7 +15,7 @@ from aijournal.common.command_runner import run_command_pipeline
 from aijournal.common.config_loader import use_fake_llm
 from aijournal.common.context import RunContext, create_run_context
 from aijournal.common.meta import Artifact, ArtifactKind, ArtifactMeta
-from aijournal.domain.claims import ClaimAtom
+from aijournal.domain.claims import ClaimAtom  # noqa: TC001
 from aijournal.domain.persona import PersonaCore
 from aijournal.io.artifacts import load_artifact, save_artifact
 from aijournal.pipelines import persona as persona_pipeline

@@ -109,7 +109,7 @@ def test_get_workspace_fails_on_missing_config(
     workspace.mkdir()
     _set_cli_workspace(monkeypatch, workspace)
 
-    with pytest.raises(RuntimeError, match="Missing config.yaml"):
+    with pytest.raises(RuntimeError, match=r"Missing config.yaml"):
         _get_workspace()
 
 

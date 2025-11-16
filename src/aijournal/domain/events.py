@@ -7,8 +7,8 @@ from typing import Annotated
 from pydantic import Field
 
 from aijournal.common.base import StrictModel
-from aijournal.domain.claims import ClaimSource
-from aijournal.domain.enums import ClaimEventAction, FeedbackDirection
+from aijournal.domain.claims import ClaimSource  # noqa: TC001
+from aijournal.domain.enums import ClaimEventAction, FeedbackDirection  # noqa: TC001
 
 
 class ClaimSignaturePayload(StrictModel):

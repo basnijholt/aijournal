@@ -7,9 +7,9 @@ from typing import Any
 from pydantic import Field, field_validator
 
 from aijournal.common.base import StrictModel
-from aijournal.domain.claims import Scope
+from aijournal.domain.claims import Scope  # noqa: TC001
 from aijournal.domain.enums import ClaimMethod, ClaimStatus, ClaimType, FacetOperation
-from aijournal.domain.evidence import SourceRef
+from aijournal.domain.evidence import SourceRef  # noqa: TC001
 
 
 class ClaimAtomInput(StrictModel):

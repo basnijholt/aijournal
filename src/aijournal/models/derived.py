@@ -9,7 +9,7 @@ from aijournal.domain.advice import AdviceRecommendation as _AdviceRecommendatio
 from aijournal.domain.advice import AdviceReference as _AdviceReference
 from aijournal.domain.changes import ProfileUpdateProposals
 from aijournal.domain.claims import ClaimAtom
-from aijournal.domain.events import ClaimPreviewEvent
+from aijournal.domain.events import ClaimPreviewEvent  # noqa: TC001
 from aijournal.domain.facts import MicroFactsFile
 from aijournal.domain.persona import InterviewQuestion, InterviewSet, PersonaCore
 

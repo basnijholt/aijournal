@@ -7,7 +7,7 @@ from typing import Any
 from pydantic import Field
 
 from aijournal.common.base import StrictModel
-from aijournal.common.types import TimestampStr
+from aijournal.common.types import TimestampStr  # noqa: TC001
 
 
 class Section(StrictModel):

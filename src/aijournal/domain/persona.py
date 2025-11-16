@@ -7,7 +7,7 @@ from typing import Any
 from pydantic import Field
 
 from aijournal.common.base import StrictModel
-from aijournal.domain.claims import ClaimAtom
+from aijournal.domain.claims import ClaimAtom  # noqa: TC001
 
 
 class PersonaCore(StrictModel):

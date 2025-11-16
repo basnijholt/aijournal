@@ -8,7 +8,7 @@ from typing import Generic, TypeVar
 from pydantic import Field
 
 from .base import StrictModel
-from .types import TimestampStr
+from .types import TimestampStr  # noqa: TC001
 
 T = TypeVar("T")
 

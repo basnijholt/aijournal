@@ -18,7 +18,6 @@ from aijournal.commands.index import (
 from aijournal.common.command_runner import run_command_pipeline
 from aijournal.common.config_loader import load_config, use_fake_llm
 from aijournal.common.context import RunContext, create_run_context
-from aijournal.domain.chat import ChatTurn
 from aijournal.io.chat_sessions import ChatSessionRecorder
 from aijournal.services.chat import ChatService
 from aijournal.services.feedback import (
@@ -31,6 +30,8 @@ from aijournal.utils import time as time_utils
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
+
+    from aijournal.domain.chat import ChatTurn
 
 
 class ChatOptions(BaseModel):

@@ -5,8 +5,8 @@ from __future__ import annotations
 from pydantic import Field
 
 from aijournal.common.base import StrictModel
-from aijournal.common.types import TimestampStr
-from aijournal.domain.chat import ChatTelemetry
+from aijournal.common.types import TimestampStr  # noqa: TC001
+from aijournal.domain.chat import ChatTelemetry  # noqa: TC001
 
 
 class ChatTranscriptTurn(StrictModel):
