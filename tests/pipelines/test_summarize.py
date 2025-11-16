@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from collections.abc import Callable
-
 from aijournal.domain.facts import DailySummary
 from aijournal.domain.journal import NormalizedEntry
 from aijournal.models.authoritative import JournalSection
@@ -25,21 +23,11 @@ def test_generate_summary_uses_fake_path_when_requested() -> None:
     def request_factory() -> DailySummary:  # pragma: no cover - should not run
         raise AssertionError("request_factory should not be invoked for fake flows")
 
-    def structured_call(  # pragma: no cover - should not run
-        func: Callable[[], DailySummary],
-        *,
-        retries: int,
-        label: str,
-    ) -> DailySummary:
-        raise AssertionError(f"structured_call called unexpectedly ({label=}, {retries=})")
-
     summary_result = summarize.generate_summary(
         entries,
         "2024-01-02",
         use_fake_llm=True,
-        structured_call=structured_call,
         request_factory=request_factory,
-        retries=2,
     )
 
     assert summary_result.day == "2024-01-02"
@@ -56,31 +44,21 @@ def test_generate_summary_merges_llm_results_with_fallback() -> None:
         todo_candidates=["", "Review notes"],
     )
 
+    call_count = 0
+
     def request_factory() -> DailySummary:
+        nonlocal call_count
+        call_count += 1
         return response
-
-    call_args: dict[str, object] = {}
-
-    def structured_call(
-        func: Callable[[], DailySummary],
-        *,
-        retries: int,
-        label: str,
-    ) -> DailySummary:
-        call_args["retries"] = retries
-        call_args["label"] = label
-        return func()
 
     summary_result = summarize.generate_summary(
         entries,
         "2024-01-02",
         use_fake_llm=False,
-        structured_call=structured_call,
         request_factory=request_factory,
-        retries=3,
     )
 
-    assert call_args == {"retries": 3, "label": "summarize 2024-01-02"}
+    assert call_count == 1
     assert summary_result.day == "2024-01-02"
     assert summary_result.bullets == ["Refined insight"]
     assert summary_result.highlights == ["Refined insight"]

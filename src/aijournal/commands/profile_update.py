@@ -122,7 +122,6 @@ def run_profile_update(
         build_claim_preview=preview_builder,
         normalize_claims=_normalize_claim_proposals,
         invoke_structured_llm=_invoke_structured_llm,
-        structured_call=_default_structured_call,
     )
 
 
@@ -135,7 +134,6 @@ def run_profile_update_command(
     ],
     normalize_claims: Callable[..., list[ClaimProposal]],
     invoke_structured_llm: Callable[..., BaseModel],
-    structured_call: Callable[..., BaseModel],
 ) -> Path:
     def _prepare(_: RunContext, opts: ProfileUpdateOptions) -> ProfileUpdatePrepared:
         entries_with_paths = _load_entries_with_paths(ctx.workspace, ctx.config, opts.date)
@@ -245,10 +243,7 @@ def run_profile_update_command(
                 prepared.profile,
                 prepared.claim_models,
                 use_fake_llm=ctx.use_fake_llm,
-                structured_call=structured_call,
                 request_factory=request_profile_update,
-                retries=ctx.config.llm.retries,
-                label=f"profile_update {prepared.date}",
                 context=context,
                 claim_timestamp=claim_timestamp,
                 build_claim=_build_claim_atom_from_entry,
@@ -323,13 +318,6 @@ def run_profile_update_command(
         invoke_pipeline=_invoke,
         persist_output=_persist,
     )
-
-
-def _default_structured_call(
-    func: Callable[[], ProfileUpdateProposals], *, retries: int, label: str
-) -> ProfileUpdateProposals:
-    del retries, label  # Function already handles retries internally.
-    return func()
 
 
 def _normalize_claim_proposals(

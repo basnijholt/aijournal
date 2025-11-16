@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -39,17 +38,6 @@ def test_generate_microfacts_uses_fake_pipeline(monkeypatch: pytest.MonkeyPatch)
     entry = _normalized_entry("entry-1")
     context = _characterization_context("entry-1")
 
-    called: dict[str, bool] = {"structured": False}
-
-    def structured_call(  # pragma: no cover - fake mode should skip
-        func: Callable[[], MicroFactsFile],
-        *,
-        retries: int,
-        label: str,
-    ) -> MicroFactsFile:
-        called["structured"] = True
-        return func()
-
     def request_factory() -> MicroFactsFile:  # pragma: no cover - fake mode should skip
         raise AssertionError("request_factory should not run in fake mode")
 
@@ -57,15 +45,12 @@ def test_generate_microfacts_uses_fake_pipeline(monkeypatch: pytest.MonkeyPatch)
         [entry],
         "2024-01-02",
         use_fake_llm=True,
-        structured_call=structured_call,
         request_factory=request_factory,
-        retries=2,
         context=context,
         manifest_index={},
         microfact_index=None,
     )
 
-    assert not called["structured"]
     assert result.facts  # fake generator returns deterministic facts
 
 
@@ -114,19 +99,11 @@ def test_generate_microfacts_merges_llm_and_derived(monkeypatch: pytest.MonkeyPa
         ],
     )
 
-    call_args: dict[str, object] = {}
-
-    def structured_call(
-        func: Callable[[], MicroFactsFile],
-        *,
-        retries: int,
-        label: str,
-    ) -> MicroFactsFile:
-        call_args["retries"] = retries
-        call_args["label"] = label
-        return func()
+    call_count = 0
 
     def request_factory() -> MicroFactsFile:
+        nonlocal call_count
+        call_count += 1
         return response
 
     fixed_now = datetime(2024, 1, 2, 10, 0, tzinfo=UTC)
@@ -136,15 +113,13 @@ def test_generate_microfacts_merges_llm_and_derived(monkeypatch: pytest.MonkeyPa
         [entry],
         "2024-01-02",
         use_fake_llm=False,
-        structured_call=structured_call,
         request_factory=request_factory,
-        retries=3,
         context=context,
         manifest_index={"entry-1": manifest_entry},
         microfact_index=None,
     )
 
-    assert call_args == {"retries": 3, "label": "facts 2024-01-02"}
+    assert call_count == 1
     assert len(result.facts) == 1
     # LLM claim duplicates derived claim, ensure deduplicated
     assert len(result.claim_proposals) == 1
@@ -165,14 +140,6 @@ def _run_custom_microfacts(
 ) -> MicroFactsFile:
     context = _characterization_context(entry.id or "entry-1")
 
-    def structured_call(
-        func: Callable[[], MicroFactsFile],
-        *,
-        retries: int,
-        label: str,
-    ) -> MicroFactsFile:
-        return func()
-
     def request_factory() -> MicroFactsFile:
         return MicroFactsFile(
             facts=[
@@ -192,9 +159,7 @@ def _run_custom_microfacts(
         [entry],
         date,
         use_fake_llm=False,
-        structured_call=structured_call,
         request_factory=request_factory,
-        retries=1,
         context=context,
         manifest_index={},
         microfact_index=microfact_index,

@@ -23,7 +23,6 @@ from aijournal.pipelines import normalization
 from aijournal.services.microfacts import MicrofactIndex, MicrofactRecord
 from aijournal.utils import time as time_utils
 
-StructuredCall = Callable[..., Any]
 FactsRequestFactory = Callable[[], MicroFactsFile]
 
 
@@ -448,9 +447,7 @@ def generate_microfacts(
     date: str,
     *,
     use_fake_llm: bool,
-    structured_call: StructuredCall,
     request_factory: FactsRequestFactory,
-    retries: int,
     context: tuple[list[str], list[str], list[ClaimSource]],
     manifest_index: dict[str, ManifestEntry],
     microfact_index: MicrofactIndex | None = None,
@@ -464,10 +461,7 @@ def generate_microfacts(
     if use_fake_llm:
         generated = MicroFactsFile(facts=fake_microfacts(entries))
     else:
-        response = cast(
-            MicroFactsFile,
-            structured_call(request_factory, retries=retries, label=f"facts {date}"),
-        )
+        response = cast(MicroFactsFile, request_factory())
         generated = response
 
     facts_model = MicroFactsFile.model_validate(generated.model_dump(mode="python"))

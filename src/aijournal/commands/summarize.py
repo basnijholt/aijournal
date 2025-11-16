@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path
@@ -291,11 +291,9 @@ def _summarize_day_payload(
     config: AppConfig,
     *,
     workspace: Path,
-    structured_call: Callable[..., BaseModel] | None = None,
     use_fake_llm_override: bool | None = None,
     prompt_set: str | None = None,
 ) -> DailySummary:
-    structured = structured_call or (lambda func, *, retries, label: func())
     fake_mode = use_fake_llm_override if use_fake_llm_override is not None else use_fake_llm()
 
     def request_summary() -> DailySummary:
@@ -318,9 +316,7 @@ def _summarize_day_payload(
         entries,
         date,
         use_fake_llm=fake_mode,
-        structured_call=structured,
         request_factory=request_summary,
-        retries=config.llm.retries,
     )
 
 

@@ -3,13 +3,12 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
-from typing import Any, cast
+from typing import cast
 
 from aijournal.domain.facts import DailySummary
 from aijournal.domain.journal import NormalizedEntry
 from aijournal.fakes import fake_summarize
 
-StructuredCall = Callable[..., Any]
 ResponseFactory = Callable[[], DailySummary]
 
 
@@ -26,9 +25,7 @@ def generate_summary(
     date: str,
     *,
     use_fake_llm: bool,
-    structured_call: StructuredCall,
     request_factory: ResponseFactory,
-    retries: int,
 ) -> DailySummary:
     """Produce a `DailySummary` for the given date."""
 
@@ -38,10 +35,7 @@ def generate_summary(
     if use_fake_llm:
         return fallback_model()
 
-    response = cast(
-        DailySummary,
-        structured_call(request_factory, retries=retries, label=f"summarize {date}"),
-    )
+    response = cast(DailySummary, request_factory())
 
     bullets = [item for item in response.bullets if item]
     highlights = [item for item in response.highlights if item]
