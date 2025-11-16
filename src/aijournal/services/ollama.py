@@ -532,13 +532,8 @@ def run_ollama_agent(
     created_at = time_utils.format_timestamp(time_utils.now())
 
     attempts = 1
-    if hasattr(result, "usage") and callable(result.usage):
-        try:
-            usage = result.usage()
-        except Exception:  # pragma: no cover - defensive
-            usage = None
-        if usage is not None:
-            attempts = getattr(usage, "requests", 0) or 1
+    usage = result.usage()
+    attempts = usage.requests or 1
     repair_attempts = max(0, attempts - 1)
 
     result_payload = LLMResult[_PayloadT](
