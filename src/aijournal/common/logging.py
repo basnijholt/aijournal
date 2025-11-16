@@ -35,6 +35,7 @@ class StructuredLogger:
     enabled: bool = True
 
     def __post_init__(self) -> None:
+        """Ensure the log directory exists when logging is enabled."""
         if self.enabled:
             self.path.parent.mkdir(parents=True, exist_ok=True)
 

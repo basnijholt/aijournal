@@ -50,6 +50,7 @@ class _FakeAgent:
 
         text = self._texts[min(self.calls, len(self._texts) - 1)]
         self.calls += 1
+        payload: object | None = None
 
         try:
             if isinstance(output_type, type) and issubclass(output_type, BaseModel):
@@ -58,12 +59,14 @@ class _FakeAgent:
                 return _FakeResult(validated, self.calls)
             if output_type is dict:
                 payload = json.loads(text)
-                if not isinstance(payload, dict):
-                    msg = "expected dict payload"
-                    raise ValueError(msg)
-                return _FakeResult(payload, self.calls)
         except Exception as exc:  # pragma: no cover - helper safety
             raise UnexpectedModelBehavior(str(exc)) from exc
+
+        if output_type is dict:
+            if not isinstance(payload, dict):
+                msg = "expected dict payload"
+                raise UnexpectedModelBehavior(msg)
+            return _FakeResult(payload, self.calls)
 
         return _FakeResult(text, self.calls)
 

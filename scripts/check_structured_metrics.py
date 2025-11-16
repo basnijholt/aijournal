@@ -21,6 +21,7 @@ class MetricsSummary:
     coercions: int = 0
 
     def __iadd__(self, other: MetricsSummary) -> Self:  # pragma: no cover - convenience
+        """Accumulate counters from another summary in-place."""
         self.calls += other.calls
         self.repair_attempts += other.repair_attempts
         self.coercions += other.coercions
@@ -31,8 +32,8 @@ def _load_metrics(path: Path) -> Iterable[dict[str, object]]:
     if not path.exists():
         return []
     entries: list[dict[str, object]] = []
-    for line in path.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
         if not line:
             continue
         try:

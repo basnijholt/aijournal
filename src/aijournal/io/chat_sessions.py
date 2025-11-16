@@ -34,6 +34,7 @@ class ChatSessionRecorder:
     session_id: str
 
     def __post_init__(self) -> None:
+        """Initialize output directories for transcript artifacts."""
         self.session_dir = self.root / "derived" / "chat_sessions" / self.session_id.strip()
         self.session_dir.mkdir(parents=True, exist_ok=True)
         self._transcript = self.session_dir / "transcript.json"
@@ -91,7 +92,7 @@ class ChatSessionRecorder:
                 meta=meta,
                 data=transcript,
             ),
-            format="json",
+            file_format="json",
         )
 
     # ------------------------------------------------------------------

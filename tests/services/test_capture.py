@@ -541,7 +541,7 @@ def test_run_capture_rebuild_always_forces_refresh(
 def test_run_capture_requires_text(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.chdir(tmp_path)
     inputs = CaptureInput(source="stdin")
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="requires non-empty text"):
         run_capture(inputs)
 
 

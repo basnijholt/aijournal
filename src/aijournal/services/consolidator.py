@@ -188,7 +188,7 @@ class ClaimConsolidator:
                 signature=ClaimSignature.from_atom(existing),
             )
 
-        return self._handle_conflict(claims, index, existing, incoming, signature)
+        return self._handle_conflict(claims, existing, incoming)
 
     def _find_existing_index(
         self,
@@ -286,10 +286,8 @@ class ClaimConsolidator:
     def _handle_conflict(
         self,
         claims: list[ClaimAtom],
-        index: int,
         existing: ClaimAtom,
         incoming: ClaimAtom,
-        signature: ClaimSignature,
     ) -> ClaimMergeOutcome:
         scoped_outcome = self._attempt_scope_split(claims, existing, incoming)
         if scoped_outcome is not None:

@@ -113,7 +113,7 @@ def _generate_fake_entries(
         return (0, 0)
 
     rng_seed = seed if seed is not None else int(time_utils.now().timestamp())
-    rng = random.Random(rng_seed)
+    rng = random.Random(rng_seed)  # noqa: S311 - deterministic sample generation
     base_dt = time_utils.now()
     base_day = base_dt.date()
     enforced_tags = list(override_tags or [])

@@ -327,10 +327,10 @@ def _format_claims(claims: list[ClaimAtom], options: PersonaExportOptions) -> li
 
 def _claim_rng(options: PersonaExportOptions) -> random.Random:
     if options.seed is not None:
-        return random.Random(options.seed)
+        return random.Random(options.seed)  # noqa: S311 - deterministic ordering for exports
     if options.deterministic:
-        return random.Random(0)
-    return random.Random()
+        return random.Random(0)  # noqa: S311 - deterministic ordering for exports
+    return random.Random()  # noqa: S311 - non-cryptographic shuffle for readability
 
 
 def _claim_sort_key(claim: ClaimAtom, mode: str) -> tuple:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol
 
@@ -16,6 +17,8 @@ from aijournal.io.artifacts import load_artifact_data
 from aijournal.io.yaml_io import load_yaml_model
 from aijournal.models.authoritative import ManifestEntry
 from aijournal.models.derived import ProfileUpdateBatch
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Sequence
@@ -714,7 +717,8 @@ def _load_manifest(root: Path) -> list[ManifestEntry]:
     for item in raw:
         try:
             entries.append(ManifestEntry.model_validate(item))
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Failed to validate manifest entry: %s", exc)
             continue
     return entries
 
@@ -731,7 +735,8 @@ def _normalized_ids(root: Path) -> set[str]:
     for yaml_file in normalized_root.rglob("*.yaml"):
         try:
             entry = load_yaml_model(yaml_file, NormalizedEntry)
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Failed to load normalized entry %s: %s", yaml_file, exc)
             continue
         if entry.id:
             ids.add(entry.id)

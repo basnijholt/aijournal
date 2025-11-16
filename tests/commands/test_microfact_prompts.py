@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 from aijournal.commands import profile_update as profile_update_module
 from aijournal.common.app_config import AppConfig
 from aijournal.domain.facts import ConsolidatedMicroFact, ConsolidatedMicrofactsFile
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def _sample_consolidated() -> ConsolidatedMicrofactsFile:
@@ -32,7 +35,7 @@ def _sample_consolidated() -> ConsolidatedMicrofactsFile:
     )
 
 
-def test_profile_update_consolidated_payload(monkeypatch) -> None:
+def test_profile_update_consolidated_payload(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr(
         profile_update_module,
         "load_consolidated_microfacts",
@@ -54,17 +57,20 @@ def test_profile_update_consolidated_payload(monkeypatch) -> None:
         ],
     )
 
-    payload = profile_update_module._load_consolidated_facts_json(Path("/tmp"), AppConfig())
+    payload = profile_update_module._load_consolidated_facts_json(tmp_path, AppConfig())
     consolidated_payload = json.loads(payload)
     assert consolidated_payload["facts"][0]["observation_count"] == 3
 
 
-def test_profile_update_consolidated_payload_missing_snapshot(monkeypatch) -> None:
+def test_profile_update_consolidated_payload_missing_snapshot(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
     monkeypatch.setattr(
         profile_update_module,
         "load_consolidated_microfacts",
         lambda workspace, config: None,
     )
 
-    payload = profile_update_module._load_consolidated_facts_json(Path("/tmp"), AppConfig())
+    payload = profile_update_module._load_consolidated_facts_json(tmp_path, AppConfig())
     assert payload == "{}"

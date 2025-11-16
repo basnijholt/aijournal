@@ -164,6 +164,19 @@ def fake_profile_proposals(
     claim_proposals: list[ClaimProposal] = []
     facet_changes: list[FacetChange] = []
 
+    if claims:
+        seed_claim = claims[0]
+        facet_changes.append(
+            FacetChange(
+                path="values.focus.primary_statement",
+                operation=FacetOperation.SET,
+                value=seed_claim.statement,
+                method="inferred",
+                confidence=seed_claim.strength,
+                rationale="Seeded from existing claim to keep fake persona coherent.",
+            ),
+        )
+
     for entry in entries[:1]:
         statement = entry.title or "New observation"
         claim_id = f"auto_{entry.id or 'entry'}"

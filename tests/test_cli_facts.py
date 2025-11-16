@@ -90,7 +90,8 @@ def test_facts_generates_microfacts(
     assert "section" in statement.lower()
     assert "meta" not in data
     proposals = data.get("claim_proposals", [])
-    assert isinstance(proposals, list) and proposals, "Expected claim proposals from micro-facts"
+    assert isinstance(proposals, list), "Expected claim proposals list"
+    assert proposals, "Expected claim proposals from micro-facts"
     proposal = proposals[0]
     assert "sync notes" in proposal["statement"].lower()
     assert proposal.get("normalized_ids") == [ENTRY_ID]

@@ -45,7 +45,6 @@ def graceful_summarize(
             workspace=workspace,
             config=config,
         )
-        return summary_path, None
     except typer.Exit as exc:
         if exc.exit_code == 0:
             # Exit code 0 is success, shouldn't happen but handle it
@@ -56,6 +55,8 @@ def graceful_summarize(
         return None, f"summarize exited with code {exc.exit_code}"
     except Exception as exc:
         return None, f"summarize failed: {exc}"
+    else:
+        return summary_path, None
 
 
 def graceful_facts(
@@ -85,7 +86,6 @@ def graceful_facts(
             workspace=workspace,
             config=config,
         )
-        return facts_path, None
     except typer.Exit as exc:
         if exc.exit_code == 0:
             return None, None
@@ -95,6 +95,8 @@ def graceful_facts(
         return None, f"facts extraction exited with code {exc.exit_code}"
     except Exception as exc:
         return None, f"facts extraction failed: {exc}"
+    else:
+        return facts_path, None
 
 
 def graceful_profile_update(
@@ -116,7 +118,6 @@ def graceful_profile_update(
             workspace=workspace,
             config=config,
         )
-        return batch_path, None
     except typer.Exit as exc:
         if exc.exit_code == 0:
             return None, None
@@ -125,3 +126,5 @@ def graceful_profile_update(
         return None, f"profile update exited with code {exc.exit_code}"
     except Exception as exc:
         return None, f"profile update failed: {exc}"
+    else:
+        return batch_path, None

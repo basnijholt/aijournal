@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 from aijournal.ingest_agent import IngestResult, IngestSection
 from aijournal.pipelines import normalization
@@ -28,7 +31,7 @@ def test_merge_sections_deduplicates_and_falls_back() -> None:
     assert headings == ["Overview", "Plan", "Details"]
 
 
-def test_normalized_from_structured_sanitizes_and_merges() -> None:
+def test_normalized_from_structured_sanitizes_and_merges(tmp_path: Path) -> None:
     structured = IngestResult(
         entry_id="focus-session",
         created_at=datetime(2024, 1, 2, 12, 30, tzinfo=UTC),
@@ -44,7 +47,7 @@ def test_normalized_from_structured_sanitizes_and_merges() -> None:
     normalized, date_str = normalization.normalized_from_structured(
         structured,
         source_path="workspace/data/journal/entry.md",
-        root=Path("/tmp"),
+        root=tmp_path,
         digest="deadbeefcafebabe",
         source_type="markdown",
         fallback_sections=[{"heading": "Fallback"}],

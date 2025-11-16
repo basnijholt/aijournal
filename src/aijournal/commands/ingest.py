@@ -118,7 +118,7 @@ def _write_yaml_if_changed(
             validate_schema(schema, data)
         except SchemaValidationError as exc:
             typer.secho(str(exc), fg=typer.colors.RED, err=True)
-            raise typer.Exit(1)
+            raise typer.Exit(1) from exc
 
     existing = _load_existing_yaml(path)
     if existing == data:
@@ -199,9 +199,10 @@ def _parse_datetime(value: str) -> datetime | None:
         dt = datetime.fromisoformat(candidate)
         if dt.tzinfo is None:
             dt = dt.replace(tzinfo=UTC)
-        return dt
     except ValueError:
         return None
+    else:
+        return dt
 
 
 def _fake_structured_entry(entry_path: Path) -> IngestResult:
@@ -386,7 +387,7 @@ def _invoke_ingest_pipeline(ctx: RunContext, prepared: IngestPrepared) -> Ingest
                 err=True,
             )
             ctx.emit(event="ingest_agent_error", error=str(exc))
-            raise typer.Exit(1)
+            raise typer.Exit(1) from exc
 
     logs: list[IngestLogEntry] = []
 

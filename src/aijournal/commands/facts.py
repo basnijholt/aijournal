@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -10,10 +10,7 @@ from typing import TYPE_CHECKING
 import typer
 from pydantic import BaseModel, ConfigDict
 
-from aijournal.commands.ingest import (
-    _load_manifest,
-    _manifest_path,
-)
+from aijournal.commands.ingest import _load_manifest, _manifest_path
 from aijournal.commands.profile import load_profile_components
 from aijournal.commands.summarize import (
     _build_meta,
@@ -36,6 +33,8 @@ from aijournal.services.summaries import SummaryNotFoundError, load_daily_summar
 from aijournal.utils import time as time_utils
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable, Sequence
+
     from aijournal.common.app_config import AppConfig
     from aijournal.common.context import RunContext
     from aijournal.domain.journal import NormalizedEntry

@@ -420,6 +420,7 @@ def _run_context(
     Args:
         command: Command name
         workspace: Workspace directory (defaults to _get_workspace())
+        config: Optional `AppConfig` override (defaults to workspace config)
 
     Returns:
         Configured RunContext
@@ -987,7 +988,7 @@ def normalize(
         frontmatter, sections, body = _parse_entry(entry)
     except ValueError as err:
         typer.secho(str(err), fg=typer.colors.RED, err=True)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from err
 
     entry_id_value = frontmatter.get("id")
     created_value = frontmatter.get("created_at")

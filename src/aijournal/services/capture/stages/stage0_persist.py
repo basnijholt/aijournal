@@ -1,3 +1,5 @@
+"""Stage 0: persist raw journal entries before processing."""
+
 from __future__ import annotations
 
 import re

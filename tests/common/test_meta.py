@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pytest
+from pydantic import ValidationError
 
 from aijournal.common.base import StrictModel
 from aijournal.common.meta import Artifact, ArtifactKind, ArtifactMeta, LLMResult
@@ -11,7 +12,7 @@ class _Payload(StrictModel):
 
 
 def test_artifact_meta_requires_timestamp() -> None:
-    with pytest.raises(Exception):
+    with pytest.raises(ValidationError, match="created_at"):
         ArtifactMeta.model_validate({})
 
 

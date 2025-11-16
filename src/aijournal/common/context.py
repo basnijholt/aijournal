@@ -5,7 +5,7 @@ from __future__ import annotations
 import secrets
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, ContextManager
+from typing import TYPE_CHECKING, Any
 
 from aijournal.common.app_config import AppConfig
 from aijournal.common.config_loader import resolve_prompt_set
@@ -19,6 +19,7 @@ from aijournal.utils import time as time_utils
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
+    from contextlib import AbstractContextManager
 
 
 def _trace_path(workspace: Path, config: AppConfig) -> Path:
@@ -50,7 +51,7 @@ class RunContext:
     def emit(self, **event: Any) -> None:
         self.logger.emit(**event)
 
-    def span(self, step: str, **fields: Any) -> ContextManager[None]:
+    def span(self, step: str, **fields: Any) -> AbstractContextManager[None]:
         return self.logger.span(step, **fields)
 
 
@@ -75,6 +76,7 @@ def create_run_context(
         trace: Whether to enable trace logging
         verbose_json: Whether to enable verbose JSON logging
         sinks: Optional additional log sinks
+        prompt_set: Explicit prompt set override (skips config/env resolution)
 
     Returns:
         Configured RunContext

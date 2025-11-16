@@ -232,30 +232,30 @@ def _unwrap_optional(annotation: Any) -> Any:
 def _field_skeleton(annotation: Any) -> Any:
     annotation = _unwrap_optional(annotation)
     origin = get_origin(annotation)
+    result: Any
 
     if isinstance(annotation, type) and issubclass(annotation, BaseModel):
-        return _model_skeleton(annotation)
-
-    if origin in {list, tuple, set}:
+        result = _model_skeleton(annotation)
+    elif origin in {list, tuple, set}:
         args = get_args(annotation)
         element_annotation = args[0] if args else Any
-        return [_field_skeleton(element_annotation)]
-
-    if origin in {dict, Mapping}:
+        result = [_field_skeleton(element_annotation)]
+    elif origin in {dict, Mapping}:
         args = get_args(annotation)
         value_annotation = args[1] if len(args) == 2 else Any
-        return {"key": _field_skeleton(value_annotation)}
+        result = {"key": _field_skeleton(value_annotation)}
+    elif annotation in {str, bytes}:
+        result = ""
+    elif annotation is int:
+        result = 0
+    elif annotation is float:
+        result = 0.0
+    elif annotation is bool:
+        result = False
+    else:
+        result = None
 
-    if annotation in {str, bytes}:
-        return ""
-    if annotation is int:
-        return 0
-    if annotation is float:
-        return 0.0
-    if annotation is bool:
-        return False
-
-    return None
+    return result
 
 
 def _model_skeleton(model: type[BaseModel]) -> dict[str, Any]:
@@ -383,18 +383,20 @@ def _attempt_model_validation(
 ) -> tuple[BaseModel | None, list[dict[str, str]], list[dict[str, Any]]]:
     try:
         validated = model.model_validate(payload)
-        return validated, [], []
     except ValidationError as exc:
         errors = cast(list[dict[str, Any]], exc.errors())
         coerced_payload, coercions = _coerce_payload_for_model(payload, model)
         if coercions:
             try:
                 validated = model.model_validate(coerced_payload)
-                return validated, coercions, []
             except ValidationError as coercion_exc:
                 coerced_errors = cast(list[dict[str, Any]], coercion_exc.errors())
                 return None, coercions, coerced_errors
+            else:
+                return validated, coercions, []
         return None, [], errors
+    else:
+        return validated, [], []
 
 
 def _failure_log_dir(label: str | None) -> Path:
