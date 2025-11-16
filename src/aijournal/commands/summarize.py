@@ -295,9 +295,9 @@ def _summarize_day_payload(
     prompt_set: str | None = None,
 ) -> DailySummary:
     fake_mode = use_fake_llm_override if use_fake_llm_override is not None else use_fake_llm()
-
-    def request_summary() -> DailySummary:
-        return cast(
+    llm_summary: DailySummary | None = None
+    if not fake_mode:
+        llm_summary = cast(
             DailySummary,
             _invoke_structured_llm(
                 "prompts/summarize_day.md",
@@ -316,7 +316,7 @@ def _summarize_day_payload(
         entries,
         date,
         use_fake_llm=fake_mode,
-        request_factory=request_summary,
+        llm_summary=llm_summary,
     )
 
 

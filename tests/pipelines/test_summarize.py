@@ -27,7 +27,7 @@ def test_generate_summary_uses_fake_path_when_requested() -> None:
         entries,
         "2024-01-02",
         use_fake_llm=True,
-        request_factory=request_factory,
+        llm_summary=None,
     )
 
     assert summary_result.day == "2024-01-02"
@@ -44,21 +44,12 @@ def test_generate_summary_merges_llm_results_with_fallback() -> None:
         todo_candidates=["", "Review notes"],
     )
 
-    call_count = 0
-
-    def request_factory() -> DailySummary:
-        nonlocal call_count
-        call_count += 1
-        return response
-
     summary_result = summarize.generate_summary(
         entries,
         "2024-01-02",
         use_fake_llm=False,
-        request_factory=request_factory,
+        llm_summary=response,
     )
-
-    assert call_count == 1
     assert summary_result.day == "2024-01-02"
     assert summary_result.bullets == ["Refined insight"]
     assert summary_result.highlights == ["Refined insight"]

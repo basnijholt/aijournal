@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from typing import cast
 
 from aijournal.domain.facts import DailySummary
 from aijournal.domain.journal import NormalizedEntry
 from aijournal.fakes import fake_summarize
-
-ResponseFactory = Callable[[], DailySummary]
 
 
 def _todo_from_entries(entries: Sequence[NormalizedEntry]) -> list[str]:
@@ -25,7 +23,7 @@ def generate_summary(
     date: str,
     *,
     use_fake_llm: bool,
-    request_factory: ResponseFactory,
+    llm_summary: DailySummary | None,
 ) -> DailySummary:
     """Produce a `DailySummary` for the given date."""
 
@@ -35,7 +33,11 @@ def generate_summary(
     if use_fake_llm:
         return fallback_model()
 
-    response = cast(DailySummary, request_factory())
+    if llm_summary is None:
+        msg = "llm_summary must be provided when fake mode is disabled"
+        raise ValueError(msg)
+
+    response = cast(DailySummary, llm_summary)
 
     bullets = [item for item in response.bullets if item]
     highlights = [item for item in response.highlights if item]

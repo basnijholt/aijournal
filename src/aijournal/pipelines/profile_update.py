@@ -15,7 +15,6 @@ from aijournal.fakes import fake_profile_proposals
 from aijournal.pipelines import facts as facts_pipeline
 from aijournal.utils.coercion import coerce_float, coerce_int
 
-RequestFactory = Callable[[], ProfileUpdateProposals]
 NormalizeClaims = Callable[..., list[ClaimProposal]]
 NormalizeFacets = Callable[..., list[FacetChange]]
 BuildClaim = Callable[..., ClaimAtom]
@@ -72,7 +71,7 @@ def generate_profile_update(
     claims: Sequence[ClaimAtom],
     *,
     use_fake_llm: bool,
-    request_factory: RequestFactory,
+    llm_proposals: ProfileUpdateProposals | None,
     context: tuple[list[str], list[str], list[ClaimSource]],
     claim_timestamp: str,
     build_claim: BuildClaim,
@@ -86,7 +85,11 @@ def generate_profile_update(
         prompts = list(fake.interview_prompts)
         return fake, prompts
 
-    response = cast(ProfileUpdateProposals, request_factory())
+    if llm_proposals is None:
+        msg = "llm_proposals must be provided when fake mode is disabled"
+        raise ValueError(msg)
+
+    response = cast(ProfileUpdateProposals, llm_proposals)
 
     raw_claims = [proposal.model_dump(mode="python") for proposal in response.claims]
     raw_facets = [proposal.model_dump(mode="python") for proposal in response.facets]

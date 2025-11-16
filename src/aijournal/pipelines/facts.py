@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Iterable, Sequence
 from typing import Any, cast
 
 from pydantic import ValidationError
@@ -22,8 +22,6 @@ from aijournal.models.authoritative import ManifestEntry
 from aijournal.pipelines import normalization
 from aijournal.services.microfacts import MicrofactIndex, MicrofactRecord
 from aijournal.utils import time as time_utils
-
-FactsRequestFactory = Callable[[], MicroFactsFile]
 
 
 def merge_unique(existing: Iterable[str], extras: Iterable[str]) -> list[str]:
@@ -447,7 +445,7 @@ def generate_microfacts(
     date: str,
     *,
     use_fake_llm: bool,
-    request_factory: FactsRequestFactory,
+    llm_microfacts: MicroFactsFile | None,
     context: tuple[list[str], list[str], list[ClaimSource]],
     manifest_index: dict[str, ManifestEntry],
     microfact_index: MicrofactIndex | None = None,
@@ -461,8 +459,10 @@ def generate_microfacts(
     if use_fake_llm:
         generated = MicroFactsFile(facts=fake_microfacts(entries))
     else:
-        response = cast(MicroFactsFile, request_factory())
-        generated = response
+        if llm_microfacts is None:
+            msg = "llm_microfacts must be provided when fake mode is disabled"
+            raise ValueError(msg)
+        generated = cast(MicroFactsFile, llm_microfacts)
 
     facts_model = MicroFactsFile.model_validate(generated.model_dump(mode="python"))
     raw_claim_candidates: Iterable[Any] = [

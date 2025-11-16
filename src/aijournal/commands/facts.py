@@ -179,7 +179,8 @@ def invoke_pipeline(ctx: RunContext, prepared: FactsPrepared) -> FactsResult:
         fake_mode=ctx.use_fake_llm,
     )
 
-    def request_microfacts() -> MicroFactsFile:
+    llm_microfacts: MicroFactsFile | None = None
+    if not ctx.use_fake_llm:
         llm_response = cast(
             PromptMicroFacts,
             _invoke_structured_llm(
@@ -197,13 +198,13 @@ def invoke_pipeline(ctx: RunContext, prepared: FactsPrepared) -> FactsResult:
                 prompt_set=ctx.prompt_set,
             ),
         )
-        return convert_prompt_microfacts(llm_response)
+        llm_microfacts = convert_prompt_microfacts(llm_response)
 
     facts_data = facts_pipeline.generate_microfacts(
         prepared.entries,
         prepared.date,
         use_fake_llm=ctx.use_fake_llm,
-        request_factory=request_microfacts,
+        llm_microfacts=llm_microfacts,
         context=context,
         manifest_index=prepared.manifest_index,
         microfact_index=microfact_index,

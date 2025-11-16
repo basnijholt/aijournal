@@ -237,13 +237,17 @@ def run_profile_update_command(
                 entry_hash_lookup=entry_hash_lookup,
             )
 
+        llm_proposals: ProfileUpdateProposals | None = None
+        if not ctx.use_fake_llm:
+            llm_proposals = request_profile_update()
+
         try:
             proposals_model, interview_prompts = profile_update_pipeline.generate_profile_update(
                 entries,
                 prepared.profile,
                 prepared.claim_models,
                 use_fake_llm=ctx.use_fake_llm,
-                request_factory=request_profile_update,
+                llm_proposals=llm_proposals,
                 context=context,
                 claim_timestamp=claim_timestamp,
                 build_claim=_build_claim_atom_from_entry,

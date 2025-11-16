@@ -34,18 +34,15 @@ def _characterization_context(
     return ([entry_id], ["manifest-1"], [ClaimSource(entry_id=entry_id, spans=[])])
 
 
-def test_generate_microfacts_uses_fake_pipeline(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_generate_microfacts_uses_fake_pipeline() -> None:
     entry = _normalized_entry("entry-1")
     context = _characterization_context("entry-1")
-
-    def request_factory() -> MicroFactsFile:  # pragma: no cover - fake mode should skip
-        raise AssertionError("request_factory should not run in fake mode")
 
     result = facts_pipeline.generate_microfacts(
         [entry],
         "2024-01-02",
         use_fake_llm=True,
-        request_factory=request_factory,
+        llm_microfacts=None,
         context=context,
         manifest_index={},
         microfact_index=None,
@@ -99,13 +96,6 @@ def test_generate_microfacts_merges_llm_and_derived(monkeypatch: pytest.MonkeyPa
         ],
     )
 
-    call_count = 0
-
-    def request_factory() -> MicroFactsFile:
-        nonlocal call_count
-        call_count += 1
-        return response
-
     fixed_now = datetime(2024, 1, 2, 10, 0, tzinfo=UTC)
     monkeypatch.setattr("aijournal.utils.time.now", lambda: fixed_now)
 
@@ -113,13 +103,12 @@ def test_generate_microfacts_merges_llm_and_derived(monkeypatch: pytest.MonkeyPa
         [entry],
         "2024-01-02",
         use_fake_llm=False,
-        request_factory=request_factory,
+        llm_microfacts=response,
         context=context,
         manifest_index={"entry-1": manifest_entry},
         microfact_index=None,
     )
 
-    assert call_count == 1
     assert len(result.facts) == 1
     # LLM claim duplicates derived claim, ensure deduplicated
     assert len(result.claim_proposals) == 1
@@ -140,8 +129,11 @@ def _run_custom_microfacts(
 ) -> MicroFactsFile:
     context = _characterization_context(entry.id or "entry-1")
 
-    def request_factory() -> MicroFactsFile:
-        return MicroFactsFile(
+    return facts_pipeline.generate_microfacts(
+        [entry],
+        date,
+        use_fake_llm=False,
+        llm_microfacts=MicroFactsFile(
             facts=[
                 MicroFact(
                     id=f"{entry.id}-fact",
@@ -153,13 +145,7 @@ def _run_custom_microfacts(
                 )
             ],
             claim_proposals=[],
-        )
-
-    return facts_pipeline.generate_microfacts(
-        [entry],
-        date,
-        use_fake_llm=False,
-        request_factory=request_factory,
+        ),
         context=context,
         manifest_index={},
         microfact_index=microfact_index,
