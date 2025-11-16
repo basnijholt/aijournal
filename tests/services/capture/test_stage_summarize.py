@@ -1,12 +1,15 @@
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING, Never
 
 import typer
 
 from aijournal.common.app_config import AppConfig
 from aijournal.services.capture import CaptureInput
 from aijournal.services.capture.stages import stage2_summarize
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def _make_inputs() -> CaptureInput:
@@ -33,7 +36,10 @@ def test_stage2_summarize_success(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr("aijournal.commands.summarize.run_summarize", fake_run)
 
     outputs = stage2_summarize.run_summarize_stage_2(
-        ["2025-10-27"], _make_inputs(), tmp_path, AppConfig()
+        ["2025-10-27"],
+        _make_inputs(),
+        tmp_path,
+        AppConfig(),
     )
 
     assert called == ["2025-10-27"]
@@ -43,13 +49,16 @@ def test_stage2_summarize_success(tmp_path: Path, monkeypatch) -> None:
 
 
 def test_stage2_summarize_handles_failure(tmp_path: Path, monkeypatch) -> None:
-    def failing_run(*args, **kwargs):
+    def failing_run(*args, **kwargs) -> Never:
         raise typer.Exit(1)
 
     monkeypatch.setattr("aijournal.commands.summarize.run_summarize", failing_run)
 
     outputs = stage2_summarize.run_summarize_stage_2(
-        ["2025-10-27"], _make_inputs(), tmp_path, AppConfig()
+        ["2025-10-27"],
+        _make_inputs(),
+        tmp_path,
+        AppConfig(),
     )
 
     assert outputs.result.ok is False

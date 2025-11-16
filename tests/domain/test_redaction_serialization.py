@@ -68,9 +68,9 @@ def test_normalize_provenance_redacts_span_text() -> None:
                         "type": "paragraph",
                         "index": 0,
                         "text": "still sensitive",
-                    }
+                    },
                 ],
-            }
+            },
         ],
         "last_updated": "2025-10-26T07:00:00Z",
     }

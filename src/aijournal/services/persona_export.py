@@ -7,24 +7,27 @@ import textwrap
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
-from pathlib import Path
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
-from aijournal.common.app_config import AppConfig
-from aijournal.domain.claims import ClaimAtom
 from aijournal.domain.persona import PersonaCore
 from aijournal.io.artifacts import load_artifact_data
 from aijournal.utils.paths import resolve_path
 
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from aijournal.common.app_config import AppConfig
+    from aijournal.domain.claims import ClaimAtom
+
 __all__ = [
-    "PersonaExportError",
     "PersonaArtifactMissingError",
     "PersonaContentError",
-    "PersonaVariant",
+    "PersonaExportError",
     "PersonaExportOptions",
     "PersonaExportResult",
-    "load_persona_core",
+    "PersonaVariant",
     "export_persona_markdown",
+    "load_persona_core",
 ]
 
 
@@ -146,7 +149,6 @@ KEYS_WITHOUT_PREFIX = {"summary", "detail", "notes", "text"}
 
 def load_persona_core(workspace: Path, config: AppConfig) -> PersonaCore:
     """Load persona_core.yaml for a workspace."""
-
     persona_path = resolve_path(workspace, config, "derived/persona") / "persona_core.yaml"
     if not persona_path.exists():
         msg = f"Missing {persona_path.relative_to(workspace)}; run 'aijournal persona build' first."
@@ -165,14 +167,14 @@ def export_persona_markdown(
     options: PersonaExportOptions | None = None,
 ) -> PersonaExportResult:
     """Render persona data to Markdown within an approximate token budget."""
-
     opts = options or PersonaExportOptions()
     budget = _effective_budget(opts)
     char_per_token = config.token_estimator.char_per_token
 
     sections = _build_sections(persona, opts)
     if all(not section.bullets for section in sections if section.name != "Claims"):
-        raise PersonaContentError("Persona profile is empty; add journal entries or claims first.")
+        msg = "Persona profile is empty; add journal entries or claims first."
+        raise PersonaContentError(msg)
 
     sections = _apply_caps(sections, opts)
     sections = _trim_to_budget(
@@ -344,7 +346,7 @@ def _claim_sort_key(claim: ClaimAtom, mode: str) -> tuple:
         if not raw:
             return 0.0
         try:
-            value = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+            value = datetime.fromisoformat(raw)
             return value.timestamp()
         except ValueError:
             return 0.0

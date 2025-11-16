@@ -21,7 +21,8 @@ def test_generate_summary_uses_fake_path_when_requested() -> None:
     entries = [_normalized_entry("entry-1", "Deep Work")]
 
     def request_factory() -> DailySummary:  # pragma: no cover - should not run
-        raise AssertionError("request_factory should not be invoked for fake flows")
+        msg = "request_factory should not be invoked for fake flows"
+        raise AssertionError(msg)
 
     summary_result = summarize.generate_summary(
         entries,

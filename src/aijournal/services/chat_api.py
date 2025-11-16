@@ -5,20 +5,23 @@ from __future__ import annotations
 import asyncio
 import json
 import re
-from collections.abc import AsyncIterator, Iterable
-from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
 
 from aijournal.api.capture import CaptureInput, CaptureRequest
-from aijournal.api.chat import ChatRequest
-from aijournal.common.app_config import AppConfig
 from aijournal.services.chat import ChatService
 from aijournal.services.feedback import FeedbackAdjustment, apply_chat_feedback
 from aijournal.services.retriever import RetrievalFilters
 from aijournal.utils.coercion import coerce_int
+
+if TYPE_CHECKING:
+    from collections.abc import AsyncIterator, Iterable
+    from pathlib import Path
+
+    from aijournal.api.chat import ChatRequest
+    from aijournal.common.app_config import AppConfig
 
 try:  # pragma: no cover - optional dependency
     import orjson
@@ -59,7 +62,6 @@ def _default_session_id() -> str:
 
 def build_chat_app(root: Path, config: AppConfig | None = None) -> FastAPI:
     """Return a FastAPI app bound to the chat orchestrator."""
-
     app = FastAPI(title="aijournal-chatd", version="0.3.0")
 
     service = ChatService(root, config)

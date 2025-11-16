@@ -15,8 +15,11 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from collections.abc import Iterable
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
 
 
 def parse_args() -> argparse.Namespace:
@@ -41,7 +44,6 @@ def parse_args() -> argparse.Namespace:
 
 def iter_prompts(path: Path, allowed_types: set[str]) -> Iterable[tuple[int, str, str, str]]:
     """Yield (line_no, timestamp, payload_type, message) tuples."""
-
     with path.open("r", encoding="utf-8") as file:
         for line_no, line in enumerate(file, start=1):
             try:

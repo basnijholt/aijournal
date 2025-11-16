@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import typer
 from pydantic import BaseModel
@@ -27,13 +26,10 @@ from aijournal.commands.summarize import (
     _json_block,
     _log_entry_progress,
 )
-from aijournal.common.app_config import AppConfig
 from aijournal.common.command_runner import run_command_pipeline
 from aijournal.common.config_loader import load_config, use_fake_llm
 from aijournal.common.context import RunContext, create_run_context
 from aijournal.common.meta import Artifact, ArtifactKind
-from aijournal.domain.changes import ProfileUpdateProposals
-from aijournal.domain.claims import ClaimAtom
 from aijournal.domain.facts import DailySummary, MicroFactsFile
 from aijournal.domain.journal import NormalizedEntry
 from aijournal.domain.prompts import (
@@ -42,7 +38,6 @@ from aijournal.domain.prompts import (
 )
 from aijournal.io.artifacts import load_artifact_data, save_artifact
 from aijournal.io.yaml_io import load_yaml_model
-from aijournal.models.authoritative import ManifestEntry
 from aijournal.models.derived import ProfileUpdateBatch, ProfileUpdateInput
 from aijournal.pipelines import profile_update as profile_update_pipeline
 from aijournal.services.microfacts import (
@@ -52,6 +47,14 @@ from aijournal.services.microfacts import (
 from aijournal.services.ollama import LLMResponseError, invoke_structured_llm
 from aijournal.services.profile_preview import build_claim_preview
 from aijournal.utils import time as time_utils
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+    from aijournal.common.app_config import AppConfig
+    from aijournal.domain.changes import ProfileUpdateProposals
+    from aijournal.domain.claims import ClaimAtom
+    from aijournal.models.authoritative import ManifestEntry
 
 MAX_CONSOLIDATED_FACTS = 20
 MIN_CONSOLIDATED_OBSERVATIONS = 2
@@ -92,7 +95,6 @@ def run_profile_update(
     config: AppConfig | None = None,
 ) -> Path:
     """Derive profile update batches using the unified prompt."""
-
     workspace = workspace or Path.cwd()
     config = config or load_config(workspace)
     ctx = create_run_context(
@@ -184,7 +186,10 @@ def run_profile_update_command(
             else "null"
         )
         manifest_payload = _json_block(
-            {key: entry.model_dump(mode="python") for key, entry in prepared.manifest_index.items()}
+            {
+                key: entry.model_dump(mode="python")
+                for key, entry in prepared.manifest_index.items()
+            },
         )
 
         def request_profile_update() -> ProfileUpdateProposals:
@@ -201,8 +206,8 @@ def run_profile_update_command(
                         {
                             "claims": [
                                 claim.model_dump(mode="python") for claim in prepared.claim_models
-                            ]
-                        }
+                            ],
+                        },
                     ),
                     "manifest_json": manifest_payload,
                 },
@@ -262,7 +267,7 @@ def run_profile_update_command(
                     source_hash=entry.source_hash,
                     manifest_hash=str(manifest_hash) if manifest_hash else None,
                     tags=entry.tags or [],
-                )
+                ),
             )
 
         batch = ProfileUpdateBatch(
@@ -368,7 +373,6 @@ def _sanitize_batch_id(batch_id: str) -> str:
 
 def _load_consolidated_facts_json(workspace: Path, config: AppConfig) -> str:
     """Return JSON payload for recurring consolidated microfacts if available."""
-
     snapshot = load_consolidated_microfacts(workspace, config)
     if not snapshot:
         return "{}"

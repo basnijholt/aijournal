@@ -71,7 +71,7 @@ def test_response_models_use_prompt_dtos() -> None:
                 name = ast.unparse(keyword.value) if hasattr(ast, "unparse") else str(keyword.value)
                 violations.append(
                     f"{file_path.relative_to(PROJECT_ROOT)}:{keyword.value.lineno} "
-                    f"uses disallowed response_model `{name}` (resolved to {resolved!r})."
+                    f"uses disallowed response_model `{name}` (resolved to {resolved!r}).",
                 )
 
-    assert not violations, "\n".join(["Found response_model violations:"] + violations)
+    assert not violations, "\n".join(["Found response_model violations:", *violations])

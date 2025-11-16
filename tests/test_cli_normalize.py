@@ -7,12 +7,13 @@ from typing import TYPE_CHECKING
 
 import pytest
 import yaml
-from typer.testing import CliRunner
 
 from aijournal.cli import app
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+    from typer.testing import CliRunner
 
 FROZEN_NOW = datetime(2025, 2, 3, 14, 5, 0, tzinfo=UTC)
 EXPECTED_DATE = "2025-02-03"

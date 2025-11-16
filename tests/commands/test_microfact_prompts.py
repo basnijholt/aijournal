@@ -27,12 +27,12 @@ def _sample_consolidated() -> ConsolidatedMicrofactsFile:
                 contexts=["focus"],
                 evidence_entries=["entry-1", "entry-2"],
                 source_fact_ids=["2025-01-01:focus"],
-            )
+            ),
         ],
     )
 
 
-def test_profile_update_consolidated_payload(monkeypatch):
+def test_profile_update_consolidated_payload(monkeypatch) -> None:
     monkeypatch.setattr(
         profile_update_module,
         "load_consolidated_microfacts",
@@ -59,7 +59,7 @@ def test_profile_update_consolidated_payload(monkeypatch):
     assert consolidated_payload["facts"][0]["observation_count"] == 3
 
 
-def test_profile_update_consolidated_payload_missing_snapshot(monkeypatch):
+def test_profile_update_consolidated_payload_missing_snapshot(monkeypatch) -> None:
     monkeypatch.setattr(
         profile_update_module,
         "load_consolidated_microfacts",

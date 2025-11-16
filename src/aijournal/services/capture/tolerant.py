@@ -11,12 +11,14 @@ import json
 import logging
 import re
 from datetime import UTC, datetime
-from pathlib import Path
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 import yaml
 
 from aijournal.utils.text import strip_invisible_prefix
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +77,7 @@ def split_frontmatter_tolerant(text: str) -> ParseResult:
 
     Returns:
         ParseResult with metadata dict, body text, detected format, and any warnings
+
     """
     text = strip_invisible_prefix(text)
     stripped = strip_invisible_prefix(text.lstrip())
@@ -82,7 +85,7 @@ def split_frontmatter_tolerant(text: str) -> ParseResult:
         return ParseResult({}, "", "none", ["Empty input text"])
 
     # Try JSON format first (starts with '{' or '[')
-    if stripped.startswith("{") or stripped.startswith("["):
+    if stripped.startswith(("{", "[")):
         return _parse_json_frontmatter(stripped)
 
     # Try YAML (---) or TOML (+++)
@@ -136,7 +139,8 @@ def _extract_json_block(text: str) -> tuple[str, str]:
             if char.isspace():
                 continue
             if char not in ("{", "["):
-                raise ValueError("JSON front-matter must start with '{' or '['")
+                msg = "JSON front-matter must start with '{' or '['"
+                raise ValueError(msg)
             start_index = index
             depth = 1
             continue
@@ -165,7 +169,8 @@ def _extract_json_block(text: str) -> tuple[str, str]:
                 remainder = text[index + 1 :]
                 return block, remainder
 
-    raise ValueError("Unterminated JSON front-matter block")
+    msg = "Unterminated JSON front-matter block"
+    raise ValueError(msg)
 
 
 def _parse_delimited_frontmatter(
@@ -236,7 +241,7 @@ def _validate_frontmatter_keys(data: dict[str, object], result: ParseResult) -> 
     unknown = set(data.keys()) - known_keys
     if unknown:
         result.add_warning(
-            f"Unknown front-matter keys (will be preserved): {', '.join(sorted(unknown))}"
+            f"Unknown front-matter keys (will be preserved): {', '.join(sorted(unknown))}",
         )
 
 
@@ -260,6 +265,7 @@ def parse_date_tolerant(
 
     Returns:
         DateParseResult with parsed datetime (UTC), format used, and warnings
+
     """
     warnings: list[str] = []
 
@@ -328,10 +334,10 @@ _MONTH_PART = r"(1[0-2]|0?[1-9])"
 _DAY_PART = r"(3[01]|[12]\d|0?[1-9])"
 
 _PATH_DATE_PATTERN = re.compile(
-    rf"(?P<year>(?:19|20)\d{{2}})[-_/](?P<month>{_MONTH_PART})[-_/](?P<day>{_DAY_PART})"
+    rf"(?P<year>(?:19|20)\d{{2}})[-_/](?P<month>{_MONTH_PART})[-_/](?P<day>{_DAY_PART})",
 )
 _COMPACT_DATE_PATTERN = re.compile(
-    r"(?P<year>(?:19|20)\d{2})(?P<month>0[1-9]|1[0-2])(?P<day>0[1-9]|[12]\d|3[01])"
+    r"(?P<year>(?:19|20)\d{2})(?P<month>0[1-9]|1[0-2])(?P<day>0[1-9]|[12]\d|3[01])",
 )
 _BODY_LABEL_PATTERN = re.compile(
     r"^\s*(date|published|created(?:_at)?)\s*[:\-]\s*(.+)$",
@@ -346,7 +352,6 @@ def infer_created_at_from_context(
     max_body_lines: int = 12,
 ) -> tuple[datetime | None, str | None]:
     """Best-effort created_at inference from filenames, directories, or body text."""
-
     if source_path:
         inferred, reason = _infer_date_from_path(source_path)
         if inferred:
@@ -471,7 +476,8 @@ def _parse_yyyy_mm_dd(text: str) -> tuple[datetime, str]:
         year, month, day = match.groups()
         dt = datetime(int(year), int(month), int(day), tzinfo=UTC)
         return dt, "yyyy-mm-dd"
-    raise ValueError("Not yyyy-mm-dd format")
+    msg = "Not yyyy-mm-dd format"
+    raise ValueError(msg)
 
 
 def _parse_common_text_date(text: str) -> tuple[datetime, str]:
@@ -492,7 +498,8 @@ def _parse_common_text_date(text: str) -> tuple[datetime, str]:
             except ValueError:
                 continue
 
-    raise ValueError("Not a common text date format")
+    msg = "Not a common text date format"
+    raise ValueError(msg)
 
 
 def _parse_slashed_date(text: str) -> tuple[datetime, str]:
@@ -502,4 +509,5 @@ def _parse_slashed_date(text: str) -> tuple[datetime, str]:
         month, day, year = match.groups()
         dt = datetime(int(year), int(month), int(day), tzinfo=UTC)
         return dt, "slashed"
-    raise ValueError("Not slashed date format")
+    msg = "Not slashed date format"
+    raise ValueError(msg)

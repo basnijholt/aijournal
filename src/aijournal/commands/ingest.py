@@ -3,19 +3,16 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from hashlib import sha256
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import typer
 import yaml
 from pydantic import BaseModel, ValidationError
-from pydantic_ai import Agent
 
-from aijournal.common.app_config import AppConfig
 from aijournal.common.command_runner import run_command_pipeline
 from aijournal.common.config_loader import load_config, use_fake_llm
 from aijournal.common.constants import MARKDOWN_SUFFIXES
@@ -34,6 +31,13 @@ from aijournal.services.ollama import build_ollama_config_from_mapping
 from aijournal.utils import time as time_utils
 from aijournal.utils.paths import normalized_entry_path, resolve_path
 from aijournal.utils.text import strip_invisible_prefix
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
+
+    from pydantic_ai import Agent
+
+    from aijournal.common.app_config import AppConfig
 
 
 class IngestOptions(BaseModel):
@@ -294,7 +298,6 @@ def run_ingest(
     snapshot: bool,
 ) -> None:
     """Ingest Markdown files into normalized YAML entries."""
-
     workspace = workspace or Path.cwd()
     config = load_config(workspace)
     ctx = create_run_context(

@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from pydantic import ConfigDict, Field
 
-from aijournal.domain.claims import ClaimAtom
 from aijournal.domain.journal import Section
 
 from .base import AijournalModel
+
+if TYPE_CHECKING:
+    from aijournal.domain.claims import ClaimAtom
 
 JsonScalar = str | int | float | bool | None
 JsonValue = JsonScalar | list[Any] | dict[str, Any]

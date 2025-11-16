@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Callable
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 
 def now() -> datetime:

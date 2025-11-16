@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Sequence
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from pydantic import ConfigDict, Field
 
@@ -12,6 +11,9 @@ from aijournal.common.base import StrictModel
 from aijournal.domain.claims import ClaimAtom, ClaimSource, ClaimSourceSpan, Provenance, Scope
 from aijournal.domain.enums import ClaimMethod, ClaimStatus
 from aijournal.domain.evidence import redact_source_text
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
 
 def _clamp01(value: float) -> float:
@@ -120,8 +122,9 @@ class ClaimConsolidator:
         incoming_atom = incoming_atom.model_copy(
             update={
                 "provenance": _redacted_provenance(
-                    incoming_atom.provenance, timestamp=self._timestamp
-                )
+                    incoming_atom.provenance,
+                    timestamp=self._timestamp,
+                ),
             },
         )
         typed_input = all(isinstance(item, ClaimAtom) for item in claims)

@@ -5,7 +5,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import yaml
-from typer.testing import CliRunner
 
 from aijournal.cli import app
 from aijournal.io.yaml_io import dump_yaml
@@ -13,6 +12,8 @@ from tests.helpers import write_daily_summary
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+    from typer.testing import CliRunner
 
 DATE = "2025-02-03"
 ENTRY_ID = "2025-02-03-sync-notes"
@@ -80,7 +81,8 @@ def test_facts_generates_microfacts(
     assert meta.get("created_at")
     data = artifact.get("data", {})
     facts = data.get("facts", [])
-    assert isinstance(facts, list) and facts
+    assert isinstance(facts, list)
+    assert facts
     first_fact = facts[0]
     assert first_fact.get("id") == f"fact-{ENTRY_ID}"
     statement = first_fact.get("statement", "")

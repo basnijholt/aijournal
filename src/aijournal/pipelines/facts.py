@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Sequence
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from pydantic import ValidationError
 
@@ -16,12 +15,16 @@ from aijournal.domain.claims import (
 )
 from aijournal.domain.evidence import SourceRef, redact_source_text
 from aijournal.domain.facts import MicroFact, MicroFactsFile
-from aijournal.domain.journal import NormalizedEntry
 from aijournal.fakes import fake_microfacts
-from aijournal.models.authoritative import ManifestEntry
 from aijournal.pipelines import normalization
 from aijournal.services.microfacts import MicrofactIndex, MicrofactRecord
 from aijournal.utils import time as time_utils
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable, Sequence
+
+    from aijournal.domain.journal import NormalizedEntry
+    from aijournal.models.authoritative import ManifestEntry
 
 
 def merge_unique(existing: Iterable[str], extras: Iterable[str]) -> list[str]:
@@ -47,15 +50,7 @@ def merge_unique(existing: Iterable[str], extras: Iterable[str]) -> list[str]:
 
 
 def _proposal_key(proposal: ClaimProposal) -> str:
-    return "|".join(
-        [
-            proposal.type,
-            proposal.subject,
-            proposal.predicate,
-            proposal.value,
-            proposal.statement,
-        ]
-    )
+    return f"{proposal.type}|{proposal.subject}|{proposal.predicate}|{proposal.value}|{proposal.statement}"
 
 
 def _fact_sources_from_evidence(fact: MicroFact) -> list[ClaimSource]:
@@ -70,7 +65,7 @@ def _fact_sources_from_evidence(fact: MicroFact) -> list[ClaimSource]:
                 index=span.index,
                 start=span.start,
                 end=span.end,
-            )
+            ),
         )
     if not evidence.entry_id:
         return []
@@ -209,7 +204,7 @@ def _microfact_claim_proposals(
                 ],
                 manifest_hashes=manifest_hashes,
                 rationale=f"Derived from micro-fact {fact.id}",
-            )
+            ),
         )
     return proposals
 
@@ -451,17 +446,15 @@ def generate_microfacts(
     microfact_index: MicrofactIndex | None = None,
 ) -> MicroFactsFile:
     """Build a `MicroFactsFile` containing facts and claim proposals."""
-
     normalized_ids, manifest_hashes, default_sources = context
     manifest_index = manifest_index or {}
     claim_timestamp = time_utils.format_timestamp(time_utils.now())
 
     if use_fake_llm:
         llm_microfacts = MicroFactsFile(facts=fake_microfacts(entries))
-    else:
-        if llm_microfacts is None:
-            msg = "llm_microfacts must be provided when fake mode is disabled"
-            raise ValueError(msg)
+    elif llm_microfacts is None:
+        msg = "llm_microfacts must be provided when fake mode is disabled"
+        raise ValueError(msg)
 
     facts_model = MicroFactsFile.model_validate(llm_microfacts.model_dump(mode="python"))
     raw_claim_candidates: Iterable[Any] = [

@@ -110,6 +110,7 @@ def run_init(path: Path | None = None) -> str:
 
     Returns:
         Status message describing what was created
+
     """
     workspace = path or Path.cwd()
     workspace.mkdir(parents=True, exist_ok=True)

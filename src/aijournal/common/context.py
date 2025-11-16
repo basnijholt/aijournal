@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 import secrets
-from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from aijournal.common.app_config import AppConfig
 from aijournal.common.config_loader import resolve_prompt_set
@@ -17,6 +16,9 @@ from aijournal.common.logging import (
     build_pretty_sink,
 )
 from aijournal.utils import time as time_utils
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping, Sequence
 
 
 def _trace_path(workspace: Path, config: AppConfig) -> Path:
@@ -76,6 +78,7 @@ def create_run_context(
 
     Returns:
         Configured RunContext
+
     """
     # Normalize config to model
     config_model = (

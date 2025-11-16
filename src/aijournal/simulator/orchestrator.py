@@ -7,8 +7,7 @@ import shutil
 from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from pathlib import Path
-from typing import Literal, cast
+from typing import TYPE_CHECKING, Literal, cast
 
 from aijournal.api.capture import CaptureInput, CaptureRequest
 from aijournal.common.constants import DEFAULT_LLM_RETRIES
@@ -22,6 +21,9 @@ from .validators import (
     ValidatorContext,
     render_failures_compact,
 )
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 @dataclass(slots=True)
@@ -85,7 +87,7 @@ class HumanSimulator:
         ctx = ValidatorContext(workspace=fixtures.root, capture=capture_result)
         validation = self.validators.run(
             ctx,
-            stages=[stage for stage in range(0, self.max_stage + 1)],
+            stages=list(range(self.max_stage + 1)),
         )
         report = SimulationReport(
             workspace=fixtures.root,

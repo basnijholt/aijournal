@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from pathlib import Path
 from types import SimpleNamespace
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -11,6 +11,9 @@ from aijournal.ingest_agent import (
     build_ingest_agent,
     ingest_with_agent,
 )
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 class _StubAgent:

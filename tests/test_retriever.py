@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import shutil
 import threading
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 import yaml
@@ -17,6 +17,9 @@ from aijournal.domain.index import IndexMeta
 from aijournal.io.artifacts import load_artifact_data
 from aijournal.services.retriever import RetrievalFilters, Retriever
 from tests.helpers import copy_fixture_workspace, write_manifest, write_normalized_entry
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 runner = CliRunner()
 

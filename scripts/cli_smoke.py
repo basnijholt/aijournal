@@ -203,7 +203,7 @@ def _run_command(spec: CommandSpec, cwd: Path, base_env: dict[str, str]) -> dict
     env = base_env.copy()
     full_args = ["uv", "run", *spec.args]
     start = time.perf_counter()
-    proc = subprocess.run(  # noqa: S603 (trusted repo command)
+    proc = subprocess.run(
         full_args,
         check=False,
         cwd=cwd,
@@ -330,10 +330,7 @@ def main() -> None:
     )
     args = parser.parse_args()
     repo_root = Path(__file__).resolve().parents[1]
-    if args.base_day:
-        base_day = args.base_day
-    else:
-        base_day = _detect_default_day(repo_root)
+    base_day = args.base_day or _detect_default_day(repo_root)
 
     base_env = os.environ.copy()
     real_mode = bool(args.ollama_host)

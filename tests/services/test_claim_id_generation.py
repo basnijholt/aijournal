@@ -48,12 +48,12 @@ def test_claim_ids_include_hash_suffix_for_uniqueness() -> None:
     proposal_a = _make_proposal("Prefers morning planning sessions")
     proposal_b = _make_proposal("Prefers evening reflection rituals")
 
-    id_a = profile_cmd._proposal_claim_id(  # noqa: SLF001
+    id_a = profile_cmd._proposal_claim_id(
         proposal_a,
         proposal_a.statement,
         set(),
     )
-    id_b = profile_cmd._proposal_claim_id(  # noqa: SLF001
+    id_b = profile_cmd._proposal_claim_id(
         proposal_b,
         proposal_b.statement,
         {id_a},
@@ -73,7 +73,7 @@ def test_apply_claim_proposal_keeps_every_statement() -> None:
     ]
 
     for proposal in proposals:
-        profile_cmd._apply_claim_proposal(claims, proposal, timestamp)  # noqa: SLF001
+        profile_cmd._apply_claim_proposal(claims, proposal, timestamp)
 
     assert len(claims) == len(proposals)
     assert len({claim.id for claim in claims}) == len(proposals)

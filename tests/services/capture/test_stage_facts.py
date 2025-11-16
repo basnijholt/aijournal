@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING, Never
 
 import typer
 
 from aijournal.common.app_config import AppConfig
 from aijournal.services.capture import CaptureInput
 from aijournal.services.capture.stages import stage3_facts
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def _make_inputs() -> CaptureInput:
@@ -22,7 +25,7 @@ def _make_config() -> AppConfig:
             "derived": "derived",
             "profile": "profile",
             "prompts": "prompts",
-        }
+        },
     )
 
 
@@ -53,7 +56,10 @@ def test_stage3_facts_success(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr("aijournal.commands.profile.load_profile_components", fake_load_profile)
 
     outputs = stage3_facts.run_facts_stage_3(
-        ["2025-10-27"], _make_inputs(), tmp_path, _make_config()
+        ["2025-10-27"],
+        _make_inputs(),
+        tmp_path,
+        _make_config(),
     )
 
     assert called == ["2025-10-27"]
@@ -63,7 +69,7 @@ def test_stage3_facts_success(tmp_path: Path, monkeypatch) -> None:
 
 
 def test_stage3_facts_handles_failure(tmp_path: Path, monkeypatch) -> None:
-    def failing_run(*args, **kwargs):
+    def failing_run(*args, **kwargs) -> Never:
         raise typer.Exit(1)
 
     def fake_load_profile(*args, **kwargs):
@@ -73,7 +79,10 @@ def test_stage3_facts_handles_failure(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr("aijournal.commands.profile.load_profile_components", fake_load_profile)
 
     outputs = stage3_facts.run_facts_stage_3(
-        ["2025-10-27"], _make_inputs(), tmp_path, _make_config()
+        ["2025-10-27"],
+        _make_inputs(),
+        tmp_path,
+        _make_config(),
     )
 
     assert outputs.result.ok is False

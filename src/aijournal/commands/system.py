@@ -6,14 +6,13 @@ import json
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import httpx
 import typer
 from pydantic import BaseModel
 
 from aijournal.commands.persona import persona_state
-from aijournal.common.app_config import AppConfig
 from aijournal.common.command_runner import run_command_pipeline
 from aijournal.common.config_loader import load_config, use_fake_llm
 from aijournal.common.context import RunContext, create_run_context
@@ -25,6 +24,9 @@ from aijournal.services.ollama import (
     resolve_ollama_host,
 )
 from aijournal.utils.paths import resolve_path
+
+if TYPE_CHECKING:
+    from aijournal.common.app_config import AppConfig
 
 
 def _check_index_artifacts(workspace: Path, config: AppConfig) -> dict[str, Any]:
@@ -111,7 +113,6 @@ def _check_ollama(
 
 def run_system_doctor(workspace: Path, *, fake_mode: bool) -> dict[str, Any]:
     """Run system diagnostics and return a structured payload."""
-
     config = load_config(workspace)
     checks: list[dict[str, Any]] = []
     overall_ok = True
@@ -129,7 +130,9 @@ def run_system_doctor(workspace: Path, *, fake_mode: bool) -> dict[str, Any]:
     checks.append({"name": "pending_profile_updates", "ok": True, "details": pending_info})
 
     ollama_ok, ollama_details = _check_ollama(
-        config, os.getenv("AIJOURNAL_OLLAMA_HOST"), fake_mode=fake_mode
+        config,
+        os.getenv("AIJOURNAL_OLLAMA_HOST"),
+        fake_mode=fake_mode,
     )
     checks.append({"name": "ollama_reachable", "ok": ollama_ok, "details": ollama_details})
     overall_ok &= ollama_ok
@@ -154,7 +157,6 @@ def run_system_doctor(workspace: Path, *, fake_mode: bool) -> dict[str, Any]:
 
 def run_status_summary(workspace: Path) -> dict[str, Any]:
     """Gather high-level workspace status information."""
-
     config = load_config(workspace)
     persona_status, persona_reasons = persona_state(workspace, workspace, config)
 
@@ -357,7 +359,7 @@ def run_system_status_cli(workspace: Path | None = None) -> None:
 
         typer.echo(
             f"Ollama host: {ollama.get('host')}"
-            + (" (fake mode)" if persist_ctx.use_fake_llm else "")
+            + (" (fake mode)" if persist_ctx.use_fake_llm else ""),
         )
         typer.echo("Run `aijournal ops system doctor` for detailed diagnostics.")
 

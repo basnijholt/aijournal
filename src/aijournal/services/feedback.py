@@ -4,8 +4,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from pathlib import Path
-from typing import Final
+from typing import TYPE_CHECKING, Final
 
 from aijournal.common.meta import Artifact, ArtifactKind, ArtifactMeta
 from aijournal.domain.enums import FeedbackDirection
@@ -13,6 +12,9 @@ from aijournal.domain.events import FeedbackAdjustmentEvent, FeedbackBatch
 from aijournal.io.artifacts import save_artifact
 from aijournal.io.yaml_io import load_yaml_model, write_yaml_model
 from aijournal.models.authoritative import ClaimsFile
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 _CLAIM_PATTERN: Final[re.Pattern[str]] = re.compile(r"\[claim:([A-Za-z0-9_.:-]+)\]")
 
@@ -29,7 +31,6 @@ class FeedbackAdjustment:
 
 def extract_claim_markers(answer: str) -> list[str]:
     """Return claim IDs referenced in `[claim:<id>]` markers."""
-
     return [match for match in _CLAIM_PATTERN.findall(answer or "") if match]
 
 
@@ -66,7 +67,6 @@ def apply_chat_feedback(
     feedback: str,
 ) -> tuple[list[FeedbackAdjustment], Path | None]:
     """Adjust claim strengths based on feedback and queue a review file."""
-
     claim_ids = extract_claim_markers(turn_answer)
     if not claim_ids:
         return ([], None)

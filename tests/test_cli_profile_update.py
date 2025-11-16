@@ -3,11 +3,9 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
+from typing import TYPE_CHECKING
 
-import pytest
 import yaml
-from typer.testing import CliRunner
 
 from aijournal.cli import app
 from aijournal.commands import profile_update as profile_update_module
@@ -17,6 +15,12 @@ from aijournal.domain.facts import DailySummary, MicroFact, MicroFactsFile
 from aijournal.domain.prompts import PromptProfileUpdates
 from aijournal.io.artifacts import save_artifact
 from aijournal.io.yaml_io import dump_yaml
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    import pytest
+    from typer.testing import CliRunner
 
 DATE = "2025-02-03"
 ENTRY_ID = "2025-02-03-focus-notes"
@@ -189,7 +193,7 @@ def test_profile_update_uses_summary_and_microfacts(
                 "reason": "Summary + microfact reinforce recurring block.",
                 "evidence_entry": ENTRY_ID,
                 "evidence_para": 0,
-            }
+            },
         ],
         "facets": [],
         "interview_prompts": ["What cancels the 8-10am block?"],
@@ -283,7 +287,7 @@ def test_profile_update_claims_use_entry_manifest_hash(
                 "reason": "LLM cites explicit entry",
                 "evidence_entry": second_entry,
                 "evidence_para": 0,
-            }
+            },
         ],
         "facets": [],
         "interview_prompts": [],

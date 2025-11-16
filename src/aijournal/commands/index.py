@@ -7,6 +7,7 @@ import re
 from dataclasses import dataclass
 from datetime import timedelta
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import typer
 from pydantic import BaseModel
@@ -17,7 +18,6 @@ from aijournal.commands.ingest import (
     _manifest_path,
     _relative_source_path,
 )
-from aijournal.common.app_config import AppConfig
 from aijournal.common.command_runner import run_command_pipeline
 from aijournal.common.config_loader import load_config, use_fake_llm
 from aijournal.common.context import RunContext, create_run_context
@@ -27,6 +27,9 @@ from aijournal.services.embedding import EmbeddingBackend
 from aijournal.services.retriever import RetrievalFilters, RetrievalResult, Retriever
 from aijournal.utils import time as time_utils
 from aijournal.utils.paths import resolve_path
+
+if TYPE_CHECKING:
+    from aijournal.common.app_config import AppConfig
 
 INDEX_META_FILENAME = "meta.json"
 
@@ -99,10 +102,12 @@ class IndexSearchResult:
 
 
 def run_index_rebuild(
-    since: str | None, *, limit: int | None, workspace: Path | None = None
+    since: str | None,
+    *,
+    limit: int | None,
+    workspace: Path | None = None,
 ) -> str:
     """Rebuild the Chroma-backed retrieval index."""
-
     workspace = workspace or Path.cwd()
     config = load_config(workspace)
     ctx = create_run_context(
@@ -118,10 +123,13 @@ def run_index_rebuild(
 
 
 def run_index_tail(
-    since: str | None, *, days: int, limit: int | None, workspace: Path | None = None
+    since: str | None,
+    *,
+    days: int,
+    limit: int | None,
+    workspace: Path | None = None,
 ) -> str:
     """Tail the retrieval index by ingesting recently normalized entries."""
-
     workspace = workspace or Path.cwd()
     config = load_config(workspace)
     ctx = create_run_context(
@@ -147,7 +155,6 @@ def run_index_search(
     workspace: Path | None = None,
 ) -> None:
     """Search the retrieval index and display formatted results."""
-
     workspace = workspace or Path.cwd()
     config = load_config(workspace)
     ctx = create_run_context(
@@ -528,7 +535,9 @@ def _index_meta_path(_root: Path, workspace: Path, config: AppConfig) -> Path:
 
 
 def _collect_normalized_files(
-    workspace: Path, config: AppConfig, since: str | None
+    workspace: Path,
+    config: AppConfig,
+    since: str | None,
 ) -> list[tuple[str, Path]]:
     normalized_root = resolve_path(workspace, config, "data/normalized")
     if not normalized_root.exists():

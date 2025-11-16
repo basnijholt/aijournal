@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
-from typing import Annotated
+from typing import TYPE_CHECKING, Annotated
 
 from pydantic import Field
 
 from aijournal.common.base import StrictModel
-from aijournal.domain.claims import ClaimSource
-from aijournal.domain.enums import ClaimEventAction, FeedbackDirection
+
+if TYPE_CHECKING:
+    from aijournal.domain.claims import ClaimSource
+    from aijournal.domain.enums import ClaimEventAction, FeedbackDirection
 
 
 class ClaimSignaturePayload(StrictModel):

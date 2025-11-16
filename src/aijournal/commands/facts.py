@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import typer
 from pydantic import BaseModel, ConfigDict
@@ -21,23 +21,27 @@ from aijournal.commands.summarize import (
     _load_normalized_entries,
     _log_entry_progress,
 )
-from aijournal.common.app_config import AppConfig
 from aijournal.common.command_runner import run_command_pipeline
-from aijournal.common.context import RunContext
 from aijournal.common.meta import Artifact, ArtifactKind
 from aijournal.domain.claims import ClaimAtom, ClaimSource
 from aijournal.domain.facts import DailySummary, MicroFactsFile
-from aijournal.domain.journal import NormalizedEntry
 from aijournal.domain.prompts import PromptMicroFacts, convert_prompt_microfacts
 from aijournal.io.artifacts import save_artifact
-from aijournal.models.authoritative import ManifestEntry
-from aijournal.models.derived import ProfileUpdatePreview
 from aijournal.pipelines import facts as facts_pipeline
 from aijournal.services.microfacts import MicrofactIndex
 from aijournal.services.ollama import LLMResponseError, invoke_structured_llm, resolve_model_name
 from aijournal.services.profile_preview import build_claim_preview
 from aijournal.services.summaries import SummaryNotFoundError, load_daily_summary
 from aijournal.utils import time as time_utils
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable, Sequence
+
+    from aijournal.common.app_config import AppConfig
+    from aijournal.common.context import RunContext
+    from aijournal.domain.journal import NormalizedEntry
+    from aijournal.models.authoritative import ManifestEntry
+    from aijournal.models.derived import ProfileUpdatePreview
 
 
 def _manifest_by_id(entries: Iterable[ManifestEntry]) -> dict[str, ManifestEntry]:
@@ -172,7 +176,7 @@ def invoke_pipeline(ctx: RunContext, prepared: FactsPrepared) -> FactsResult:
             {
                 "date": prepared.date,
                 "entries_json": _json_block(
-                    _entries_to_payload(prepared.entries, prepared.workspace)
+                    _entries_to_payload(prepared.entries, prepared.workspace),
                 ),
                 "summary_json": _json_block(prepared.summary.model_dump(mode="python")),
             },

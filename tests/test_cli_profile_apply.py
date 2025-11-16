@@ -77,7 +77,7 @@ def _seed_suggestions(workspace: Path) -> Path:
             status="tentative",
             method="inferred",
             last_updated=f"{DATE}T10:00:00Z",
-        )
+        ),
     )
     claim_input = ClaimAtomInput(
         type=proposed_claim.type,
@@ -127,7 +127,7 @@ def _seed_suggestions(workspace: Path) -> Path:
                 id=f"{DATE}-entry",
                 normalized_path=f"data/normalized/{DATE}/entry.yaml",
                 tags=["evening"],
-            )
+            ),
         ],
         proposals=proposals,
         preview=ProfileUpdatePreview(),
@@ -197,13 +197,13 @@ def test_profile_apply_idempotent(
     first_output = _invoke(suggestions_path, cli_runner)
     claims_after_first = (cli_workspace / "profile" / "claims.yaml").read_text(encoding="utf-8")
     profile_after_first = (cli_workspace / "profile" / "self_profile.yaml").read_text(
-        encoding="utf-8"
+        encoding="utf-8",
     )
 
     second_output = _invoke(suggestions_path, cli_runner)
 
     assert (cli_workspace / "profile" / "claims.yaml").read_text(
-        encoding="utf-8"
+        encoding="utf-8",
     ) == claims_after_first
     assert (cli_workspace / "profile" / "self_profile.yaml").read_text(
         encoding="utf-8",

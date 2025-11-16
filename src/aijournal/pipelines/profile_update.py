@@ -2,20 +2,23 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from pydantic import ValidationError
 
 from aijournal.domain.changes import FacetChange, ProfileUpdateProposals
 from aijournal.domain.claims import ClaimAtom, ClaimSource
 from aijournal.domain.evidence import SourceRef, redact_source_text
-from aijournal.domain.journal import NormalizedEntry
 from aijournal.fakes import fake_profile_proposals
 from aijournal.pipelines import facts as facts_pipeline
 from aijournal.pipelines import normalization
 from aijournal.utils import time as time_utils
 from aijournal.utils.coercion import coerce_float, coerce_int
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+    from aijournal.domain.journal import NormalizedEntry
 
 
 def normalize_facet_proposals(
@@ -74,7 +77,6 @@ def generate_profile_update(
     claim_timestamp: str,
 ) -> tuple[ProfileUpdateProposals, list[str]]:
     """Produce profile update proposals plus interview prompts for a single day."""
-
     if use_fake_llm:
         fake = fake_profile_proposals(
             entries,

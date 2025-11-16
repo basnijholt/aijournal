@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
-from typer.testing import CliRunner
 
 from aijournal.cli import app
 from tests.helpers import write_manifest, write_normalized_entry
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from typer.testing import CliRunner
 
 
 @pytest.fixture(autouse=True)

@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-from pathlib import Path
 from time import perf_counter
 from typing import TYPE_CHECKING
 
-from aijournal.common.app_config import AppConfig
-
 if TYPE_CHECKING:
-    from .. import CaptureInput, ProfileUpdateStageOutputs
+    from pathlib import Path
+
+    from aijournal.common.app_config import AppConfig
+    from aijournal.services.capture import CaptureInput, ProfileUpdateStageOutputs
 
 
 def run_profile_update_stage(
@@ -16,9 +16,13 @@ def run_profile_update_stage(
     root: Path,
     config: AppConfig,
 ) -> ProfileUpdateStageOutputs:
-    from .. import OperationResult, ProfileUpdateStageOutputs
-    from ..graceful import graceful_profile_update
-    from ..utils import apply_profile_update_batch, pending_batches, relative_path
+    from aijournal.services.capture import OperationResult, ProfileUpdateStageOutputs
+    from aijournal.services.capture.graceful import graceful_profile_update
+    from aijournal.services.capture.utils import (
+        apply_profile_update_batch,
+        pending_batches,
+        relative_path,
+    )
 
     stage_start = perf_counter()
     batch_paths: list[str] = []

@@ -11,10 +11,9 @@ from __future__ import annotations
 import json
 import os
 import sys
-from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 import click
 import httpx
@@ -76,7 +75,6 @@ from aijournal.commands.summarize import (
     run_summarize_command,
 )
 from aijournal.commands.system import run_system_doctor_cli, run_system_status_cli
-from aijournal.common.app_config import AppConfig
 from aijournal.common.config_loader import (
     load_config,
     load_config_with_overrides,
@@ -92,7 +90,6 @@ from aijournal.domain.changes import ClaimProposal, FacetChange
 from aijournal.domain.events import (
     FeedbackBatch,
 )
-from aijournal.domain.journal import NormalizedEntry
 from aijournal.domain.persona import InterviewQuestion, InterviewSet
 from aijournal.io.artifacts import load_artifact_data
 from aijournal.io.yaml_io import dump_yaml, load_yaml_model, write_yaml_model
@@ -113,13 +110,11 @@ from aijournal.services.ollama import (
 from aijournal.services.persona_export import (
     PersonaArtifactMissingError,
     PersonaContentError,
+    PersonaExportOptions,
     PersonaExportResult,
     PersonaVariant,
     export_persona_markdown,
     load_persona_core,
-)
-from aijournal.services.persona_export import (
-    PersonaExportOptions as PersonaExportOptions,
 )
 from aijournal.services.profile_preview import (
     claim_proposal_to_atom,
@@ -139,6 +134,12 @@ from aijournal.utils.paths import (
     normalized_entry_path,
 )
 
+if TYPE_CHECKING:
+    from collections.abc import Iterable, Sequence
+
+    from aijournal.common.app_config import AppConfig
+    from aijournal.domain.journal import NormalizedEntry
+
 INTERVIEW_SUMMARY_LOOKBACK_DAYS = 6
 
 
@@ -152,6 +153,7 @@ def _get_workspace() -> Path:
     Raises:
         RuntimeError: If the workspace directory doesn't exist, is not a directory,
                      or doesn't contain config.yaml
+
     """
     settings = _cli_settings()
     workspace = settings.workspace or Path.cwd()
@@ -192,7 +194,6 @@ app = typer.Typer(
 @app.command("version", help="Print the current aijournal version and source root.")
 def show_version() -> None:
     """Display package version and repository source path."""
-
     source_root = Path(__file__).resolve().parents[2]
     typer.echo(f"aijournal version: {version_module.__version__}")
     typer.echo(f"source root: {source_root}")
@@ -327,6 +328,7 @@ def _run_context(
 
     Returns:
         Configured RunContext
+
     """
     settings = _cli_settings()
     actual_workspace = workspace or _get_workspace()
@@ -437,7 +439,6 @@ def logs_tail(
     ),
 ) -> None:
     """Show the most recent structured trace events."""
-
     workspace = _get_workspace()
     log_path = path or workspace / "derived" / "logs" / "run_trace.jsonl"
     if not log_path.exists():
@@ -469,7 +470,6 @@ def logs_tail(
 @ops_microfacts_app.command("rebuild")
 def ops_microfacts_rebuild_command() -> None:
     """Rebuild the consolidated microfacts snapshot and search index."""
-
     workspace = _get_workspace()
     config = load_config(workspace)
     ctx = create_run_context(
@@ -601,7 +601,6 @@ def capture(
     ),
 ) -> None:
     """Persist new material and refresh downstream artifacts in one pass."""
-
     stdin_text: str | None = None
     if not from_paths and text is None and not sys.stdin.isatty():
         stdin_buffer = sys.stdin.read()
@@ -624,7 +623,9 @@ def capture(
     source_type_value = source_type.lower()
     if source_type_value not in {"journal", "notes", "blog"}:
         typer.secho(
-            "--source-type must be one of: journal, notes, blog.", fg=typer.colors.RED, err=True
+            "--source-type must be one of: journal, notes, blog.",
+            fg=typer.colors.RED,
+            err=True,
         )
         raise typer.Exit(code=2)
 
@@ -655,7 +656,9 @@ def capture(
         raise typer.Exit(code=2)
     if min_stage > max_stage:
         typer.secho(
-            "--min-stage cannot be greater than --max-stage.", fg=typer.colors.RED, err=True
+            "--min-stage cannot be greater than --max-stage.",
+            fg=typer.colors.RED,
+            err=True,
         )
         raise typer.Exit(code=2)
 
@@ -753,7 +756,7 @@ def capture(
                 "deduped": len(deduped),
             },
             indent=2,
-        )
+        ),
     )
 
 
@@ -883,7 +886,6 @@ def dev_human_sim(
     ),
 ) -> None:
     """Run the human simulator with configurable stage depth for validation."""
-
     from aijournal.simulator.orchestrator import HumanSimulator
 
     resolved_pack = pack_level.upper()
@@ -1423,7 +1425,6 @@ def persona_export(
     ),
 ) -> None:
     """Render the current persona as Markdown for downstream LLM contexts."""
-
     expanded = _normalize_persona_variants(variants)
     _validate_persona_export_flags(
         expanded_variants=expanded,
@@ -1435,8 +1436,9 @@ def persona_export(
 
     sort_key = sort.lower().strip()
     if sort_key not in {"strength", "recency", "id"}:
+        msg = "--sort must be one of: strength, recency, id."
         raise typer.BadParameter(
-            "--sort must be one of: strength, recency, id.",
+            msg,
             param_hint="--sort",
         )
 
@@ -1509,8 +1511,9 @@ def _normalize_persona_variants(raw_variants: Iterable[str]) -> list[PersonaVari
         else:
             member = allowed.get(value)
             if member is None:
+                msg = "--variant must be one of: tiny, short, full, or all."
                 raise typer.BadParameter(
-                    "--variant must be one of: tiny, short, full, or all.",
+                    msg,
                     param_hint="--variant",
                 )
             candidates = (member,)
@@ -1536,27 +1539,32 @@ def _validate_persona_export_flags(
 ) -> None:
     if tokens is not None:
         if tokens <= 0:
-            raise typer.BadParameter("--tokens must be a positive integer.", param_hint="--tokens")
+            msg = "--tokens must be a positive integer."
+            raise typer.BadParameter(msg, param_hint="--tokens")
         if len(expanded_variants) > 1:
+            msg = "--tokens can only be combined with a single --variant."
             raise typer.BadParameter(
-                "--tokens can only be combined with a single --variant.",
+                msg,
                 param_hint="--tokens",
             )
 
     if max_items is not None and max_items <= 0:
+        msg = "--max-items must be positive when provided."
         raise typer.BadParameter(
-            "--max-items must be positive when provided.",
+            msg,
             param_hint="--max-items",
         )
 
     if output is not None and output_dir is not None:
+        msg = "Use either --output or --output-dir, not both."
         raise typer.BadParameter(
-            "Use either --output or --output-dir, not both.",
+            msg,
             param_hint="--output",
         )
     if output is not None and len(expanded_variants) > 1:
+        msg = "--output only supports a single variant; use --output-dir for multiples."
         raise typer.BadParameter(
-            "--output only supports a single variant; use --output-dir for multiples.",
+            msg,
             param_hint="--output",
         )
 
@@ -1841,7 +1849,7 @@ def interview(
                     "date": date,
                     "profile_json": _json_block(profile),
                     "claims_json": _json_block(
-                        {"claims": [claim.model_dump(mode="python") for claim in claims]}
+                        {"claims": [claim.model_dump(mode="python") for claim in claims]},
                     ),
                     "entries_json": _json_block(_entries_to_payload(entries, workspace)),
                     "rankings_json": _json_block(rankings_payload),
@@ -2116,7 +2124,6 @@ def feedback_apply(
     ),
 ) -> None:
     """Apply and clear pending chat feedback batches."""
-
     workspace = _get_workspace()
     pending_dir = workspace / "derived" / "pending" / "profile_updates"
     if not pending_dir.exists():
@@ -2196,7 +2203,6 @@ def feedback_apply(
 
 def _unique_archive_path(target: Path) -> Path:
     """Return a unique path by appending a counter when needed."""
-
     if not target.exists():
         return target
     stem = target.stem
@@ -2227,5 +2233,5 @@ for _command in app.registered_commands:
 for _group_name in ("profile", "ollama", "index", "persona"):
     if not any(info.name == _group_name for info in app.registered_commands):
         app.registered_commands.append(
-            CommandInfo(name=_group_name, callback=lambda _name=_group_name: None, hidden=True)
+            CommandInfo(name=_group_name, callback=lambda _name=_group_name: None, hidden=True),
         )

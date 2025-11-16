@@ -3,27 +3,30 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import typer
 from pydantic import BaseModel
 
-from aijournal.common.app_config import AppConfig
 from aijournal.common.command_runner import run_command_pipeline
 from aijournal.common.config_loader import use_fake_llm
 from aijournal.common.context import RunContext, create_run_context
 from aijournal.common.meta import Artifact, ArtifactKind, ArtifactMeta
-from aijournal.domain.claims import ClaimAtom
 from aijournal.domain.persona import PersonaCore
 from aijournal.io.artifacts import load_artifact, save_artifact
 from aijournal.pipelines import persona as persona_pipeline
 from aijournal.utils import time as time_utils
 from aijournal.utils.coercion import coerce_float
 from aijournal.utils.paths import resolve_path
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+    from aijournal.common.app_config import AppConfig
+    from aijournal.domain.claims import ClaimAtom
 
 PERSONA_DEFAULTS = {
     "token_budget": 1200,
@@ -75,17 +78,17 @@ def prepare_inputs(ctx: RunContext, options: PersonaBuildOptions) -> PersonaPrep
     token_budget = int(
         options.token_budget_override
         if options.token_budget_override is not None
-        else persona_cfg.token_budget
+        else persona_cfg.token_budget,
     )
     max_claims = int(
         options.max_claims_override
         if options.max_claims_override is not None
-        else persona_cfg.max_claims
+        else persona_cfg.max_claims,
     )
     min_claims = int(
         options.min_claims_override
         if options.min_claims_override is not None
-        else persona_cfg.min_claims
+        else persona_cfg.min_claims,
     )
     if token_budget <= 0:
         typer.secho("Token budget must be positive", fg=typer.colors.RED, err=True)
@@ -183,7 +186,7 @@ def invoke_pipeline(ctx: RunContext, prepared: PersonaPrepared) -> PersonaResult
     )
     if existing_artifact is not None:
         changed = existing_artifact.data != persona_core or existing_artifact.meta.model_dump(
-            mode="json"
+            mode="json",
         ) != artifact_meta.model_dump(mode="json")
     else:
         changed = True

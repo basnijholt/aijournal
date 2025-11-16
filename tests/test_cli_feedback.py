@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 import yaml
-from typer.testing import CliRunner
 
 from aijournal.cli import app
 from aijournal.common.meta import Artifact, ArtifactKind, ArtifactMeta
@@ -14,6 +13,11 @@ from aijournal.domain.events import FeedbackAdjustmentEvent, FeedbackBatch
 from aijournal.io.artifacts import save_artifact
 from aijournal.io.yaml_io import dump_yaml
 from tests.helpers import make_claim_atom
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from typer.testing import CliRunner
 
 
 @pytest.fixture(autouse=True)
@@ -46,7 +50,7 @@ def _write_feedback_batch(
                 old_strength=old_strength,
                 new_strength=new_strength,
                 delta=new_strength - old_strength,
-            )
+            ),
         ],
     )
     save_artifact(

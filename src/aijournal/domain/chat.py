@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from pydantic import Field
 
-from aijournal.api.chat import ChatCitation, ChatResponse
 from aijournal.common.base import StrictModel
-from aijournal.common.types import TimestampStr
-from aijournal.domain.index import RetrievedChunk
-from aijournal.domain.persona import PersonaCore
+
+if TYPE_CHECKING:
+    from aijournal.api.chat import ChatCitation, ChatResponse
+    from aijournal.common.types import TimestampStr
+    from aijournal.domain.index import RetrievedChunk
+    from aijournal.domain.persona import PersonaCore
 
 
 class ChatTelemetry(StrictModel):

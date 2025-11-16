@@ -2,16 +2,14 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import typer
 import yaml
 from pydantic import BaseModel
 
-from aijournal.common.app_config import AppConfig
 from aijournal.common.command_runner import run_command_pipeline
 from aijournal.common.config_loader import load_config, use_fake_llm
 from aijournal.common.context import RunContext, create_run_context
@@ -24,6 +22,11 @@ from aijournal.io.yaml_io import write_yaml_model
 from aijournal.models.authoritative import ClaimsFile
 from aijournal.models.derived import ProfileUpdateBatch
 from aijournal.utils.paths import resolve_path
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Iterable
+
+    from aijournal.common.app_config import AppConfig
 
 
 @dataclass(frozen=True)
@@ -70,10 +73,13 @@ class AuditResult:
 
 
 def run_audit_provenance(
-    *, root: Path, workspace: Path, config: AppConfig, fix: bool
+    *,
+    root: Path,
+    workspace: Path,
+    config: AppConfig,
+    fix: bool,
 ) -> list[AuditFileResult]:
     """Scan claims and derived artifacts for provenance span text."""
-
     results: list[AuditFileResult] = []
 
     claims_path = resolve_path(workspace, config, "profile/claims.yaml")
@@ -153,7 +159,10 @@ def prepare_inputs(ctx: RunContext, options: AuditOptions) -> AuditPrepared:
 
 def invoke_pipeline(ctx: RunContext, prepared: AuditPrepared) -> AuditResult:
     findings = run_audit_provenance(
-        root=ctx.workspace, workspace=ctx.workspace, config=ctx.config, fix=prepared.fix
+        root=ctx.workspace,
+        workspace=ctx.workspace,
+        config=ctx.config,
+        fix=prepared.fix,
     )
     ctx.emit(
         event="pipeline_complete",
@@ -303,13 +312,16 @@ def _scan_value(
             field_value = getattr(value, field_name)
 
             def _set_field(
-                new_value: Any, *, field: str = field_name, owner: BaseModel = value
+                new_value: Any,
+                *,
+                field: str = field_name,
+                owner: BaseModel = value,
             ) -> None:
                 setattr(owner, field, new_value)
 
             count += _scan_value(
                 field_value,
-                path=path + [field_name],
+                path=[*path, field_name],
                 setter=_set_field,
                 issues=issues,
                 fix=fix,
@@ -324,7 +336,7 @@ def _scan_value(
 
             count += _scan_value(
                 item,
-                path=path + [f"[{idx}]"],
+                path=[*path, f"[{idx}]"],
                 setter=_set_index,
                 issues=issues,
                 fix=fix,
@@ -341,7 +353,7 @@ def _scan_value(
 
             child_count = _scan_value(
                 item,
-                path=path + [f"[{idx}]"],
+                path=[*path, f"[{idx}]"],
                 setter=_set_tuple_item,
                 issues=issues,
                 fix=fix,
@@ -379,13 +391,16 @@ def _scan_value(
         for key, item in list(value.items()):
 
             def _set_dict_item(
-                new_value: Any, *, dict_key: Any = key, target: dict[Any, Any] = value
+                new_value: Any,
+                *,
+                dict_key: Any = key,
+                target: dict[Any, Any] = value,
             ) -> None:
                 target[dict_key] = new_value
 
             count += _scan_value(
                 item,
-                path=path + [str(key)],
+                path=[*path, str(key)],
                 setter=_set_dict_item,
                 issues=issues,
                 fix=fix,

@@ -6,15 +6,18 @@ import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import chromadb
-from chromadb.api import ClientAPI, Collection
 from chromadb.api.types import SparseVector
 from chromadb.config import Settings
 
-from aijournal.common.app_config import AppConfig
 from aijournal.domain.index import Chunk
+
+if TYPE_CHECKING:
+    from chromadb.api import ClientAPI, Collection
+
+    from aijournal.common.app_config import AppConfig
 
 
 def _resolve_derived_path(workspace: Path, config: AppConfig) -> Path:
@@ -185,8 +188,9 @@ class ChunkIndex:
             )
             hits.append(
                 ChunkIndexHit(
-                    chunk=chunk, distance=float(distance) if distance is not None else None
-                )
+                    chunk=chunk,
+                    distance=float(distance) if distance is not None else None,
+                ),
             )
         return hits
 

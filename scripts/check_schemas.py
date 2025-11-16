@@ -117,9 +117,8 @@ def main() -> int:
         if should_bless:
             if write_if_changed(target, content):
                 changed.append(target)
-        else:
-            if not target.exists() or target.read_text(encoding="utf-8") != content:
-                changed.append(target)
+        elif not target.exists() or target.read_text(encoding="utf-8") != content:
+            changed.append(target)
 
     missing = sorted(existing - seen)
     if should_bless:

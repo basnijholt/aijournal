@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import os
-from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import yaml
 
 from aijournal.common.app_config import AppConfig, LLMConfig
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def load_yaml(path: Path) -> dict[str, Any]:
@@ -19,6 +21,7 @@ def load_yaml(path: Path) -> dict[str, Any]:
 
     Returns:
         Parsed YAML dictionary, or empty dict if file is empty
+
     """
     return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
 
@@ -31,6 +34,7 @@ def load_config(workspace: Path) -> AppConfig:
 
     Returns:
         Parsed AppConfig or defaults if config.yaml doesn't exist
+
     """
     config_path = workspace / "config.yaml"
     if not config_path.exists():
@@ -47,7 +51,6 @@ def load_config_with_overrides(
     llm_timeout: float | None = None,
 ) -> AppConfig:
     """Load workspace config and apply runtime LLM overrides."""
-
     config = load_config(workspace)
     return apply_llm_overrides(config, retries=llm_retries, timeout=llm_timeout)
 
@@ -59,7 +62,6 @@ def apply_llm_overrides(
     timeout: float | None = None,
 ) -> AppConfig:
     """Return a copy of the config with CLI LLM overrides applied."""
-
     updates: dict[str, Any] = {}
     llm_updates: dict[str, Any] = {}
     if retries is not None:
@@ -81,6 +83,7 @@ def use_fake_llm() -> bool:
 
     Returns:
         True if AIJOURNAL_FAKE_OLLAMA=1, False otherwise
+
     """
     return os.getenv("AIJOURNAL_FAKE_OLLAMA") == "1"
 
@@ -103,6 +106,7 @@ def resolve_prompt_set(
 
     Returns:
         Active prompt set name, or None for default prompts
+
     """
     if cli_override:
         return cli_override

@@ -71,7 +71,6 @@ def resolve_ollama_host(
     config_host: str | None = None,
 ) -> str:
     """Return the base Ollama host (without `/v1`) to contact."""
-
     if host:
         return host.rstrip("/")
 
@@ -125,7 +124,6 @@ def build_ollama_config_from_mapping(
     max_tokens: int | None = None,
 ) -> OllamaConfig:
     """Construct an OllamaConfig from a loose mapping of settings."""
-
     cfg = config or AppConfig()
     raw_config_model = cfg.model
     raw_config_host = cfg.host
@@ -161,7 +159,6 @@ def resolve_model_name(
     fake_label: str = "fake-ollama",
 ) -> str:
     """Return the effective model name, accounting for fake-LLM mode."""
-
     if use_fake_llm:
         return fake_label
     return build_ollama_config_from_mapping(config).model
@@ -329,7 +326,7 @@ def _coerce_value_for_type(
                     "rule": "wrap_scalar_in_list",
                     "from": repr(value),
                     "to": repr(coerced_value),
-                }
+                },
             )
             value = coerced_value
         coerced_items: list[Any] = []
@@ -472,7 +469,6 @@ def run_ollama_agent(
     log_label: str | None = None,
 ) -> LLMResult[_PayloadT]:
     """Run a Pydantic AI agent and return the validated payload with metadata."""
-
     target_model: type[BaseModel] | None = None
     if isinstance(output_type, type) and issubclass(output_type, BaseModel):
         target_model = output_type
@@ -481,7 +477,10 @@ def run_ollama_agent(
         resolved_output = output_type or dict
 
     agent = build_ollama_agent(
-        config, system_prompt=system_prompt, output_type=resolved_output, retries=retries
+        config,
+        system_prompt=system_prompt,
+        output_type=resolved_output,
+        retries=retries,
     )
 
     skeleton_json: str | None = None
@@ -601,7 +600,10 @@ def _load_prompt_template(prompt_path: str, *, prompt_set: str | None = None) ->
 
 
 def _render_prompt(
-    prompt_path: str, variables: dict[str, str], *, prompt_set: str | None = None
+    prompt_path: str,
+    variables: dict[str, str],
+    *,
+    prompt_set: str | None = None,
 ) -> str:
     template = Template(_load_prompt_template(prompt_path, prompt_set=prompt_set))
     return template.safe_substitute(**variables)

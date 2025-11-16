@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 import yaml
@@ -19,6 +19,9 @@ from aijournal.io.yaml_io import dump_yaml
 from aijournal.services.chat import ChatService, ChatTelemetry, ChatTurn
 from aijournal.services.chat_api import build_chat_app
 from tests.helpers import make_claim_atom, write_manifest, write_normalized_entry
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 @pytest.fixture(autouse=True)
@@ -41,7 +44,8 @@ def capture_pipeline_mocks(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> N
     monkeypatch.setattr(
         "aijournal.commands.summarize.run_summarize",
         lambda date, *, progress, workspace=None, config=None: _ensure_file(
-            tmp_path / "derived" / "summaries" / f"{date}.yaml", "summary"
+            tmp_path / "derived" / "summaries" / f"{date}.yaml",
+            "summary",
         ),
     )
 
@@ -132,7 +136,7 @@ def _build_index(base: Path, *, day: str, entry_id: str, summary: str) -> None:
                 "id": entry_id,
                 "hash": f"hash-{entry_id}",
                 "source_type": "journal",
-            }
+            },
         ],
     )
     runner = CliRunner()

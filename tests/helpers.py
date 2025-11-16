@@ -98,7 +98,6 @@ def write_daily_summary(
     todo_candidates: list[str] | None = None,
 ) -> Path:
     """Write a minimal Artifact[DailySummary] for tests."""
-
     payload = {
         "kind": "summaries.daily",
         "meta": {
@@ -136,7 +135,6 @@ def read_index_meta(base: Path) -> dict[str, Any]:
 
 def copy_fixture_workspace(name: str, destination: Path) -> Path:
     """Copy a named fixture workspace into the destination directory."""
-
     fixture_root = FIXTURES_ROOT / name
     if not fixture_root.exists():
         msg = f"Fixture {name} not found under {FIXTURES_ROOT}"

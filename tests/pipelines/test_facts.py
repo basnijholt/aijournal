@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from pathlib import Path
-
-import pytest
+from typing import TYPE_CHECKING
 
 from aijournal.common.app_config import AppConfig
 from aijournal.domain.changes import ClaimProposal
@@ -14,6 +12,11 @@ from aijournal.domain.journal import NormalizedEntry
 from aijournal.models.authoritative import ManifestEntry
 from aijournal.pipelines import facts as facts_pipeline
 from aijournal.services.microfacts import MicrofactIndex, MicrofactRecord
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    import pytest
 
 
 def _normalized_entry(entry_id: str) -> NormalizedEntry:
@@ -73,7 +76,7 @@ def test_generate_microfacts_merges_llm_and_derived(monkeypatch: pytest.MonkeyPa
                 evidence=SourceRef(entry_id="entry-1", spans=[]),
                 first_seen="2024-01-02",
                 last_seen="2024-01-02",
-            )
+            ),
         ],
         claim_proposals=[
             ClaimProposal(
@@ -92,7 +95,7 @@ def test_generate_microfacts_merges_llm_and_derived(monkeypatch: pytest.MonkeyPa
                 manifest_hashes=["manifest-1"],
                 evidence=[SourceRef(entry_id="entry-1", spans=[])],
                 rationale=None,
-            )
+            ),
         ],
     )
 
@@ -142,7 +145,7 @@ def _run_custom_microfacts(
                     evidence=SourceRef(entry_id=entry.id, spans=[]),
                     first_seen=date,
                     last_seen=date,
-                )
+                ),
             ],
             claim_proposals=[],
         ),
@@ -202,8 +205,10 @@ def test_generate_microfacts_creates_new_records_for_unique_statements(tmp_path:
 
     match_focus = microfact_index.query_similar("Morning deep work focus block", top_k=1)
     match_walk = microfact_index.query_similar("Evening recovery walk", top_k=1)
-    assert match_focus and match_walk
+    assert match_focus
+    assert match_walk
     focus_record = MicrofactRecord.from_match(match_focus[0])
     walk_record = MicrofactRecord.from_match(match_walk[0])
-    assert focus_record is not None and walk_record is not None
+    assert focus_record is not None
+    assert walk_record is not None
     assert focus_record.uid != walk_record.uid

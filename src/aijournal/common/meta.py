@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Generic, TypeVar
+from typing import TYPE_CHECKING, Generic, TypeVar
 
 from pydantic import Field
 
 from .base import StrictModel
-from .types import TimestampStr
+
+if TYPE_CHECKING:
+    from .types import TimestampStr
 
 T = TypeVar("T")
 

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING, Never
 
 import typer
 
@@ -11,6 +11,9 @@ from aijournal.common.app_config import AppConfig
 from aijournal.services.capture import CaptureInput
 from aijournal.services.capture import utils as capture_utils
 from aijournal.services.capture.stages import stage4_profile_update
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def _make_inputs(apply_profile: str = "review") -> CaptureInput:
@@ -24,7 +27,7 @@ def _make_config() -> AppConfig:
             "derived": "derived",
             "profile": "profile",
             "prompts": "prompts",
-        }
+        },
     )
 
 
@@ -50,7 +53,10 @@ def test_stage_profile_update_success(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(profile_update_module, "run_profile_update", fake_run)
 
     outputs = stage4_profile_update.run_profile_update_stage(
-        ["2025-10-27"], _make_inputs(), tmp_path, _make_config()
+        ["2025-10-27"],
+        _make_inputs(),
+        tmp_path,
+        _make_config(),
     )
 
     assert called == ["2025-10-27"]
@@ -62,13 +68,16 @@ def test_stage_profile_update_success(tmp_path: Path, monkeypatch) -> None:
 
 
 def test_stage_profile_update_handles_failure(tmp_path: Path, monkeypatch) -> None:
-    def failing_run(*_args, **_kwargs):
+    def failing_run(*_args, **_kwargs) -> Never:
         raise typer.Exit(1)
 
     monkeypatch.setattr(profile_update_module, "run_profile_update", failing_run)
 
     outputs = stage4_profile_update.run_profile_update_stage(
-        ["2025-10-27"], _make_inputs(), tmp_path, _make_config()
+        ["2025-10-27"],
+        _make_inputs(),
+        tmp_path,
+        _make_config(),
     )
 
     assert outputs.result.ok is False
@@ -96,7 +105,10 @@ def test_stage_profile_update_auto_apply(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(capture_utils, "apply_profile_update_batch", fake_apply)
 
     outputs = stage4_profile_update.run_profile_update_stage(
-        ["2025-10-27"], _make_inputs(apply_profile="auto"), tmp_path, _make_config()
+        ["2025-10-27"],
+        _make_inputs(apply_profile="auto"),
+        tmp_path,
+        _make_config(),
     )
 
     assert called_apply == [batch_path]

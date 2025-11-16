@@ -3,16 +3,19 @@
 from __future__ import annotations
 
 import copy
-from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from math import ceil, exp
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from aijournal.domain.claims import ClaimAtom
 from aijournal.domain.persona import PersonaCore
 from aijournal.io.yaml_io import dump_yaml
 from aijournal.utils.coercion import coerce_float
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+    from aijournal.domain.claims import ClaimAtom
 
 PERSONA_PROFILE_KEYS = (
     "values_motivations",
@@ -94,7 +97,7 @@ def _claim_effective_strength(
     weight = _claim_weight(claim, weights)
     last_updated = str(claim.provenance.last_updated or "")
     try:
-        dt = datetime.fromisoformat(last_updated.replace("Z", "+00:00"))
+        dt = datetime.fromisoformat(last_updated)
     except ValueError:
         dt = now
     days_since = (now - dt).days if now >= dt else 0
@@ -174,7 +177,6 @@ def build_persona_core(
     now: datetime,
 ) -> PersonaBuildResult:
     """Construct a persona core and selection metadata."""
-
     profile_slice = _persona_profile_slice(profile)
     ranked_claims = _rank_claims_for_persona(claims, impact_weights, now)
 

@@ -6,15 +6,16 @@ from datetime import UTC, datetime
 from hashlib import sha256
 from typing import TYPE_CHECKING
 
-import pytest
 import yaml
-from typer.testing import CliRunner
 
 from aijournal.cli import app
 from aijournal.commands.ingest import _fake_structured_entry
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+    import pytest
+    from typer.testing import CliRunner
 
 
 def _write_blog_post(tmp_path: Path, slug: str = "agentic-coding") -> Path:
@@ -91,7 +92,8 @@ def test_ingest_skips_duplicate_hash(
 
 
 def test_fake_structured_entry_handles_malformed_frontmatter(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     bad = tmp_path / "broken.md"
     bad.write_text(

@@ -3,27 +3,30 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from hashlib import sha256
 from math import ceil
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-from aijournal.common.app_config import AppConfig
 from aijournal.common.meta import Artifact, ArtifactKind, ArtifactMeta
 from aijournal.domain.facts import DailySummary, MicroFactsFile
 from aijournal.domain.index import Chunk, ChunkBatch, IndexMeta
 from aijournal.domain.journal import NormalizedEntry
 from aijournal.io.artifacts import load_artifact_data, save_artifact
 from aijournal.io.yaml_io import load_yaml_model
-from aijournal.models.authoritative import ManifestEntry
 from aijournal.pipelines import normalization
-from aijournal.services.embedding import EmbeddingBackend
 from aijournal.services.summaries import load_daily_summary, summary_artifact_path
 from aijournal.utils import time as time_utils
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Iterable, Mapping, Sequence
+
+    from aijournal.common.app_config import AppConfig
+    from aijournal.models.authoritative import ManifestEntry
+    from aijournal.services.embedding import EmbeddingBackend
 
 CHUNK_TARGET_CHARS = 900
 CHUNK_MAX_CHARS = 1200
@@ -224,7 +227,7 @@ def _summary_chunk_records(
                 tokens=token_estimate(text, char_per_token),
                 source_hash=None,
                 manifest_hash=None,
-            )
+            ),
         )
     return records
 
@@ -259,7 +262,7 @@ def _microfact_chunk_records(
                 tokens=token_estimate(text, char_per_token),
                 source_hash=None,
                 manifest_hash=None,
-            )
+            ),
         )
     return records
 
@@ -333,7 +336,7 @@ def build_chunk_records(
     if not entry_id:
         return []
     created_at = normalization.normalize_created_at(
-        entry.created_at or time_utils.format_timestamp(time_utils.now())
+        entry.created_at or time_utils.format_timestamp(time_utils.now()),
     )
     date_value = time_utils.created_date(created_at)
     tags = entry.tags or []
@@ -451,7 +454,7 @@ def write_chunk_manifests(
                     tokens=record.tokens,
                     source_hash=record.source_hash,
                     manifest_hash=record.manifest_hash,
-                )
+                ),
             )
             vectors.append(record.embedding or [])
 

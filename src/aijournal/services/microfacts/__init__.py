@@ -10,11 +10,11 @@ from .index import (
 from .snapshot import load_consolidated_microfacts, select_recurring_facts
 
 __all__ = [
+    "MicrofactConsolidationStats",
     "MicrofactIndex",
     "MicrofactMatch",
-    "MicrofactRecord",
-    "MicrofactConsolidationStats",
     "MicrofactRebuildResult",
+    "MicrofactRecord",
     "load_consolidated_microfacts",
     "select_recurring_facts",
 ]

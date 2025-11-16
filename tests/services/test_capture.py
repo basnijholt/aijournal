@@ -6,6 +6,7 @@ import json
 import textwrap
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 import yaml
@@ -24,7 +25,6 @@ from aijournal.domain.facts import (
 )
 from aijournal.domain.journal import NormalizedEntry
 from aijournal.io.artifacts import save_artifact
-from aijournal.models.authoritative import ManifestEntry
 from aijournal.models.derived import (
     ProfileUpdateBatch,
     ProfileUpdateInput,
@@ -41,6 +41,9 @@ from aijournal.services.capture.stages.stage0_persist import (
     _persist_text_entry,
 )
 from aijournal.services.capture.utils import discover_markdown_files
+
+if TYPE_CHECKING:
+    from aijournal.models.authoritative import ManifestEntry
 
 
 def test_capture_input_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -123,7 +126,7 @@ def test_run_capture_records_telemetry(tmp_path: Path, monkeypatch: pytest.Monke
                     ),
                     first_seen=day,
                     last_seen=day,
-                )
+                ),
             ],
         )
         artifact = Artifact[MicroFactsFile](
@@ -150,7 +153,7 @@ def test_run_capture_records_telemetry(tmp_path: Path, monkeypatch: pytest.Monke
                     id=f"{day}-entry",
                     normalized_path=f"data/normalized/{day}/entry.yaml",
                     tags=["test"],
-                )
+                ),
             ],
             proposals=ProfileUpdateProposals(),
             preview=ProfileUpdatePreview(),
@@ -267,7 +270,7 @@ def test_run_capture_records_telemetry(tmp_path: Path, monkeypatch: pytest.Monke
     monkeypatch.setattr(
         "aijournal.commands.pack.run_pack",
         lambda level, date, *, output, max_tokens, fmt, history_days, dry_run: pack_calls.append(
-            (level, output)
+            (level, output),
         ),
     )
 
@@ -345,7 +348,8 @@ def test_run_capture_records_telemetry(tmp_path: Path, monkeypatch: pytest.Monke
 
 
 def test_run_capture_rebuild_skip_skips_refresh(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("AIJOURNAL_FAKE_OLLAMA", "1")
     monkeypatch.setattr(
@@ -388,13 +392,13 @@ def test_run_capture_rebuild_skip_skips_refresh(
     monkeypatch.setattr(
         "aijournal.services.capture.stages.stage6_index.run_index_stage_6",
         lambda *args, **kwargs: (_ for _ in ()).throw(
-            AssertionError("index stage should be skipped when rebuild=skip")
+            AssertionError("index stage should be skipped when rebuild=skip"),
         ),
     )
     monkeypatch.setattr(
         "aijournal.services.capture.stages.stage7_persona.run_persona_stage_7",
         lambda *args, **kwargs: (_ for _ in ()).throw(
-            AssertionError("persona stage should be skipped when rebuild=skip")
+            AssertionError("persona stage should be skipped when rebuild=skip"),
         ),
     )
 
@@ -414,7 +418,8 @@ def test_run_capture_rebuild_skip_skips_refresh(
 
 
 def test_run_capture_rebuild_always_forces_refresh(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("AIJOURNAL_FAKE_OLLAMA", "1")
     monkeypatch.setattr(
@@ -543,7 +548,8 @@ def test_run_capture_requires_text(tmp_path: Path, monkeypatch: pytest.MonkeyPat
 
 
 def test_run_capture_review_mode_skips_apply(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("AIJOURNAL_FAKE_OLLAMA", "1")
     monkeypatch.setattr(
@@ -560,7 +566,8 @@ def test_run_capture_review_mode_skips_apply(
     monkeypatch.setattr(
         "aijournal.commands.summarize.run_summarize",
         lambda date, *, timeout, retries, progress, workspace=None: _ensure_file(
-            tmp_path / "derived" / "summaries" / f"{date}.yaml", "summary"
+            tmp_path / "derived" / "summaries" / f"{date}.yaml",
+            "summary",
         ),
     )
 
@@ -606,7 +613,7 @@ def test_run_capture_review_mode_skips_apply(
     monkeypatch.setattr(
         "aijournal.commands.persona.run_persona_build",
         lambda *args, **kwargs: (_ for _ in ()).throw(
-            AssertionError("persona build should not run")
+            AssertionError("persona build should not run"),
         ),
     )
     monkeypatch.setattr(
@@ -632,7 +639,8 @@ def test_run_capture_review_mode_skips_apply(
 
 
 def test_persist_text_writes_markdown_and_normalized(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
         "aijournal.utils.time.now",
@@ -670,7 +678,8 @@ def test_persist_file_skips_duplicate(tmp_path: Path, monkeypatch: pytest.Monkey
     )
     entry_path = tmp_path / "entry.md"
     entry_path.write_text(
-        "---\nid: custom-slug\ncreated_at: 2025-10-27\ntitle: Sample\n---\nBody", encoding="utf-8"
+        "---\nid: custom-slug\ncreated_at: 2025-10-27\ntitle: Sample\n---\nBody",
+        encoding="utf-8",
     )
 
     inputs = CaptureInput(source="file", paths=[str(entry_path)])
@@ -687,7 +696,8 @@ def test_persist_file_skips_duplicate(tmp_path: Path, monkeypatch: pytest.Monkey
 
 
 def test_persist_file_infers_created_at_from_filename(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
         "aijournal.utils.time.now",
@@ -714,7 +724,8 @@ def test_persist_file_infers_created_at_from_filename(
 
 
 def test_persist_file_infers_created_at_from_body(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
         "aijournal.utils.time.now",
@@ -742,7 +753,8 @@ def test_persist_file_infers_created_at_from_body(
 
 
 def test_persist_file_records_snapshot_and_manifest_fields(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
         "aijournal.utils.time.now",
@@ -762,7 +774,7 @@ def test_persist_file_records_snapshot_and_manifest_fields(
             }
 
             Body from JSON frontmatter.
-            """
+            """,
         ).strip(),
         encoding="utf-8",
     )
@@ -777,7 +789,12 @@ def test_persist_file_records_snapshot_and_manifest_fields(
     manifest: list[ManifestEntry] = []
     config = AppConfig()
     result = _persist_file_entry(
-        inputs, tmp_path, config, manifest, source_path=entry_path, snapshot=True
+        inputs,
+        tmp_path,
+        config,
+        manifest,
+        source_path=entry_path,
+        snapshot=True,
     )
 
     assert result.changed is True
@@ -797,7 +814,8 @@ def test_persist_file_records_snapshot_and_manifest_fields(
 
 
 def test_persist_file_slug_collision_logs_alias(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
         "aijournal.utils.time.now",
@@ -821,7 +839,12 @@ def test_persist_file_slug_collision_logs_alias(
 
     inputs_two = CaptureInput(source="file", paths=[str(entry_two)])
     result_two = _persist_file_entry(
-        inputs_two, tmp_path, config, manifest, source_path=entry_two, snapshot=False
+        inputs_two,
+        tmp_path,
+        config,
+        manifest,
+        source_path=entry_two,
+        snapshot=False,
     )
 
     assert result_two.slug.endswith("-2")
@@ -833,7 +856,8 @@ def test_persist_file_slug_collision_logs_alias(
 
 
 def test_persist_file_falls_back_to_ingest_agent(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     broken = tmp_path / "broken.md"
     broken.write_text(
@@ -877,7 +901,12 @@ def test_persist_file_falls_back_to_ingest_agent(
     manifest: list[ManifestEntry] = []
     config = AppConfig()
     result = _persist_file_entry(
-        inputs, tmp_path, config, manifest, source_path=broken, snapshot=False
+        inputs,
+        tmp_path,
+        config,
+        manifest,
+        source_path=broken,
+        snapshot=False,
     )
 
     assert called["source"] == broken

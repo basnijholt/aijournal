@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
 from datetime import datetime, timedelta
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 from aijournal.domain.packs import PackBundle, PackEntry, PackMeta, TrimmedFile
 from aijournal.utils import time as time_utils
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
+    from pathlib import Path
 
 ROLE_ORDER = [
     "persona_core",
@@ -54,7 +57,8 @@ def _add_path(
     if path.is_file():
         entries.append((role, path, day_index))
     elif required:
-        raise PackAssemblyError(f"Missing required file {path}")
+        msg = f"Missing required file {path}"
+        raise PackAssemblyError(msg)
 
 
 def _add_dir(
@@ -69,7 +73,8 @@ def _add_dir(
 ) -> None:
     if not directory.exists():
         if required:
-            raise PackAssemblyError(f"Missing required files under {directory}")
+            msg = f"Missing required files under {directory}"
+            raise PackAssemblyError(msg)
         return
     if recursive:
         files = sorted(p for p in directory.rglob("*") if p.is_file())
@@ -78,7 +83,8 @@ def _add_dir(
     else:
         files = sorted(p for p in directory.iterdir() if p.is_file())
     if not files and required:
-        raise PackAssemblyError(f"Missing required files under {directory}")
+        msg = f"Missing required files under {directory}"
+        raise PackAssemblyError(msg)
     for file in files:
         entries.append((role, file, day_index))
 
@@ -125,11 +131,15 @@ def collect_pack_entries(
 ) -> list[tuple[str, Path]]:
     level = level.upper()
     if level not in {"L1", "L2", "L3", "L4"}:
-        raise ValueError(f"Unsupported level {level}")
+        msg = f"Unsupported level {level}"
+        raise ValueError(msg)
 
     entries: list[tuple[str, Path, int]] = []
     _add_path(
-        entries, "persona_core", root / "derived" / "persona" / "persona_core.yaml", required=True
+        entries,
+        "persona_core",
+        root / "derived" / "persona" / "persona_core.yaml",
+        required=True,
     )
 
     if level == "L1":

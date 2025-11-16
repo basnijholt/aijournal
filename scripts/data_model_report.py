@@ -19,12 +19,14 @@ import inspect
 import pkgutil
 import sys
 from collections import defaultdict
-from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
 
 
 @dataclass(slots=True)
@@ -49,7 +51,6 @@ class ClassSummary:
     @property
     def signature(self) -> tuple[tuple[str, str], ...]:
         """Similarity signature used for grouping (field name + type)."""
-
         return tuple((field.name, field.type_repr) for field in self.fields)
 
 
@@ -128,7 +129,8 @@ def _print_group_report(title: str, summaries: Iterable[ClassSummary]) -> None:
         f"{len(summaries)} total · {len(grouped)} unique field signatures\n",
     )
     for index, (signature, items) in enumerate(
-        sorted(grouped.items(), key=lambda item: (-len(item[1]), item[0])), start=1
+        sorted(grouped.items(), key=lambda item: (-len(item[1]), item[0])),
+        start=1,
     ):
         fields_display = ", ".join(f"{name}: {type_repr}" for name, type_repr in signature)
         print(f"### Group {index} ({len(items)} classes)\n")

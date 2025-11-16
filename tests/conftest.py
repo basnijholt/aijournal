@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 from typer.testing import CliRunner
 
 from aijournal.cli import app
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 _FIXED_NOW = datetime(2025, 2, 3, 12, 0, tzinfo=UTC)
 
@@ -32,6 +35,7 @@ def cli_workspace(
 
     result = cli_runner.invoke(app, ["init"])
     if result.exit_code != 0:
-        raise RuntimeError(f"Failed to initialize CLI workspace: {result.stdout}")
+        msg = f"Failed to initialize CLI workspace: {result.stdout}"
+        raise RuntimeError(msg)
 
-    yield tmp_path
+    return tmp_path

@@ -6,9 +6,12 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING, Self
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
 
 
 @dataclass
@@ -17,7 +20,7 @@ class MetricsSummary:
     repair_attempts: int = 0
     coercions: int = 0
 
-    def __iadd__(self, other: MetricsSummary) -> MetricsSummary:  # pragma: no cover - convenience
+    def __iadd__(self, other: MetricsSummary) -> Self:  # pragma: no cover - convenience
         self.calls += other.calls
         self.repair_attempts += other.repair_attempts
         self.coercions += other.coercions
@@ -91,14 +94,14 @@ def main() -> int:
         ok = False
     if avg_coercions > args.max_avg_coercions:
         print(
-            f"Average coercions {avg_coercions:.3f} exceeded threshold {args.max_avg_coercions:.3f}"
+            f"Average coercions {avg_coercions:.3f} exceeded threshold {args.max_avg_coercions:.3f}",
         )
         ok = False
 
     print(
         f"Metrics: calls={summary.calls} repairs={summary.repair_attempts} "
         f"coercions={summary.coercions} repair_rate={repair_rate:.3f} "
-        f"avg_coercions={avg_coercions:.3f}"
+        f"avg_coercions={avg_coercions:.3f}",
     )
 
     return 0 if ok else 1

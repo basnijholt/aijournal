@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -12,6 +12,9 @@ from aijournal.domain.evidence import SourceRef
 from aijournal.domain.facts import MicroFact, MicroFactsFile
 from aijournal.io.yaml_io import write_yaml_model
 from aijournal.services.microfacts import MicrofactIndex, MicrofactRecord
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def _make_record(statement: str, *, day: str = "2025-11-14") -> MicrofactRecord:

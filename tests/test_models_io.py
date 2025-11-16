@@ -376,7 +376,7 @@ def test_profile_update_batch_schema(tmp_path: Path) -> None:
                 id="2025-10-25-entry",
                 normalized_path="data/normalized/2025-10-25/2025-10-25-entry.yaml",
                 source_hash="hash",
-            )
+            ),
         ],
         proposals=proposals,
         preview=ProfileUpdatePreview(),

@@ -5,16 +5,14 @@ from __future__ import annotations
 import json
 import os
 import time
-from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from pydantic import ValidationError
 
 from aijournal.api.chat import ChatCitation, ChatCitationRef, ChatResponse
 from aijournal.common.app_config import AppConfig
-from aijournal.common.meta import LLMResult
 from aijournal.domain.chat import ChatTelemetry, ChatTurn
 from aijournal.domain.persona import PersonaCore
 from aijournal.io.artifacts import load_artifact
@@ -30,6 +28,11 @@ from aijournal.services.retriever import (
     Retriever,
 )
 from aijournal.utils.coercion import coerce_int
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+    from aijournal.common.meta import LLMResult
 
 _INTENT_KEYWORDS: dict[str, tuple[str, ...]] = {
     "planning": (
@@ -154,7 +157,7 @@ class ChatService:
                 "answer": answer,
                 "telemetry": telemetry_payload,
                 "timestamp": response.timestamp or timestamp,
-            }
+            },
         )
         return ChatTurn(
             question=sanitized_question,
@@ -277,7 +280,8 @@ class ChatService:
         answer = response.answer.strip()
 
         if not answer:
-            raise LLMResponseError("Chat model returned an empty answer.")
+            msg = "Chat model returned an empty answer."
+            raise LLMResponseError(msg)
 
         citations: list[ChatCitation] = []
         missing_codes: list[str] = []
@@ -293,11 +297,15 @@ class ChatService:
                 citations.append(citation)
 
         if missing_codes:
-            raise LLMResponseError(
+            msg = (
                 f"Chat model referenced unknown citation codes: {', '.join(sorted(missing_codes))}."
             )
+            raise LLMResponseError(
+                msg,
+            )
         if not citations:
-            raise LLMResponseError("Chat model did not provide any citations.")
+            msg = "Chat model did not provide any citations."
+            raise LLMResponseError(msg)
 
         clarifying: str | None = None
         if allow_follow_up and response.clarifying_question:
@@ -305,7 +313,7 @@ class ChatService:
             clarifying = clarifying_candidate or None
 
         response = response.model_copy(
-            update={"citations": [ChatCitationRef(code=c.code) for c in citations]}
+            update={"citations": [ChatCitationRef(code=c.code) for c in citations]},
         )
         return answer, citations, clarifying, response
 

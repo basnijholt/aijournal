@@ -2,15 +2,13 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, ConfigDict
 
-from aijournal.common.app_config import AppConfig
 from aijournal.common.command_runner import run_command_pipeline
-from aijournal.common.context import RunContext
 from aijournal.common.meta import Artifact, ArtifactKind, ArtifactMeta
 from aijournal.domain.facts import (
     ConsolidatedMicroFact,
@@ -25,6 +23,12 @@ from aijournal.services.microfacts import (
     MicrofactRecord,
 )
 from aijournal.utils import time as time_utils
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+    from aijournal.common.app_config import AppConfig
+    from aijournal.common.context import RunContext
 
 
 class MicrofactsRebuildOptions(BaseModel):
@@ -118,7 +122,8 @@ def _build_log(
 
 
 def invoke_pipeline(
-    ctx: RunContext, prepared: MicrofactsRebuildPrepared
+    ctx: RunContext,
+    prepared: MicrofactsRebuildPrepared,
 ) -> MicrofactsRebuildResult:
     index = MicrofactIndex(prepared.workspace, prepared.config, fake_mode=ctx.use_fake_llm)
     rebuild = index.rebuild_from_daily_artifacts()
@@ -172,7 +177,8 @@ def persist_output(ctx: RunContext, result: MicrofactsRebuildResult) -> Microfac
 
 
 def run_microfacts_rebuild(
-    ctx: RunContext, options: MicrofactsRebuildOptions
+    ctx: RunContext,
+    options: MicrofactsRebuildOptions,
 ) -> MicrofactsRebuildResult:
     return run_command_pipeline(
         ctx,

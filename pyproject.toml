@@ -48,9 +48,28 @@ target-version = "py311"
 src = ["src", "tests"]
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP"]
+select = ["ALL"]
 ignore = [
-    "E501", # Line too long
+    "T20",     # flake8-print
+    "S101",    # Use of assert detected
+    "PD901",   # df is a bad variable name. Be kinder to your future self.
+    "ANN401",  # Dynamically typed expressions (typing.Any) are disallowed in {name}
+    "D402",    # First line should not be the function's signature
+    "PLW0603", # Using the global statement to update `X` is discouraged
+    "D401",    # First line of docstring should be in imperative mood
+    "SLF001",  # Private member accessed
+    "S603",    # `subprocess` call: check for execution of untrusted input
+    "S607",    # Starting a process with a partial executable path
+    "PLR0913", # Too many arguments to function call (N > 5)
+    "TD002",   # Missing author in TODO; try: `# TODO(<author_name>): ...`
+    "TD003",   # Missing issue link on the line following this TODO
+    "FIX002",  # Line contains TODO"
+    "E501",    # Line too long
+    "D107",    # Missing docstring in `__init__`
+    "B905",    # `zip()` without an explicit `strict=` parameter
+    "PLC0415", # `import` should be at the top-level of a file
+    "FBT001",  # Boolean-typed positional argument in function definition
+    "TC006",  # Add quotes to type expression in `typing.cast()`
 ]
 
 [tool.mypy]

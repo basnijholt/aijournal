@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from pydantic import ValidationError
 
-from aijournal.common.app_config import AppConfig
 from aijournal.domain.facts import ConsolidatedMicroFact, ConsolidatedMicrofactsFile
 from aijournal.io.artifacts import load_artifact_data
+
+if TYPE_CHECKING:
+    from aijournal.common.app_config import AppConfig
 
 
 def _consolidated_path(workspace: Path, config: AppConfig) -> Path:
@@ -20,10 +22,10 @@ def _consolidated_path(workspace: Path, config: AppConfig) -> Path:
 
 
 def load_consolidated_microfacts(
-    workspace: Path, config: AppConfig
+    workspace: Path,
+    config: AppConfig,
 ) -> ConsolidatedMicrofactsFile | None:
     """Return the consolidated snapshot if it exists and validates."""
-
     path = _consolidated_path(workspace, config)
     if not path.exists():
         return None
@@ -40,7 +42,6 @@ def select_recurring_facts(
     limit: int = 20,
 ) -> list[dict[str, Any]]:
     """Return the strongest recurring facts for prompt context."""
-
     candidates: list[ConsolidatedMicroFact] = [
         fact for fact in snapshot.facts if fact.observation_count >= min_observations
     ]

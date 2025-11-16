@@ -1,13 +1,14 @@
 from __future__ import annotations
 
-from pathlib import Path
 from time import perf_counter
 from typing import TYPE_CHECKING
 
 import typer
 
 if TYPE_CHECKING:
-    from .. import CaptureInput, PackStage8Outputs
+    from pathlib import Path
+
+    from aijournal.services.capture import CaptureInput, PackStage8Outputs
 
 
 def run_pack_stage_8(
@@ -17,9 +18,8 @@ def run_pack_stage_8(
     persona_changed: bool,
 ) -> PackStage8Outputs:
     from aijournal.commands.pack import run_pack
-
-    from .. import OperationResult, PackStage8Outputs
-    from ..utils import relative_path
+    from aijournal.services.capture import OperationResult, PackStage8Outputs
+    from aijournal.services.capture.utils import relative_path
 
     if not inputs.pack:
         return PackStage8Outputs(OperationResult.noop("no pack requested"), 0.0)
