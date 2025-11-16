@@ -6,9 +6,19 @@ Take your time to reason through the evidence, then emit a single structured obj
 Do not add prose, markdown fences, or extra fields.
 If you have nothing grounded to add, return `{ "claims": [], "facets": [], "interview_prompts": [] }`.
 
+Overall shape:
+
+```
+{
+  "claims": [...],
+  "facets": [...],
+  "interview_prompts": [...]
+}
+```
+
 ## Mission
 
-- Claims capture precise statements about the person (habits, values, goals, boundaries, etc.) using the ClaimAtomInput shape; IDs and provenance are handled downstream.
+- Claims capture precise statements about the person (habits, values, goals, boundaries, etc.); the system fills in IDs, provenance, and other metadata for you.
 - Facets adjust persona fields (e.g., `planning.focus_blocks`) using `set` or `remove` operations only.
 - Interview prompts surface ≤20-word questions that would help resolve important ambiguities.
 - Every proposal must reference concrete evidence such as an entry ID or tag.
@@ -66,7 +76,7 @@ If you have nothing grounded to add, return `{ "claims": [], "facets": [], "inte
     }
   ],
   "interview_prompts": [
-    "≤20 word clarification question referencing a claim or facet"
+    "Optional ≤20 word clarification question referencing a claim or facet"
   ]
 }
 ```
