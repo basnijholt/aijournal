@@ -21,3 +21,8 @@ def test_capture_request_to_input_conversion() -> None:
         assert getattr(capture_input, key) == value
     assert capture_input.min_stage == 2
     assert capture_input.max_stage == 4
+
+
+def test_capture_request_retries_defaults_to_none() -> None:
+    request = CaptureRequest(source="stdin", text="Body")
+    assert request.retries is None

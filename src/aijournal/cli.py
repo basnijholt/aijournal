@@ -80,10 +80,6 @@ from aijournal.common.config_loader import (
     resolve_prompt_set,
     use_fake_llm,
 )
-from aijournal.common.constants import (
-    DEFAULT_LLM_RETRIES,
-    DEFAULT_TIMEOUT_SECONDS,
-)
 from aijournal.common.context import RunContext, create_run_context
 from aijournal.domain.changes import ClaimProposal, FacetChange
 from aijournal.domain.events import (
@@ -649,12 +645,13 @@ def capture(
         help=f"Highest capture stage (0-{CAPTURE_MAX_STAGE}) to execute. Stages:\n{CAPTURE_STAGE_TABLE}",
         rich_help_panel="STAGE CONTROL",
     ),
-    retries: int = typer.Option(
-        DEFAULT_LLM_RETRIES,
+    retries: int | None = typer.Option(
+        None,
         "--retries",
         min=0,
-        help="Structured-output retry attempts per stage.",
+        help="Override structured-output retries; defaults to workspace config when unset.",
         rich_help_panel="LLM & VALIDATION",
+        show_default=False,
     ),
     progress: bool = typer.Option(
         True,
@@ -1038,19 +1035,19 @@ def summarize(
         help="Date (YYYY-MM-DD) to summarize.",
         rich_help_panel="INPUT",
     ),
-    timeout: float = typer.Option(
-        DEFAULT_TIMEOUT_SECONDS,
+    timeout: float | None = typer.Option(
+        None,
         "--timeout",
-        help="Seconds to wait for the LLM response before retrying.",
-        show_default=True,
+        help="Override the LLM timeout in seconds; defaults to workspace config when unset.",
+        show_default=False,
         rich_help_panel="LLM",
     ),
-    retries: int = typer.Option(
-        DEFAULT_LLM_RETRIES,
+    retries: int | None = typer.Option(
+        None,
         "--retries",
         min=0,
-        help="Number of retry attempts when the model times out or returns invalid JSON.",
-        show_default=True,
+        help="Override retry attempts when the model times out or returns invalid JSON.",
+        show_default=False,
         rich_help_panel="LLM",
     ),
     progress: bool = typer.Option(
@@ -1088,19 +1085,19 @@ def facts(
         help="Date (YYYY-MM-DD) to analyze.",
         rich_help_panel="INPUT",
     ),
-    timeout: float = typer.Option(
-        DEFAULT_TIMEOUT_SECONDS,
+    timeout: float | None = typer.Option(
+        None,
         "--timeout",
-        help="Seconds to wait for the LLM response before retrying.",
-        show_default=True,
+        help="Override the LLM timeout in seconds; defaults to workspace config when unset.",
+        show_default=False,
         rich_help_panel="LLM",
     ),
-    retries: int = typer.Option(
-        DEFAULT_LLM_RETRIES,
+    retries: int | None = typer.Option(
+        None,
         "--retries",
         min=0,
-        help="Number of retry attempts when the model times out or returns invalid JSON.",
-        show_default=True,
+        help="Override retry attempts when the model times out or returns invalid JSON.",
+        show_default=False,
         rich_help_panel="LLM",
     ),
     progress: bool = typer.Option(
@@ -1138,18 +1135,18 @@ def facts(
 @profile_app.command("update")
 def profile_update_cli(
     date: str = typer.Option(..., "--date", "-d", help="Date (YYYY-MM-DD) to analyze."),
-    timeout: float = typer.Option(
-        DEFAULT_TIMEOUT_SECONDS,
+    timeout: float | None = typer.Option(
+        None,
         "--timeout",
-        help="Seconds to wait for the LLM response before retrying.",
-        show_default=True,
+        help="Override the LLM timeout in seconds; defaults to workspace config when unset.",
+        show_default=False,
     ),
-    retries: int = typer.Option(
-        DEFAULT_LLM_RETRIES,
+    retries: int | None = typer.Option(
+        None,
         "--retries",
         min=0,
-        help="Number of retry attempts when the model times out or returns invalid JSON.",
-        show_default=True,
+        help="Override retry attempts when the model times out or returns invalid JSON.",
+        show_default=False,
     ),
     progress: bool = typer.Option(
         False,

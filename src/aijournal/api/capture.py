@@ -7,7 +7,6 @@ from typing import Literal
 from pydantic import Field
 
 from aijournal.common.base import StrictModel
-from aijournal.common.constants import DEFAULT_LLM_RETRIES
 
 
 class CaptureRequest(StrictModel):
@@ -26,7 +25,13 @@ class CaptureRequest(StrictModel):
     apply_profile: Literal["auto", "review"] = "auto"
     rebuild: Literal["auto", "always", "skip"] = "auto"
     pack: Literal["L1", "L3", "L4"] | None = None
-    retries: int = Field(DEFAULT_LLM_RETRIES, ge=0)
+    retries: int | None = Field(
+        default=None,
+        ge=0,
+        description=(
+            "Optional override for LLM retries; defaults to workspace configuration when unset."
+        ),
+    )
     progress: bool = True
     dry_run: bool = False
     snapshot: bool = True
