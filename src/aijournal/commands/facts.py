@@ -5,7 +5,6 @@ from __future__ import annotations
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import cast
 
 import typer
 from pydantic import BaseModel, ConfigDict
@@ -169,22 +168,19 @@ def invoke_pipeline(ctx: RunContext, prepared: FactsPrepared) -> FactsResult:
 
     llm_microfacts: MicroFactsFile | None = None
     if not ctx.use_fake_llm:
-        llm_response = cast(
-            PromptMicroFacts,
-            _invoke_structured_llm(
-                "prompts/extract_facts.md",
-                {
-                    "date": prepared.date,
-                    "entries_json": _json_block(
-                        _entries_to_payload(prepared.entries, prepared.workspace)
-                    ),
-                    "summary_json": _json_block(prepared.summary.model_dump(mode="python")),
-                },
-                response_model=PromptMicroFacts,
-                agent_name="aijournal-facts",
-                config=ctx.config,
-                prompt_set=ctx.prompt_set,
-            ),
+        llm_response = _invoke_structured_llm(
+            "prompts/extract_facts.md",
+            {
+                "date": prepared.date,
+                "entries_json": _json_block(
+                    _entries_to_payload(prepared.entries, prepared.workspace)
+                ),
+                "summary_json": _json_block(prepared.summary.model_dump(mode="python")),
+            },
+            response_model=PromptMicroFacts,
+            agent_name="aijournal-facts",
+            config=ctx.config,
+            prompt_set=ctx.prompt_set,
         )
         llm_microfacts = convert_prompt_microfacts(llm_response)
 

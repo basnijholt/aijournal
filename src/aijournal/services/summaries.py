@@ -6,6 +6,7 @@ from collections.abc import Iterable
 from datetime import date as _date
 from datetime import timedelta
 from pathlib import Path
+from typing import Literal, overload
 
 from aijournal.common.app_config import AppConfig
 from aijournal.domain.facts import DailySummary
@@ -38,6 +39,26 @@ def summary_artifact_path(workspace: Path, config: AppConfig, day: str) -> Path:
     if not derived.is_absolute():
         derived = workspace / derived
     return derived / "summaries" / f"{day}.yaml"
+
+
+@overload
+def load_daily_summary(
+    workspace: Path,
+    config: AppConfig,
+    day: str,
+    *,
+    required: Literal[True] = True,
+) -> DailySummary: ...
+
+
+@overload
+def load_daily_summary(
+    workspace: Path,
+    config: AppConfig,
+    day: str,
+    *,
+    required: Literal[False],
+) -> DailySummary | None: ...
 
 
 def load_daily_summary(
@@ -91,12 +112,21 @@ def load_summary_window(
     for offset in offsets:
         target = anchor - timedelta(days=offset)
         date_str = target.isoformat()
-        summary = load_daily_summary(
-            workspace,
-            config,
-            date_str,
-            required=(date_str == anchor_day),
-        )
+        summary: DailySummary | None
+        if date_str == anchor_day:
+            summary = load_daily_summary(
+                workspace,
+                config,
+                date_str,
+                required=True,
+            )
+        else:
+            summary = load_daily_summary(
+                workspace,
+                config,
+                date_str,
+                required=False,
+            )
         if summary is not None:
             results.append((date_str, summary))
     return results

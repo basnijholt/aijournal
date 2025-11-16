@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Any, cast
+from typing import Any
 
 from pydantic import ValidationError
 
@@ -89,11 +89,9 @@ def generate_profile_update(
         msg = "llm_proposals must be provided when fake mode is disabled"
         raise ValueError(msg)
 
-    response = cast(ProfileUpdateProposals, llm_proposals)
-
-    raw_claims = [proposal.model_dump(mode="python") for proposal in response.claims]
-    raw_facets = [proposal.model_dump(mode="python") for proposal in response.facets]
-    prompts = [prompt for prompt in response.interview_prompts if prompt]
+    raw_claims = [proposal.model_dump(mode="python") for proposal in llm_proposals.claims]
+    raw_facets = [proposal.model_dump(mode="python") for proposal in llm_proposals.facets]
+    prompts = [prompt for prompt in llm_proposals.interview_prompts if prompt]
 
     normalized_ids, manifest_hashes, default_sources = context
     claims_payload = facts_pipeline.normalize_claim_proposals(

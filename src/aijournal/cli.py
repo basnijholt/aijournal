@@ -93,7 +93,6 @@ from aijournal.domain.changes import ClaimProposal, FacetChange
 from aijournal.domain.events import (
     FeedbackBatch,
 )
-from aijournal.domain.facts import DailySummary
 from aijournal.domain.journal import NormalizedEntry
 from aijournal.domain.persona import InterviewQuestion, InterviewSet
 from aijournal.io.artifacts import load_artifact_data
@@ -1791,10 +1790,7 @@ def interview(
         raise typer.Exit(1)
 
     try:
-        summary = cast(
-            DailySummary,
-            load_daily_summary(workspace, config, date),
-        )
+        summary = load_daily_summary(workspace, config, date)
     except SummaryNotFoundError as exc:
         typer.secho(str(exc), fg=typer.colors.RED, err=True)
         raise typer.Exit(1) from exc
@@ -1844,27 +1840,24 @@ def interview(
             summary_window_payload = [
                 window_summary.model_dump(mode="python") for _, window_summary in summary_window
             ]
-            interview_set = cast(
-                InterviewSet,
-                summarize_commands._invoke_structured_llm(
-                    "prompts/interview.md",
-                    {
-                        "date": date,
-                        "profile_json": _json_block(profile),
-                        "claims_json": _json_block(
-                            {"claims": [claim.model_dump(mode="python") for claim in claims]}
-                        ),
-                        "entries_json": _json_block(_entries_to_payload(entries, workspace)),
-                        "rankings_json": _json_block(rankings_payload),
-                        "summary_json": _json_block(summary_payload),
-                        "summary_window_json": _json_block(summary_window_payload),
-                        "coaching_prefs_json": _json_block(profile.get("coaching_prefs", {})),
-                    },
-                    response_model=InterviewSet,
-                    agent_name="aijournal-interview",
-                    config=config,
-                    prompt_set=_active_prompt_set(config),
-                ),
+            interview_set = summarize_commands._invoke_structured_llm(
+                "prompts/interview.md",
+                {
+                    "date": date,
+                    "profile_json": _json_block(profile),
+                    "claims_json": _json_block(
+                        {"claims": [claim.model_dump(mode="python") for claim in claims]}
+                    ),
+                    "entries_json": _json_block(_entries_to_payload(entries, workspace)),
+                    "rankings_json": _json_block(rankings_payload),
+                    "summary_json": _json_block(summary_payload),
+                    "summary_window_json": _json_block(summary_window_payload),
+                    "coaching_prefs_json": _json_block(profile.get("coaching_prefs", {})),
+                },
+                response_model=InterviewSet,
+                agent_name="aijournal-interview",
+                config=config,
+                prompt_set=_active_prompt_set(config),
             )
         except LLMResponseError as exc:
             typer.secho(

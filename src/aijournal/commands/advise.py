@@ -6,7 +6,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 import typer
 from pydantic import BaseModel, ValidationError
@@ -226,25 +226,22 @@ def _advice_payload(
 
     llm_advice: AdviceCard | None = None
     if not use_fake_llm:
-        llm_advice = cast(
-            AdviceCard,
-            _invoke_structured_llm(
-                "prompts/advise.md",
-                {
-                    "date": time_utils.created_date(time_utils.format_timestamp(time_utils.now())),
-                    "question": question,
-                    "profile_json": _json_block(profile),
-                    "claims_json": _json_block(
-                        {"claims": [claim.model_dump(mode="python") for claim in claims]}
-                    ),
-                    "rankings_json": _json_block(rankings_payload),
-                    "pending_prompts_json": _json_block(list(pending_prompts)),
-                },
-                response_model=AdviceCard,
-                agent_name="aijournal-advise",
-                config=config,
-                prompt_set=prompt_set,
-            ),
+        llm_advice = _invoke_structured_llm(
+            "prompts/advise.md",
+            {
+                "date": time_utils.created_date(time_utils.format_timestamp(time_utils.now())),
+                "question": question,
+                "profile_json": _json_block(profile),
+                "claims_json": _json_block(
+                    {"claims": [claim.model_dump(mode="python") for claim in claims]}
+                ),
+                "rankings_json": _json_block(rankings_payload),
+                "pending_prompts_json": _json_block(list(pending_prompts)),
+            },
+            response_model=AdviceCard,
+            agent_name="aijournal-advise",
+            config=config,
+            prompt_set=prompt_set,
         )
 
     return advise_pipeline.generate_advice(

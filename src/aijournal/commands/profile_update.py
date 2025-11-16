@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 import typer
 from pydantic import BaseModel
@@ -113,7 +113,6 @@ def run_profile_update(
     return run_profile_update_command(
         ctx,
         options,
-        invoke_structured_llm=_invoke_structured_llm,
         generate_preview=generate_preview,
     )
 
@@ -122,7 +121,6 @@ def run_profile_update_command(
     ctx: RunContext,
     options: ProfileUpdateOptions,
     *,
-    invoke_structured_llm: Callable[..., BaseModel],
     generate_preview: bool,
 ) -> Path:
     def _prepare(_: RunContext, opts: ProfileUpdateOptions) -> ProfileUpdatePrepared:
@@ -191,34 +189,28 @@ def run_profile_update_command(
         )
 
         def request_profile_update() -> ProfileUpdateProposals:
-            llm_response = cast(
-                PromptProfileUpdates,
-                invoke_structured_llm(
-                    "prompts/profile_update.md",
-                    {
-                        "date": prepared.date,
-                        "entries_json": _json_block(
-                            _entries_to_payload(entries, prepared.workspace)
-                        ),
-                        "summary_json": summary_json,
-                        "microfacts_json": microfacts_json,
-                        "consolidated_facts_json": prepared.consolidated_facts_json,
-                        "profile_json": _json_block(prepared.profile or {}),
-                        "claims_json": _json_block(
-                            {
-                                "claims": [
-                                    claim.model_dump(mode="python")
-                                    for claim in prepared.claim_models
-                                ]
-                            }
-                        ),
-                        "manifest_json": manifest_payload,
-                    },
-                    response_model=PromptProfileUpdates,
-                    agent_name="aijournal-profile-update",
-                    config=prepared.config,
-                    prompt_set=ctx.prompt_set,
-                ),
+            llm_response = _invoke_structured_llm(
+                "prompts/profile_update.md",
+                {
+                    "date": prepared.date,
+                    "entries_json": _json_block(_entries_to_payload(entries, prepared.workspace)),
+                    "summary_json": summary_json,
+                    "microfacts_json": microfacts_json,
+                    "consolidated_facts_json": prepared.consolidated_facts_json,
+                    "profile_json": _json_block(prepared.profile or {}),
+                    "claims_json": _json_block(
+                        {
+                            "claims": [
+                                claim.model_dump(mode="python") for claim in prepared.claim_models
+                            ]
+                        }
+                    ),
+                    "manifest_json": manifest_payload,
+                },
+                response_model=PromptProfileUpdates,
+                agent_name="aijournal-profile-update",
+                config=prepared.config,
+                prompt_set=ctx.prompt_set,
             )
             return convert_prompt_updates_to_proposals(
                 llm_response,

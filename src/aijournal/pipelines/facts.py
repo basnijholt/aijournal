@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
-from typing import Any, cast
+from typing import Any
 
 from pydantic import ValidationError
 
@@ -457,14 +457,13 @@ def generate_microfacts(
     claim_timestamp = time_utils.format_timestamp(time_utils.now())
 
     if use_fake_llm:
-        generated = MicroFactsFile(facts=fake_microfacts(entries))
+        llm_microfacts = MicroFactsFile(facts=fake_microfacts(entries))
     else:
         if llm_microfacts is None:
             msg = "llm_microfacts must be provided when fake mode is disabled"
             raise ValueError(msg)
-        generated = cast(MicroFactsFile, llm_microfacts)
 
-    facts_model = MicroFactsFile.model_validate(generated.model_dump(mode="python"))
+    facts_model = MicroFactsFile.model_validate(llm_microfacts.model_dump(mode="python"))
     raw_claim_candidates: Iterable[Any] = [
         proposal.model_dump(mode="python") for proposal in facts_model.claim_proposals
     ]

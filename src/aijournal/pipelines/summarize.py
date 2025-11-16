@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import cast
 
 from aijournal.domain.facts import DailySummary
 from aijournal.domain.journal import NormalizedEntry
@@ -37,11 +36,9 @@ def generate_summary(
         msg = "llm_summary must be provided when fake mode is disabled"
         raise ValueError(msg)
 
-    response = cast(DailySummary, llm_summary)
-
-    bullets = [item for item in response.bullets if item]
-    highlights = [item for item in response.highlights if item]
-    todo_candidates = [item for item in response.todo_candidates if item]
+    bullets = [item for item in llm_summary.bullets if item]
+    highlights = [item for item in llm_summary.highlights if item]
+    todo_candidates = [item for item in llm_summary.todo_candidates if item]
 
     if not bullets:
         fallback = fallback_model()
@@ -56,7 +53,7 @@ def generate_summary(
     if not todo_candidates:
         todo_candidates = _todo_from_entries(entries)
 
-    day = response.day or date
+    day = llm_summary.day or date
 
     return DailySummary(
         day=day,
