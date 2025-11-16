@@ -64,7 +64,8 @@ class _FakeAgent:
 
         if output_type is dict:
             if not isinstance(payload, dict):
-                raise UnexpectedModelBehavior("expected dict payload")
+                msg = "expected dict payload"
+                raise UnexpectedModelBehavior(msg)
             return _FakeResult(payload, self.calls)
 
         return _FakeResult(text, self.calls)
