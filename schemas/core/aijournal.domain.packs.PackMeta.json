@@ -1,7 +1,6 @@
 {
   "$defs": {
     "TrimmedFile": {
-      "additionalProperties": false,
       "description": "Record of a file trimmed due to token budget limits.",
       "properties": {
         "path": {
@@ -21,7 +20,6 @@
       "type": "object"
     }
   },
-  "additionalProperties": false,
   "description": "Metadata describing the assembled pack.",
   "properties": {
     "generated_at": {

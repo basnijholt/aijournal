@@ -33,7 +33,6 @@
       "type": "string"
     },
     "Scope": {
-      "additionalProperties": false,
       "description": "Contextual qualifiers for a claim atom.",
       "properties": {
         "conditions": {
@@ -67,7 +66,6 @@
       "type": "object"
     }
   },
-  "additionalProperties": false,
   "description": "Normalized claim payload without identifiers or provenance.",
   "properties": {
     "method": {

@@ -174,7 +174,7 @@ def test_interview_live_mode_structured(
         )
 
     monkeypatch.setattr(
-        "aijournal.cli._invoke_structured_llm",
+        "aijournal.commands.summarize._invoke_structured_llm",
         lambda *a, **k: _fake_structured(*a, **k),
     )
 

@@ -1,5 +1,4 @@
 {
-  "additionalProperties": false,
   "description": "Reference emitted by the LLM; resolved against retrieved chunks.",
   "properties": {
     "code": {

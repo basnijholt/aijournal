@@ -1,5 +1,4 @@
 {
-  "additionalProperties": false,
   "description": "Detailed pointer back into a source document.",
   "properties": {
     "end": {

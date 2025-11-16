@@ -1,5 +1,4 @@
 {
-  "additionalProperties": false,
   "description": "Global microfact entry that survives consolidation runs.",
   "properties": {
     "canonical_statement": {

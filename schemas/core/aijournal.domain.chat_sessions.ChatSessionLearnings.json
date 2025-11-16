@@ -1,7 +1,6 @@
 {
   "$defs": {
     "ChatLearningEntry": {
-      "additionalProperties": false,
       "description": "Entry capturing a single learning from a chat turn.",
       "properties": {
         "citations": {
@@ -61,7 +60,6 @@
       "type": "object"
     },
     "ChatTelemetry": {
-      "additionalProperties": false,
       "description": "Telemetry captured during a chat turn.",
       "properties": {
         "chunk_count": {
@@ -91,7 +89,6 @@
       "type": "object"
     }
   },
-  "additionalProperties": false,
   "description": "Rollup of learnings captured across a chat session.",
   "properties": {
     "created_at": {

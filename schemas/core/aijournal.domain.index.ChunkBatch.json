@@ -1,7 +1,6 @@
 {
   "$defs": {
     "Chunk": {
-      "additionalProperties": false,
       "description": "Normalized chunk persisted in the retrieval index.",
       "properties": {
         "chunk_id": {
@@ -94,7 +93,6 @@
       "type": "object"
     }
   },
-  "additionalProperties": false,
   "description": "Exported chunk set for a given journal day.",
   "properties": {
     "chunks": {

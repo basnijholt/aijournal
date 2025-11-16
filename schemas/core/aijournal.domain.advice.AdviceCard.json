@@ -1,7 +1,6 @@
 {
   "$defs": {
     "AdviceRecommendation": {
-      "additionalProperties": false,
       "description": "Single recommendation within an advice card.",
       "properties": {
         "mitigations": {
@@ -40,7 +39,6 @@
       "type": "object"
     },
     "AdviceReference": {
-      "additionalProperties": false,
       "description": "References included to ground why advice fits.",
       "properties": {
         "claims": {
@@ -62,7 +60,6 @@
       "type": "object"
     }
   },
-  "additionalProperties": false,
   "description": "Structured advice payload produced by LLM pipelines.",
   "properties": {
     "alignment": {

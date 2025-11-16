@@ -10,7 +10,6 @@
       "type": "string"
     },
     "ClaimProposal": {
-      "additionalProperties": false,
       "description": "Structured claim update prepared for downstream review.",
       "properties": {
         "evidence": {
@@ -127,7 +126,6 @@
       "type": "string"
     },
     "FacetChange": {
-      "additionalProperties": false,
       "description": "Facet modification proposed by characterization pipelines.",
       "properties": {
         "confidence": {
@@ -232,7 +230,6 @@
       "type": "string"
     },
     "Scope": {
-      "additionalProperties": false,
       "description": "Contextual qualifiers for a claim atom.",
       "properties": {
         "conditions": {
@@ -266,7 +263,6 @@
       "type": "object"
     },
     "SourceRef": {
-      "additionalProperties": false,
       "description": "Reference to a normalized entry and the supporting spans.",
       "properties": {
         "entry_id": {
@@ -288,7 +284,6 @@
       "type": "object"
     },
     "Span": {
-      "additionalProperties": false,
       "description": "Detailed pointer back into a source document.",
       "properties": {
         "end": {
@@ -351,7 +346,6 @@
       "type": "object"
     }
   },
-  "additionalProperties": false,
   "description": "Aggregate container for proposed claim and facet updates.",
   "properties": {
     "claims": {

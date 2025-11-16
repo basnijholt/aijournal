@@ -1,5 +1,4 @@
 {
-  "additionalProperties": false,
   "description": "Structured interview question proposed by the characterization pipeline.",
   "properties": {
     "id": {

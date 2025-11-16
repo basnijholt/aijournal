@@ -1,5 +1,4 @@
 {
-  "additionalProperties": false,
   "description": "Telemetry captured during a chat turn.",
   "properties": {
     "chunk_count": {

@@ -1,7 +1,6 @@
 {
   "$defs": {
     "RetrievalMeta": {
-      "additionalProperties": false,
       "description": "Metadata describing a retrieval invocation.",
       "properties": {
         "fake_mode": {
@@ -31,7 +30,6 @@
       "type": "object"
     },
     "RetrievedChunk": {
-      "additionalProperties": false,
       "description": "Chunk returned from retrieval with a similarity score.",
       "properties": {
         "chunk_id": {
@@ -129,7 +127,6 @@
       "type": "object"
     }
   },
-  "additionalProperties": false,
   "description": "Chunks plus metadata returned from a search.",
   "properties": {
     "chunks": {

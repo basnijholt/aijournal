@@ -1,5 +1,4 @@
 {
-  "additionalProperties": false,
   "description": "Optional filters applied during retrieval.",
   "properties": {
     "date_from": {

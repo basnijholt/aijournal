@@ -1,5 +1,4 @@
 {
-  "additionalProperties": false,
   "description": "Captured LLM invocation details paired with the structured payload.",
   "properties": {
     "attempts": {

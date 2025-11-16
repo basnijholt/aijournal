@@ -1,5 +1,4 @@
 {
-  "additionalProperties": false,
   "description": "Record of a file trimmed due to token budget limits.",
   "properties": {
     "path": {

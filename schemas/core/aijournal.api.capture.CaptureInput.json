@@ -1,5 +1,4 @@
 {
-  "additionalProperties": false,
   "description": "Internal capture payload enriched with stage bounds.",
   "properties": {
     "apply_profile": {

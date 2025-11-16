@@ -1,5 +1,4 @@
 {
-  "additionalProperties": false,
   "description": "Human-authored Markdown entry metadata.",
   "properties": {
     "created_at": {

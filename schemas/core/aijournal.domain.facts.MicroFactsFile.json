@@ -1,7 +1,6 @@
 {
   "$defs": {
     "ClaimConflictPayload": {
-      "additionalProperties": false,
       "description": "Structured conflict emitted during consolidation previews.",
       "properties": {
         "claim_id": {
@@ -62,7 +61,6 @@
       "type": "string"
     },
     "ClaimPreviewEvent": {
-      "additionalProperties": false,
       "description": "Outcome of attempting to merge a claim proposal into existing atoms.",
       "properties": {
         "action": {
@@ -191,7 +189,6 @@
       "type": "object"
     },
     "ClaimProposal": {
-      "additionalProperties": false,
       "description": "Structured claim update prepared for downstream review.",
       "properties": {
         "evidence": {
@@ -285,7 +282,6 @@
       "type": "object"
     },
     "ClaimSignaturePayload": {
-      "additionalProperties": false,
       "description": "Serialized signature describing the target slot for a claim.",
       "properties": {
         "claim_type": {
@@ -359,7 +355,6 @@
       "type": "string"
     },
     "MicroFact": {
-      "additionalProperties": false,
       "properties": {
         "confidence": {
           "title": "Confidence",
@@ -411,7 +406,6 @@
       "type": "object"
     },
     "ProfileUpdatePreview": {
-      "additionalProperties": false,
       "description": "Preview metadata bundled with a profile update batch.",
       "properties": {
         "claim_events": {
@@ -433,7 +427,6 @@
       "type": "object"
     },
     "Scope": {
-      "additionalProperties": false,
       "description": "Contextual qualifiers for a claim atom.",
       "properties": {
         "conditions": {
@@ -467,7 +460,6 @@
       "type": "object"
     },
     "SourceRef": {
-      "additionalProperties": false,
       "description": "Reference to a normalized entry and the supporting spans.",
       "properties": {
         "entry_id": {
@@ -489,7 +481,6 @@
       "type": "object"
     },
     "Span": {
-      "additionalProperties": false,
       "description": "Detailed pointer back into a source document.",
       "properties": {
         "end": {
@@ -552,7 +543,6 @@
       "type": "object"
     }
   },
-  "additionalProperties": false,
   "properties": {
     "claim_proposals": {
       "items": {

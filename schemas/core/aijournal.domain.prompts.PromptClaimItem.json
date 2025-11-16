@@ -33,7 +33,6 @@
       "type": "string"
     }
   },
-  "additionalProperties": false,
   "description": "Lightweight claim item that LLM emits (no system metadata).",
   "properties": {
     "evidence_entry": {

@@ -1,5 +1,4 @@
 {
-  "additionalProperties": false,
   "description": "Normalized chunk persisted in the retrieval index.",
   "properties": {
     "chunk_id": {

@@ -1,5 +1,4 @@
 {
-  "additionalProperties": false,
   "description": "Single file included in an export pack.",
   "properties": {
     "content": {

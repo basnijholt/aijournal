@@ -249,15 +249,11 @@ def prepare_inputs(ctx: RunContext, options: DailySummaryOptions) -> DailySummar
 
 
 def invoke_pipeline(ctx: RunContext, prepared: DailySummaryPrepared) -> DailySummaryResult:
-    timeout_value = ctx.config.llm.timeout
-    retries_value = ctx.config.llm.retries
     summary = _summarize_day_payload(
         prepared.entries,
         prepared.date,
         ctx.config,
         workspace=prepared.workspace,
-        timeout=timeout_value,
-        retries=retries_value,
         use_fake_llm_override=ctx.use_fake_llm,
         prompt_set=ctx.prompt_set,
     )
@@ -295,21 +291,17 @@ def _summarize_day_payload(
     config: AppConfig,
     *,
     workspace: Path,
-    timeout: float | None = None,
-    retries: int,
-    invoke_structured_llm: Callable[..., BaseModel] | None = None,
     structured_call: Callable[..., BaseModel] | None = None,
     use_fake_llm_override: bool | None = None,
     prompt_set: str | None = None,
 ) -> DailySummary:
-    invoke = invoke_structured_llm or _invoke_structured_llm
     structured = structured_call or (lambda func, *, retries, label: func())
     fake_mode = use_fake_llm_override if use_fake_llm_override is not None else use_fake_llm()
 
     def request_summary() -> DailySummary:
         return cast(
             DailySummary,
-            invoke(
+            _invoke_structured_llm(
                 "prompts/summarize_day.md",
                 {
                     "date": date,
@@ -328,7 +320,7 @@ def _summarize_day_payload(
         use_fake_llm=fake_mode,
         structured_call=structured,
         request_factory=request_summary,
-        retries=retries,
+        retries=config.llm.retries,
     )
 
 

@@ -1,5 +1,4 @@
 {
-  "additionalProperties": false,
   "description": "Contextual qualifiers for a claim atom.",
   "properties": {
     "conditions": {

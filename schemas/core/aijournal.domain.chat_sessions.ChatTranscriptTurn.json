@@ -1,7 +1,6 @@
 {
   "$defs": {
     "ChatTelemetry": {
-      "additionalProperties": false,
       "description": "Telemetry captured during a chat turn.",
       "properties": {
         "chunk_count": {
@@ -31,7 +30,6 @@
       "type": "object"
     }
   },
-  "additionalProperties": false,
   "description": "Captured question/answer pair within a chat transcript.",
   "properties": {
     "answer": {

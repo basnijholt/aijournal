@@ -1,5 +1,4 @@
 {
-  "additionalProperties": false,
   "description": "Serialized signature describing the target slot for a claim.",
   "properties": {
     "claim_type": {

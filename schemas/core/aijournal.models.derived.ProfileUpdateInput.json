@@ -1,5 +1,4 @@
 {
-  "additionalProperties": false,
   "description": "Normalized entry metadata captured in a characterization batch.",
   "properties": {
     "id": {

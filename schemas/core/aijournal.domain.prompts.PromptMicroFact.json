@@ -1,5 +1,4 @@
 {
-  "additionalProperties": false,
   "description": "Lightweight micro-fact emitted by the LLM.",
   "properties": {
     "confidence": {

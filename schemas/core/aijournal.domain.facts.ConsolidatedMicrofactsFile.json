@@ -1,7 +1,6 @@
 {
   "$defs": {
     "ConsolidatedMicroFact": {
-      "additionalProperties": false,
       "description": "Global microfact entry that survives consolidation runs.",
       "properties": {
         "canonical_statement": {
@@ -79,7 +78,6 @@
       "type": "object"
     }
   },
-  "additionalProperties": false,
   "description": "Artifact capturing the global consolidated microfact snapshot.",
   "properties": {
     "embedding_model": {

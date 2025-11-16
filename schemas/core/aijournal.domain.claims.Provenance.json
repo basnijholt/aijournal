@@ -1,7 +1,6 @@
 {
   "$defs": {
     "SourceRef": {
-      "additionalProperties": false,
       "description": "Reference to a normalized entry and the supporting spans.",
       "properties": {
         "entry_id": {
@@ -23,7 +22,6 @@
       "type": "object"
     },
     "Span": {
-      "additionalProperties": false,
       "description": "Detailed pointer back into a source document.",
       "properties": {
         "end": {
@@ -86,7 +84,6 @@
       "type": "object"
     }
   },
-  "additionalProperties": false,
   "description": "Provenance metadata recorded for a claim atom.",
   "properties": {
     "first_seen": {

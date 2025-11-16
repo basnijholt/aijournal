@@ -1,5 +1,4 @@
 {
-  "additionalProperties": false,
   "description": "Reference to a retrieved chunk included in a chat response.",
   "properties": {
     "chunk_id": {

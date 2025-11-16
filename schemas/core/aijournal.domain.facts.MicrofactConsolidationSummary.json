@@ -1,5 +1,4 @@
 {
-  "additionalProperties": false,
   "description": "Per-day summary emitted during rebuild operations.",
   "properties": {
     "day": {

@@ -76,9 +76,6 @@ from aijournal.commands.summarize import (
     _load_normalized_entries,
     run_summarize_command,
 )
-from aijournal.commands.summarize import (
-    _invoke_structured_llm as _commands_invoke_structured_llm,
-)
 from aijournal.commands.system import run_system_doctor_cli, run_system_status_cli
 from aijournal.common.app_config import AppConfig
 from aijournal.common.config_loader import (
@@ -126,7 +123,6 @@ from aijournal.services.ollama import (
     LLMResponseError,
     build_ollama_config_from_mapping,
     resolve_ollama_host,
-    run_ollama_agent,
 )
 from aijournal.services.persona_export import (
     PersonaArtifactMissingError,
@@ -807,60 +803,6 @@ HIGH_IMPACT_PROBES = [
 
 def _normalize_created_at(value: Any) -> str:
     return normalization.normalize_created_at(value)
-
-
-def _invoke_structured_llm(
-    prompt_path: str,
-    variables: dict[str, str],
-    *,
-    response_model: type[Any],
-    agent_name: str,
-    config: AppConfig,
-    prompt_set: str | None = None,
-) -> Any:
-    """Proxy to summarize command helper while honoring patched runners."""
-
-    original_runner = summarize_commands.run_ollama_agent
-    original_builder = summarize_commands.build_ollama_config_from_mapping
-    summarize_commands.run_ollama_agent = run_ollama_agent
-    summarize_commands.build_ollama_config_from_mapping = build_ollama_config_from_mapping
-    try:
-        return _commands_invoke_structured_llm(
-            prompt_path,
-            variables,
-            response_model=response_model,
-            agent_name=agent_name,
-            config=config,
-            prompt_set=prompt_set,
-        )
-    finally:
-        summarize_commands.build_ollama_config_from_mapping = original_builder
-        summarize_commands.run_ollama_agent = original_runner
-
-
-def _summarize_day_payload(
-    entries: Sequence[NormalizedEntry],
-    date: str,
-    config: AppConfig,
-    *,
-    workspace: Path,
-    timeout: float | None = None,
-    retries: int,
-    prompt_set: str | None = None,
-) -> Any:
-    """Proxy to the summarize command helper with test-friendly overrides."""
-
-    return summarize_commands._summarize_day_payload(
-        entries,
-        date,
-        config,
-        workspace=workspace,
-        retries=retries,
-        invoke_structured_llm=_invoke_structured_llm,
-        structured_call=lambda func, *, retries, label: func(),
-        use_fake_llm_override=use_fake_llm(),
-        prompt_set=prompt_set,
-    )
 
 
 def _pending_updates_dir(workspace: Path, config: AppConfig) -> Path:
@@ -2093,7 +2035,7 @@ def interview(
             ]
             interview_set = cast(
                 InterviewSet,
-                _invoke_structured_llm(
+                summarize_commands._invoke_structured_llm(
                     "prompts/interview.md",
                     {
                         "date": date,

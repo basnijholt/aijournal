@@ -1,7 +1,6 @@
 {
   "$defs": {
     "PackEntry": {
-      "additionalProperties": false,
       "description": "Single file included in an export pack.",
       "properties": {
         "content": {
@@ -31,7 +30,6 @@
       "type": "object"
     },
     "PackMeta": {
-      "additionalProperties": false,
       "description": "Metadata describing the assembled pack.",
       "properties": {
         "generated_at": {
@@ -63,7 +61,6 @@
       "type": "object"
     },
     "TrimmedFile": {
-      "additionalProperties": false,
       "description": "Record of a file trimmed due to token budget limits.",
       "properties": {
         "path": {
@@ -83,7 +80,6 @@
       "type": "object"
     }
   },
-  "additionalProperties": false,
   "description": "Structured representation of a pack export.",
   "properties": {
     "date": {

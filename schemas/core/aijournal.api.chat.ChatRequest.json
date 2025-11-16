@@ -1,5 +1,4 @@
 {
-  "additionalProperties": false,
   "description": "Incoming chat payload for both CLI and FastAPI surfaces.",
   "properties": {
     "date_from": {

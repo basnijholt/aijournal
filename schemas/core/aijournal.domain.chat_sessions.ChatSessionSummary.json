@@ -1,5 +1,4 @@
 {
-  "additionalProperties": false,
   "description": "Aggregated summary metadata for a chat session.",
   "properties": {
     "created_at": {

@@ -42,7 +42,6 @@
       "type": "string"
     },
     "PromptClaimItem": {
-      "additionalProperties": false,
       "description": "Lightweight claim item that LLM emits (no system metadata).",
       "properties": {
         "evidence_entry": {
@@ -209,7 +208,6 @@
       "type": "object"
     },
     "PromptFacetItem": {
-      "additionalProperties": false,
       "description": "Lightweight facet change that LLM emits (no system metadata).",
       "properties": {
         "evidence_entry": {
@@ -268,7 +266,6 @@
       "type": "object"
     }
   },
-  "additionalProperties": false,
   "description": "Container for LLM-emitted profile updates (lightweight DTOs only).",
   "properties": {
     "claims": {

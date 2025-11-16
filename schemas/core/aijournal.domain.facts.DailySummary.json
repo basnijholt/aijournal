@@ -1,5 +1,4 @@
 {
-  "additionalProperties": false,
   "description": "Derived day summary (PLAN §4.1).",
   "properties": {
     "bullets": {

@@ -1,7 +1,6 @@
 {
   "$defs": {
     "FeedbackAdjustmentEvent": {
-      "additionalProperties": false,
       "description": "Record of a claim strength adjustment triggered by chat feedback.",
       "properties": {
         "claim_id": {
@@ -44,7 +43,6 @@
       "type": "string"
     }
   },
-  "additionalProperties": false,
   "description": "Batch of feedback adjustments queued for claim strength updates.",
   "properties": {
     "batch_id": {

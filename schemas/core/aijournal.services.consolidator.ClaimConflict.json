@@ -1,7 +1,6 @@
 {
   "$defs": {
     "ClaimSignature": {
-      "additionalProperties": false,
       "properties": {
         "claim_type": {
           "title": "Claim Type",
@@ -56,7 +55,6 @@
       "type": "object"
     },
     "SourceRef": {
-      "additionalProperties": false,
       "description": "Reference to a normalized entry and the supporting spans.",
       "properties": {
         "entry_id": {
@@ -78,7 +76,6 @@
       "type": "object"
     },
     "Span": {
-      "additionalProperties": false,
       "description": "Detailed pointer back into a source document.",
       "properties": {
         "end": {
@@ -141,7 +138,6 @@
       "type": "object"
     }
   },
-  "additionalProperties": false,
   "properties": {
     "claim_id": {
       "title": "Claim Id",

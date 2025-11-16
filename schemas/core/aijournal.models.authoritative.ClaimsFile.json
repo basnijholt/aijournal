@@ -1,7 +1,6 @@
 {
   "$defs": {
     "ClaimAtom": {
-      "additionalProperties": false,
       "description": "Typed, scoped claim describing part of the persona.",
       "properties": {
         "id": {
@@ -104,7 +103,6 @@
       "type": "string"
     },
     "Provenance": {
-      "additionalProperties": false,
       "description": "Provenance metadata recorded for a claim atom.",
       "properties": {
         "first_seen": {
@@ -144,7 +142,6 @@
       "type": "object"
     },
     "Scope": {
-      "additionalProperties": false,
       "description": "Contextual qualifiers for a claim atom.",
       "properties": {
         "conditions": {
@@ -178,7 +175,6 @@
       "type": "object"
     },
     "SourceRef": {
-      "additionalProperties": false,
       "description": "Reference to a normalized entry and the supporting spans.",
       "properties": {
         "entry_id": {
@@ -200,7 +196,6 @@
       "type": "object"
     },
     "Span": {
-      "additionalProperties": false,
       "description": "Detailed pointer back into a source document.",
       "properties": {
         "end": {
@@ -263,7 +258,6 @@
       "type": "object"
     }
   },
-  "additionalProperties": false,
   "properties": {
     "claims": {
       "items": {

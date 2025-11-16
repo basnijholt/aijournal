@@ -1,5 +1,4 @@
 {
-  "additionalProperties": false,
   "description": "Chunk returned from retrieval with a similarity score.",
   "properties": {
     "chunk_id": {

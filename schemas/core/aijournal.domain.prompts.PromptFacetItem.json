@@ -10,7 +10,6 @@
       "type": "string"
     }
   },
-  "additionalProperties": false,
   "description": "Lightweight facet change that LLM emits (no system metadata).",
   "properties": {
     "evidence_entry": {

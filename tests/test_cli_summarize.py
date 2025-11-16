@@ -9,8 +9,8 @@ import pytest
 import yaml
 from typer.testing import CliRunner
 
-from aijournal import cli
 from aijournal.cli import app
+from aijournal.commands import summarize as summarize_commands
 from aijournal.common import config_loader
 from aijournal.common.app_config import AppConfig
 from aijournal.common.constants import DEFAULT_LLM_RETRIES
@@ -154,14 +154,13 @@ def test_summarize_structured_success(monkeypatch: pytest.MonkeyPatch) -> None:
         return fake_response
 
     monkeypatch.setattr(config_loader, "use_fake_llm", lambda: False)
-    monkeypatch.setattr(cli, "_invoke_structured_llm", fake_invoke)
+    monkeypatch.setattr(summarize_commands, "_invoke_structured_llm", fake_invoke)
 
-    summary = cli._summarize_day_payload(
+    summary = summarize_commands._summarize_day_payload(
         [entry],
         DATE,
-        {},
+        AppConfig(),
         workspace=Path("."),
-        retries=1,
     )
 
     assert summary.day == DATE
@@ -185,15 +184,14 @@ def test_summarize_structured_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
         raise LLMResponseError("bad schema")
 
     monkeypatch.setattr(config_loader, "use_fake_llm", lambda: False)
-    monkeypatch.setattr(cli, "_invoke_structured_llm", fake_invoke)
+    monkeypatch.setattr(summarize_commands, "_invoke_structured_llm", fake_invoke)
 
     with pytest.raises(LLMResponseError):
-        cli._summarize_day_payload(
+        summarize_commands._summarize_day_payload(
             [entry],
             DATE,
-            {},
+            AppConfig(),
             workspace=Path("."),
-            retries=0,
         )
 
 
@@ -237,10 +235,10 @@ def test_invoke_structured_llm_uses_shared_builder(monkeypatch: pytest.MonkeyPat
             payload=payload,
         )
 
-    monkeypatch.setattr(cli, "build_ollama_config_from_mapping", fake_builder)
-    monkeypatch.setattr(cli, "run_ollama_agent", fake_runner)
+    monkeypatch.setattr(summarize_commands, "build_ollama_config_from_mapping", fake_builder)
+    monkeypatch.setattr(summarize_commands, "run_ollama_agent", fake_runner)
 
-    response = cli._invoke_structured_llm(
+    response = summarize_commands._invoke_structured_llm(
         "prompts/summarize_day.md",
         {"date": DATE, "entries_json": "[]"},
         response_model=DailySummary,

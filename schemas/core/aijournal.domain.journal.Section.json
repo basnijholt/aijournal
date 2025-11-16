@@ -1,5 +1,4 @@
 {
-  "additionalProperties": false,
   "description": "Normalized representation of a markdown heading or section.",
   "properties": {
     "heading": {

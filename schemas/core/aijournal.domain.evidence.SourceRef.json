@@ -1,7 +1,6 @@
 {
   "$defs": {
     "Span": {
-      "additionalProperties": false,
       "description": "Detailed pointer back into a source document.",
       "properties": {
         "end": {
@@ -64,7 +63,6 @@
       "type": "object"
     }
   },
-  "additionalProperties": false,
   "description": "Reference to a normalized entry and the supporting spans.",
   "properties": {
     "entry_id": {

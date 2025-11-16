@@ -1,5 +1,4 @@
 {
-  "additionalProperties": false,
   "description": "Metadata describing the current retrieval index state.",
   "properties": {
     "char_per_token": {

@@ -1,5 +1,4 @@
 {
-  "additionalProperties": false,
   "properties": {
     "claim_type": {
       "title": "Claim Type",

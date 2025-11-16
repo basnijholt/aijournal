@@ -1,7 +1,6 @@
 {
   "$defs": {
     "ClaimConflictPayload": {
-      "additionalProperties": false,
       "description": "Structured conflict emitted during consolidation previews.",
       "properties": {
         "claim_id": {
@@ -53,7 +52,6 @@
       "type": "string"
     },
     "ClaimPreviewEvent": {
-      "additionalProperties": false,
       "description": "Outcome of attempting to merge a claim proposal into existing atoms.",
       "properties": {
         "action": {
@@ -182,7 +180,6 @@
       "type": "object"
     },
     "ClaimSignaturePayload": {
-      "additionalProperties": false,
       "description": "Serialized signature describing the target slot for a claim.",
       "properties": {
         "claim_type": {
@@ -233,7 +230,6 @@
       "type": "object"
     },
     "SourceRef": {
-      "additionalProperties": false,
       "description": "Reference to a normalized entry and the supporting spans.",
       "properties": {
         "entry_id": {
@@ -255,7 +251,6 @@
       "type": "object"
     },
     "Span": {
-      "additionalProperties": false,
       "description": "Detailed pointer back into a source document.",
       "properties": {
         "end": {
@@ -318,7 +313,6 @@
       "type": "object"
     }
   },
-  "additionalProperties": false,
   "description": "Preview metadata bundled with a profile update batch.",
   "properties": {
     "claim_events": {

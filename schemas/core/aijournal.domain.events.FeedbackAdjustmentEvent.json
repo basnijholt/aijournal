@@ -1,5 +1,4 @@
 {
-  "additionalProperties": false,
   "description": "Record of a claim strength adjustment triggered by chat feedback.",
   "properties": {
     "claim_id": {

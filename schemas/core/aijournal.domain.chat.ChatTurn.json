@@ -1,7 +1,6 @@
 {
   "$defs": {
     "ChatCitation": {
-      "additionalProperties": false,
       "description": "Reference to a retrieved chunk included in a chat response.",
       "properties": {
         "chunk_id": {
@@ -58,7 +57,6 @@
       "type": "object"
     },
     "ChatCitationRef": {
-      "additionalProperties": false,
       "description": "Reference emitted by the LLM; resolved against retrieved chunks.",
       "properties": {
         "code": {
@@ -74,7 +72,6 @@
       "type": "object"
     },
     "ChatResponse": {
-      "additionalProperties": false,
       "description": "Structured response returned by the chat LLM.",
       "properties": {
         "answer": {
@@ -126,7 +123,6 @@
       "type": "object"
     },
     "ChatTelemetry": {
-      "additionalProperties": false,
       "description": "Telemetry captured during a chat turn.",
       "properties": {
         "chunk_count": {
@@ -156,7 +152,6 @@
       "type": "object"
     },
     "ClaimAtom": {
-      "additionalProperties": false,
       "description": "Typed, scoped claim describing part of the persona.",
       "properties": {
         "id": {
@@ -259,7 +254,6 @@
       "type": "string"
     },
     "PersonaCore": {
-      "additionalProperties": false,
       "description": "Primary persona payload used by chat/advise pipelines.",
       "properties": {
         "claims": {
@@ -279,7 +273,6 @@
       "type": "object"
     },
     "Provenance": {
-      "additionalProperties": false,
       "description": "Provenance metadata recorded for a claim atom.",
       "properties": {
         "first_seen": {
@@ -319,7 +312,6 @@
       "type": "object"
     },
     "RetrievedChunk": {
-      "additionalProperties": false,
       "description": "Chunk returned from retrieval with a similarity score.",
       "properties": {
         "chunk_id": {
@@ -417,7 +409,6 @@
       "type": "object"
     },
     "Scope": {
-      "additionalProperties": false,
       "description": "Contextual qualifiers for a claim atom.",
       "properties": {
         "conditions": {
@@ -451,7 +442,6 @@
       "type": "object"
     },
     "SourceRef": {
-      "additionalProperties": false,
       "description": "Reference to a normalized entry and the supporting spans.",
       "properties": {
         "entry_id": {
@@ -473,7 +463,6 @@
       "type": "object"
     },
     "Span": {
-      "additionalProperties": false,
       "description": "Detailed pointer back into a source document.",
       "properties": {
         "end": {
@@ -536,7 +525,6 @@
       "type": "object"
     }
   },
-  "additionalProperties": false,
   "description": "Structured representation of a chat turn.",
   "properties": {
     "answer": {

@@ -1,5 +1,4 @@
 {
-  "additionalProperties": false,
   "description": "Metadata describing how an artifact was produced.",
   "properties": {
     "char_per_token": {

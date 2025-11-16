@@ -1,5 +1,4 @@
 {
-  "additionalProperties": false,
   "properties": {
     "affect_energy": {
       "additionalProperties": true,

@@ -1,5 +1,4 @@
 {
-  "additionalProperties": false,
   "description": "Metadata describing a retrieval invocation.",
   "properties": {
     "fake_mode": {

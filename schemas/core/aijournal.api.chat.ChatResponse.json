@@ -1,7 +1,6 @@
 {
   "$defs": {
     "ChatCitationRef": {
-      "additionalProperties": false,
       "description": "Reference emitted by the LLM; resolved against retrieved chunks.",
       "properties": {
         "code": {
@@ -17,7 +16,6 @@
       "type": "object"
     }
   },
-  "additionalProperties": false,
   "description": "Structured response returned by the chat LLM.",
   "properties": {
     "answer": {

@@ -1,7 +1,6 @@
 {
   "$defs": {
     "AdviceReference": {
-      "additionalProperties": false,
       "description": "References included to ground why advice fits.",
       "properties": {
         "claims": {
@@ -23,7 +22,6 @@
       "type": "object"
     }
   },
-  "additionalProperties": false,
   "description": "Single recommendation within an advice card.",
   "properties": {
     "mitigations": {

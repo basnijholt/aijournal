@@ -1,5 +1,4 @@
 {
-  "additionalProperties": false,
   "description": "Structured entity extracted during normalization.",
   "properties": {
     "extra": {

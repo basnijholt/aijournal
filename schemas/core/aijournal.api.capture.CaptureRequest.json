@@ -1,5 +1,4 @@
 {
-  "additionalProperties": false,
   "description": "User-facing capture options supplied by CLI or HTTP.",
   "properties": {
     "apply_profile": {

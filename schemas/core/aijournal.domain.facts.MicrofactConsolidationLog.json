@@ -1,7 +1,6 @@
 {
   "$defs": {
     "MicrofactConsolidationSummary": {
-      "additionalProperties": false,
       "description": "Per-day summary emitted during rebuild operations.",
       "properties": {
         "day": {
@@ -31,7 +30,6 @@
       "type": "object"
     }
   },
-  "additionalProperties": false,
   "description": "Artifact capturing the rebuild run summaries.",
   "properties": {
     "entries": {
