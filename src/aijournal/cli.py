@@ -295,6 +295,72 @@ PACK_OUTPUT_OPTION: Final = typer.Option(
     rich_help_panel="OUTPUT",
 )
 
+# LLM-related options used across multiple commands
+LLM_TIMEOUT_OPTION: Final = typer.Option(
+    DEFAULT_TIMEOUT_SECONDS,
+    "--timeout",
+    help="Seconds to wait for the LLM response before retrying.",
+    show_default=True,
+    rich_help_panel="LLM",
+)
+LLM_RETRIES_OPTION: Final = typer.Option(
+    DEFAULT_LLM_RETRIES,
+    "--retries",
+    min=0,
+    help="Number of retry attempts when the model times out or returns invalid JSON.",
+    show_default=True,
+    rich_help_panel="LLM",
+)
+LLM_PROGRESS_OPTION: Final = typer.Option(
+    False,
+    "--progress/--no-progress",
+    help="Print progress for each normalized entry before calling the model.",
+    rich_help_panel="LLM",
+)
+
+# Date options used across multiple commands
+PIPELINE_DATE_OPTION: Final = typer.Option(
+    ...,
+    "--date",
+    "-d",
+    help="Date (YYYY-MM-DD) to process.",
+    rich_help_panel="INPUT",
+)
+DATE_FROM_OPTION: Final = typer.Option(
+    None,
+    "--date-from",
+    help="Earliest chunk date (YYYY-MM-DD).",
+)
+DATE_TO_OPTION: Final = typer.Option(
+    None,
+    "--date-to",
+    help="Latest chunk date (YYYY-MM-DD).",
+)
+
+# Retrieval filter options used in search/chat commands
+TAGS_FILTER_OPTION: Final = typer.Option(
+    None,
+    "--tags",
+    help="Comma- or space-separated tags to filter by (match any).",
+)
+SOURCE_FILTER_OPTION: Final = typer.Option(
+    None,
+    "--source",
+    help="Comma- or space-separated source types to filter by.",
+)
+
+# Index operation options
+INDEX_SINCE_OPTION: Final = typer.Option(
+    None,
+    "--since",
+    help="Earliest date (YYYY-MM-DD or Nd) to include.",
+)
+INDEX_LIMIT_OPTION: Final = typer.Option(
+    None,
+    "--limit",
+    help="Maximum number of normalized files to process.",
+)
+
 
 @app.command("version", help="Print the current aijournal version and source root.")
 def show_version() -> None:
@@ -1031,34 +1097,10 @@ def normalize(
 
 @ops_pipeline_app.command("summarize", hidden=True)
 def summarize(
-    date: str = typer.Option(
-        ...,
-        "--date",
-        "-d",
-        help="Date (YYYY-MM-DD) to summarize.",
-        rich_help_panel="INPUT",
-    ),
-    timeout: float = typer.Option(
-        DEFAULT_TIMEOUT_SECONDS,
-        "--timeout",
-        help="Seconds to wait for the LLM response before retrying.",
-        show_default=True,
-        rich_help_panel="LLM",
-    ),
-    retries: int = typer.Option(
-        DEFAULT_LLM_RETRIES,
-        "--retries",
-        min=0,
-        help="Number of retry attempts when the model times out or returns invalid JSON.",
-        show_default=True,
-        rich_help_panel="LLM",
-    ),
-    progress: bool = typer.Option(
-        False,
-        "--progress/--no-progress",
-        help="Print progress for each normalized entry before calling the model.",
-        rich_help_panel="LLM",
-    ),
+    date: str = PIPELINE_DATE_OPTION,
+    timeout: float = LLM_TIMEOUT_OPTION,
+    retries: int = LLM_RETRIES_OPTION,
+    progress: bool = LLM_PROGRESS_OPTION,
 ) -> None:
     """Generate a daily summary from normalized entries."""
     _emit_deprecation("aijournal ops pipeline summarize", "aijournal capture --from/--text")
@@ -1081,34 +1123,10 @@ def summarize(
 
 @ops_pipeline_app.command("extract-facts", hidden=True)
 def facts(
-    date: str = typer.Option(
-        ...,
-        "--date",
-        "-d",
-        help="Date (YYYY-MM-DD) to analyze.",
-        rich_help_panel="INPUT",
-    ),
-    timeout: float = typer.Option(
-        DEFAULT_TIMEOUT_SECONDS,
-        "--timeout",
-        help="Seconds to wait for the LLM response before retrying.",
-        show_default=True,
-        rich_help_panel="LLM",
-    ),
-    retries: int = typer.Option(
-        DEFAULT_LLM_RETRIES,
-        "--retries",
-        min=0,
-        help="Number of retry attempts when the model times out or returns invalid JSON.",
-        show_default=True,
-        rich_help_panel="LLM",
-    ),
-    progress: bool = typer.Option(
-        False,
-        "--progress/--no-progress",
-        help="Print progress for each normalized entry before calling the model.",
-        rich_help_panel="LLM",
-    ),
+    date: str = PIPELINE_DATE_OPTION,
+    timeout: float = LLM_TIMEOUT_OPTION,
+    retries: int = LLM_RETRIES_OPTION,
+    progress: bool = LLM_PROGRESS_OPTION,
 ) -> None:
     """Generate micro-facts from normalized entries."""
     _emit_deprecation("aijournal ops pipeline extract-facts", "aijournal capture --from/--text")
@@ -1137,25 +1155,10 @@ def facts(
 
 @profile_app.command("update")
 def profile_update_cli(
-    date: str = typer.Option(..., "--date", "-d", help="Date (YYYY-MM-DD) to analyze."),
-    timeout: float = typer.Option(
-        DEFAULT_TIMEOUT_SECONDS,
-        "--timeout",
-        help="Seconds to wait for the LLM response before retrying.",
-        show_default=True,
-    ),
-    retries: int = typer.Option(
-        DEFAULT_LLM_RETRIES,
-        "--retries",
-        min=0,
-        help="Number of retry attempts when the model times out or returns invalid JSON.",
-        show_default=True,
-    ),
-    progress: bool = typer.Option(
-        False,
-        "--progress/--no-progress",
-        help="Print progress for each normalized entry before calling the model.",
-    ),
+    date: str = PIPELINE_DATE_OPTION,
+    timeout: float = LLM_TIMEOUT_OPTION,
+    retries: int = LLM_RETRIES_OPTION,
+    progress: bool = LLM_PROGRESS_OPTION,
 ) -> None:
     """Derive pending profile updates using the unified Prompt 3 contract."""
     workspace = _get_workspace()
@@ -1175,7 +1178,7 @@ def profile_update_cli(
 
 @profile_app.command("apply")
 def profile_apply(
-    date: str = typer.Option(..., "--date", "-d", help="Date (YYYY-MM-DD) to apply."),
+    date: str = PIPELINE_DATE_OPTION,
     file: Path | None = PROFILE_APPLY_FILE_OPTION,
     yes: bool = typer.Option(False, "--yes", help="Apply without prompting."),
 ) -> None:
@@ -1780,7 +1783,7 @@ def profile_status() -> None:
 
 @profile_app.command("interview")
 def interview(
-    date: str = typer.Option(..., "--date", "-d", help="Date (YYYY-MM-DD) to review."),
+    date: str = PIPELINE_DATE_OPTION,
 ) -> None:
     """Surface targeted interview probes based on stale facets."""
     workspace = _get_workspace()
@@ -1955,16 +1958,8 @@ def pack(
 
 @index_app.command("rebuild")
 def index_rebuild(
-    since: str | None = typer.Option(
-        None,
-        "--since",
-        help="Earliest date (YYYY-MM-DD or Nd) to include when rebuilding.",
-    ),
-    limit: int | None = typer.Option(
-        None,
-        "--limit",
-        help="Maximum number of normalized files to index (debug/testing).",
-    ),
+    since: str | None = INDEX_SINCE_OPTION,
+    limit: int | None = INDEX_LIMIT_OPTION,
 ) -> None:
     """Rebuild the Chroma-backed retrieval index from normalized YAML."""
     message = run_index_rebuild(since, limit=limit)
@@ -1973,21 +1968,13 @@ def index_rebuild(
 
 @index_app.command("update")
 def index_update(
-    since: str | None = typer.Option(
-        None,
-        "--since",
-        help="Earliest date (YYYY-MM-DD or Nd) to scan for new normalized files.",
-    ),
+    since: str | None = INDEX_SINCE_OPTION,
     days: int = typer.Option(
         7,
         "--days",
         help="Rolling window (days) when --since is omitted.",
     ),
-    limit: int | None = typer.Option(
-        None,
-        "--limit",
-        help="Maximum number of normalized files to inspect.",
-    ),
+    limit: int | None = INDEX_LIMIT_OPTION,
 ) -> None:
     """Incrementally ingest new normalized entries into the retrieval index."""
     message = run_index_tail(since, days=days, limit=limit)
@@ -2003,26 +1990,10 @@ def index_search(
         "-k",
         help="Number of results to display.",
     ),
-    tags: str | None = typer.Option(
-        None,
-        "--tags",
-        help="Comma- or space-separated tags to filter by (match any).",
-    ),
-    source: str | None = typer.Option(
-        None,
-        "--source",
-        help="Comma- or space-separated source types to filter by.",
-    ),
-    date_from: str | None = typer.Option(
-        None,
-        "--date-from",
-        help="Earliest chunk date (YYYY-MM-DD).",
-    ),
-    date_to: str | None = typer.Option(
-        None,
-        "--date-to",
-        help="Latest chunk date (YYYY-MM-DD).",
-    ),
+    tags: str | None = TAGS_FILTER_OPTION,
+    source: str | None = SOURCE_FILTER_OPTION,
+    date_from: str | None = DATE_FROM_OPTION,
+    date_to: str | None = DATE_TO_OPTION,
 ) -> None:
     """Search the retrieval index and stream formatted results."""
     run_index_search(
@@ -2048,30 +2019,10 @@ def chat(
         help="Maximum number of retrieval chunks to use.",
         rich_help_panel="RETRIEVAL FILTERS",
     ),
-    tags: str | None = typer.Option(
-        None,
-        "--tags",
-        help="Optional tag filters (comma or space separated).",
-        rich_help_panel="RETRIEVAL FILTERS",
-    ),
-    source: str | None = typer.Option(
-        None,
-        "--source",
-        help="Optional source-type filters (comma or space separated).",
-        rich_help_panel="RETRIEVAL FILTERS",
-    ),
-    date_from: str | None = typer.Option(
-        None,
-        "--date-from",
-        help="Earliest chunk date (YYYY-MM-DD).",
-        rich_help_panel="RETRIEVAL FILTERS",
-    ),
-    date_to: str | None = typer.Option(
-        None,
-        "--date-to",
-        help="Latest chunk date (YYYY-MM-DD).",
-        rich_help_panel="RETRIEVAL FILTERS",
-    ),
+    tags: str | None = TAGS_FILTER_OPTION,
+    source: str | None = SOURCE_FILTER_OPTION,
+    date_from: str | None = DATE_FROM_OPTION,
+    date_to: str | None = DATE_TO_OPTION,
     session: str | None = typer.Option(
         None,
         "--session",
