@@ -9,6 +9,7 @@ import pytest
 import yaml
 from typer.testing import CliRunner
 
+import aijournal.services.ollama
 from aijournal.cli import app
 from aijournal.commands import summarize as summarize_commands
 from aijournal.common import config_loader
@@ -154,7 +155,7 @@ def test_summarize_structured_success(monkeypatch: pytest.MonkeyPatch) -> None:
         return fake_response
 
     monkeypatch.setattr(config_loader, "use_fake_llm", lambda: False)
-    monkeypatch.setattr(summarize_commands, "_invoke_structured_llm", fake_invoke)
+    monkeypatch.setattr(summarize_commands, "invoke_structured_llm", fake_invoke)
 
     summary = summarize_commands._summarize_day_payload(
         [entry],
@@ -184,7 +185,7 @@ def test_summarize_structured_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
         raise LLMResponseError("bad schema")
 
     monkeypatch.setattr(config_loader, "use_fake_llm", lambda: False)
-    monkeypatch.setattr(summarize_commands, "_invoke_structured_llm", fake_invoke)
+    monkeypatch.setattr(summarize_commands, "invoke_structured_llm", fake_invoke)
 
     with pytest.raises(LLMResponseError):
         summarize_commands._summarize_day_payload(
@@ -235,10 +236,13 @@ def test_invoke_structured_llm_uses_shared_builder(monkeypatch: pytest.MonkeyPat
             payload=payload,
         )
 
-    monkeypatch.setattr(summarize_commands, "build_ollama_config_from_mapping", fake_builder)
-    monkeypatch.setattr(summarize_commands, "run_ollama_agent", fake_runner)
+    monkeypatch.setattr(
+        "aijournal.services.ollama.build_ollama_config_from_mapping",
+        fake_builder,
+    )
+    monkeypatch.setattr("aijournal.services.ollama.run_ollama_agent", fake_runner)
 
-    response = summarize_commands._invoke_structured_llm(
+    response = aijournal.services.ollama.invoke_structured_llm(
         "prompts/summarize_day.md",
         {"date": DATE, "entries_json": "[]"},
         response_model=DailySummary,

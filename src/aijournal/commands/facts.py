@@ -17,7 +17,6 @@ from aijournal.commands.profile import load_profile_components
 from aijournal.commands.summarize import (
     _build_meta,
     _entries_to_payload,
-    _invoke_structured_llm,
     _json_block,
     _load_normalized_entries,
     _log_entry_progress,
@@ -35,7 +34,7 @@ from aijournal.models.authoritative import ManifestEntry
 from aijournal.models.derived import ProfileUpdatePreview
 from aijournal.pipelines import facts as facts_pipeline
 from aijournal.services.microfacts import MicrofactIndex
-from aijournal.services.ollama import LLMResponseError, resolve_model_name
+from aijournal.services.ollama import LLMResponseError, invoke_structured_llm, resolve_model_name
 from aijournal.services.profile_preview import build_claim_preview
 from aijournal.services.summaries import SummaryNotFoundError, load_daily_summary
 from aijournal.utils import time as time_utils
@@ -168,7 +167,7 @@ def invoke_pipeline(ctx: RunContext, prepared: FactsPrepared) -> FactsResult:
 
     llm_microfacts: MicroFactsFile | None = None
     if not ctx.use_fake_llm:
-        llm_response = _invoke_structured_llm(
+        llm_response = invoke_structured_llm(
             "prompts/extract_facts.md",
             {
                 "date": prepared.date,

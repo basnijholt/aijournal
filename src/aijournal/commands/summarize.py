@@ -5,10 +5,8 @@ from __future__ import annotations
 import json
 from collections.abc import Sequence
 from dataclasses import dataclass
-from hashlib import sha256
 from pathlib import Path
-from string import Template
-from typing import Any, TypeVar, cast
+from typing import Any
 
 import typer
 from pydantic import BaseModel
@@ -17,7 +15,7 @@ from aijournal.common.app_config import AppConfig
 from aijournal.common.command_runner import run_command_pipeline
 from aijournal.common.config_loader import load_config, use_fake_llm
 from aijournal.common.context import RunContext
-from aijournal.common.meta import Artifact, ArtifactKind, ArtifactMeta, LLMResult
+from aijournal.common.meta import Artifact, ArtifactKind, ArtifactMeta
 from aijournal.domain.facts import DailySummary
 from aijournal.domain.journal import NormalizedEntry
 from aijournal.io.artifacts import save_artifact
@@ -25,30 +23,11 @@ from aijournal.io.yaml_io import load_yaml_model
 from aijournal.pipelines import summarize as summarize_pipeline
 from aijournal.services.ollama import (
     LLMResponseError,
-    build_ollama_config_from_mapping,
+    _hash_prompt,
+    invoke_structured_llm,
     resolve_model_name,
-    run_ollama_agent,
 )
 from aijournal.utils import time as time_utils
-from aijournal.utils.paths import resolve_prompt_path
-
-DEFAULT_PROMPTS = {
-    "summarize_day.md": (
-        "You are a journaling summarizer. Return JSON with day, bullets, highlights, "
-        "todo_candidates."
-    ),
-    "extract_facts.md": 'Extract atomic facts as JSON {"facts":[...]}.',
-    "profile_update.md": (
-        "Propose JSON with claim/facet updates grounded in entries, summaries, and microfacts."
-    ),
-    "advise.md": "Return an advice card JSON with recommendations citing facets and claims.",
-}
-
-_STRUCTURED_SYSTEM_PROMPT = (
-    "You are the summarize agent for the local aijournal CLI. "
-    "Read the user's prompt carefully and respond with JSON that matches the declared response schema. "
-    "Do not include markdown fences or commentary."
-)
 
 
 class DailySummaryOptions(BaseModel):
@@ -70,57 +49,6 @@ class DailySummaryResult:
     model_name: str
 
 
-StructuredModelT = TypeVar("StructuredModelT", bound=BaseModel)
-
-
-def _load_prompt_template(prompt_path: str, *, prompt_set: str | None = None) -> str:
-    path = resolve_prompt_path(prompt_path, prompt_set=prompt_set)
-    if path.exists():
-        return path.read_text(encoding="utf-8")
-    key = Path(prompt_path).name
-    return DEFAULT_PROMPTS.get(prompt_path) or DEFAULT_PROMPTS.get(key, "")
-
-
-def _render_prompt(
-    prompt_path: str, variables: dict[str, str], *, prompt_set: str | None = None
-) -> str:
-    template = Template(_load_prompt_template(prompt_path, prompt_set=prompt_set))
-    return template.safe_substitute(**variables)
-
-
-def _invoke_structured_llm(
-    prompt_path: str,
-    variables: dict[str, str],
-    *,
-    response_model: type[StructuredModelT],
-    agent_name: str,
-    config: AppConfig,
-    prompt_set: str | None = None,
-) -> StructuredModelT:
-    prompt = _render_prompt(prompt_path, variables, prompt_set=prompt_set)
-    prompt_hash = _hash_prompt(prompt_path, prompt_set=prompt_set)
-    prompt_kind = Path(prompt_path).stem
-    try:
-        ollama_config = build_ollama_config_from_mapping(config)
-
-        result: LLMResult[BaseModel] = run_ollama_agent(
-            ollama_config,
-            prompt,
-            system_prompt=_STRUCTURED_SYSTEM_PROMPT,
-            output_type=response_model,
-            retries=config.llm.retries,
-            prompt_path=prompt_path,
-            prompt_hash=prompt_hash,
-            prompt_kind=prompt_kind,
-            prompt_set=prompt_set,
-            log_label=agent_name,
-        )
-        return cast(StructuredModelT, result.payload)
-    except Exception as exc:  # pragma: no cover - runtime dependent
-        msg = f"Structured output generation failed for {prompt_path}: {exc}"
-        raise LLMResponseError(msg) from exc
-
-
 def _log_entry_progress(action: str, entries: Sequence[NormalizedEntry], enabled: bool) -> None:
     if not enabled:
         return
@@ -132,16 +60,6 @@ def _log_entry_progress(action: str, entries: Sequence[NormalizedEntry], enabled
     for idx, entry in enumerate(entries, start=1):
         label = entry.title or entry.id or f"entry-{idx}"
         typer.echo(f"  [{idx}/{total}] {label}")
-
-
-def _is_timeout_exception(exc: BaseException) -> bool:
-    current: BaseException | None = exc
-    while current is not None:
-        message = str(current).lower()
-        if isinstance(current, TimeoutError) or "timed out" in message or "timeout" in message:
-            return True
-        current = current.__cause__ if current.__cause__ is not None else current.__context__
-    return False
 
 
 def _json_block(data: Any) -> str:
@@ -188,15 +106,6 @@ def _derived_summary_path(workspace: Path, config: AppConfig, day: str) -> Path:
     if not derived.is_absolute():
         derived = workspace / derived
     return derived / "summaries" / f"{day}.yaml"
-
-
-def _hash_prompt(prompt_path: str, *, prompt_set: str | None = None) -> str | None:
-    path = resolve_prompt_path(prompt_path, prompt_set=prompt_set)
-    try:
-        data = path.read_bytes()
-    except FileNotFoundError:
-        return None
-    return sha256(data).hexdigest()
 
 
 def _build_meta(
@@ -300,7 +209,7 @@ def _summarize_day_payload(
     fake_mode = use_fake_llm_override if use_fake_llm_override is not None else use_fake_llm()
     llm_summary: DailySummary | None = None
     if not fake_mode:
-        llm_summary = _invoke_structured_llm(
+        llm_summary = invoke_structured_llm(
             "prompts/summarize_day.md",
             {
                 "date": date,

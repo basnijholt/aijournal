@@ -24,7 +24,6 @@ from typer.models import CommandInfo
 
 import aijournal._version as version_module
 from aijournal.api.capture import CaptureRequest
-from aijournal.commands import summarize as summarize_commands
 from aijournal.commands.advise import (
     AdviceOptions,
     _collect_pending_interview_prompts,
@@ -100,12 +99,8 @@ from aijournal.io.yaml_io import dump_yaml, load_yaml_model, write_yaml_model
 from aijournal.models.authoritative import ClaimsFile, SelfProfile
 from aijournal.models.derived import ProfileUpdateBatch, ProfileUpdatePreview
 from aijournal.pipelines import normalization
-from aijournal.services.capture import (
-    CAPTURE_MAX_STAGE,
-    CAPTURE_STAGES,
-    CaptureInput,
-    run_capture,
-)
+from aijournal.services import ollama
+from aijournal.services.capture import CAPTURE_MAX_STAGE, CAPTURE_STAGES, CaptureInput, run_capture
 from aijournal.services.consolidator import (
     ClaimConsolidator,
     ClaimMergeOutcome,
@@ -1840,7 +1835,7 @@ def interview(
             summary_window_payload = [
                 window_summary.model_dump(mode="python") for _, window_summary in summary_window
             ]
-            interview_set = summarize_commands._invoke_structured_llm(
+            interview_set = ollama.invoke_structured_llm(
                 "prompts/interview.md",
                 {
                     "date": date,

@@ -200,7 +200,7 @@ def test_profile_update_uses_summary_and_microfacts(
         return PromptProfileUpdates.model_validate(example_payload)
 
     monkeypatch.setenv("AIJOURNAL_FAKE_OLLAMA", "0")
-    monkeypatch.setattr(profile_update_module, "_invoke_structured_llm", fake_invoke)
+    monkeypatch.setattr(profile_update_module, "invoke_structured_llm", fake_invoke)
 
     result = cli_runner.invoke(app, ["ops", "profile", "update", "--date", DATE])
 
@@ -231,7 +231,7 @@ def test_profile_update_sanitizes_batch_filename(
     def fake_invoke(*_args, **_kwargs) -> PromptProfileUpdates:
         return PromptProfileUpdates.model_validate(example_payload)
 
-    monkeypatch.setattr(profile_update_module, "_invoke_structured_llm", fake_invoke)
+    monkeypatch.setattr(profile_update_module, "invoke_structured_llm", fake_invoke)
     monkeypatch.setattr(
         profile_update_module.time_utils,
         "format_timestamp",
@@ -293,7 +293,7 @@ def test_profile_update_claims_use_entry_manifest_hash(
         return PromptProfileUpdates.model_validate(example_payload)
 
     monkeypatch.setenv("AIJOURNAL_FAKE_OLLAMA", "0")
-    monkeypatch.setattr(profile_update_module, "_invoke_structured_llm", fake_invoke)
+    monkeypatch.setattr(profile_update_module, "invoke_structured_llm", fake_invoke)
 
     result = cli_runner.invoke(app, ["ops", "profile", "update", "--date", DATE])
 

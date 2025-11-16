@@ -20,7 +20,6 @@ from aijournal.commands.profile import (
 )
 from aijournal.commands.summarize import (
     _build_meta,
-    _invoke_structured_llm,
     _json_block,
     _load_normalized_entries,
 )
@@ -32,7 +31,7 @@ from aijournal.domain.claims import ClaimAtom
 from aijournal.io.artifacts import load_artifact, save_artifact
 from aijournal.models.derived import AdviceCard, ProfileUpdateBatch
 from aijournal.pipelines import advise as advise_pipeline
-from aijournal.services.ollama import resolve_model_name
+from aijournal.services.ollama import invoke_structured_llm, resolve_model_name
 from aijournal.utils import time as time_utils
 from aijournal.utils.paths import resolve_path
 
@@ -226,7 +225,7 @@ def _advice_payload(
 
     llm_advice: AdviceCard | None = None
     if not use_fake_llm:
-        llm_advice = _invoke_structured_llm(
+        llm_advice = invoke_structured_llm(
             "prompts/advise.md",
             {
                 "date": time_utils.created_date(time_utils.format_timestamp(time_utils.now())),

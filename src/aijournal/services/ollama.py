@@ -7,7 +7,9 @@ import json
 import os
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from hashlib import sha256
 from pathlib import Path
+from string import Template
 from typing import Any, TypeVar, cast, get_args, get_origin
 
 from pydantic import BaseModel, ValidationError
@@ -21,11 +23,30 @@ from aijournal.common.app_config import AppConfig
 from aijournal.common.constants import DEFAULT_MODEL_NAME, DEFAULT_OLLAMA_HOST
 from aijournal.common.meta import LLMResult
 from aijournal.utils import time as time_utils
+from aijournal.utils.paths import resolve_prompt_path
 
 _JSON_SYSTEM_PROMPT = (
     "You are part of the aijournal CLI. "
     "Respond with valid JSON only—no markdown fences, explanations, or trailing text."
 )
+
+_STRUCTURED_SYSTEM_PROMPT = (
+    "You are the summarize agent for the local aijournal CLI. "
+    "Read the user's prompt carefully and respond with JSON that matches the declared response schema. "
+    "Do not include markdown fences or commentary."
+)
+
+DEFAULT_PROMPTS = {
+    "summarize_day.md": (
+        "You are a journaling summarizer. Return JSON with day, bullets, highlights, "
+        "todo_candidates."
+    ),
+    "extract_facts.md": 'Extract atomic facts as JSON {"facts":[...]}.',
+    "profile_update.md": (
+        "Propose JSON with claim/facet updates grounded in entries, summaries, and microfacts."
+    ),
+    "advise.md": "Return an advice card JSON with recommendations citing facets and claims.",
+}
 
 
 class LLMResponseError(RuntimeError):
@@ -560,3 +581,63 @@ def run_ollama_agent(
     _append_metrics_record(metrics_record)
 
     return result_payload
+
+
+def _hash_prompt(prompt_path: str, *, prompt_set: str | None = None) -> str | None:
+    path = resolve_prompt_path(prompt_path, prompt_set=prompt_set)
+    try:
+        data = path.read_bytes()
+    except FileNotFoundError:
+        return None
+    return sha256(data).hexdigest()
+
+
+def _load_prompt_template(prompt_path: str, *, prompt_set: str | None = None) -> str:
+    path = resolve_prompt_path(prompt_path, prompt_set=prompt_set)
+    if path.exists():
+        return path.read_text(encoding="utf-8")
+    key = Path(prompt_path).name
+    return DEFAULT_PROMPTS.get(prompt_path) or DEFAULT_PROMPTS.get(key, "")
+
+
+def _render_prompt(
+    prompt_path: str, variables: dict[str, str], *, prompt_set: str | None = None
+) -> str:
+    template = Template(_load_prompt_template(prompt_path, prompt_set=prompt_set))
+    return template.safe_substitute(**variables)
+
+
+StructuredModelT = TypeVar("StructuredModelT", bound=BaseModel)
+
+
+def invoke_structured_llm(
+    prompt_path: str,
+    variables: dict[str, str],
+    *,
+    response_model: type[StructuredModelT],
+    agent_name: str,
+    config: AppConfig,
+    prompt_set: str | None = None,
+) -> StructuredModelT:
+    prompt = _render_prompt(prompt_path, variables, prompt_set=prompt_set)
+    prompt_hash = _hash_prompt(prompt_path, prompt_set=prompt_set)
+    prompt_kind = Path(prompt_path).stem
+    try:
+        ollama_config = build_ollama_config_from_mapping(config)
+
+        result: LLMResult[BaseModel] = run_ollama_agent(
+            ollama_config,
+            prompt,
+            system_prompt=_STRUCTURED_SYSTEM_PROMPT,
+            output_type=response_model,
+            retries=config.llm.retries,
+            prompt_path=prompt_path,
+            prompt_hash=prompt_hash,
+            prompt_kind=prompt_kind,
+            prompt_set=prompt_set,
+            log_label=agent_name,
+        )
+        return cast(StructuredModelT, result.payload)
+    except Exception as exc:  # pragma: no cover - runtime dependent
+        msg = f"Structured output generation failed for {prompt_path}: {exc}"
+        raise LLMResponseError(msg) from exc

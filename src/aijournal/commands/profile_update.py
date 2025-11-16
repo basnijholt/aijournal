@@ -24,7 +24,6 @@ from aijournal.commands.summarize import (
     _build_meta,
     _derived_summary_path,
     _entries_to_payload,
-    _invoke_structured_llm,
     _json_block,
     _log_entry_progress,
 )
@@ -50,7 +49,7 @@ from aijournal.services.microfacts import (
     load_consolidated_microfacts,
     select_recurring_facts,
 )
-from aijournal.services.ollama import LLMResponseError
+from aijournal.services.ollama import LLMResponseError, invoke_structured_llm
 from aijournal.services.profile_preview import build_claim_preview
 from aijournal.utils import time as time_utils
 
@@ -189,7 +188,7 @@ def run_profile_update_command(
         )
 
         def request_profile_update() -> ProfileUpdateProposals:
-            llm_response = _invoke_structured_llm(
+            llm_response = invoke_structured_llm(
                 "prompts/profile_update.md",
                 {
                     "date": prepared.date,
