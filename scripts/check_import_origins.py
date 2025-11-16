@@ -25,9 +25,12 @@ import argparse
 import ast
 import sys
 from collections import defaultdict
-from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable, Sequence
 
 
 @dataclass(slots=True)
@@ -77,12 +80,13 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
 
 def iter_python_files(base_dirs: Sequence[Path]) -> Iterable[tuple[Path, Path]]:
     """Yield ``(base_dir, file_path)`` pairs for each Python file."""
-
     for base in base_dirs:
         if not base.exists():
-            raise SystemExit(f"Base directory does not exist: {base}")
+            msg = f"Base directory does not exist: {base}"
+            raise SystemExit(msg)
         if not base.is_dir():
-            raise SystemExit(f"Base path is not a directory: {base}")
+            msg = f"Base path is not a directory: {base}"
+            raise SystemExit(msg)
 
         for path in base.rglob("*.py"):
             if "__pycache__" in path.parts:
@@ -92,7 +96,6 @@ def iter_python_files(base_dirs: Sequence[Path]) -> Iterable[tuple[Path, Path]]:
 
 def module_metadata(path: Path, base: Path) -> tuple[str, tuple[str, ...]]:
     """Return the module name and package parts for ``path`` relative to ``base``."""
-
     rel = path.relative_to(base).with_suffix("")
     package_parts = tuple(rel.parts)
     module_parts = list(package_parts)
@@ -244,7 +247,7 @@ def find_problems(
             problems.append(
                 f"{rel_path}:{record.lineno}: "
                 f"{record.symbol!r} is imported from {record.target_module} but not defined there."
-                f" Defined inside: {defined_hint}"
+                f" Defined inside: {defined_hint}",
             )
 
     return sorted(problems)
