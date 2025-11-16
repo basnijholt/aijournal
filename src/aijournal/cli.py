@@ -80,10 +80,7 @@ from aijournal.common.config_loader import (
     resolve_prompt_set,
     use_fake_llm,
 )
-from aijournal.common.constants import (
-    DEFAULT_LLM_RETRIES,
-    DEFAULT_TIMEOUT_SECONDS,
-)
+from aijournal.common.constants import DEFAULT_LLM_RETRIES, DEFAULT_TIMEOUT_SECONDS
 from aijournal.common.context import RunContext, create_run_context
 from aijournal.domain.changes import ClaimProposal, FacetChange
 from aijournal.domain.events import (
@@ -299,7 +296,7 @@ PACK_OUTPUT_OPTION: Final = typer.Option(
 LLM_TIMEOUT_OPTION: Final = typer.Option(
     DEFAULT_TIMEOUT_SECONDS,
     "--timeout",
-    help="Seconds to wait for the LLM response before retrying.",
+    help="Override the LLM timeout in seconds; defaults to workspace config when unset.",
     show_default=True,
     rich_help_panel="LLM",
 )
@@ -307,7 +304,7 @@ LLM_RETRIES_OPTION: Final = typer.Option(
     DEFAULT_LLM_RETRIES,
     "--retries",
     min=0,
-    help="Number of retry attempts when the model times out or returns invalid JSON.",
+    help="Number of retry attempts when the model times out or returns invalid JSON; defaults to workspace config when unset.",
     show_default=True,
     rich_help_panel="LLM",
 )
@@ -715,12 +712,13 @@ def capture(
         help=f"Highest capture stage (0-{CAPTURE_MAX_STAGE}) to execute. Stages:\n{CAPTURE_STAGE_TABLE}",
         rich_help_panel="STAGE CONTROL",
     ),
-    retries: int = typer.Option(
-        DEFAULT_LLM_RETRIES,
+    retries: int | None = typer.Option(
+        None,
         "--retries",
         min=0,
-        help="Structured-output retry attempts per stage.",
+        help="Override structured-output retries; defaults to workspace config when unset.",
         rich_help_panel="LLM & VALIDATION",
+        show_default=False,
     ),
     progress: bool = typer.Option(
         True,
@@ -1098,8 +1096,8 @@ def normalize(
 @ops_pipeline_app.command("summarize", hidden=True)
 def summarize(
     date: str = PIPELINE_DATE_OPTION,
-    timeout: float = LLM_TIMEOUT_OPTION,
-    retries: int = LLM_RETRIES_OPTION,
+    timeout: float | None = LLM_TIMEOUT_OPTION,
+    retries: int | None = LLM_RETRIES_OPTION,
     progress: bool = LLM_PROGRESS_OPTION,
 ) -> None:
     """Generate a daily summary from normalized entries."""
@@ -1124,8 +1122,8 @@ def summarize(
 @ops_pipeline_app.command("extract-facts", hidden=True)
 def facts(
     date: str = PIPELINE_DATE_OPTION,
-    timeout: float = LLM_TIMEOUT_OPTION,
-    retries: int = LLM_RETRIES_OPTION,
+    timeout: float | None = LLM_TIMEOUT_OPTION,
+    retries: int | None = LLM_RETRIES_OPTION,
     progress: bool = LLM_PROGRESS_OPTION,
 ) -> None:
     """Generate micro-facts from normalized entries."""
@@ -1156,8 +1154,8 @@ def facts(
 @profile_app.command("update")
 def profile_update_cli(
     date: str = PIPELINE_DATE_OPTION,
-    timeout: float = LLM_TIMEOUT_OPTION,
-    retries: int = LLM_RETRIES_OPTION,
+    timeout: float | None = LLM_TIMEOUT_OPTION,
+    retries: int | None = LLM_RETRIES_OPTION,
     progress: bool = LLM_PROGRESS_OPTION,
 ) -> None:
     """Derive pending profile updates using the unified Prompt 3 contract."""
