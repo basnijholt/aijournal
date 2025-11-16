@@ -11,6 +11,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
 
 from aijournal.api.capture import CaptureInput, CaptureRequest
+from aijournal.api.chat import ChatRequest
 from aijournal.services.chat import ChatService
 from aijournal.services.feedback import FeedbackAdjustment, apply_chat_feedback
 from aijournal.services.retriever import RetrievalFilters
@@ -20,7 +21,6 @@ if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Iterable
     from pathlib import Path
 
-    from aijournal.api.chat import ChatRequest
     from aijournal.common.app_config import AppConfig
 
 try:  # pragma: no cover - optional dependency

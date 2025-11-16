@@ -7,10 +7,10 @@ from typing import TYPE_CHECKING
 from pydantic import Field
 
 from aijournal.common.base import StrictModel
+from aijournal.domain.changes import ClaimProposal
 from aijournal.domain.evidence import SourceRef, Span
 
 if TYPE_CHECKING:  # pragma: no cover
-    from aijournal.domain.changes import ClaimProposal
     from aijournal.models.derived import ProfileUpdatePreview
 
 

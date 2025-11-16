@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any, NamedTuple
 
 from pydantic import BaseModel, Field
 
+from aijournal.api.capture import CaptureInput
 from aijournal.common.config_loader import load_config_with_overrides
 from aijournal.common.logging import StructuredLogger
 from aijournal.services.capture.results import OperationResult, StageResult
@@ -16,7 +17,7 @@ from aijournal.services.capture.utils import normalize_markdown
 from aijournal.services.ollama import build_ollama_config_from_mapping
 from aijournal.utils import time as time_utils
 
-from .stages.stage0_persist import run_persist_stage_0
+from .stages.stage0_persist import EntryResult, run_persist_stage_0
 from .stages.stage1_normalize import run_normalize_stage_1
 from .stages.stage2_summarize import run_summarize_stage_2
 from .stages.stage3_facts import run_facts_stage_3
@@ -33,10 +34,8 @@ from .utils import (
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from aijournal.api.capture import CaptureInput
     from aijournal.common.app_config import AppConfig
     from aijournal.models.authoritative import ManifestEntry
-    from aijournal.services.capture.stages.stage0_persist import EntryResult
 
 
 class CaptureStage(NamedTuple):

@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from pydantic import Field
 
 from aijournal.common.base import StrictModel
-
-if TYPE_CHECKING:
-    from aijournal.domain.claims import ClaimAtom
+from aijournal.domain.claims import ClaimAtom
 
 
 class PersonaCore(StrictModel):

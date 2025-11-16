@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -35,8 +36,6 @@ from aijournal.services.summaries import SummaryNotFoundError, load_daily_summar
 from aijournal.utils import time as time_utils
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Sequence
-
     from aijournal.common.app_config import AppConfig
     from aijournal.common.context import RunContext
     from aijournal.domain.journal import NormalizedEntry

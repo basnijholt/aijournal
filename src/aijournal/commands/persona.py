@@ -15,6 +15,7 @@ from aijournal.common.command_runner import run_command_pipeline
 from aijournal.common.config_loader import use_fake_llm
 from aijournal.common.context import RunContext, create_run_context
 from aijournal.common.meta import Artifact, ArtifactKind, ArtifactMeta
+from aijournal.domain.claims import ClaimAtom
 from aijournal.domain.persona import PersonaCore
 from aijournal.io.artifacts import load_artifact, save_artifact
 from aijournal.pipelines import persona as persona_pipeline
@@ -26,7 +27,6 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
     from aijournal.common.app_config import AppConfig
-    from aijournal.domain.claims import ClaimAtom
 
 PERSONA_DEFAULTS = {
     "token_budget": 1200,

@@ -6,10 +6,11 @@ from typing import TYPE_CHECKING
 
 import typer
 
+from aijournal.domain.changes import ClaimProposal
 from aijournal.domain.claims import ClaimAtom, ClaimSource, Scope
+from aijournal.domain.enums import ClaimEventAction
 from aijournal.domain.events import (
     ClaimConflictPayload,
-    ClaimEventAction,
     ClaimPreviewEvent,
     ClaimSignaturePayload,
 )
@@ -24,8 +25,6 @@ from aijournal.services.consolidator import (
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
-
-    from aijournal.domain.changes import ClaimProposal
 
 
 def claim_proposal_to_atom(proposal: ClaimProposal, *, timestamp: str) -> ClaimAtom:

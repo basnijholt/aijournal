@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 from pydantic import Field
 
 from aijournal.domain.advice import AdviceCard as _AdviceCard
@@ -11,13 +9,11 @@ from aijournal.domain.advice import AdviceRecommendation as _AdviceRecommendatio
 from aijournal.domain.advice import AdviceReference as _AdviceReference
 from aijournal.domain.changes import ProfileUpdateProposals
 from aijournal.domain.claims import ClaimAtom
+from aijournal.domain.events import ClaimPreviewEvent
 from aijournal.domain.facts import MicroFactsFile
 from aijournal.domain.persona import InterviewQuestion, InterviewSet, PersonaCore
 
 from .base import AijournalModel
-
-if TYPE_CHECKING:
-    from aijournal.domain.events import ClaimPreviewEvent
 
 PersonaCore.model_rebuild(_types_namespace={"ClaimAtom": ClaimAtom})
 InterviewSet.model_rebuild(

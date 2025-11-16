@@ -2,16 +2,14 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from pydantic import Field, field_validator
 
 from aijournal.common.base import StrictModel
+from aijournal.domain.claims import Scope
 from aijournal.domain.enums import ClaimMethod, ClaimStatus, ClaimType, FacetOperation
-
-if TYPE_CHECKING:
-    from aijournal.domain.claims import Scope
-    from aijournal.domain.evidence import SourceRef
+from aijournal.domain.evidence import SourceRef
 
 
 class ClaimAtomInput(StrictModel):

@@ -7,6 +7,8 @@ from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, Field, field_validator
 
+from aijournal.common.types import TimestampStr
+from aijournal.domain.journal import Section as IngestSection
 from aijournal.services.ollama import build_ollama_agent, build_ollama_config_from_mapping
 from aijournal.utils import time as time_utils
 
@@ -16,8 +18,7 @@ if TYPE_CHECKING:
     from pydantic_ai import Agent
 
     from aijournal.common.app_config import AppConfig
-    from aijournal.common.types import TimestampStr
-    from aijournal.domain.journal import Section as IngestSection
+
 
 INGEST_SYSTEM_PROMPT = """
 You are part of a local journaling pipeline. Given a Markdown or Hugo document with optional
