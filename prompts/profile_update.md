@@ -86,13 +86,32 @@ to add, return `{ "claims": [], "facets": [], "interview_prompts": [] }`.
 }
 ```
 
+- Every claim you emit **must** set `type` to one of the allowed values
+  (`preference`, `value`, `goal`, `boundary`, `trait`, `habit`, `aversion`, `skill`).
+  If none apply, drop the claim entirely instead of inventing a new label.
+- Keep the payload purely structured data—no stray prose, commentary, or fences.
+
+Example claim object:
+
+```
+{
+  "type": "value",
+  "statement": "Values shared rituals with close friends.",
+  "strength": 0.65,
+  "status": "tentative",
+  "reason": "Entry describes weekly dinner tradition.",
+  "evidence_entry": "2025-11-10-friends-dinner"
+}
+```
+
 ### Constraints
 
 1. Facet `operation` must be `set` or `remove` (never `merge`).
 2. Facet `value` must be a string or list of strings.
 3. Statements ≤160 chars; subject/predicate ≤80 chars; value ≤160 chars; reason
    ≤25 words; interview prompts ≤20 words.
-4. Omit empty strings, null evidence, or redundant claims.
+4. Omit empty strings, null evidence, or redundant claims. Never invent new enum
+   values—stick to the allowed options for `type`, `status`, and `method`.
 
 ## Failure Handling
 
@@ -116,4 +135,3 @@ CONSOLIDATED_FACTS_JSON: $consolidated_facts_json
 PROFILE_JSON: $profile_json
 
 CLAIMS_JSON: $claims_json
-
