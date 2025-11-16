@@ -178,7 +178,7 @@ class Stage1Validator:
 
             try:
                 normalized = load_yaml_model(normalized_abs, NormalizedEntry)
-            except Exception as exc:  # noqa: BLE001 - include validation errors
+            except Exception as exc:
                 failures.append(
                     ValidationFailure(
                         stage_id=self.stage_id,
@@ -233,7 +233,7 @@ class Stage2Validator:
 
             try:
                 summary = load_artifact_data(summary_path, DailySummary)
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 failures.append(
                     ValidationFailure(
                         stage_id=self.stage_id,
@@ -290,7 +290,7 @@ class Stage3Validator:
 
             try:
                 facts_file = load_artifact_data(facts_path, MicroFactsFile)
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 failures.append(
                     ValidationFailure(
                         stage_id=self.stage_id,
@@ -366,7 +366,7 @@ class Stage4Validator:
         for batch_path in batch_files:
             try:
                 batch = load_artifact_data(batch_path, ProfileUpdateBatch)
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 failures.append(
                     ValidationFailure(
                         stage_id=self.stage_id,
@@ -488,7 +488,7 @@ class Stage5Validator:
         else:
             try:
                 meta = json.loads(meta_file.read_text(encoding="utf-8"))
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 failures.append(
                     ValidationFailure(
                         stage_id=self.stage_id,
@@ -543,7 +543,7 @@ class Stage6Validator:
 
         try:
             persona = load_artifact_data(persona_path, PersonaCore)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             failures.append(
                 ValidationFailure(
                     stage_id=self.stage_id,
@@ -617,7 +617,7 @@ class Stage7Validator:
                 continue
             try:
                 bundle = load_artifact_data(pack_path, PackBundle)
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 failures.append(
                     ValidationFailure(
                         stage_id=self.stage_id,
@@ -717,7 +717,7 @@ def _load_manifest(root: Path) -> list[ManifestEntry]:
     for item in raw:
         try:
             entries.append(ManifestEntry.model_validate(item))
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.warning("Failed to validate manifest entry: %s", exc)
             continue
     return entries
@@ -735,7 +735,7 @@ def _normalized_ids(root: Path) -> set[str]:
     for yaml_file in normalized_root.rglob("*.yaml"):
         try:
             entry = load_yaml_model(yaml_file, NormalizedEntry)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.warning("Failed to load normalized entry %s: %s", yaml_file, exc)
             continue
         if entry.id:

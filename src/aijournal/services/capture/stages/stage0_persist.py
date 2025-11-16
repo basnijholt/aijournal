@@ -267,7 +267,7 @@ def _persist_file_entry(
     try:
         frontmatter_data, body = split_frontmatter(text)
         body = body.strip()
-    except Exception:  # noqa: BLE001 - tolerate malformed front matter
+    except Exception:
         tolerant = split_frontmatter_tolerant(text)
         ingest_warnings.extend(tolerant.warnings)
         frontmatter_data = tolerant.data

@@ -417,7 +417,7 @@ def normalize_markdown(
     raw_text = markdown_path.read_text(encoding="utf-8")
     try:
         frontmatter, body = split_frontmatter(raw_text)
-    except Exception:  # noqa: BLE001 - fallback to tolerant parser
+    except Exception:
         tolerant = split_frontmatter_tolerant(raw_text)
         frontmatter = tolerant.data
         body = tolerant.body

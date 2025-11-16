@@ -186,7 +186,7 @@ def main() -> None:
 
     try:
         result = agent.run_sync(prompt)
-    except Exception as exc:  # noqa: BLE001 - we want full diagnostics
+    except Exception as exc:
         dump_exc(exc)
         sys.exit(1)
 

@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 from pydantic import Field
 
 from aijournal.common.base import StrictModel
-from aijournal.domain.changes import ClaimProposal
+from aijournal.domain.changes import ClaimProposal  # noqa: TC001
 from aijournal.domain.evidence import SourceRef
 
 if TYPE_CHECKING:  # pragma: no cover
