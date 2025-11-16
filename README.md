@@ -87,7 +87,7 @@ Run `aijournal init` inside a fresh directory to materialize `data/`, `derived/`
 
 - Every derived output now persists as an `Artifact[T]` envelope (`kind`, `meta`, `data`). Deterministic helpers in `aijournal/io/artifacts.py` keep the JSON/YAML on disk stable.
 - Legacy payloads are gone—commands read and write only the strict envelopes that live under `derived/`.
-- Source spans now strip raw text before writing claims or feedback to disk. `aijournal/domain/evidence.py` enforces this at the schema layer and `aijournal ops audit provenance` lets you scan/redact any lingering text when needed.
+- Source spans now strip raw text before writing claims or feedback to disk; `aijournal/domain/evidence.py` enforces this at the schema layer so no extra cleanup pass is required.
 - Governance hooks (`scripts/check_schemas.py`, JSON schema snapshots under `schemas/core/`, and mandatory pre-commit checks) ensure every schema change is intentional and reviewable.
 - Reference outputs under `docs/examples/` showcase the strict persona core, index metadata, microfacts, packs, feedback batches, and chat transcripts generated in fake mode.
 

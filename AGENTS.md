@@ -173,7 +173,6 @@ Advanced/manual checks (useful for troubleshooting specific stages):
 21. `uv run aijournal ops index search 'deep work sprint focus' --top 3 --tags focus`
 22. `uv run aijournal ops persona build`
 23. `uv run aijournal ops persona status`
-24. `uv run aijournal ops audit provenance --fix` (scan for lingering `span.text` and redact if needed)
 
 Maintain a run log capturing score, command, summary, artifacts, troubleshooting notes (e.g., `run_log.md` in the temp directory). This ensures reproducibility and provides evidence of the 350/350 score.
 
