@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import copy
 import json
 import os
@@ -425,10 +426,8 @@ def _write_failure_log(
     raw_payload: str | None,
 ) -> None:
     folder = _failure_log_dir(label)
-    try:
+    with contextlib.suppress(FileExistsError):  # pragma: no cover - minor race safety
         folder.mkdir(parents=True, exist_ok=True)
-    except FileExistsError:  # pragma: no cover - minor race safety
-        pass
 
     timestamp = time_utils.format_timestamp(time_utils.now()).replace(":", "-")
     payload: dict[str, Any] = {

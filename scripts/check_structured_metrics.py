@@ -88,6 +88,7 @@ def main() -> int:
     repair_rate = summary.repair_attempts / summary.calls
     avg_coercions = summary.coercions / summary.calls
 
+    ok = True
     if repair_rate > args.max_repair_rate:
         print(f"Repair rate {repair_rate:.3f} exceeded threshold {args.max_repair_rate:.3f}")
         ok = False

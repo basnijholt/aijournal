@@ -13,6 +13,7 @@ Run it from the repository root:
 
 from __future__ import annotations
 
+import contextlib
 import dataclasses
 import importlib
 import inspect
@@ -77,11 +78,8 @@ def main() -> None:
             try:
                 file_path = inspect.getfile(cls)
                 # Make path relative to root for cleaner output
-                try:
+                with contextlib.suppress(ValueError):
                     file_path = str(Path(file_path).relative_to(root))
-                except ValueError:
-                    # If not relative to root, keep absolute path
-                    pass
             except (TypeError, OSError):
                 file_path = "<unknown>"
 

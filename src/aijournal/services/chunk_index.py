@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -90,10 +91,8 @@ class ChunkIndex:
         return client.get_or_create_collection(self._collection_name)
 
     def reset(self) -> None:
-        try:
+        with contextlib.suppress(Exception):  # pragma: no cover - collection may not exist yet
             self._client.delete_collection(self._collection_name)
-        except Exception:  # pragma: no cover - collection may not exist yet
-            pass
         self._collection = self._ensure_collection(self._client)
 
     def replace_entry(self, normalized_id: str, records: Sequence[Any]) -> None:
