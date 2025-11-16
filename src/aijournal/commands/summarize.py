@@ -300,19 +300,16 @@ def _summarize_day_payload(
     fake_mode = use_fake_llm_override if use_fake_llm_override is not None else use_fake_llm()
     llm_summary: DailySummary | None = None
     if not fake_mode:
-        llm_summary = cast(
-            DailySummary,
-            _invoke_structured_llm(
-                "prompts/summarize_day.md",
-                {
-                    "date": date,
-                    "entries_json": _json_block(_entries_to_payload(entries, workspace)),
-                },
-                response_model=DailySummary,
-                agent_name="aijournal-summarize",
-                config=config,
-                prompt_set=prompt_set,
-            ),
+        llm_summary = _invoke_structured_llm(
+            "prompts/summarize_day.md",
+            {
+                "date": date,
+                "entries_json": _json_block(_entries_to_payload(entries, workspace)),
+            },
+            response_model=DailySummary,
+            agent_name="aijournal-summarize",
+            config=config,
+            prompt_set=prompt_set,
         )
 
     return summarize_pipeline.generate_summary(
