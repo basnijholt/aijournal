@@ -116,14 +116,26 @@ Return the empty payload when:
 
 DATE: $date
 
-ENTRIES_JSON: $entries_json
+<ENTRIES_JSON>
+$entries_json
+</ENTRIES_JSON>
 
-SUMMARY_JSON: $summary_json
+<SUMMARY_JSON>
+$summary_json
+</SUMMARY_JSON>
 
-MICROFACTS_JSON: $microfacts_json
+<MICROFACTS_JSON>
+$microfacts_json
+</MICROFACTS_JSON>
 
-CONSOLIDATED_FACTS_JSON: $consolidated_facts_json
+<CONSOLIDATED_FACTS_JSON>
+$consolidated_facts_json
+</CONSOLIDATED_FACTS_JSON>
 
-PROFILE_JSON: $profile_json
+<PROFILE_JSON>
+$profile_json
+</PROFILE_JSON>
 
-CLAIMS_JSON: $claims_json
+<CLAIMS_JSON>
+$claims_json
+</CLAIMS_JSON>

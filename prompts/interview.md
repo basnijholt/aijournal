@@ -93,19 +93,33 @@ Do not add explanations.
 ## Inputs (read-only context)
 DATE: $date
 
-PROFILE_JSON: $profile_json
+<PROFILE_JSON>
+$profile_json
+</PROFILE_JSON>
 
-CLAIMS_JSON: $claims_json
+<CLAIMS_JSON>
+$claims_json
+</CLAIMS_JSON>
 
-ENTRIES_JSON: $entries_json
+<ENTRIES_JSON>
+$entries_json
+</ENTRIES_JSON>
 
-RANKINGS_JSON: $rankings_json
+<RANKINGS_JSON>
+$rankings_json
+</RANKINGS_JSON>
 
-COACHING_PREFS_JSON: $coaching_prefs_json
+<COACHING_PREFS_JSON>
+$coaching_prefs_json
+</COACHING_PREFS_JSON>
 
-SUMMARY_JSON: $summary_json
+<SUMMARY_JSON>
+$summary_json
+</SUMMARY_JSON>
 
-SUMMARY_WINDOW_JSON: $summary_window_json
+<SUMMARY_WINDOW_JSON>
+$summary_window_json
+</SUMMARY_WINDOW_JSON>
 
 ---
 ## Final Instruction

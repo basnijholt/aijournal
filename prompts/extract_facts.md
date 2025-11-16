@@ -65,8 +65,9 @@ Treat the daily summary as a **map of what mattered most** before you dive into 
 3. Verify every hypothesis against the normalized entries before you add anything to `facts` or `claim_proposals`.
 4. Never emit a fact that contradicts the summary or the entries.
 
-SUMMARY_JSON:
+<SUMMARY_JSON>
 $summary_json
+</SUMMARY_JSON>
 
 ---
 
@@ -185,5 +186,6 @@ Each claim proposal must:
 
 DATE: $date
 
-ENTRIES_JSON:
+<ENTRIES_JSON>
 $entries_json
+</ENTRIES_JSON>

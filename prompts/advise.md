@@ -169,15 +169,25 @@ Do not add explanations.
 ## Inputs (read-only context)
 DATE: $date
 
-QUESTION: $question
+<QUESTION>
+$question
+</QUESTION>
 
-PROFILE_JSON: $profile_json
+<PROFILE_JSON>
+$profile_json
+</PROFILE_JSON>
 
-CLAIMS_JSON: $claims_json
+<CLAIMS_JSON>
+$claims_json
+</CLAIMS_JSON>
 
-RANKINGS_JSON: $rankings_json
+<RANKINGS_JSON>
+$rankings_json
+</RANKINGS_JSON>
 
-PENDING_PROMPTS_JSON: $pending_prompts_json
+<PENDING_PROMPTS_JSON>
+$pending_prompts_json
+</PENDING_PROMPTS_JSON>
 
 ---
 ## Final Instruction

@@ -56,9 +56,13 @@ Return this payload when the inputs provide no grounded summary, or when you can
 ## Inputs (read-only)
 DATE: $date
 
-SUMMARY_JSON: $summary_json
+<SUMMARY_JSON>
+$summary_json
+</SUMMARY_JSON>
 
-ENTRIES_JSON: $entries_json
+<ENTRIES_JSON>
+$entries_json
+</ENTRIES_JSON>
 
 ---
 ## Final Instruction
