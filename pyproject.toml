@@ -72,6 +72,17 @@ ignore = [
     "TC006",  # Add quotes to type expression in `typing.cast()`
 ]
 
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = [
+    "ANN",
+    "D",
+    "PLR2004",
+    "ARG001",
+    "ARG002", # Unused method argument: `X`
+    "D103",
+    "ARG005", # ARG005 Unused lambda argument: `X`
+]
+
 [tool.mypy]
 python_version = "3.12"
 show_error_codes = true

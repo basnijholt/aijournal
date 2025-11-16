@@ -95,7 +95,7 @@ def capture_pipeline_mocks(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> N
 
     monkeypatch.setattr("aijournal.commands.persona.persona_state", _persona_state)
 
-    def _persona_build(profile, claims, *, config, root=None):  # noqa: ANN001
+    def _persona_build(profile, claims, *, config, root=None):
         path = _ensure_file(tmp_path / "derived" / "persona" / "persona_core.yaml", "persona")
         return path, True
 
