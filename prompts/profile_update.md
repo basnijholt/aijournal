@@ -27,8 +27,8 @@ to add, return `{ "claims": [], "facets": [], "interview_prompts": [] }`.
 1. Read `PROFILE_JSON` and `CLAIMS_JSON` to understand the baseline persona.
 2. Review `SUMMARY_JSON` (bullets, highlights, todo_candidates) for the day's
    headline signals.
-3. Inspect each normalized entry in `ENTRIES_JSON` (sections, paragraphs, tags,
-   mood). Cite actual sentences when proposing updates.
+3. Inspect each normalized entry in `ENTRIES_JSON` (sections, tags, mood).
+   Cite actual sentences when proposing updates.
 4. Use `MICROFACTS_JSON` to reinforce or challenge hypotheses — do not simply
    restate metadata.
 5. Check `CONSOLIDATED_FACTS_JSON` for recurring patterns observed across multiple
@@ -68,8 +68,7 @@ to add, return `{ "claims": [], "facets": [], "interview_prompts": [] }`.
       "scope_context": ["weekday", "solo"],
       "scope_conditions": [],
       "reason": "≤25 word justification referencing evidence",
-      "evidence_entry": "normalized entry id",
-      "evidence_para": 0
+      "evidence_entry": "normalized entry id"
     }
   ],
   "facets": [
@@ -78,8 +77,7 @@ to add, return `{ "claims": [], "facets": [], "interview_prompts": [] }`.
       "operation": "set" | "remove",
       "value": "string or list of strings when operation is set",
       "reason": "≤25 word justification",
-      "evidence_entry": "normalized entry id",
-      "evidence_para": 0
+      "evidence_entry": "normalized entry id"
     }
   ],
   "interview_prompts": [
@@ -101,7 +99,7 @@ to add, return `{ "claims": [], "facets": [], "interview_prompts": [] }`.
 Return the empty payload when:
 - `ENTRIES_JSON` lacks substantive content.
 - Inputs contradict each other and you cannot reconcile the story.
-- Evidence is entirely metadata (titles only, no paragraphs) or speculative.
+- Evidence is entirely metadata (titles only) or speculative.
 
 ## Input Context (read-only)
 

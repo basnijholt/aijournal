@@ -200,7 +200,7 @@ def fake_profile_proposals(
             user_verified=claim_model.user_verified,
             review_after_days=claim_model.review_after_days,
         )
-        evidence = [SourceRef(entry_id=entry.id or claim_id, spans=[])]
+        evidence = [SourceRef(entry_id=entry.id or claim_id)]
         claim_proposals.append(
             ClaimProposal(
                 type=claim_input.type,
@@ -226,7 +226,7 @@ def fake_profile_proposals(
                 path="values_motivations.schwartz_top5",
                 operation=FacetOperation.SET,
                 value=profile.get("values_motivations", {}).get("schwartz_top5", []),
-                evidence=[SourceRef(entry_id="profile.snapshot", spans=[])],
+                evidence=[SourceRef(entry_id="profile.snapshot")],
                 rationale="Retain existing Schwartz ranking in fake mode",
             ),
         )

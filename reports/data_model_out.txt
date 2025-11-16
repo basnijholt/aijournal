@@ -194,12 +194,6 @@ Fields: facts: list[aijournal.domain.facts.MicroFact], claim_proposals: list[aij
 
 ### Group 31 (1 classes)
 
-Fields: fix: bool
-
-- aijournal.commands.audit.AuditOptions (src/aijournal/commands/audit.py)
-
-### Group 32 (1 classes)
-
 Fields: hash: str, path: str, normalized: str, source_type: str | None, ingested_at: str, created_at: str, id: str, tags: list[str], model: str | None, canonical_journal_path: str | None, snapshot_path: str | None, aliases: list[str]
 
 - aijournal.models.authoritative.ManifestEntry (src/aijournal/models/authoritative.py)
@@ -625,12 +619,6 @@ Fields: files: 'list[Path]', config: 'dict[str, Any]', manifest_path: 'Path', ma
 
 ### Group 20 (1 classes)
 
-Fields: fix: 'bool'
-
-- aijournal.commands.audit.AuditPrepared (src/aijournal/commands/audit.py)
-
-### Group 21 (1 classes)
-
 Fields: host: 'str', port: 'int'
 
 - aijournal.commands.chatd.ChatdPrepared (src/aijournal/commands/chatd.py)
@@ -721,18 +709,6 @@ Fields: path: 'Path', base: 'Mapping[str, Any]', sinks: 'Sequence[StructuredLogS
 
 ### Group 36 (1 classes)
 
-Fields: path: 'Path', issues: 'list[IssueDetail]'
-
-- aijournal.commands.audit.AuditFileResult (src/aijournal/commands/audit.py)
-
-### Group 37 (1 classes)
-
-Fields: path: 'str', entry_id: 'str | None', span_indices: 'tuple[int, ...]'
-
-- aijournal.commands.audit.IssueDetail (src/aijournal/commands/audit.py)
-
-### Group 38 (1 classes)
-
 Fields: path: 'str', score: 'float', kind: "Literal['facet', 'claim', 'pending']", reasons: 'tuple[str, ...]', claim_id: 'str | None', missing_context: 'tuple[str, ...]'
 
 - aijournal.commands.profile.InterviewTarget (src/aijournal/commands/profile.py)
@@ -792,12 +768,6 @@ Fields: result: 'RetrievalResult'
 - aijournal.commands.index.IndexSearchResult (src/aijournal/commands/index.py)
 
 ### Group 48 (1 classes)
-
-Fields: results: 'list[AuditFileResult]', fix: 'bool'
-
-- aijournal.commands.audit.AuditResult (src/aijournal/commands/audit.py)
-
-### Group 49 (1 classes)
 
 Fields: root: 'Path', proposals: 'ProfileUpdateProposals', profile: 'dict[str, Any]', claims: 'list[ClaimAtom]', timestamp: 'str'
 

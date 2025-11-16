@@ -19,7 +19,6 @@ def _fact(
         statement=statement,
         confidence=0.9,
         evidence_entry=evidence_entry,
-        evidence_para=0,
         first_seen="2025-11-14",
         last_seen="2025-11-14",
     )

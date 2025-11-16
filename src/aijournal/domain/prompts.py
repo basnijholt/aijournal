@@ -9,7 +9,7 @@ from pydantic import Field, field_validator
 from aijournal.common.base import StrictModel
 from aijournal.domain.claims import Scope
 from aijournal.domain.enums import ClaimMethod, ClaimStatus, ClaimType, FacetOperation
-from aijournal.domain.evidence import SourceRef, Span
+from aijournal.domain.evidence import SourceRef
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -48,7 +48,6 @@ class PromptClaimItem(StrictModel):
     scope_conditions: list[str] | None = None
     reason: str | None = None
     evidence_entry: str | None = None
-    evidence_para: int = Field(default=0, ge=0)
 
     @field_validator("statement", mode="before")
     @classmethod
@@ -87,7 +86,6 @@ class PromptFacetItem(StrictModel):
     value: Any | None = None
     reason: str | None = None
     evidence_entry: str | None = None
-    evidence_para: int = Field(default=0, ge=0)
 
     @field_validator("path")
     @classmethod
@@ -142,8 +140,7 @@ def convert_prompt_claim_to_proposal(
     # Build evidence from simple references
     evidence: list[SourceRef] = []
     if item.evidence_entry:
-        span = Span(type="para", index=item.evidence_para)
-        source = SourceRef(entry_id=item.evidence_entry, spans=[span])
+        source = SourceRef(entry_id=item.evidence_entry)
         evidence = [source]
 
     scope = Scope(
@@ -182,7 +179,6 @@ class PromptMicroFact(StrictModel):
     statement: str = Field(..., max_length=500)
     confidence: float | None = Field(default=None, ge=0.0, le=1.0)
     evidence_entry: str | None = None
-    evidence_para: int = Field(default=0, ge=0)
     first_seen: str | None = None
     last_seen: str | None = None
 
@@ -205,11 +201,8 @@ class PromptMicroFacts(StrictModel):
 
 
 def _source_from_prompt_fact(item: PromptMicroFact) -> SourceRef:
-    spans: list[Span] = []
-    if item.evidence_entry:
-        spans.append(Span(type="para", index=item.evidence_para))
     entry_id = item.evidence_entry or f"prompt.fact.{item.id}"
-    return SourceRef(entry_id=entry_id, spans=spans)
+    return SourceRef(entry_id=entry_id)
 
 
 _METADATA_ID_HINTS = (
@@ -292,8 +285,7 @@ def convert_prompt_facet_to_change(item: PromptFacetItem) -> Any:  # Returns Fac
     # Build evidence from simple references
     evidence: list[SourceRef] = []
     if item.evidence_entry:
-        span = Span(type="para", index=item.evidence_para)
-        source = SourceRef(entry_id=item.evidence_entry, spans=[span])
+        source = SourceRef(entry_id=item.evidence_entry)
         evidence = [source]
 
     return FacetChange(

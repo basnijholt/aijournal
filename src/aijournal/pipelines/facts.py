@@ -10,10 +10,9 @@ from aijournal.domain.changes import ClaimAtomInput, ClaimProposal
 from aijournal.domain.claims import (
     ClaimAtom,
     ClaimSource,
-    ClaimSourceSpan,
     Scope,
 )
-from aijournal.domain.evidence import SourceRef, redact_source_text
+from aijournal.domain.evidence import SourceRef
 from aijournal.domain.facts import MicroFact, MicroFactsFile
 from aijournal.fakes import fake_microfacts
 from aijournal.pipelines import normalization
@@ -57,18 +56,9 @@ def _fact_sources_from_evidence(fact: MicroFact) -> list[ClaimSource]:
     evidence = fact.evidence
     if evidence is None:
         return []
-    spans = [
-        ClaimSourceSpan(
-            type=span.type,
-            index=span.index,
-            start=span.start,
-            end=span.end,
-        )
-        for span in evidence.spans or []
-    ]
     if not evidence.entry_id:
         return []
-    return [ClaimSource(entry_id=evidence.entry_id, spans=spans)]
+    return [ClaimSource(entry_id=evidence.entry_id)]
 
 
 def _scope_from_fact(
@@ -124,9 +114,9 @@ def _microfact_claim_proposals(
             evidence_sources
             if evidence_sources
             else (
-                [ClaimSource(entry_id=entry_id, spans=[])]
+                [ClaimSource(entry_id=entry_id)]
                 if entry_id
-                else [ClaimSource(entry_id=f"microfact-{fact.id}", spans=[])]
+                else [ClaimSource(entry_id=f"microfact-{fact.id}")]
             )
         )
 
@@ -362,10 +352,7 @@ def normalize_claim_proposals(
         combined_sources = _merge_sources(default_sources, proposal.evidence)
 
         sanitized_sources = [
-            SourceRef.model_validate(
-                redact_source_text(src).model_dump(mode="python"),
-            )
-            for src in combined_sources
+            SourceRef.model_validate(src.model_dump(mode="python")) for src in combined_sources
         ]
 
         scoped_ids = proposal.normalized_ids or normalized_ids
@@ -415,22 +402,14 @@ def _merge_sources(
     extras: Sequence[SourceRef],
 ) -> list[ClaimSource]:
     merged: list[ClaimSource] = []
-    seen: set[tuple[str, tuple[tuple[str | None, int | None, int | None, int | None], ...]]] = set()
-
-    def key(
-        source: SourceRef,
-    ) -> tuple[str, tuple[tuple[str | None, int | None, int | None, int | None], ...]]:
-        span_key = tuple(
-            (span.type, span.index, span.start, span.end) for span in source.spans or []
-        )
-        return source.entry_id, span_key
+    seen: set[str] = set()
 
     for source in list(existing) + list(extras):
-        candidate = redact_source_text(SourceRef.model_validate(source.model_dump(mode="python")))
-        identifier = key(candidate)
-        if identifier in seen:
+        candidate = SourceRef.model_validate(source.model_dump(mode="python"))
+        entry_id = candidate.entry_id
+        if entry_id in seen:
             continue
-        seen.add(identifier)
+        seen.add(entry_id)
         merged.append(ClaimSource.model_validate(candidate.model_dump(mode="python")))
     return merged
 

@@ -28,7 +28,6 @@ from aijournal.commands.advise import (
     _collect_pending_interview_prompts,
     run_advise_command,
 )
-from aijournal.commands.audit import run_audit_provenance_cli
 from aijournal.commands.chat import run_chat
 from aijournal.commands.chatd import run_chatd
 from aijournal.commands.facts import (
@@ -318,7 +317,6 @@ ops_logs_app = typer.Typer(help="Log utilities.")
 ops_microfacts_app = typer.Typer(help="Microfacts utilities.")
 ops_system_app = typer.Typer(help="System diagnostics and doctor helpers.")
 ops_dev_app = typer.Typer(help="Developer fixtures and helpers.")
-ops_audit_app = typer.Typer(help="Audit and governance utilities.")
 
 ops_app.add_typer(ops_pipeline_app, name="pipeline")
 ops_app.add_typer(ops_microfacts_app, name="microfacts")
@@ -329,7 +327,6 @@ ops_app.add_typer(ops_feedback_app, name="feedback")
 ops_app.add_typer(ops_logs_app, name="logs")
 ops_app.add_typer(ops_system_app, name="system")
 ops_app.add_typer(ops_dev_app, name="dev")
-ops_app.add_typer(ops_audit_app, name="audit")
 
 ops_system_app.add_typer(ollama_app, name="ollama")
 
@@ -842,18 +839,6 @@ def status() -> None:
 def system_doctor() -> None:
     """Run system diagnostics and emit machine-readable results."""
     run_system_doctor_cli()
-
-
-@ops_audit_app.command("provenance")
-def audit_provenance_command(
-    fix: bool = typer.Option(
-        False,
-        "--fix/--no-fix",
-        help="Redact span.text fields when present instead of only reporting them.",
-    ),
-) -> None:
-    """Scan claims and derived artifacts for span.text remnants."""
-    run_audit_provenance_cli(fix=fix)
 
 
 HIGH_IMPACT_PROBES = [

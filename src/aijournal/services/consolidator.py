@@ -8,9 +8,8 @@ from typing import TYPE_CHECKING, Any
 from pydantic import ConfigDict, Field
 
 from aijournal.common.base import StrictModel
-from aijournal.domain.claims import ClaimAtom, ClaimSource, ClaimSourceSpan, Provenance, Scope
+from aijournal.domain.claims import ClaimAtom, ClaimSource, Provenance, Scope
 from aijournal.domain.enums import ClaimMethod, ClaimStatus
-from aijournal.domain.evidence import redact_source_text
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -21,7 +20,7 @@ def _clamp01(value: float) -> float:
 
 
 def _redacted_sources(sources: Sequence[ClaimSource]) -> list[ClaimSource]:
-    return [redact_source_text(source) for source in sources]
+    return [ClaimSource.model_validate(source.model_dump(mode="python")) for source in sources]
 
 
 def _redacted_provenance(provenance: Provenance, timestamp: str) -> Provenance:
@@ -457,10 +456,5 @@ class ClaimConsolidator:
         return candidate
 
 
-def _source_key(
-    source: ClaimSource,
-) -> tuple[str, tuple[tuple[str | None, int | None, int | None, int | None], ...]]:
-    def span_key(span: ClaimSourceSpan) -> tuple[str | None, int | None, int | None, int | None]:
-        return (span.type, span.index, span.start, span.end)
-
-    return (source.entry_id, tuple(span_key(span) for span in source.spans))
+def _source_key(source: ClaimSource) -> str:
+    return source.entry_id

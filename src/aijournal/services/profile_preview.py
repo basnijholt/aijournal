@@ -13,7 +13,7 @@ from aijournal.domain.events import (
     ClaimPreviewEvent,
     ClaimSignaturePayload,
 )
-from aijournal.domain.evidence import redact_source_text
+from aijournal.domain.evidence import SourceRef
 from aijournal.models.derived import ProfileUpdatePreview
 from aijournal.services.consolidator import (
     ClaimConflict,
@@ -30,7 +30,9 @@ if TYPE_CHECKING:
 
 def claim_proposal_to_atom(proposal: ClaimProposal, *, timestamp: str) -> ClaimAtom:
     evidence_sources = [
-        ClaimSource.model_validate(redact_source_text(source).model_dump(mode="python"))
+        ClaimSource.model_validate(
+            SourceRef.model_validate(source.model_dump(mode="python")).model_dump(mode="python"),
+        )
         for source in proposal.evidence
     ]
     claim_payload = proposal.model_dump(

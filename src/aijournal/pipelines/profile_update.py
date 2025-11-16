@@ -8,7 +8,7 @@ from pydantic import ValidationError
 
 from aijournal.domain.changes import FacetChange, ProfileUpdateProposals
 from aijournal.domain.claims import ClaimAtom, ClaimSource
-from aijournal.domain.evidence import SourceRef, redact_source_text
+from aijournal.domain.evidence import SourceRef
 from aijournal.fakes import fake_profile_proposals
 from aijournal.pipelines import facts as facts_pipeline
 from aijournal.pipelines import normalization
@@ -122,10 +122,10 @@ def _default_fake_claim_builder(
     status: str,
 ) -> ClaimAtom:
     timestamp = time_utils.format_timestamp(time_utils.now())
-    default_sources = [ClaimSource(entry_id=entry.id or claim_id, spans=[])]
+    default_sources = [ClaimSource(entry_id=entry.id or claim_id)]
     sanitized_sources = [
         ClaimSource.model_validate(
-            redact_source_text(source).model_dump(mode="python"),
+            SourceRef.model_validate(source.model_dump(mode="python")).model_dump(mode="python"),
         )
         for source in default_sources
     ]

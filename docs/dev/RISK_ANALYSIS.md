@@ -379,7 +379,7 @@ If ANY answer is "no", omit the claim.
 ### ⚡ High Priority (Do Soon)
 
 #### 5. Add Claim Count Warning
-**File:** `src/aijournal/commands/profile.py` (or new `audit` command)
+**File:** `src/aijournal/commands/profile.py`
 
 ```python
 def _check_claim_health(claims: list[ClaimAtom]) -> list[str]:

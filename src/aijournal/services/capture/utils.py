@@ -19,7 +19,7 @@ from aijournal.commands.profile import (
 )
 from aijournal.common.constants import MARKDOWN_SUFFIXES
 from aijournal.domain.claims import ClaimAtom, ClaimSource
-from aijournal.domain.evidence import redact_source_text
+from aijournal.domain.evidence import SourceRef
 from aijournal.domain.journal import NormalizedEntry
 from aijournal.io.artifacts import load_artifact_data
 from aijournal.io.yaml_io import dump_yaml, write_yaml_model
@@ -240,7 +240,7 @@ def _proposal_claim_to_atom(proposal: ClaimProposal, timestamp: str) -> ClaimAto
     )
     evidence_sources = [
         ClaimSource.model_validate(
-            redact_source_text(source).model_dump(mode="python"),
+            SourceRef.model_validate(source.model_dump(mode="python")).model_dump(mode="python"),
         )
         for source in proposal.evidence
     ]
