@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from aijournal.cli import _claim_proposal_to_atom
 from aijournal.domain.changes import ClaimProposal
 from aijournal.domain.claims import Scope
 from aijournal.domain.evidence import SourceRef, Span
 from aijournal.pipelines import normalization
 from aijournal.pipelines.facts import normalize_claim_proposals
+from aijournal.services.profile_preview import claim_proposal_to_atom
 
 
 def _proposal_with_span_text() -> ClaimProposal:
@@ -34,7 +34,7 @@ def _proposal_with_span_text() -> ClaimProposal:
 
 def test_cli_claim_proposal_to_atom_redacts_span_text() -> None:
     proposal = _proposal_with_span_text()
-    atom = _claim_proposal_to_atom(proposal, timestamp="2025-10-26T07:00:00Z")
+    atom = claim_proposal_to_atom(proposal, timestamp="2025-10-26T07:00:00Z")
     for source in atom.provenance.sources:
         for span in source.spans:
             assert span.text is None

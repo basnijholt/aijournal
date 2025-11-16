@@ -7,7 +7,7 @@ ensuring the capture orchestrator always receives a result object.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, TypeVar
 
@@ -15,9 +15,7 @@ import typer
 
 if TYPE_CHECKING:
     from aijournal.common.app_config import AppConfig
-    from aijournal.domain.changes import ClaimProposal
     from aijournal.domain.claims import ClaimAtom
-    from aijournal.models.derived import ProfileUpdatePreview
 
 
 T = TypeVar("T")
@@ -63,9 +61,7 @@ def graceful_facts(
     *,
     progress: bool,
     claim_models: Sequence[ClaimAtom],
-    build_claim_preview: Callable[
-        [Sequence[ClaimProposal], Sequence[ClaimAtom], str], ProfileUpdatePreview | None
-    ],
+    generate_preview: bool,
     workspace: Path,
     config: AppConfig | None = None,
 ) -> tuple[Path | None, str | None]:
@@ -82,7 +78,7 @@ def graceful_facts(
             date,
             progress=progress,
             claim_models=claim_models,
-            build_claim_preview=build_claim_preview,
+            generate_preview=generate_preview,
             workspace=workspace,
             config=config,
         )
@@ -102,9 +98,7 @@ def graceful_profile_update(
     date: str,
     *,
     progress: bool,
-    build_claim_preview: Callable[
-        [Sequence[ClaimProposal], Sequence[ClaimAtom], str], ProfileUpdatePreview | None
-    ],
+    generate_preview: bool,
     workspace: Path,
     config: AppConfig | None = None,
 ) -> tuple[Path | None, str | None]:
@@ -116,7 +110,7 @@ def graceful_profile_update(
         batch_path = run_profile_update(
             date,
             progress=progress,
-            build_claim_preview=build_claim_preview,
+            generate_preview=generate_preview,
             workspace=workspace,
             config=config,
         )

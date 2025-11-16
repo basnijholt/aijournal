@@ -18,12 +18,7 @@ def run_profile_update_stage(
 ) -> ProfileUpdateStageOutputs:
     from .. import OperationResult, ProfileUpdateStageOutputs
     from ..graceful import graceful_profile_update
-    from ..utils import (
-        apply_profile_update_batch,
-        noop_preview,
-        pending_batches,
-        relative_path,
-    )
+    from ..utils import apply_profile_update_batch, pending_batches, relative_path
 
     stage_start = perf_counter()
     batch_paths: list[str] = []
@@ -38,7 +33,7 @@ def run_profile_update_stage(
         batch_path, error = graceful_profile_update(
             date,
             progress=inputs.progress,
-            build_claim_preview=noop_preview,
+            generate_preview=False,
             workspace=root,
             config=config,
         )

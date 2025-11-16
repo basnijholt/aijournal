@@ -90,15 +90,9 @@ from aijournal.common.constants import (
 )
 from aijournal.common.context import RunContext, create_run_context
 from aijournal.domain.changes import ClaimProposal, FacetChange
-from aijournal.domain.claims import ClaimAtom, ClaimSource, Scope
 from aijournal.domain.events import (
-    ClaimConflictPayload,
-    ClaimEventAction,
-    ClaimPreviewEvent,
-    ClaimSignaturePayload,
     FeedbackBatch,
 )
-from aijournal.domain.evidence import redact_source_text
 from aijournal.domain.facts import DailySummary
 from aijournal.domain.journal import NormalizedEntry
 from aijournal.domain.persona import InterviewQuestion, InterviewSet
@@ -114,10 +108,8 @@ from aijournal.services.capture import (
     run_capture,
 )
 from aijournal.services.consolidator import (
-    ClaimConflict,
     ClaimConsolidator,
     ClaimMergeOutcome,
-    ClaimSignature,
 )
 from aijournal.services.ollama import (
     LLMResponseError,
@@ -134,6 +126,12 @@ from aijournal.services.persona_export import (
 )
 from aijournal.services.persona_export import (
     PersonaExportOptions as PersonaExportOptions,
+)
+from aijournal.services.profile_preview import (
+    claim_proposal_to_atom,
+    emit_claim_merge_events,
+    format_scope_label,
+    scope_tuple_from_payload,
 )
 from aijournal.services.summaries import (
     SummaryNotFoundError,
@@ -1105,11 +1103,7 @@ def facts(
             date=date,
             progress=progress,
             claim_models=claim_models,
-            preview_builder=lambda proposals, claims, timestamp: _build_claim_preview(
-                proposals,
-                claims,
-                timestamp=timestamp,
-            ),
+            generate_preview=True,
         ),
     )
     preview, facts_path = output.preview, output.path
@@ -1150,11 +1144,6 @@ def profile_update_cli(
     path = run_profile_update(
         date,
         progress=progress,
-        build_claim_preview=lambda proposals, claims, ts: _build_claim_preview(
-            proposals,
-            claims,
-            timestamp=ts,
-        ),
         workspace=workspace,
         config=config,
     )
@@ -1245,7 +1234,7 @@ def review_updates(
     merge_events: list[ClaimMergeOutcome] = []
 
     for claim_proposal in claim_proposals:
-        incoming_atom = _claim_proposal_to_atom(claim_proposal, timestamp=timestamp)
+        incoming_atom = claim_proposal_to_atom(claim_proposal, timestamp=timestamp)
         if apply_claim_upsert(claims_data, incoming_atom, timestamp, events=merge_events):
             applied += 1
 
@@ -1266,7 +1255,7 @@ def review_updates(
         profile_dir = workspace / profile_dir
     write_yaml_model(profile_dir / "self_profile.yaml", updated_profile)
     write_yaml_model(profile_dir / "claims.yaml", ClaimsFile(claims=updated_claims))
-    _emit_claim_merge_events(merge_events, "Applied claim consolidations:")
+    emit_claim_merge_events(merge_events, "Applied claim consolidations:")
     typer.echo(f"Applied {applied} updates from {batch_path}")
 
 
@@ -1684,88 +1673,6 @@ def _build_targeted_probes(
     return InterviewSet(questions=questions)
 
 
-def _signature_payload_from_claim(claim: ClaimAtom) -> ClaimSignaturePayload:
-    scope = claim.scope or Scope()
-    return ClaimSignaturePayload(
-        claim_type=str(claim.type or "preference"),
-        subject=str(claim.subject or ""),
-        predicate=str(claim.predicate or ""),
-        domain=scope.domain,
-        context=[item for item in scope.context if item],
-        conditions=[item for item in scope.conditions if item],
-    )
-
-
-def _signature_payload_from_signature(signature: ClaimSignature) -> ClaimSignaturePayload:
-    domain, context, conditions = signature.scope
-    return ClaimSignaturePayload(
-        claim_type=signature.claim_type,
-        subject=signature.subject,
-        predicate=signature.predicate,
-        domain=domain,
-        context=[item for item in context if item],
-        conditions=[item for item in conditions if item],
-    )
-
-
-def _conflict_payload_from_outcome(conflict: ClaimConflict) -> ClaimConflictPayload:
-    return ClaimConflictPayload(
-        claim_id=conflict.claim_id,
-        signature=_signature_payload_from_signature(conflict.signature),
-        statement=conflict.statement,
-        existing_value=conflict.existing_value,
-        incoming_value=conflict.incoming_value,
-        incoming_sources=[source.model_copy(deep=True) for source in conflict.incoming_sources],
-    )
-
-
-def _format_scope_label(scope: tuple[str | None, tuple[str, ...], tuple[str, ...]]) -> str:
-    domain, context, conditions = scope
-    parts: list[str] = []
-    if domain:
-        parts.append(str(domain))
-    if context:
-        parts.append("/".join(context))
-    if conditions:
-        parts.append("|".join(conditions))
-    return " :: ".join(parts) if parts else "global"
-
-
-def _emit_claim_merge_events(events: list[ClaimMergeOutcome], heading: str) -> None:
-    relevant = [event for event in events if event.changed]
-    if not relevant:
-        return
-    typer.echo(heading)
-    for event in relevant:
-        if event.action == "upsert":
-            typer.echo(f"  • new claim {event.claim_id}")
-        elif event.action == "update":
-            note = f" (Δstrength {event.delta_strength:+0.2f})" if event.delta_strength else ""
-            typer.echo(f"  • updated {event.claim_id}{note}")
-        elif event.action == "strength_delta":
-            typer.echo(
-                f"  • strength adjusted {event.claim_id} (Δ {event.delta_strength:+0.2f})",
-            )
-        elif event.action == "conflict" and event.conflict:
-            conflict = event.conflict
-            scope_label = _format_scope_label(conflict.signature.scope)
-            typer.secho(
-                (
-                    f"  • conflict {event.claim_id} [{scope_label}]: "
-                    f"'{conflict.existing_value}' vs '{conflict.incoming_value}'"
-                ),
-                fg=typer.colors.YELLOW,
-            )
-            if event.related_claim_id and event.related_signature:
-                related_scope = _format_scope_label(event.related_signature.scope)
-                action_note = f" ({event.related_action})" if event.related_action else ""
-                typer.echo(
-                    f"    ↳ spawned {event.related_claim_id} [{related_scope}]{action_note}",
-                )
-        elif event.action == "delete":
-            typer.echo(f"  • deleted {event.claim_id}")
-
-
 def _preview_claim_consolidation(
     workspace: Path,
     claim_proposals: Sequence[Any],
@@ -1783,7 +1690,7 @@ def _preview_claim_consolidation(
     events: list[ClaimMergeOutcome] = []
     for proposal in claim_proposals:
         if isinstance(proposal, ClaimProposal):
-            incoming = _claim_proposal_to_atom(proposal, timestamp=timestamp)
+            incoming = claim_proposal_to_atom(proposal, timestamp=timestamp)
         elif isinstance(proposal, dict):
             raw_claim = proposal.get("claim") if isinstance(proposal, dict) else None
             if raw_claim is None:
@@ -1797,103 +1704,7 @@ def _preview_claim_consolidation(
         outcome = consolidator.upsert(working_claims, incoming)
         if outcome.changed:
             events.append(outcome)
-    _emit_claim_merge_events(events, "Preview (claim consolidation):")
-
-
-def _claim_proposal_to_atom(proposal: ClaimProposal, *, timestamp: str) -> ClaimAtom:
-    # Extract claim fields only (exclude proposal metadata)
-    claim_payload = proposal.model_dump(
-        mode="python",
-        exclude={"normalized_ids", "evidence", "manifest_hashes", "rationale"},
-    )
-    evidence_sources = [
-        ClaimSource.model_validate(
-            redact_source_text(source).model_dump(mode="python"),
-        )
-        for source in proposal.evidence
-    ]
-    claim_payload["provenance"] = {
-        "sources": [source.model_dump(mode="python") for source in evidence_sources],
-        "first_seen": timestamp.split("T", 1)[0],
-        "last_updated": timestamp,
-        "observation_count": max(1, len(evidence_sources) or 1),
-    }
-
-    return normalization.normalize_claim_atom(
-        claim_payload,
-        timestamp=timestamp,
-        default_sources=evidence_sources,
-    )
-
-
-def _build_claim_preview(
-    claim_proposals: Sequence[ClaimProposal],
-    existing_claims: Sequence[ClaimAtom],
-    *,
-    timestamp: str,
-) -> ProfileUpdatePreview | None:
-    if not claim_proposals:
-        return None
-
-    working_claims = [claim.model_copy(deep=True) for claim in existing_claims]
-    consolidator = ClaimConsolidator(timestamp=timestamp)
-    events: list[ClaimPreviewEvent] = []
-    prompts: list[str] = []
-
-    for proposal in claim_proposals:
-        incoming = _claim_proposal_to_atom(proposal, timestamp=timestamp)
-        outcome = consolidator.upsert(working_claims, incoming)
-        if not outcome.changed:
-            continue
-        signature_payload = (
-            _signature_payload_from_signature(outcome.signature)
-            if outcome.signature
-            else _signature_payload_from_claim(incoming)
-        )
-        related_signature_payload = (
-            _signature_payload_from_signature(outcome.related_signature)
-            if outcome.related_signature
-            else None
-        )
-        conflict_payload = None
-        if outcome.conflict:
-            conflict_payload = _conflict_payload_from_outcome(outcome.conflict)
-            scope_label = _format_scope_label(outcome.conflict.signature.scope)
-            prompts.append(
-                f"Clarify claim {outcome.claim_id} [{scope_label}]: "
-                f"existing='{outcome.conflict.existing_value}' vs incoming='{outcome.conflict.incoming_value}'."
-            )
-        events.append(
-            ClaimPreviewEvent(
-                action=ClaimEventAction(outcome.action),
-                claim_id=outcome.claim_id,
-                delta_strength=float(outcome.delta_strength or 0.0),
-                statement=incoming.statement,
-                value=incoming.value,
-                strength=float(incoming.strength or 0.0),
-                signature=signature_payload,
-                conflict=conflict_payload,
-                related_claim_id=outcome.related_claim_id,
-                related_action=outcome.related_action,
-                related_signature=related_signature_payload,
-            )
-        )
-
-    if not events and not prompts:
-        return None
-    return ProfileUpdatePreview(claim_events=events, interview_prompts=prompts)
-
-
-def _scope_tuple_from_payload(
-    signature: ClaimSignaturePayload | None,
-) -> tuple[str | None, tuple[str, ...], tuple[str, ...]]:
-    if signature is None:
-        return (None, tuple(), tuple())
-    return (
-        signature.domain,
-        tuple(signature.context),
-        tuple(signature.conditions),
-    )
+    emit_claim_merge_events(events, "Preview (claim consolidation):")
 
 
 def _print_claim_preview(preview: ProfileUpdatePreview) -> None:
@@ -1901,7 +1712,7 @@ def _print_claim_preview(preview: ProfileUpdatePreview) -> None:
     if events:
         typer.echo("Preview (claim consolidation):")
         for event in events:
-            scope_label = _format_scope_label(_scope_tuple_from_payload(event.signature))
+            scope_label = format_scope_label(scope_tuple_from_payload(event.signature))
             if event.action == "upsert":
                 typer.echo(f"  • new claim {event.claim_id} [{scope_label}]")
             elif event.action == "update":
@@ -1916,7 +1727,7 @@ def _print_claim_preview(preview: ProfileUpdatePreview) -> None:
                 )
             elif event.action == "conflict" and event.conflict:
                 conflict = event.conflict
-                conflict_scope = _format_scope_label(
+                conflict_scope = format_scope_label(
                     (
                         conflict.signature.domain,
                         tuple(conflict.signature.context),
@@ -1931,8 +1742,8 @@ def _print_claim_preview(preview: ProfileUpdatePreview) -> None:
                     fg=typer.colors.YELLOW,
                 )
                 if event.related_claim_id and event.related_signature:
-                    new_scope_label = _format_scope_label(
-                        _scope_tuple_from_payload(event.related_signature),
+                    new_scope_label = format_scope_label(
+                        scope_tuple_from_payload(event.related_signature),
                     )
                     action_note = f" ({event.related_action})" if event.related_action else ""
                     typer.echo(

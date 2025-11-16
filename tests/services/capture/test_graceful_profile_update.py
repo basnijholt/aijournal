@@ -18,11 +18,11 @@ def test_graceful_profile_update_success(tmp_path: Path, monkeypatch) -> None:
         date: str,
         *,
         progress: bool,
-        build_claim_preview,
+        generate_preview: bool,
         workspace: Path | None = None,
         config: AppConfig | None = None,
     ) -> Path:
-        del date, progress, build_claim_preview, workspace, config
+        del date, progress, generate_preview, workspace, config
         batch_path.write_text("batch", encoding="utf-8")
         return batch_path
 
@@ -31,7 +31,7 @@ def test_graceful_profile_update_success(tmp_path: Path, monkeypatch) -> None:
     path, error = graceful_profile_update(
         "2025-10-27",
         progress=False,
-        build_claim_preview=lambda *_args, **_kwargs: None,
+        generate_preview=False,
         workspace=tmp_path,
         config=AppConfig(),
     )
@@ -49,7 +49,7 @@ def test_graceful_profile_update_failure(tmp_path: Path, monkeypatch) -> None:
     path, error = graceful_profile_update(
         "2025-10-27",
         progress=False,
-        build_claim_preview=lambda *_args, **_kwargs: None,
+        generate_preview=False,
         workspace=tmp_path,
         config=AppConfig(),
     )

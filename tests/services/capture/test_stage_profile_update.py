@@ -38,11 +38,11 @@ def test_stage_profile_update_success(tmp_path: Path, monkeypatch) -> None:
         date: str,
         *,
         progress: bool,
-        build_claim_preview,
+        generate_preview: bool,
         workspace: Path | None = None,
         config: AppConfig | None = None,
     ) -> Path:
-        del progress, build_claim_preview, workspace, config
+        del progress, generate_preview, workspace, config
         called.append(date)
         batch_path.write_text("batch", encoding="utf-8")
         return batch_path

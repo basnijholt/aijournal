@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
@@ -27,7 +27,6 @@ from aijournal.common.app_config import AppConfig
 from aijournal.common.command_runner import run_command_pipeline
 from aijournal.common.context import RunContext
 from aijournal.common.meta import Artifact, ArtifactKind
-from aijournal.domain.changes import ClaimProposal
 from aijournal.domain.claims import ClaimAtom, ClaimSource
 from aijournal.domain.facts import DailySummary, MicroFactsFile
 from aijournal.domain.journal import NormalizedEntry
@@ -38,6 +37,7 @@ from aijournal.models.derived import ProfileUpdatePreview
 from aijournal.pipelines import facts as facts_pipeline
 from aijournal.services.microfacts import MicrofactIndex
 from aijournal.services.ollama import LLMResponseError, resolve_model_name
+from aijournal.services.profile_preview import build_claim_preview
 from aijournal.services.summaries import SummaryNotFoundError, load_daily_summary
 from aijournal.utils import time as time_utils
 
@@ -85,13 +85,7 @@ class FactsOptions(BaseModel):
     date: str
     progress: bool
     claim_models: Sequence[ClaimAtom] | None = None
-    preview_builder: (
-        Callable[
-            [Sequence[ClaimProposal], Sequence[ClaimAtom], str],
-            ProfileUpdatePreview | None,
-        ]
-        | None
-    ) = None
+    generate_preview: bool = True
 
 
 @dataclass(slots=True)
@@ -101,11 +95,8 @@ class FactsPrepared:
     summary: DailySummary
     manifest_index: dict[str, ManifestEntry]
     claim_models: list[ClaimAtom]
-    preview_builder: Callable[
-        [Sequence[ClaimProposal], Sequence[ClaimAtom], str],
-        ProfileUpdatePreview | None,
-    ]
     workspace: Path
+    generate_preview: bool
 
 
 @dataclass(slots=True)
@@ -152,7 +143,6 @@ def prepare_inputs(ctx: RunContext, options: FactsOptions) -> FactsPrepared:
             claim.model_copy(deep=True)
             for claim in load_profile_components(ctx.workspace, config=ctx.config)[1]
         ]
-    preview_builder = options.preview_builder or (lambda *_args, **_kwargs: None)
     ctx.emit(
         event="prepare_summary",
         entries=len(entries),
@@ -166,8 +156,8 @@ def prepare_inputs(ctx: RunContext, options: FactsOptions) -> FactsPrepared:
         summary=summary,
         manifest_index=manifest_index,
         claim_models=claim_models,
-        preview_builder=preview_builder,
         workspace=ctx.workspace,
+        generate_preview=options.generate_preview,
     )
 
 
@@ -210,10 +200,14 @@ def invoke_pipeline(ctx: RunContext, prepared: FactsPrepared) -> FactsResult:
         microfact_index=microfact_index,
     )
 
-    preview = prepared.preview_builder(
-        facts_data.claim_proposals,
-        [claim.model_copy(deep=True) for claim in prepared.claim_models],
-        time_utils.format_timestamp(time_utils.now()),
+    preview = (
+        build_claim_preview(
+            facts_data.claim_proposals,
+            [claim.model_copy(deep=True) for claim in prepared.claim_models],
+            timestamp=time_utils.format_timestamp(time_utils.now()),
+        )
+        if prepared.generate_preview
+        else None
     )
     facts_data.preview = preview
     ctx.emit(
@@ -266,9 +260,7 @@ def run_facts(
     *,
     progress: bool,
     claim_models: Sequence[ClaimAtom],
-    build_claim_preview: Callable[
-        [Sequence[ClaimProposal], Sequence[ClaimAtom], str], ProfileUpdatePreview | None
-    ],
+    generate_preview: bool = True,
     workspace: Path | None = None,
     config: AppConfig | None = None,
 ) -> tuple[ProfileUpdatePreview | None, Path]:
@@ -289,7 +281,7 @@ def run_facts(
         date=date,
         progress=progress,
         claim_models=claim_models,
-        preview_builder=build_claim_preview,
+        generate_preview=generate_preview,
     )
     output = run_facts_command(ctx, options)
     return output.preview, output.path

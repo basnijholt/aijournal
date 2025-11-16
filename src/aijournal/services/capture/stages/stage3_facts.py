@@ -20,7 +20,7 @@ def run_facts_stage_3(
 
     from .. import FactsStage3Outputs, OperationResult
     from ..graceful import graceful_facts
-    from ..utils import noop_preview, relative_path
+    from ..utils import relative_path
 
     stage_start = perf_counter()
     facts_paths: list[str] = []
@@ -31,7 +31,7 @@ def run_facts_stage_3(
             date,
             progress=inputs.progress,
             claim_models=claim_models,
-            build_claim_preview=noop_preview,
+            generate_preview=False,
             workspace=root,
             config=config,
         )

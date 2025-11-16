@@ -2,22 +2,20 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from typing import Any, cast
 
 from pydantic import ValidationError
 
-from aijournal.domain.changes import ClaimProposal, FacetChange, ProfileUpdateProposals
+from aijournal.domain.changes import FacetChange, ProfileUpdateProposals
 from aijournal.domain.claims import ClaimAtom, ClaimSource
-from aijournal.domain.evidence import SourceRef
+from aijournal.domain.evidence import SourceRef, redact_source_text
 from aijournal.domain.journal import NormalizedEntry
 from aijournal.fakes import fake_profile_proposals
 from aijournal.pipelines import facts as facts_pipeline
+from aijournal.pipelines import normalization
+from aijournal.utils import time as time_utils
 from aijournal.utils.coercion import coerce_float, coerce_int
-
-NormalizeClaims = Callable[..., list[ClaimProposal]]
-NormalizeFacets = Callable[..., list[FacetChange]]
-BuildClaim = Callable[..., ClaimAtom]
 
 
 def normalize_facet_proposals(
@@ -74,14 +72,16 @@ def generate_profile_update(
     llm_proposals: ProfileUpdateProposals | None,
     context: tuple[list[str], list[str], list[ClaimSource]],
     claim_timestamp: str,
-    build_claim: BuildClaim,
-    normalize_claims: NormalizeClaims,
-    normalize_facets: NormalizeFacets,
 ) -> tuple[ProfileUpdateProposals, list[str]]:
     """Produce profile update proposals plus interview prompts for a single day."""
 
     if use_fake_llm:
-        fake = fake_profile_proposals(entries, profile, claims, build_claim=build_claim)
+        fake = fake_profile_proposals(
+            entries,
+            profile,
+            claims,
+            build_claim=_default_fake_claim_builder,
+        )
         prompts = list(fake.interview_prompts)
         return fake, prompts
 
@@ -96,14 +96,14 @@ def generate_profile_update(
     prompts = [prompt for prompt in response.interview_prompts if prompt]
 
     normalized_ids, manifest_hashes, default_sources = context
-    claims_payload = normalize_claims(
+    claims_payload = facts_pipeline.normalize_claim_proposals(
         raw_claims,
         normalized_ids=normalized_ids,
         manifest_hashes=manifest_hashes,
         default_sources=default_sources,
         timestamp=claim_timestamp,
     )
-    facets_payload = normalize_facets(raw_facets)
+    facets_payload = normalize_facet_proposals(raw_facets)
     merged_prompts = facts_pipeline.merge_unique([], prompts)
     proposals = ProfileUpdateProposals(
         claims=claims_payload,
@@ -111,3 +111,49 @@ def generate_profile_update(
         interview_prompts=merged_prompts,
     )
     return proposals, merged_prompts
+
+
+def _default_fake_claim_builder(
+    entry: NormalizedEntry,
+    *,
+    claim_id: str,
+    statement: str,
+    strength: float,
+    status: str,
+) -> ClaimAtom:
+    timestamp = time_utils.format_timestamp(time_utils.now())
+    default_sources = [ClaimSource(entry_id=entry.id or claim_id, spans=[])]
+    sanitized_sources = [
+        ClaimSource.model_validate(
+            redact_source_text(source).model_dump(mode="python"),
+        )
+        for source in default_sources
+    ]
+    raw = {
+        "id": claim_id,
+        "type": "preference",
+        "subject": entry.title or claim_id,
+        "predicate": "insight",
+        "value": statement,
+        "statement": statement,
+        "scope": {
+            "domain": None,
+            "context": list((entry.tags or [])[:2]),
+            "conditions": [],
+        },
+        "strength": strength,
+        "status": status,
+        "method": "inferred",
+        "user_verified": False,
+        "review_after_days": 120,
+        "provenance": {
+            "sources": [source.model_dump(mode="python") for source in sanitized_sources],
+            "first_seen": entry.created_at or timestamp,
+        },
+    }
+
+    return normalization.normalize_claim_atom(
+        raw,
+        timestamp=timestamp,
+        default_sources=sanitized_sources,
+    )

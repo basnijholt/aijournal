@@ -37,10 +37,11 @@ def test_stage3_facts_success(tmp_path: Path, monkeypatch) -> None:
         *,
         progress: bool,
         claim_models,
-        build_claim_preview,
+        generate_preview: bool,
         workspace: Path | None = None,
         config: AppConfig | None = None,
     ) -> tuple[None, Path]:
+        del generate_preview
         called.append(date)
         facts_path.write_text("facts", encoding="utf-8")
         return None, facts_path

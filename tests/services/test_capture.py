@@ -182,11 +182,11 @@ def test_run_capture_records_telemetry(tmp_path: Path, monkeypatch: pytest.Monke
         *,
         progress: bool,
         claim_models,
-        build_claim_preview,
+        generate_preview: bool,
         workspace: Path | None = None,
         config: AppConfig | None = None,
     ) -> tuple[None, Path]:
-        del progress, claim_models, build_claim_preview, workspace, config
+        del progress, claim_models, generate_preview, workspace, config
         stage_calls.append(("facts", date))
         path = _write_microfacts_artifact(
             tmp_path / "derived" / "microfacts" / f"{date}.yaml",
@@ -198,11 +198,11 @@ def test_run_capture_records_telemetry(tmp_path: Path, monkeypatch: pytest.Monke
         date: str,
         *,
         progress: bool,
-        build_claim_preview,
+        generate_preview: bool,
         workspace: Path | None = None,
         config: AppConfig | None = None,
     ) -> Path:
-        del progress, build_claim_preview, workspace, config
+        del progress, generate_preview, workspace, config
         stage_calls.append(("profile_update", date))
         return _write_profile_update_batch_artifact(
             tmp_path / "derived" / "pending" / "profile_updates" / f"{date}-batch.yaml",
@@ -368,20 +368,14 @@ def test_run_capture_rebuild_skip_skips_refresh(
     )
     monkeypatch.setattr(
         "aijournal.commands.facts.run_facts",
-        lambda date, *, timeout, progress, claim_models, build_claim_preview: (
+        lambda date, *, progress, claim_models, generate_preview, workspace=None, config=None: (
             None,
             _ensure_file(tmp_path / "derived" / "microfacts" / f"{date}.yaml", "facts"),
         ),
     )
     monkeypatch.setattr(
         "aijournal.commands.profile_update.run_profile_update",
-        lambda date,
-        *,
-        timeout,
-        retries,
-        progress,
-        build_claim_preview,
-        workspace=None: _ensure_file(
+        lambda date, *, progress, generate_preview, workspace=None, config=None: _ensure_file(
             tmp_path / "derived" / "pending" / "profile_updates" / f"{date}-batch.yaml",
             "batch",
         ),
@@ -443,20 +437,14 @@ def test_run_capture_rebuild_always_forces_refresh(
     )
     monkeypatch.setattr(
         "aijournal.commands.facts.run_facts",
-        lambda date, *, timeout, progress, claim_models, build_claim_preview: (
+        lambda date, *, progress, claim_models, generate_preview, workspace=None, config=None: (
             None,
             _ensure_file(tmp_path / "derived" / "microfacts" / f"{date}.yaml", "facts"),
         ),
     )
     monkeypatch.setattr(
         "aijournal.commands.profile_update.run_profile_update",
-        lambda date,
-        *,
-        timeout,
-        retries,
-        progress,
-        build_claim_preview,
-        workspace=None: _ensure_file(
+        lambda date, *, progress, generate_preview, workspace=None, config=None: _ensure_file(
             tmp_path / "derived" / "pending" / "profile_updates" / f"{date}-batch.yaml",
             "batch",
         ),
@@ -578,7 +566,7 @@ def test_run_capture_review_mode_skips_apply(
 
     monkeypatch.setattr(
         "aijournal.commands.facts.run_facts",
-        lambda date, *, timeout, progress, claim_models, build_claim_preview, workspace=None: (
+        lambda date, *, progress, claim_models, generate_preview, workspace=None, config=None: (
             None,
             _ensure_file(tmp_path / "derived" / "microfacts" / f"{date}.yaml", "facts"),
         ),
@@ -586,13 +574,7 @@ def test_run_capture_review_mode_skips_apply(
 
     monkeypatch.setattr(
         "aijournal.commands.profile_update.run_profile_update",
-        lambda date,
-        *,
-        timeout,
-        retries,
-        progress,
-        build_claim_preview,
-        workspace=None: _ensure_file(
+        lambda date, *, progress, generate_preview, workspace=None, config=None: _ensure_file(
             tmp_path / "derived" / "pending" / "profile_updates" / f"{date}-batch.yaml",
             "batch",
         ),

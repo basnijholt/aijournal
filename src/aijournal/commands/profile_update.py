@@ -17,7 +17,6 @@ from aijournal.commands.ingest import (
     _relative_source_path,
 )
 from aijournal.commands.profile import (
-    _build_claim_atom_from_entry,
     load_profile_components,
     profile_to_dict,
 )
@@ -34,7 +33,7 @@ from aijournal.common.command_runner import run_command_pipeline
 from aijournal.common.config_loader import load_config, use_fake_llm
 from aijournal.common.context import RunContext, create_run_context
 from aijournal.common.meta import Artifact, ArtifactKind
-from aijournal.domain.changes import ClaimProposal, ProfileUpdateProposals
+from aijournal.domain.changes import ProfileUpdateProposals
 from aijournal.domain.claims import ClaimAtom
 from aijournal.domain.facts import DailySummary, MicroFactsFile
 from aijournal.domain.journal import NormalizedEntry
@@ -45,14 +44,14 @@ from aijournal.domain.prompts import (
 from aijournal.io.artifacts import load_artifact_data, save_artifact
 from aijournal.io.yaml_io import load_yaml_model
 from aijournal.models.authoritative import ManifestEntry
-from aijournal.models.derived import ProfileUpdateBatch, ProfileUpdateInput, ProfileUpdatePreview
-from aijournal.pipelines import facts as facts_pipeline
+from aijournal.models.derived import ProfileUpdateBatch, ProfileUpdateInput
 from aijournal.pipelines import profile_update as profile_update_pipeline
 from aijournal.services.microfacts import (
     load_consolidated_microfacts,
     select_recurring_facts,
 )
 from aijournal.services.ollama import LLMResponseError
+from aijournal.services.profile_preview import build_claim_preview
 from aijournal.utils import time as time_utils
 
 MAX_CONSOLIDATED_FACTS = 20
@@ -90,10 +89,7 @@ def run_profile_update(
     *,
     progress: bool,
     workspace: Path | None = None,
-    build_claim_preview: Callable[
-        [Sequence[ClaimProposal], Sequence[ClaimAtom], str], ProfileUpdatePreview | None
-    ]
-    | None = None,
+    generate_preview: bool = True,
     config: AppConfig | None = None,
 ) -> Path:
     """Derive profile update batches using the unified prompt."""
@@ -114,14 +110,11 @@ def run_profile_update(
         progress=progress,
     )
 
-    preview_builder = build_claim_preview or (lambda *_args, **_kwargs: None)
-
     return run_profile_update_command(
         ctx,
         options,
-        build_claim_preview=preview_builder,
-        normalize_claims=_normalize_claim_proposals,
         invoke_structured_llm=_invoke_structured_llm,
+        generate_preview=generate_preview,
     )
 
 
@@ -129,11 +122,8 @@ def run_profile_update_command(
     ctx: RunContext,
     options: ProfileUpdateOptions,
     *,
-    build_claim_preview: Callable[
-        [Sequence[ClaimProposal], Sequence[ClaimAtom], str], ProfileUpdatePreview | None
-    ],
-    normalize_claims: Callable[..., list[ClaimProposal]],
     invoke_structured_llm: Callable[..., BaseModel],
+    generate_preview: bool,
 ) -> Path:
     def _prepare(_: RunContext, opts: ProfileUpdateOptions) -> ProfileUpdatePrepared:
         entries_with_paths = _load_entries_with_paths(ctx.workspace, ctx.config, opts.date)
@@ -250,9 +240,6 @@ def run_profile_update_command(
                 llm_proposals=llm_proposals,
                 context=context,
                 claim_timestamp=claim_timestamp,
-                build_claim=_build_claim_atom_from_entry,
-                normalize_claims=normalize_claims,
-                normalize_facets=profile_update_pipeline.normalize_facet_proposals,
             )
         except LLMResponseError as exc:
             typer.secho(f"Profile update failed: {exc}", fg=typer.colors.RED, err=True)
@@ -262,10 +249,14 @@ def run_profile_update_command(
         proposals_model.interview_prompts = interview_prompts
         timestamp = claim_timestamp
         batch_id = f"{prepared.date}-{timestamp}"
-        preview_model = build_claim_preview(
-            proposals_model.claims,
-            prepared.claim_models,
-            timestamp,
+        preview_model = (
+            build_claim_preview(
+                proposals_model.claims,
+                prepared.claim_models,
+                timestamp=timestamp,
+            )
+            if generate_preview
+            else None
         )
         inputs: list[ProfileUpdateInput] = []
         for entry, path in prepared.entries_with_paths:
@@ -321,23 +312,6 @@ def run_profile_update_command(
         prepare_inputs=_prepare,
         invoke_pipeline=_invoke,
         persist_output=_persist,
-    )
-
-
-def _normalize_claim_proposals(
-    raw_claims: Sequence[ClaimProposal] | Sequence[Any],
-    *,
-    normalized_ids: list[str],
-    manifest_hashes: list[str],
-    default_sources: Sequence[Any],
-    timestamp: str,
-) -> list[ClaimProposal]:
-    return facts_pipeline.normalize_claim_proposals(
-        raw_claims,
-        normalized_ids=normalized_ids,
-        manifest_hashes=manifest_hashes,
-        default_sources=default_sources,
-        timestamp=timestamp,
     )
 
 
