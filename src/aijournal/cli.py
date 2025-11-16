@@ -358,6 +358,14 @@ INDEX_LIMIT_OPTION: Final = typer.Option(
     help="Maximum number of normalized files to process.",
 )
 
+# Import/snapshot options used in capture/ingest commands
+SNAPSHOT_OPTION: Final = typer.Option(
+    True,
+    "--snapshot/--no-snapshot",
+    help="Store raw copies under data/raw/<hash>.md when importing files.",
+    rich_help_panel="IMPORT BEHAVIOR",
+)
+
 
 @app.command("version", help="Print the current aijournal version and source root.")
 def show_version() -> None:
