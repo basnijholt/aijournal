@@ -85,8 +85,7 @@ def _add_dir(
     if not files and required:
         msg = f"Missing required files under {directory}"
         raise PackAssemblyError(msg)
-    for file in files:
-        entries.append((role, file, day_index))
+    entries.extend((role, file, day_index) for file in files)
 
 
 def _add_day_artifacts(

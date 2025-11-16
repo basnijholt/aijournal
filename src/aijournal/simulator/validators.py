@@ -133,17 +133,17 @@ class Stage0Validator:
                         ),
                     )
 
-            for warning in entry.warnings:
-                failures.append(
-                    ValidationFailure(
-                        stage_id=self.stage_id,
-                        invariant="persist-warning",
-                        message=warning,
-                        date=entry.date,
-                        file=entry.markdown_path,
-                        severity="warning",
-                    ),
+            failures.extend(
+                ValidationFailure(
+                    stage_id=self.stage_id,
+                    invariant="persist-warning",
+                    message=warning,
+                    date=entry.date,
+                    file=entry.markdown_path,
+                    severity="warning",
                 )
+                for warning in entry.warnings
+            )
 
         return failures
 
@@ -689,18 +689,18 @@ class StageValidatorRegistry:
 def render_failures_compact(failures: Sequence[ValidationFailure]) -> str:
     """Return a table-style summary suitable for CLI output."""
     lines = ["stage | invariant | date | file | message"]
-    for failure in failures:
-        lines.append(
-            " | ".join(
-                [
-                    failure.stage,
-                    failure.invariant,
-                    failure.date or "-",
-                    failure.file or "-",
-                    failure.message,
-                ],
-            ),
+    lines.extend(
+        " | ".join(
+            [
+                failure.stage,
+                failure.invariant,
+                failure.date or "-",
+                failure.file or "-",
+                failure.message,
+            ],
         )
+        for failure in failures
+    )
     return "\n".join(lines)
 
 

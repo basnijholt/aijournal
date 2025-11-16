@@ -352,10 +352,9 @@ def _load_entries_with_paths(
     folder = data_dir / "normalized" / day
     if not folder.exists():
         return []
-    entries: list[tuple[NormalizedEntry, Path]] = []
-    for file in sorted(folder.glob("*.yaml")):
-        entries.append((load_yaml_model(file, NormalizedEntry), file))
-    return entries
+    return [
+        (load_yaml_model(file, NormalizedEntry), file) for file in sorted(folder.glob("*.yaml"))
+    ]
 
 
 def _pending_profile_update_path(workspace: Path, config: AppConfig, batch_id: str) -> Path:

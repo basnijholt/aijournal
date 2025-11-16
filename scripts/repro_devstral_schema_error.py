@@ -50,9 +50,10 @@ def _json_block(data: Any) -> str:
 def load_profile_inputs(date: str) -> dict[str, str]:
     base = Path.cwd()
     entry_dir = base / "data" / "normalized" / date
-    entries: list[dict[str, Any]] = []
-    for path in sorted(entry_dir.glob("*.yaml")):
-        entries.append(yaml.safe_load(path.read_text(encoding="utf-8")))
+    entries = [
+        yaml.safe_load(path.read_text(encoding="utf-8"))
+        for path in sorted(entry_dir.glob("*.yaml"))
+    ]
     profile_path = base / "profile" / "self_profile.yaml"
     claims_path = base / "profile" / "claims.yaml"
     profile_data = (

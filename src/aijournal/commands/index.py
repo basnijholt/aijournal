@@ -547,8 +547,7 @@ def _collect_normalized_files(
         day = day_dir.name
         if since and day < since:
             continue
-        for file in sorted(day_dir.glob("*.yaml")):
-            entries.append((day, file))
+        entries.extend((day, file) for file in sorted(day_dir.glob("*.yaml")))
     return entries
 
 

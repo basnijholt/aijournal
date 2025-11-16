@@ -57,8 +57,7 @@ def run_profile_update_stage(
         if batch_path not in new_batches:
             new_batches.append(batch_path)
 
-        for pending_path in new_batches:
-            review_candidates.append(relative_path(pending_path, root))
+        review_candidates.extend(relative_path(pending_path, root) for pending_path in new_batches)
 
         if inputs.apply_profile == "auto":
             for pending_path in new_batches:

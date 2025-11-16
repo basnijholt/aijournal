@@ -287,15 +287,14 @@ def _format_claims(claims: list[ClaimAtom], options: PersonaExportOptions) -> li
         return []
 
     rng = _claim_rng(options)
-    decorated = []
-    for claim in claims:
-        decorated.append(
-            (
-                _claim_sort_key(claim, options.sort_by),
-                rng.random(),
-                claim,
-            ),
+    decorated = [
+        (
+            _claim_sort_key(claim, options.sort_by),
+            rng.random(),
+            claim,
         )
+        for claim in claims
+    ]
 
     decorated.sort(
         key=lambda item: (

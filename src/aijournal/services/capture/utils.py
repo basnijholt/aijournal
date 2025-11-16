@@ -160,9 +160,11 @@ def discover_markdown_files(paths: Sequence[str]) -> list[Path]:
     for raw in paths:
         candidate = Path(raw).expanduser().resolve()
         if candidate.is_dir():
-            for path in sorted(candidate.rglob("*")):
-                if path.is_file() and path.suffix.lower() in MARKDOWN_SUFFIXES:
-                    collected.append(path)
+            collected.extend(
+                path
+                for path in sorted(candidate.rglob("*"))
+                if path.is_file() and path.suffix.lower() in MARKDOWN_SUFFIXES
+            )
             continue
         if candidate.is_file():
             if candidate.suffix.lower() in MARKDOWN_SUFFIXES:

@@ -189,8 +189,7 @@ def _extract_frontmatter_tags(frontmatter: dict[str, Any]) -> list[str]:
         if isinstance(raw, str):
             values.append(raw)
         elif isinstance(raw, list):
-            for item in raw:
-                values.append(str(item))
+            values.extend(str(item) for item in raw)
     return values
 
 
@@ -274,9 +273,11 @@ def _discover_markdown_files(inputs: Iterable[Path]) -> list[Path]:
     for source in inputs:
         resolved = source.expanduser().resolve()
         if resolved.is_dir():
-            for candidate in sorted(resolved.rglob("*")):
-                if candidate.is_file() and candidate.suffix.lower() in MARKDOWN_SUFFIXES:
-                    files.append(candidate)
+            files.extend(
+                candidate
+                for candidate in sorted(resolved.rglob("*"))
+                if candidate.is_file() and candidate.suffix.lower() in MARKDOWN_SUFFIXES
+            )
         elif resolved.is_file():
             files.append(resolved)
 

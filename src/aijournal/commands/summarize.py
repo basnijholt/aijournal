@@ -98,10 +98,7 @@ def _load_normalized_entries(workspace: Path, config: AppConfig, day: str) -> li
     folder = data_dir / "normalized" / day
     if not folder.exists():
         return []
-    entries: list[NormalizedEntry] = []
-    for file in sorted(folder.glob("*.yaml")):
-        entries.append(load_yaml_model(file, NormalizedEntry))
-    return entries
+    return [load_yaml_model(file, NormalizedEntry) for file in sorted(folder.glob("*.yaml"))]
 
 
 def _derived_summary_path(workspace: Path, config: AppConfig, day: str) -> Path:

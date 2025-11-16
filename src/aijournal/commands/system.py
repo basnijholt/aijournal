@@ -101,13 +101,15 @@ def _check_ollama(
     except Exception as exc:  # pragma: no cover - defensive
         return False, {"host": host, "error": str(exc)}
 
-    models = []
+    models: list[str | None] = []
     if isinstance(data, dict):
         raw_models = data.get("models")
         if isinstance(raw_models, list):
-            for item in raw_models[:5]:
-                if isinstance(item, dict):
-                    models.append(item.get("name") or item.get("model"))
+            models = [
+                item.get("name") or item.get("model")
+                for item in raw_models[:5]
+                if isinstance(item, dict)
+            ]
     return True, {"host": host, "models": models}
 
 

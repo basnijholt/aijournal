@@ -335,9 +335,11 @@ def persona_state(root: Path, workspace: Path, config: AppConfig) -> tuple[str, 
                 f"(was {datetime.fromtimestamp(stored_mtime, tz=UTC):%Y-%m-%d %H:%M:%SZ}).",
             )
 
-    for rel in stored_raw:
-        if rel not in current_state:
-            reasons.append(f"{rel} missing; it existed when persona core was generated.")
+    reasons.extend(
+        f"{rel} missing; it existed when persona core was generated."
+        for rel in stored_raw
+        if rel not in current_state
+    )
 
     if reasons:
         return "stale", reasons

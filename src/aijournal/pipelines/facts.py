@@ -57,16 +57,15 @@ def _fact_sources_from_evidence(fact: MicroFact) -> list[ClaimSource]:
     evidence = fact.evidence
     if evidence is None:
         return []
-    spans: list[ClaimSourceSpan] = []
-    for span in evidence.spans or []:
-        spans.append(
-            ClaimSourceSpan(
-                type=span.type,
-                index=span.index,
-                start=span.start,
-                end=span.end,
-            ),
+    spans = [
+        ClaimSourceSpan(
+            type=span.type,
+            index=span.index,
+            start=span.start,
+            end=span.end,
         )
+        for span in evidence.spans or []
+    ]
     if not evidence.entry_id:
         return []
     return [ClaimSource(entry_id=evidence.entry_id, spans=spans)]
