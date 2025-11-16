@@ -145,6 +145,13 @@ def run_profile_update_command(
         claims = [claim.model_copy(deep=True) for claim in claim_models]
         consolidated_facts_json = _load_consolidated_facts_json(ctx.workspace, ctx.config)
 
+        # NEW: Retrieve historical chunks via RAG
+        retrieved_chunks = _retrieve_historical_chunks(ctx.workspace, ctx.config)
+
+        # NEW: Check consolidation threshold
+        new_claims_count = _count_new_claims_since_last_consolidation(ctx.workspace)
+        consolidation_triggered = new_claims_count >= 10
+
         _log_entry_progress(f"Generating profile update for {opts.date}", entries, opts.progress)
 
         ctx.emit(
@@ -155,6 +162,9 @@ def run_profile_update_command(
             retries=ctx.config.llm.retries,
             summary=bool(summary),
             microfacts=bool(microfacts),
+            retrieved_chunks=len(retrieved_chunks),
+            consolidation_triggered=consolidation_triggered,
+            new_claims_since_last=new_claims_count,
         )
 
         return ProfileUpdatePrepared(
@@ -169,6 +179,8 @@ def run_profile_update_command(
             claim_models=claims,
             config=ctx.config,
             workspace=ctx.workspace,
+            retrieved_chunks=retrieved_chunks,
+            consolidation_triggered=consolidation_triggered,
         )
 
     def _invoke(_: RunContext, prepared: ProfileUpdatePrepared) -> ProfileUpdateResult:
@@ -196,6 +208,30 @@ def run_profile_update_command(
         )
 
         def request_profile_update() -> ProfileUpdateProposals:
+            # Build retrieved chunks JSON
+            retrieved_chunks_json = _json_block(
+                {
+                    "metadata": {
+                        "queries": RETRIEVAL_QUERIES,
+                        "total_chunks_returned": len(prepared.retrieved_chunks),
+                        "new_claims_since_last": _count_new_claims_since_last_consolidation(
+                            prepared.workspace
+                        ),
+                    },
+                    "chunks": [
+                        {
+                            "chunk_id": chunk.chunk_id,
+                            "date": chunk.date,
+                            "text": chunk.text,
+                            "tags": list(chunk.tags) if chunk.tags else [],
+                            "source_type": chunk.source_type,
+                            "score": round(chunk.score, 3),
+                        }
+                        for chunk in prepared.retrieved_chunks
+                    ],
+                }
+            )
+
             llm_response = invoke_structured_llm(
                 "prompts/profile_update.md",
                 {
@@ -213,6 +249,8 @@ def run_profile_update_command(
                         },
                     ),
                     "manifest_json": manifest_payload,
+                    "retrieved_chunks_json": retrieved_chunks_json,
+                    "consolidation_triggered": prepared.consolidation_triggered,
                 },
                 response_model=PromptProfileUpdates,
                 agent_name="aijournal-profile-update",
@@ -290,10 +328,20 @@ def run_profile_update_command(
         )
         artifact = Artifact(kind=ArtifactKind.PROFILE_UPDATES, meta=artifact_meta, data=batch)
 
+        # Update consolidation metadata if facets were proposed
+        if prepared.consolidation_triggered and batch.proposals.facets:
+            _update_consolidation_metadata(
+                ctx.workspace,
+                claim_count=_count_all_claims(ctx.workspace),
+                timestamp=claim_timestamp,
+            )
+
         ctx.emit(
             event="pipeline_complete",
             claims=len(batch.proposals.claims),
+            facets=len(batch.proposals.facets),
             interview_prompts=len(batch.proposals.interview_prompts),
+            consolidation_triggered=prepared.consolidation_triggered,
         )
         return ProfileUpdateResult(artifact=artifact, path=path)
 
@@ -383,3 +431,116 @@ def _load_consolidated_facts_json(workspace: Path, config: AppConfig) -> str:
     if not recurring:
         return "{}"
     return _json_block({"facts": recurring})
+
+
+# Retrieval queries for RAG-enhanced profile update (hardcoded for determinism)
+RETRIEVAL_QUERIES = [
+    "current projects goals focus priorities",
+    "habits routines patterns morning afternoon timing",
+    "values principles themes important care about",
+    "personality traits preferences style decisions",
+]
+
+
+def _retrieve_historical_chunks(workspace: Path, config: AppConfig) -> list[RetrievedChunk]:
+    """Retrieve relevant historical chunks for profile update via RAG.
+
+    Runs 4 hardcoded queries to retrieve chunks about:
+    - Current focus and projects
+    - Habits and routines
+    - Values and themes
+    - Personality traits
+
+    Returns up to 40 deduplicated chunks sorted by relevance score.
+    """
+    from aijournal.services.retriever import Retriever
+
+    try:
+        retriever = Retriever(workspace, config)
+    except (RuntimeError, FileNotFoundError):
+        # Index not available yet - return empty list
+        return []
+
+    all_chunks: list[RetrievedChunk] = []
+    for query in RETRIEVAL_QUERIES:
+        try:
+            result = retriever.search(query, k=10)
+            all_chunks.extend(result.chunks)
+        except (RuntimeError, FileNotFoundError):
+            # Index not ready or query failed - continue with other queries
+            continue
+
+    # Dedupe by chunk_id, sort by score descending, limit to 40
+    seen: set[str] = set()
+    deduped: list[RetrievedChunk] = []
+    for chunk in sorted(all_chunks, key=lambda c: c.score, reverse=True):
+        if chunk.chunk_id not in seen:
+            seen.add(chunk.chunk_id)
+            deduped.append(chunk)
+            if len(deduped) >= 40:
+                break
+
+    return deduped
+
+
+def _count_new_claims_since_last_consolidation(workspace: Path) -> int:
+    """Count claims added since last consolidation run."""
+    import yaml
+
+    metadata_path = workspace / "derived" / "profile_update_meta.yaml"
+    if not metadata_path.exists():
+        # Never consolidated before - count all claims
+        return _count_all_claims(workspace)
+
+    try:
+        meta = yaml.safe_load(metadata_path.read_text(encoding="utf-8"))
+        last_count = meta.get("last_consolidation", {}).get("claim_count", 0)
+    except Exception:  # pragma: no cover - defensive
+        last_count = 0
+
+    current_count = _count_all_claims(workspace)
+    return max(0, current_count - last_count)
+
+
+def _count_all_claims(workspace: Path) -> int:
+    """Count total accepted + tentative claims."""
+    import yaml
+
+    claims_path = workspace / "profile" / "claims.yaml"
+    if not claims_path.exists():
+        return 0
+
+    try:
+        claims_data = yaml.safe_load(claims_path.read_text(encoding="utf-8"))
+        claims = claims_data.get("claims", [])
+        return sum(
+            1
+            for c in claims
+            if isinstance(c, dict) and c.get("status") in {"accepted", "tentative"}
+        )
+    except Exception:  # pragma: no cover - defensive
+        return 0
+
+
+def _update_consolidation_metadata(
+    workspace: Path,
+    claim_count: int,
+    timestamp: str,
+) -> None:
+    """Update metadata after consolidation run."""
+    from aijournal.io.yaml_io import dump_yaml
+
+    metadata_path = workspace / "derived" / "profile_update_meta.yaml"
+    metadata_path.parent.mkdir(parents=True, exist_ok=True)
+
+    data = {
+        "last_consolidation": {
+            "timestamp": timestamp,
+            "claim_count": claim_count,
+        },
+    }
+
+    metadata_path.write_text(
+        dump_yaml(data, sort_keys=False),
+        encoding="utf-8",
+    )
