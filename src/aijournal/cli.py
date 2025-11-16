@@ -657,12 +657,7 @@ def capture(
         help="Raw Markdown content to capture directly from the CLI.",
         rich_help_panel="INPUT",
     ),
-    snapshot: bool = typer.Option(
-        True,
-        "--snapshot/--no-snapshot",
-        help="Store raw copies under data/raw/<hash>.md when importing files.",
-        rich_help_panel="IMPORT BEHAVIOR",
-    ),
+    snapshot: bool = SNAPSHOT_OPTION,
     source_type: str = typer.Option(
         "journal",
         "--source-type",
@@ -1032,12 +1027,7 @@ def ingest(
         help="Maximum number of files to ingest.",
         rich_help_panel="CONTROL",
     ),
-    snapshot: bool = typer.Option(
-        True,
-        "--snapshot/--no-snapshot",
-        help="Store raw copies under data/raw/<hash>.md.",
-        rich_help_panel="IMPORT",
-    ),
+    snapshot: bool = SNAPSHOT_OPTION,
 ) -> None:
     """Ingest Markdown posts into normalized YAML via Ollama."""
     _emit_deprecation("aijournal ops pipeline ingest", "aijournal capture --from")
