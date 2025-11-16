@@ -8,7 +8,7 @@ from pydantic import Field, field_validator
 
 from aijournal.common.base import StrictModel
 from aijournal.domain.claims import Scope  # noqa: TC001
-from aijournal.domain.enums import ClaimMethod, ClaimStatus, ClaimType, FacetOperation
+from aijournal.domain.enums import ClaimStatus, ClaimType, FacetOperation
 from aijournal.domain.evidence import SourceRef  # noqa: TC001
 
 
@@ -18,13 +18,10 @@ class ClaimAtomInput(StrictModel):
     type: ClaimType
     subject: str
     predicate: str
-    value: str
     statement: str
     scope: Scope
     strength: float
     status: ClaimStatus
-    method: ClaimMethod
-    user_verified: bool
     review_after_days: int
 
     @field_validator("strength")
@@ -43,13 +40,10 @@ class ClaimProposal(StrictModel):
     type: ClaimType
     subject: str
     predicate: str
-    value: str
     statement: str
     scope: Scope
     strength: float
     status: ClaimStatus
-    method: ClaimMethod
-    user_verified: bool
     review_after_days: int
     # Proposal metadata
     normalized_ids: list[str] = Field(default_factory=list)

@@ -1,14 +1,5 @@
 {
   "$defs": {
-    "ClaimMethod": {
-      "enum": [
-        "self_report",
-        "inferred",
-        "behavioral"
-      ],
-      "title": "ClaimMethod",
-      "type": "string"
-    },
     "ClaimStatus": {
       "enum": [
         "accepted",
@@ -35,13 +26,6 @@
     "Scope": {
       "description": "Contextual qualifiers for a claim atom.",
       "properties": {
-        "conditions": {
-          "items": {
-            "type": "string"
-          },
-          "title": "Conditions",
-          "type": "array"
-        },
         "context": {
           "items": {
             "type": "string"
@@ -96,9 +80,6 @@
       "title": "Manifest Hashes",
       "type": "array"
     },
-    "method": {
-      "$ref": "#/$defs/ClaimMethod"
-    },
     "normalized_ids": {
       "items": {
         "type": "string"
@@ -146,27 +127,16 @@
     },
     "type": {
       "$ref": "#/$defs/ClaimType"
-    },
-    "user_verified": {
-      "title": "User Verified",
-      "type": "boolean"
-    },
-    "value": {
-      "title": "Value",
-      "type": "string"
     }
   },
   "required": [
     "type",
     "subject",
     "predicate",
-    "value",
     "statement",
     "scope",
     "strength",
     "status",
-    "method",
-    "user_verified",
     "review_after_days"
   ],
   "title": "ClaimProposal",

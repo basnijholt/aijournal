@@ -9,7 +9,7 @@ from pydantic import ConfigDict, Field
 
 from aijournal.common.base import StrictModel
 from aijournal.domain.claims import ClaimAtom, ClaimSource, Provenance, Scope
-from aijournal.domain.enums import ClaimMethod, ClaimStatus
+from aijournal.domain.enums import ClaimStatus
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -33,12 +33,11 @@ def _redacted_provenance(provenance: Provenance, timestamp: str) -> Provenance:
     return redacted
 
 
-def _scope_tuple(scope: Scope | None) -> tuple[str | None, tuple[str, ...], tuple[str, ...]]:
+def _scope_tuple(scope: Scope | None) -> tuple[str | None, tuple[str, ...]]:
     scope = scope or Scope()
     domain = scope.domain if scope.domain else None
     context = tuple(item.strip() for item in scope.context if item.strip())
-    conditions = tuple(item.strip() for item in scope.conditions if item.strip())
-    return (domain, context, conditions)
+    return (domain, context)
 
 
 _SCOPE_QUALIFIER_GROUPS: dict[str, dict[str, tuple[str, ...]]] = {
@@ -67,7 +66,7 @@ class ClaimSignature(StrictModel):
     claim_type: str
     subject: str
     predicate: str
-    scope: tuple[str | None, tuple[str, ...], tuple[str, ...]]
+    scope: tuple[str | None, tuple[str, ...]]
 
     @classmethod
     def from_atom(cls, claim: ClaimAtom) -> ClaimSignature:
@@ -78,7 +77,7 @@ class ClaimSignature(StrictModel):
             scope=_scope_tuple(claim.scope),
         )
 
-    def as_tuple(self) -> tuple[str, str, str, tuple[str | None, tuple[str, ...], tuple[str, ...]]]:
+    def as_tuple(self) -> tuple[str, str, str, tuple[str | None, tuple[str, ...]]]:
         return (self.claim_type, self.subject, self.predicate, self.scope)
 
 
@@ -89,8 +88,8 @@ class ClaimConflict(StrictModel):
     claim_id: str
     signature: ClaimSignature
     statement: str
-    existing_value: str
-    incoming_value: str
+    existing_statement: str
+    incoming_statement: str
     incoming_sources: list[ClaimSource] = Field(default_factory=list)
 
 
@@ -157,15 +156,11 @@ class ClaimConsolidator:
             delta, observations_changed = self._merge_strength(existing, incoming)
             sources_delta = self._merge_sources(existing, incoming)
             status_changed = self._maybe_promote_status(existing, incoming)
-            method_changed = self._maybe_upgrade_method(existing, incoming)
-            user_verified_changed = self._propagate_user_verified(existing, incoming)
             changed = any(
                 (
                     delta != 0.0,
                     sources_delta,
                     status_changed,
-                    method_changed,
-                    user_verified_changed,
                     observations_changed,
                 ),
             )
@@ -173,8 +168,6 @@ class ClaimConsolidator:
                 (
                     sources_delta,
                     status_changed,
-                    method_changed,
-                    user_verified_changed,
                 ),
             )
             action = "strength_delta" if (delta != 0.0 and not structural_change) else "update"
@@ -212,7 +205,7 @@ class ClaimConsolidator:
             provenance.first_seen = self._timestamp.split("T", 1)[0]
 
     def _values_equal(self, existing: ClaimAtom, incoming: ClaimAtom) -> bool:
-        return existing.value == incoming.value
+        return existing.statement == incoming.statement
 
     def _merge_strength(
         self,
@@ -262,27 +255,6 @@ class ClaimConsolidator:
             return True
         return False
 
-    def _maybe_upgrade_method(self, existing: ClaimAtom, incoming: ClaimAtom) -> bool:
-        priorities = {
-            ClaimMethod.BEHAVIORAL.value: 3,
-            ClaimMethod.SELF_REPORT.value: 2,
-            ClaimMethod.INFERRED.value: 1,
-        }
-        existing_method = priorities.get(str(existing.method), 0)
-        incoming_method = priorities.get(str(incoming.method), 0)
-        if incoming_method > existing_method:
-            existing.method = incoming.method
-            return True
-        return False
-
-    def _propagate_user_verified(self, existing: ClaimAtom, incoming: ClaimAtom) -> bool:
-        if existing.user_verified:
-            return False
-        if incoming.user_verified:
-            existing.user_verified = True
-            return True
-        return False
-
     def _handle_conflict(
         self,
         claims: list[ClaimAtom],
@@ -323,8 +295,8 @@ class ClaimConsolidator:
             claim_id=existing.id,
             signature=ClaimSignature.from_atom(existing),
             statement=existing.statement,
-            existing_value=existing.value,
-            incoming_value=incoming.value,
+            existing_statement=existing.statement,
+            incoming_statement=incoming.statement,
             incoming_sources=list(incoming.provenance.sources),
         )
         return ClaimMergeOutcome(
@@ -389,8 +361,8 @@ class ClaimConsolidator:
                 claim_id=existing.id,
                 signature=ClaimSignature.from_atom(existing),
                 statement=existing.statement,
-                existing_value=existing.value,
-                incoming_value=incoming.value,
+                existing_statement=existing.statement,
+                incoming_statement=incoming.statement,
                 incoming_sources=list(incoming.provenance.sources),
             )
             return ClaimMergeOutcome(
@@ -413,21 +385,18 @@ class ClaimConsolidator:
     ) -> str | None:
         scope = claim.scope or Scope()
         context_lower = {item.lower() for item in scope.context}
-        condition_lower = {item.lower() for item in scope.conditions}
         for label, keywords in keyword_map.items():
             keyword_set = {word.lower() for word in keywords}
             if context_lower & keyword_set:
                 return label
-            if condition_lower & keyword_set:
-                return label
 
-        for text in (claim.statement, claim.value):
-            if not text:
-                continue
-            lowered = text.lower()
-            for label, keywords in keyword_map.items():
-                if any(word in lowered for word in keywords):
-                    return label
+        text = claim.statement
+        if not text:
+            return None
+        lowered = text.lower()
+        for label, keywords in keyword_map.items():
+            if any(word in lowered for word in keywords):
+                return label
         return None
 
     def _ensure_scope_label(self, scope: Scope, label: str) -> None:

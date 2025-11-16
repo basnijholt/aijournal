@@ -9,8 +9,8 @@
       "type": "string"
     },
     "scope": {
-      "maxItems": 3,
-      "minItems": 3,
+      "maxItems": 2,
+      "minItems": 2,
       "prefixItems": [
         {
           "anyOf": [
@@ -21,12 +21,6 @@
               "type": "null"
             }
           ]
-        },
-        {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
         },
         {
           "items": {

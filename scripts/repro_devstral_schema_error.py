@@ -93,7 +93,6 @@ Return JSON exactly following the `ProfileUpdateProposals` schema:
         "strength": 0.0-1.0,
         "status": "accepted" | "tentative" | "rejected",
         "method": "self_report" | "inferred" | "behavioral",
-        "user_verified": false,
         "review_after_days": integer
       },
       "normalized_ids": ["normalized-entry-id"],
@@ -112,7 +111,6 @@ Return JSON exactly following the `ProfileUpdateProposals` schema:
       "method": "inferred" | "self_report" | "behavioral",
       "confidence": 0.0-1.0,
       "review_after_days": integer,
-      "user_verified": false,
       "evidence": [
         {"entry_id": "normalized-entry-id", "spans": [{"type": "paragraph", "index": 1}]}
       ],

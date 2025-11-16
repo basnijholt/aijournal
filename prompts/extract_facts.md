@@ -36,7 +36,7 @@ Example fact:
   - `statement` – readable sentence ≤160 characters.
   - `reason` – ≤25-word justification that cites evidence.
   - `evidence_entry` – normalized entry id backing the claim.
-  - Optional: `subject`, `predicate`, `value`, `strength`, `status`, `method`, scope metadata.
+  - Optional: `subject`, `predicate`, `strength`, `status`, scope metadata (domain/context strings only).
 
 - Example claim proposal:
   ```

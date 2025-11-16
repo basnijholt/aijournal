@@ -22,12 +22,6 @@ class ClaimStatus(StrEnum):
     REJECTED = "rejected"
 
 
-class ClaimMethod(StrEnum):
-    SELF_REPORT = "self_report"
-    INFERRED = "inferred"
-    BEHAVIORAL = "behavioral"
-
-
 class FacetOperation(StrEnum):
     SET = "set"
     REMOVE = "remove"

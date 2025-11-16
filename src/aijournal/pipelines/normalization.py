@@ -12,7 +12,7 @@ from aijournal.domain.claims import (
     Provenance,
     Scope,
 )
-from aijournal.domain.enums import ClaimMethod, ClaimStatus, ClaimType
+from aijournal.domain.enums import ClaimStatus, ClaimType
 from aijournal.domain.evidence import SourceRef
 from aijournal.utils import time as time_utils
 from aijournal.utils.coercion import coerce_float, coerce_int
@@ -92,8 +92,7 @@ def normalize_scope(raw: Any) -> Scope:
         return sanitized
 
     context = _string_list(scope_dict.get("context"))
-    conditions = _string_list(scope_dict.get("conditions"))
-    return Scope(domain=domain, context=context, conditions=conditions)
+    return Scope(domain=domain, context=context)
 
 
 def normalize_sources(raw: Any) -> list[ClaimSource]:
@@ -232,11 +231,6 @@ def normalize_claim_atom(
 
     predicate = str(base.get("predicate") or "statement").strip() or "statement"
 
-    value_raw = base.get("value")
-    value = (
-        str(value_raw).strip() if value_raw is not None and str(value_raw).strip() else statement
-    )
-
     claim_id_raw = base.get("id")
     claim_id = str(claim_id_raw).strip() or None if claim_id_raw else None
     if not claim_id:
@@ -256,12 +250,6 @@ def normalize_claim_atom(
     status_value = status_raw if status_raw in valid_status else ClaimStatus.TENTATIVE.value
     status = ClaimStatus(status_value)
 
-    method_raw = str(base.get("method") or "inferred").strip().lower()
-    valid_methods = {item.value for item in ClaimMethod}
-    method_value = method_raw if method_raw in valid_methods else ClaimMethod.INFERRED.value
-    method = ClaimMethod(method_value)
-
-    user_verified = bool(base.get("user_verified", False))
     review_after_days = coerce_int(base.get("review_after_days")) or 120
 
     provenance = normalize_provenance(
@@ -275,13 +263,10 @@ def normalize_claim_atom(
         type=claim_type,
         subject=subject,
         predicate=predicate,
-        value=value,
         statement=statement,
         scope=scope,
         strength=strength,
         status=status,
-        method=method,
-        user_verified=user_verified,
         review_after_days=review_after_days,
         provenance=provenance,
     )

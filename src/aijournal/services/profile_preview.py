@@ -63,19 +63,17 @@ def signature_payload_from_claim(claim: ClaimAtom) -> ClaimSignaturePayload:
         predicate=str(claim.predicate or ""),
         domain=scope.domain,
         context=[item for item in scope.context if item],
-        conditions=[item for item in scope.conditions if item],
     )
 
 
 def signature_payload_from_signature(signature: ClaimSignature) -> ClaimSignaturePayload:
-    domain, context, conditions = signature.scope
+    domain, context = signature.scope
     return ClaimSignaturePayload(
         claim_type=signature.claim_type,
         subject=signature.subject,
         predicate=signature.predicate,
         domain=domain,
         context=[item for item in context if item],
-        conditions=[item for item in conditions if item],
     )
 
 
@@ -84,33 +82,30 @@ def conflict_payload_from_outcome(conflict: ClaimConflict) -> ClaimConflictPaylo
         claim_id=conflict.claim_id,
         signature=signature_payload_from_signature(conflict.signature),
         statement=conflict.statement,
-        existing_value=conflict.existing_value,
-        incoming_value=conflict.incoming_value,
+        existing_statement=conflict.existing_statement,
+        incoming_statement=conflict.incoming_statement,
         incoming_sources=[source.model_copy(deep=True) for source in conflict.incoming_sources],
     )
 
 
-def format_scope_label(scope: tuple[str | None, tuple[str, ...], tuple[str, ...]]) -> str:
-    domain, context, conditions = scope
+def format_scope_label(scope: tuple[str | None, tuple[str, ...]]) -> str:
+    domain, context = scope
     parts: list[str] = []
     if domain:
         parts.append(str(domain))
     if context:
         parts.append("/".join(context))
-    if conditions:
-        parts.append("|".join(conditions))
     return " :: ".join(parts) if parts else "global"
 
 
 def scope_tuple_from_payload(
     signature: ClaimSignaturePayload | None,
-) -> tuple[str | None, tuple[str, ...], tuple[str, ...]]:
+) -> tuple[str | None, tuple[str, ...]]:
     if signature is None:
-        return (None, (), ())
+        return (None, ())
     return (
         signature.domain,
         tuple(signature.context),
-        tuple(signature.conditions),
     )
 
 
@@ -149,8 +144,8 @@ def build_claim_preview(
             scope_label = format_scope_label(outcome.conflict.signature.scope)
             prompts.append(
                 f"Clarify claim {outcome.claim_id} [{scope_label}]: "
-                f"existing='{outcome.conflict.existing_value}' vs "
-                f"incoming='{outcome.conflict.incoming_value}'.",
+                f"existing='{outcome.conflict.existing_statement}' vs "
+                f"incoming='{outcome.conflict.incoming_statement}'.",
             )
         events.append(
             ClaimPreviewEvent(
@@ -158,7 +153,6 @@ def build_claim_preview(
                 claim_id=outcome.claim_id,
                 delta_strength=float(outcome.delta_strength or 0.0),
                 statement=incoming.statement,
-                value=incoming.value,
                 strength=float(incoming.strength or 0.0),
                 signature=signature_payload,
                 conflict=conflict_payload,
@@ -194,7 +188,7 @@ def emit_claim_merge_events(events: Sequence[ClaimMergeOutcome], heading: str) -
             typer.secho(
                 (
                     f"  • conflict {event.claim_id} [{scope_label}]: "
-                    f"'{conflict.existing_value}' vs '{conflict.incoming_value}'"
+                    f"'{conflict.existing_statement}' vs '{conflict.incoming_statement}'"
                 ),
                 fg=typer.colors.YELLOW,
             )

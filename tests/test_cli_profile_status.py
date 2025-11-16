@@ -65,16 +65,12 @@ claims:
     type: preference
     subject: deep_work
     predicate: best_window
-    value: "morning"
     statement: "Prefers morning deep work"
     scope:
       domain: work
       context: []
-      conditions: []
     strength: 0.8
     status: accepted
-    method: inferred
-    user_verified: false
     review_after_days: 120
     provenance:
       sources:

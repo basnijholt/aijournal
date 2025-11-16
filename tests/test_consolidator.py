@@ -45,7 +45,6 @@ def test_claim_consolidator_splits_scope_on_weekend_conflict() -> None:
     existing_claim = make_claim_atom(
         "preference.deep-work.window",
         "Prefers deep work in the morning on weekdays.",
-        value="Morning focus weekdays",
         strength=0.82,
         status="accepted",
         last_updated="2025-10-20T08:00:00Z",
@@ -53,7 +52,6 @@ def test_claim_consolidator_splits_scope_on_weekend_conflict() -> None:
     incoming_claim = make_claim_atom(
         "preference.deep-work.window",
         "Prefers later focus blocks on weekends.",
-        value="Afternoon focus weekends",
         strength=0.7,
         status="accepted",
         last_updated="2025-10-25T08:00:00Z",
@@ -75,7 +73,7 @@ def test_claim_consolidator_splits_scope_on_weekend_conflict() -> None:
     assert weekday_claim["status"] == "accepted"
     weekend_claim = next(claim for claim in claims if claim["id"] == outcome.related_claim_id)
     assert "weekend" in [item.lower() for item in weekend_claim["scope"]["context"]]
-    assert weekend_claim["value"] == "Afternoon focus weekends"
+    assert weekend_claim["statement"].startswith("Prefers later focus")
     assert weekend_claim["status"] == "accepted"
 
 
@@ -83,15 +81,13 @@ def test_claim_consolidator_flags_conflicts_and_downgrades_strength() -> None:
     existing_claim = make_claim_atom(
         "preference.deep-work.window",
         "Prefers deep work in the morning",
-        value="Morning focus",
         strength=0.8,
         status="accepted",
         last_updated="2025-10-20T08:00:00Z",
     )
     incoming_claim = make_claim_atom(
         "preference.deep-work.window",
-        "Prefers deep work in the morning",
-        value="Evening focus",
+        "Prefers deep work in the evening",
         strength=0.7,
         status="accepted",
         last_updated="2025-10-25T08:00:00Z",
@@ -106,8 +102,8 @@ def test_claim_consolidator_flags_conflicts_and_downgrades_strength() -> None:
     assert outcome.delta_strength == pytest.approx(-0.15, abs=1e-6)
     assert outcome.conflict is not None
     conflict = outcome.conflict
-    assert conflict.existing_value == "Morning focus"
-    assert conflict.incoming_value == "Evening focus"
+    assert conflict.existing_statement == "Prefers deep work in the morning"
+    assert conflict.incoming_statement == "Prefers deep work in the evening"
     updated = claims[0]
     assert updated["status"] == "tentative"
     assert updated["strength"] == pytest.approx(0.65, abs=1e-6)

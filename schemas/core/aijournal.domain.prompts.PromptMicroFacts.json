@@ -1,14 +1,5 @@
 {
   "$defs": {
-    "ClaimMethod": {
-      "enum": [
-        "self_report",
-        "inferred",
-        "behavioral"
-      ],
-      "title": "ClaimMethod",
-      "type": "string"
-    },
     "ClaimStatus": {
       "enum": [
         "accepted",
@@ -47,17 +38,6 @@
           "default": null,
           "title": "Evidence Entry"
         },
-        "method": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/ClaimMethod"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
         "predicate": {
           "anyOf": [
             {
@@ -82,21 +62,6 @@
           ],
           "default": null,
           "title": "Reason"
-        },
-        "scope_conditions": {
-          "anyOf": [
-            {
-              "items": {
-                "type": "string"
-              },
-              "type": "array"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Scope Conditions"
         },
         "scope_context": {
           "anyOf": [
@@ -170,19 +135,6 @@
         },
         "type": {
           "$ref": "#/$defs/ClaimType"
-        },
-        "value": {
-          "anyOf": [
-            {
-              "maxLength": 160,
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Value"
         }
       },
       "required": [

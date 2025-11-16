@@ -7,9 +7,6 @@
           "title": "Id",
           "type": "string"
         },
-        "method": {
-          "$ref": "#/$defs/ClaimMethod"
-        },
         "predicate": {
           "title": "Predicate",
           "type": "string"
@@ -46,15 +43,6 @@
         },
         "type": {
           "$ref": "#/$defs/ClaimType"
-        },
-        "user_verified": {
-          "default": false,
-          "title": "User Verified",
-          "type": "boolean"
-        },
-        "value": {
-          "title": "Value",
-          "type": "string"
         }
       },
       "required": [
@@ -62,22 +50,11 @@
         "type",
         "subject",
         "predicate",
-        "value",
         "statement",
-        "method",
         "provenance"
       ],
       "title": "ClaimAtom",
       "type": "object"
-    },
-    "ClaimMethod": {
-      "enum": [
-        "self_report",
-        "inferred",
-        "behavioral"
-      ],
-      "title": "ClaimMethod",
-      "type": "string"
     },
     "ClaimStatus": {
       "enum": [
@@ -144,13 +121,6 @@
     "Scope": {
       "description": "Contextual qualifiers for a claim atom.",
       "properties": {
-        "conditions": {
-          "items": {
-            "type": "string"
-          },
-          "title": "Conditions",
-          "type": "array"
-        },
         "context": {
           "items": {
             "type": "string"

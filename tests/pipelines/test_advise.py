@@ -11,13 +11,10 @@ def _claim(claim_id: str) -> ClaimAtom:
         type="preference",
         subject="self",
         predicate="insight",
-        value="Value",
         statement="Statement",
         scope=Scope(),
         strength=0.6,
         status="tentative",
-        method="inferred",
-        user_verified=False,
         review_after_days=120,
         provenance=Provenance(
             sources=[],

@@ -134,17 +134,13 @@ def _default_fake_claim_builder(
         "type": "preference",
         "subject": entry.title or claim_id,
         "predicate": "insight",
-        "value": statement,
         "statement": statement,
         "scope": {
             "domain": None,
             "context": list((entry.tags or [])[:2]),
-            "conditions": [],
         },
         "strength": strength,
         "status": status,
-        "method": "inferred",
-        "user_verified": False,
         "review_after_days": 120,
         "provenance": {
             "sources": [source.model_dump(mode="python") for source in sanitized_sources],

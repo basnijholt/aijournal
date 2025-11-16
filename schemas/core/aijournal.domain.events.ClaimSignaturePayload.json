@@ -5,13 +5,6 @@
       "title": "Claim Type",
       "type": "string"
     },
-    "conditions": {
-      "items": {
-        "type": "string"
-      },
-      "title": "Conditions",
-      "type": "array"
-    },
     "context": {
       "items": {
         "type": "string"

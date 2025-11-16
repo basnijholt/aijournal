@@ -8,7 +8,7 @@ from pydantic import Field, ValidationInfo, field_validator, model_validator
 
 from aijournal.common.base import StrictModel
 from aijournal.domain.claims import Scope
-from aijournal.domain.enums import ClaimMethod, ClaimStatus, ClaimType, FacetOperation
+from aijournal.domain.enums import ClaimStatus, ClaimType, FacetOperation
 from aijournal.domain.evidence import SourceRef
 
 if TYPE_CHECKING:
@@ -39,13 +39,10 @@ class PromptClaimItem(StrictModel):
     statement: str = Field(..., max_length=160)
     subject: str | None = Field(default=None, max_length=80)
     predicate: str | None = Field(default=None, max_length=80)
-    value: str | None = Field(default=None, max_length=160)
     strength: float | None = Field(default=None, ge=0.0, le=1.0)
     status: ClaimStatus | None = None
-    method: ClaimMethod | None = None
     scope_domain: str | None = None
     scope_context: list[str] | None = None
-    scope_conditions: list[str] | None = None
     reason: str | None = None
     evidence_entry: str | None = None
 
@@ -65,11 +62,6 @@ class PromptClaimItem(StrictModel):
         if isinstance(value, str):
             value = value.strip()
         return value or None
-
-    @field_validator("value", mode="after")
-    @classmethod
-    def _strip_value(cls, value: str | None) -> str | None:
-        return _clean_text(value)
 
     @field_validator("reason")
     @classmethod
@@ -135,8 +127,6 @@ def convert_prompt_claim_to_proposal(
     # Fill in defaults for missing optional fields
     subject = item.subject or "self"
     predicate = item.predicate or "states"
-    value = item.value or item.statement
-
     # Build evidence from simple references
     evidence: list[SourceRef] = []
     if item.evidence_entry:
@@ -146,24 +136,19 @@ def convert_prompt_claim_to_proposal(
     scope = Scope(
         domain=(item.scope_domain or None),
         context=[s.strip() for s in (item.scope_context or []) if s.strip()],
-        conditions=[s.strip() for s in (item.scope_conditions or []) if s.strip()],
     )
 
     strength = float(item.strength) if item.strength is not None else 0.55
     status = item.status or ClaimStatus.TENTATIVE
-    method = item.method or ClaimMethod.INFERRED
 
     return ClaimProposal(
         type=item.type,
         subject=subject,
         predicate=predicate,
-        value=value,
         statement=item.statement,
         scope=scope,
         strength=strength,
         status=status,
-        method=method,
-        user_verified=False,
         review_after_days=120,
         normalized_ids=normalized_ids,
         evidence=evidence,

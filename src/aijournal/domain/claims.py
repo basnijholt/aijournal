@@ -5,7 +5,7 @@ from __future__ import annotations
 from pydantic import Field
 
 from aijournal.common.base import StrictModel
-from aijournal.domain.enums import ClaimMethod, ClaimStatus, ClaimType
+from aijournal.domain.enums import ClaimStatus, ClaimType
 from aijournal.domain.evidence import SourceRef
 
 # Type alias for claim evidence sources.
@@ -17,7 +17,6 @@ class Scope(StrictModel):
 
     domain: str | None = None
     context: list[str] = Field(default_factory=list)
-    conditions: list[str] = Field(default_factory=list)
 
 
 class Provenance(StrictModel):
@@ -36,13 +35,10 @@ class ClaimAtom(StrictModel):
     type: ClaimType
     subject: str
     predicate: str
-    value: str
     statement: str
     scope: Scope = Field(default_factory=Scope)
     strength: float = Field(default=0.5, ge=0.0, le=1.0)
     status: ClaimStatus = ClaimStatus.TENTATIVE
-    method: ClaimMethod
-    user_verified: bool = False
     review_after_days: int = 120
     provenance: Provenance
 

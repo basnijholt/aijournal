@@ -11,17 +11,13 @@ def _sample_atom_dict() -> dict:
         "type": "preference",
         "subject": "deep_work",
         "predicate": "best_window",
-        "value": "09:00-12:00",
         "statement": "Best deep work between 09:00–12:00 on weekdays.",
         "scope": {
             "domain": "work",
             "context": ["weekday"],
-            "conditions": [],
         },
         "strength": 0.78,
         "status": "accepted",
-        "method": "inferred",
-        "user_verified": True,
         "review_after_days": 120,
         "provenance": {
             "sources": [
@@ -39,7 +35,6 @@ def test_claim_atom_model_round_trip() -> None:
     atom = ClaimAtom.model_validate(_sample_atom_dict())
     assert atom.type == "preference"
     assert atom.status == "accepted"
-    assert atom.method == "inferred"
     assert atom.scope.domain == "work"
     assert atom.provenance.sources[0].entry_id == "2025-10-25_x9t3"
 
@@ -51,4 +46,4 @@ def test_claim_atom_model_round_trip() -> None:
 def test_claim_atoms_file_container() -> None:
     atoms_file = ClaimAtomsFile.model_validate({"claims": [_sample_atom_dict()]})
     assert len(atoms_file.claims) == 1
-    assert atoms_file.claims[0].value == "09:00-12:00"
+    assert atoms_file.claims[0].statement.startswith("Best deep work")

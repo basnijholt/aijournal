@@ -17,7 +17,7 @@ from aijournal.domain.claims import (
 from aijournal.domain.claims import (
     Scope as _Scope,
 )
-from aijournal.domain.enums import ClaimMethod, ClaimStatus, ClaimType
+from aijournal.domain.enums import ClaimStatus, ClaimType
 
 warnings.warn(
     "Import claim models from `aijournal.domain.claims` instead of `aijournal.models.claim_atoms`.",
@@ -33,7 +33,6 @@ ClaimAtomsFile = _ClaimAtomsFile
 __all__ = [
     "ClaimAtom",
     "ClaimAtomsFile",
-    "ClaimMethod",
     "ClaimSource",
     "ClaimStatus",
     "ClaimType",

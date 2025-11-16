@@ -49,7 +49,7 @@ def merge_unique(existing: Iterable[str], extras: Iterable[str]) -> list[str]:
 
 
 def _proposal_key(proposal: ClaimProposal) -> str:
-    return f"{proposal.type}|{proposal.subject}|{proposal.predicate}|{proposal.value}|{proposal.statement}"
+    return f"{proposal.type}|{proposal.subject}|{proposal.predicate}|{proposal.statement}"
 
 
 def _fact_sources_from_evidence(fact: MicroFact) -> list[ClaimSource]:
@@ -85,7 +85,6 @@ def _scope_from_fact(
     return Scope(
         domain=domain,
         context=unique_context,
-        conditions=[],
     )
 
 
@@ -135,12 +134,10 @@ def _microfact_claim_proposals(
             "type": "preference",
             "subject": fact.id,
             "predicate": "insight",
-            "value": fact.statement,
             "statement": fact.statement,
             "scope": scope.model_dump(mode="python"),
             "strength": fact.confidence,
             "status": "tentative",
-            "method": "inferred",
             "review_after_days": 90,
             "provenance": {
                 "sources": [source.model_dump(mode="python") for source in provenance_sources],
@@ -163,13 +160,10 @@ def _microfact_claim_proposals(
             type=claim_model.type,
             subject=claim_model.subject,
             predicate=claim_model.predicate,
-            value=claim_model.value,
             statement=claim_model.statement,
             scope=claim_model.scope,
             strength=claim_model.strength,
             status=claim_model.status,
-            method=claim_model.method,
-            user_verified=claim_model.user_verified,
             review_after_days=claim_model.review_after_days,
         )
 
@@ -178,13 +172,10 @@ def _microfact_claim_proposals(
                 type=claim_input.type,
                 subject=claim_input.subject,
                 predicate=claim_input.predicate,
-                value=claim_input.value,
                 statement=claim_input.statement,
                 scope=claim_input.scope,
                 strength=claim_input.strength,
                 status=claim_input.status,
-                method=claim_input.method,
-                user_verified=claim_input.user_verified,
                 review_after_days=claim_input.review_after_days,
                 normalized_ids=normalized_ids,
                 evidence=[
@@ -318,13 +309,10 @@ def normalize_claim_proposals(
             type=proposal.type,
             subject=proposal.subject,
             predicate=proposal.predicate,
-            value=proposal.value,
             statement=proposal.statement,
             scope=proposal.scope,
             strength=proposal.strength,
             status=proposal.status,
-            method=proposal.method,
-            user_verified=proposal.user_verified,
             review_after_days=proposal.review_after_days,
         )
 
@@ -339,13 +327,10 @@ def normalize_claim_proposals(
             type=claim_atom.type,
             subject=claim_atom.subject,
             predicate=claim_atom.predicate,
-            value=claim_atom.value,
             statement=claim_atom.statement,
             scope=claim_atom.scope,
             strength=claim_atom.strength,
             status=claim_atom.status,
-            method=claim_atom.method,
-            user_verified=claim_atom.user_verified,
             review_after_days=claim_atom.review_after_days,
         )
 
@@ -363,13 +348,10 @@ def normalize_claim_proposals(
                 type=claim_input.type,
                 subject=claim_input.subject,
                 predicate=claim_input.predicate,
-                value=claim_input.value,
                 statement=claim_input.statement,
                 scope=claim_input.scope,
                 strength=claim_input.strength,
                 status=claim_input.status,
-                method=claim_input.method,
-                user_verified=claim_input.user_verified,
                 review_after_days=claim_input.review_after_days,
                 normalized_ids=merge_unique(scoped_ids, []),
                 evidence=sanitized_sources,

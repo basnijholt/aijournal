@@ -7,8 +7,8 @@
           "title": "Claim Id",
           "type": "string"
         },
-        "existing_value": {
-          "title": "Existing Value",
+        "existing_statement": {
+          "title": "Existing Statement",
           "type": "string"
         },
         "incoming_sources": {
@@ -18,8 +18,8 @@
           "title": "Incoming Sources",
           "type": "array"
         },
-        "incoming_value": {
-          "title": "Incoming Value",
+        "incoming_statement": {
+          "title": "Incoming Statement",
           "type": "string"
         },
         "signature": {
@@ -34,8 +34,8 @@
         "claim_id",
         "signature",
         "statement",
-        "existing_value",
-        "incoming_value"
+        "existing_statement",
+        "incoming_statement"
       ],
       "title": "ClaimConflictPayload",
       "type": "object"
@@ -57,13 +57,6 @@
         "claim_type": {
           "title": "Claim Type",
           "type": "string"
-        },
-        "conditions": {
-          "items": {
-            "type": "string"
-          },
-          "title": "Conditions",
-          "type": "array"
         },
         "context": {
           "items": {
@@ -222,18 +215,6 @@
       ],
       "default": null,
       "title": "Strength"
-    },
-    "value": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null,
-      "title": "Value"
     }
   },
   "required": [

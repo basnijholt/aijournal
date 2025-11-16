@@ -110,7 +110,7 @@ aijournal/
 
 ### 3.2 Claim Atoms
 
-`profile/claims.yaml` stores typed, scoped claim atoms with `{type, subject, predicate, value, scope}` alongside `strength`, `status`, and provenance. Scope captures domain, context, and conditions (for example weekday vs weekend) so downstream agents can reason precisely about when statements apply. Provenance lists source entry IDs and spans plus `first_seen`/`last_updated` timestamps.
+`profile/claims.yaml` stores typed, scoped claim atoms with `{type, subject, predicate, statement, scope}` alongside `strength`, `status`, and provenance. Scope captures domain plus normalized context tags (for example weekday vs weekend) so downstream agents can reason precisely about when statements apply. Provenance lists source entry IDs and spans plus `first_seen`/`last_updated` timestamps.
 
 ### 3.3 Consolidation, Freshness, and Conflicts
 
@@ -124,7 +124,7 @@ aijournal/
 
 ### 3.5 Provenance, Re-Validation, and Impact Weights
 
-- Each facet or claim records `method`, `user_verified`, `review_after_days`, and evidence references. `staleness = min(2.0, days_since_last_updated / review_after_days)` drives interview prioritization.
+- Each facet or claim records `review_after_days` and evidence references. `staleness = min(2.0, days_since_last_updated / review_after_days)` drives interview prioritization.
 - Default impact weights: values/goals (1.5), decision_style (1.3), affect_energy (1.2), traits (1.0), social (0.9). Claim types (value, goal, boundary, trait, preference, habit, skill) inherit these weights for ranking.
 - Freshness and impact control interview prompts and claim ordering in persona packs, advising the system where to probe next.
 - Provenance spans never persist raw text—`aijournal/domain/evidence.py` strips `span.text` before saving claims or feedback, and the audit tooling redacts any lingering text when running migrations.

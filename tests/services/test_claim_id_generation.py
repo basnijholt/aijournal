@@ -3,7 +3,7 @@ from __future__ import annotations
 from aijournal.commands import profile as profile_cmd
 from aijournal.domain.changes import ClaimAtomInput, ClaimProposal
 from aijournal.domain.claims import Scope
-from aijournal.domain.enums import ClaimMethod, ClaimStatus, ClaimType
+from aijournal.domain.enums import ClaimStatus, ClaimType
 from aijournal.domain.evidence import SourceRef
 from aijournal.utils import time as time_utils
 
@@ -18,26 +18,20 @@ def _make_proposal(
         type=ClaimType.PREFERENCE,
         subject="work",
         predicate=predicate,
-        value=statement,
         statement=statement,
         scope=Scope(),
         strength=0.6,
         status=ClaimStatus.ACCEPTED,
-        method=ClaimMethod.BEHAVIORAL,
-        user_verified=False,
         review_after_days=120,
     )
     return ClaimProposal(
         type=claim_input.type,
         subject=claim_input.subject,
         predicate=claim_input.predicate,
-        value=claim_input.value,
         statement=claim_input.statement,
         scope=claim_input.scope,
         strength=claim_input.strength,
         status=claim_input.status,
-        method=claim_input.method,
-        user_verified=claim_input.user_verified,
         review_after_days=claim_input.review_after_days,
         normalized_ids=[normalized_id],
         evidence=[SourceRef(entry_id=normalized_id, spans=[])],

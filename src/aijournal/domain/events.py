@@ -19,7 +19,6 @@ class ClaimSignaturePayload(StrictModel):
     predicate: str
     domain: str | None = None
     context: list[str] = Field(default_factory=list)
-    conditions: list[str] = Field(default_factory=list)
 
 
 class ClaimConflictPayload(StrictModel):
@@ -28,8 +27,8 @@ class ClaimConflictPayload(StrictModel):
     claim_id: str
     signature: ClaimSignaturePayload
     statement: str
-    existing_value: str
-    incoming_value: str
+    existing_statement: str
+    incoming_statement: str
     incoming_sources: list[ClaimSource] = Field(default_factory=list)
 
 
@@ -41,7 +40,6 @@ class ClaimPreviewEvent(StrictModel):
     claim_id: str
     delta_strength: float | None = None
     statement: str | None = None
-    value: str | None = None
     strength: float | None = None
     signature: ClaimSignaturePayload | None = None
     conflict: ClaimConflictPayload | None = None

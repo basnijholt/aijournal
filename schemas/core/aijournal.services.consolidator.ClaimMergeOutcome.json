@@ -6,8 +6,8 @@
           "title": "Claim Id",
           "type": "string"
         },
-        "existing_value": {
-          "title": "Existing Value",
+        "existing_statement": {
+          "title": "Existing Statement",
           "type": "string"
         },
         "incoming_sources": {
@@ -17,8 +17,8 @@
           "title": "Incoming Sources",
           "type": "array"
         },
-        "incoming_value": {
-          "title": "Incoming Value",
+        "incoming_statement": {
+          "title": "Incoming Statement",
           "type": "string"
         },
         "signature": {
@@ -33,8 +33,8 @@
         "claim_id",
         "signature",
         "statement",
-        "existing_value",
-        "incoming_value"
+        "existing_statement",
+        "incoming_statement"
       ],
       "title": "ClaimConflict",
       "type": "object"
@@ -50,8 +50,8 @@
           "type": "string"
         },
         "scope": {
-          "maxItems": 3,
-          "minItems": 3,
+          "maxItems": 2,
+          "minItems": 2,
           "prefixItems": [
             {
               "anyOf": [
@@ -62,12 +62,6 @@
                   "type": "null"
                 }
               ]
-            },
-            {
-              "items": {
-                "type": "string"
-              },
-              "type": "array"
             },
             {
               "items": {

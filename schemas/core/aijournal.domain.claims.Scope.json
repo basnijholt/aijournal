@@ -1,13 +1,6 @@
 {
   "description": "Contextual qualifiers for a claim atom.",
   "properties": {
-    "conditions": {
-      "items": {
-        "type": "string"
-      },
-      "title": "Conditions",
-      "type": "array"
-    },
     "context": {
       "items": {
         "type": "string"

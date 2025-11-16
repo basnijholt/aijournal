@@ -41,7 +41,7 @@ Overall shape:
 - **0.30–0.40**: Single ambiguous mention or inference.
 - **0.50–0.60**: One or two clear mentions **or** a single self-report.
 - **0.70–0.80**: Three to five entries showing a pattern **or** strong self-report + behavioral evidence.
-- **0.85–0.95**: Five or more consistent entries **or** user-verified claims.
+- **0.85–0.95**: Five or more consistent entries **or** immutable commitments corroborated across sources.
 - **0.95–1.00**: Immutable facts only (birthdate, formal certifications).
 - Default to **0.55** when unsure and note ambiguity in the reason.
 
@@ -55,13 +55,10 @@ Overall shape:
       "statement": "Readable sentence (≤160 chars)",
       "subject": "optional, ≤80 chars",
       "predicate": "optional, ≤80 chars",
-      "value": "optional, ≤160 chars",
       "strength": 0.0-1.0 (defaults to 0.55),
       "status": "accepted|tentative|rejected" (defaults to tentative),
-      "method": "self_report|inferred|behavioral" (defaults to inferred),
       "scope_domain": "optional domain string",
       "scope_context": ["weekday", "solo"],
-      "scope_conditions": [],
       "reason": "≤25 word justification referencing evidence",
       "evidence_entry": "normalized entry id"
     }
@@ -102,8 +99,8 @@ Example claim object:
 
 1. Facet `operation` must be `set` or `remove` (never `merge`).
 2. Facet `value` must be a string or list of strings.
-3. Statements ≤160 chars; subject/predicate ≤80 chars; value ≤160 chars; reason ≤25 words; interview prompts ≤20 words.
-4. Omit empty strings, null evidence, or redundant claims, and never invent new enum values—stick to the allowed options for `type`, `status`, and `method`.
+3. Statements ≤160 chars; subject/predicate ≤80 chars; reason ≤25 words; interview prompts ≤20 words.
+4. Omit empty strings, null evidence, or redundant claims, and never invent new enum values—stick to the allowed options for `type` and `status`.
 
 ## Failure Handling
 

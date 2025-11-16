@@ -1739,13 +1739,12 @@ def _print_claim_preview(preview: ProfileUpdatePreview) -> None:
                     (
                         conflict.signature.domain,
                         tuple(conflict.signature.context),
-                        tuple(conflict.signature.conditions),
                     ),
                 )
                 typer.secho(
                     (
                         f"  • conflict {event.claim_id} [{conflict_scope}]: "
-                        f"'{conflict.existing_value}' vs '{conflict.incoming_value}'"
+                        f"'{conflict.existing_statement}' vs '{conflict.incoming_statement}'"
                     ),
                     fg=typer.colors.YELLOW,
                 )
