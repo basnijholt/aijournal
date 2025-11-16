@@ -86,10 +86,18 @@
       "type": "string"
     },
     "retries": {
-      "default": 4,
-      "minimum": 0,
-      "title": "Retries",
-      "type": "integer"
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Optional override for LLM retries; defaults to workspace configuration when unset.",
+      "title": "Retries"
     },
     "slug": {
       "anyOf": [
