@@ -53,7 +53,7 @@ def invoke_pipeline(ctx: RunContext, prepared: ChatdPrepared) -> ChatdResult:
             err=True,
         )
         ctx.emit(event="command_failed", reason="missing_uvicorn")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from exc
 
     app_instance = build_chat_app(ctx.workspace, ctx.config)
     ctx.emit(event="pipeline_complete", host=prepared.host, port=prepared.port)

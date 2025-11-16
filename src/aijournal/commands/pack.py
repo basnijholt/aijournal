@@ -196,6 +196,7 @@ def invoke_pipeline(ctx: RunContext, prepared: PackPrepared) -> PackResult:
 
 
 def persist_output(ctx: RunContext, result: PackResult) -> None:
+    del ctx
     _log_pack_metrics(
         result.bundle.level,
         result.total_tokens,
@@ -233,7 +234,7 @@ def persist_output(ctx: RunContext, result: PackResult) -> None:
     if result.output:
         result.output.parent.mkdir(parents=True, exist_ok=True)
         previous = result.output.read_text(encoding="utf-8") if result.output.exists() else None
-        save_artifact(result.output, artifact, format=result.fmt_value)
+        save_artifact(result.output, artifact, file_format=result.fmt_value)
         new_text = result.output.read_text(encoding="utf-8") if result.output.exists() else None
         changed = previous != new_text
         if changed:

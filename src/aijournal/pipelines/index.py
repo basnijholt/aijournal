@@ -87,6 +87,7 @@ def prepare_index_tasks(
     manifest_index: dict[str, ManifestEntry],
     relative_path: Callable[[Path], str],
 ) -> list[IndexTask]:
+    del root  # compatibility: retained for earlier call sites needing signature
     tasks: list[IndexTask] = []
     for day, path in entries:
         entry = load_yaml_model(path, NormalizedEntry)
@@ -523,4 +524,4 @@ def write_index_meta(
     )
     meta_path = index_meta_path(root)
     artifact_format = meta_path.suffix.lstrip(".") or "json"
-    save_artifact(meta_path, artifact, format=artifact_format)
+    save_artifact(meta_path, artifact, file_format=artifact_format)

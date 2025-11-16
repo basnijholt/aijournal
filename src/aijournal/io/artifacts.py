@@ -43,13 +43,18 @@ def _load_raw(path: Path) -> Any:
         raise ValueError(msg) from exc
 
 
-def save_artifact(path: Path | str, artifact: Artifact[T], *, format: str | None = None) -> None:
+def save_artifact(
+    path: Path | str,
+    artifact: Artifact[T],
+    *,
+    file_format: str | None = None,
+) -> None:
     """Persist an artifact envelope using deterministic ordering and UTF-8."""
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
 
     data = artifact.model_dump(mode="json", by_alias=True, exclude_none=False)
-    fmt = (format or target.suffix.lstrip(".") or "yaml").lower()
+    fmt = (file_format or target.suffix.lstrip(".") or "yaml").lower()
 
     if fmt in {"yaml", "yml"}:
         serialized = _dump_yaml(data)

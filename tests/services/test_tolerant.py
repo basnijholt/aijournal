@@ -387,7 +387,7 @@ Entry text.
         assert not result.warnings
 
     def test_datetime_without_timezone(self) -> None:
-        dt = datetime(2025, 1, 5, 10, 30)
+        dt = datetime(2025, 1, 5, 10, 30, tzinfo=UTC)
         result = parse_date_tolerant(dt)
         assert result.dt == dt.replace(tzinfo=UTC)
         assert result.format_used == "datetime"

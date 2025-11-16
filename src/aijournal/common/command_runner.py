@@ -39,24 +39,27 @@ def run_command_pipeline(
 
 
 def _summarize(value: Any) -> Any:
+    result: Any
     if isinstance(value, BaseModel):
         try:
-            return value.model_dump(exclude_none=True, mode="json")
+            result = value.model_dump(exclude_none=True, mode="json")
         except PydanticSerializationError:
             raw = value.model_dump(exclude_none=True, mode="python")
-            return _convert(raw)
-    if isinstance(value, (str, int, float, bool)) or value is None:
-        return value
-    if isinstance(value, Path):
-        return str(value)
-    if isinstance(value, (list, tuple, set)):
-        return [_summarize(item) for item in value]
-    if hasattr(value, "model_dump"):
+            result = _convert(raw)
+    elif isinstance(value, (str, int, float, bool)) or value is None:
+        result = value
+    elif isinstance(value, Path):
+        result = str(value)
+    elif isinstance(value, (list, tuple, set)):
+        result = [_summarize(item) for item in value]
+    elif hasattr(value, "model_dump"):
         try:
-            return value.model_dump()
+            result = value.model_dump()
         except Exception:  # pragma: no cover - defensive
-            return str(value)
-    return str(value)
+            result = str(value)
+    else:
+        result = str(value)
+    return result
 
 
 def _convert(obj: Any) -> Any:

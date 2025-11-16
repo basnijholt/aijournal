@@ -56,32 +56,39 @@ class IngestResult(BaseModel):
     @field_validator("created_at", mode="before")
     @classmethod
     def _coerce_created_at(cls, value: object) -> str:
+        timestamp: datetime | None = None
         if isinstance(value, datetime):
-            dt = value.astimezone(UTC)
-            return time_utils.format_timestamp(dt)
-        if value is None:
-            return time_utils.format_timestamp(time_utils.now())
-        if hasattr(value, "year") and hasattr(value, "month") and hasattr(value, "day"):
-            dt = datetime(
+            timestamp = value.astimezone(UTC)
+        elif value is None:
+            timestamp = time_utils.now()
+        elif hasattr(value, "year") and hasattr(value, "month") and hasattr(value, "day"):
+            timestamp = datetime(
                 value.year,
                 value.month,
                 value.day,
                 tzinfo=UTC,
             )
-            return time_utils.format_timestamp(dt)
-        if isinstance(value, str):
+        elif isinstance(value, str):
             candidate = value.strip()
             if not candidate:
-                return time_utils.format_timestamp(time_utils.now())
-            normalized = candidate.replace("Z", "+00:00") if candidate.endswith("Z") else candidate
-            try:
-                dt = datetime.fromisoformat(normalized)
-            except ValueError:
-                return candidate
-            if dt.tzinfo is None:
-                dt = dt.replace(tzinfo=UTC)
-            return time_utils.format_timestamp(dt)
-        return str(value)
+                timestamp = time_utils.now()
+            else:
+                normalized = (
+                    candidate.replace("Z", "+00:00") if candidate.endswith("Z") else candidate
+                )
+                try:
+                    parsed = datetime.fromisoformat(normalized)
+                except ValueError:
+                    return candidate
+                if parsed.tzinfo is None:
+                    parsed = parsed.replace(tzinfo=UTC)
+                timestamp = parsed
+        else:
+            return str(value)
+
+        if timestamp is None:
+            timestamp = time_utils.now()
+        return time_utils.format_timestamp(timestamp)
 
 
 def build_ingest_agent(

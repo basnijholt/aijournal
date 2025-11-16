@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import os
 import shutil
-from collections.abc import Iterator
 from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -24,6 +23,7 @@ from .validators import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
     from pathlib import Path
 
 

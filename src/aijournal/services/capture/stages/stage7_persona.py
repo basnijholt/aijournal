@@ -1,3 +1,5 @@
+"""Stage 7: rebuild persona artifacts from refreshed claims."""
+
 from __future__ import annotations
 
 from pathlib import Path

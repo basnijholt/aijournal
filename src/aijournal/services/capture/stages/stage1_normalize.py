@@ -1,3 +1,5 @@
+"""Stage 1: normalize captured Markdown into structured entries."""
+
 from __future__ import annotations
 
 from time import perf_counter

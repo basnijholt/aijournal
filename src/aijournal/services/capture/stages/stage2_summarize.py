@@ -1,3 +1,5 @@
+"""Stage 2: generate and persist daily summaries."""
+
 from __future__ import annotations
 
 from time import perf_counter

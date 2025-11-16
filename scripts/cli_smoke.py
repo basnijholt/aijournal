@@ -29,6 +29,7 @@ DEFAULT_CHAT_QUESTION = "What did I focus on last week?"
 
 
 def _build_specs(base_day: str, *, real_mode: bool) -> list[CommandSpec]:
+    mode_label = "live" if real_mode else "fake"
     return [
         CommandSpec(
             name="persona status (pre-build)",
@@ -66,7 +67,7 @@ def _build_specs(base_day: str, *, real_mode: bool) -> list[CommandSpec]:
         CommandSpec(
             name="ollama health",
             args=["aijournal", "ollama", "health"],
-            description="Inspect Ollama availability (fake or live).",
+            description=f"Inspect Ollama availability ({mode_label} mode).",
         ),
         CommandSpec(
             name="pack L1",

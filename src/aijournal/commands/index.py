@@ -500,6 +500,7 @@ def _invoke_search_pipeline(ctx: RunContext, prepared: IndexSearchPrepared) -> I
 
 
 def _persist_search_output(ctx: RunContext, search_result: IndexSearchResult) -> None:
+    del ctx
     result = search_result.result
     if not result.chunks:
         typer.echo("No matches found.")

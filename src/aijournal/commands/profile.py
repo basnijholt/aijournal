@@ -125,6 +125,7 @@ def run_profile_apply(
 def run_profile_status(workspace: Path | None = None, *, root: Path | None = None) -> None:
     """Show ranked facets/claims requiring review."""
     workspace = workspace or Path.cwd()
+    del root
     config_path = workspace / "config.yaml"
     config = load_yaml(config_path) if config_path.exists() else {}
     ctx = create_run_context(

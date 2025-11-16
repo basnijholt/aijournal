@@ -117,7 +117,7 @@ def run_audit_provenance(
                         meta=artifact.meta,
                         data=artifact.data,
                     ),
-                    format=_artifact_format(path),
+                    file_format=_artifact_format(path),
                 )
             results.append(
                 AuditFileResult(
@@ -305,9 +305,7 @@ def _scan_value(
             count += len(spans_with_text)
             if fix:
                 setter(redact_source_text(value))
-        return count
-
-    if isinstance(value, BaseModel):
+    elif isinstance(value, BaseModel):
         for field_name in value.__class__.model_fields:
             field_value = getattr(value, field_name)
 
@@ -326,9 +324,7 @@ def _scan_value(
                 issues=issues,
                 fix=fix,
             )
-        return count
-
-    if isinstance(value, list):
+    elif isinstance(value, list):
         for idx, item in enumerate(value):
 
             def _set_index(new_value: Any, *, index: int = idx, target: list[Any] = value) -> None:
@@ -341,9 +337,7 @@ def _scan_value(
                 issues=issues,
                 fix=fix,
             )
-        return count
-
-    if isinstance(value, tuple):
+    elif isinstance(value, tuple):
         mutable = list(value)
         tuple_changed = False
         for idx, item in enumerate(mutable):
@@ -363,9 +357,8 @@ def _scan_value(
             count += child_count
         if tuple_changed and fix:
             setter(tuple(mutable))
-        return count
-
-    if isinstance(value, dict):
+    elif isinstance(value, dict):
+        handled_source = False
         if "entry_id" in value and "spans" in value:
             try:
                 source = SourceRef.model_validate(value)
@@ -387,25 +380,25 @@ def _scan_value(
                     issues=issues,
                     fix=fix,
                 )
-                return count
-        for key, item in list(value.items()):
+                handled_source = True
+        if not handled_source:
+            for key, item in list(value.items()):
 
-            def _set_dict_item(
-                new_value: Any,
-                *,
-                dict_key: Any = key,
-                target: dict[Any, Any] = value,
-            ) -> None:
-                target[dict_key] = new_value
+                def _set_dict_item(
+                    new_value: Any,
+                    *,
+                    dict_key: Any = key,
+                    target: dict[Any, Any] = value,
+                ) -> None:
+                    target[dict_key] = new_value
 
-            count += _scan_value(
-                item,
-                path=[*path, str(key)],
-                setter=_set_dict_item,
-                issues=issues,
-                fix=fix,
-            )
-        return count
+                count += _scan_value(
+                    item,
+                    path=[*path, str(key)],
+                    setter=_set_dict_item,
+                    issues=issues,
+                    fix=fix,
+                )
 
     return count
 

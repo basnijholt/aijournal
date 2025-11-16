@@ -238,15 +238,16 @@ def _should_merge_records(
         return True
     if candidate.domain and existing.domain and candidate.domain != existing.domain:
         return False
-    if candidate.contexts and existing.contexts:
-        if not set(candidate.contexts).intersection(existing.contexts):
-            return False
+    if (
+        candidate.contexts
+        and existing.contexts
+        and not set(candidate.contexts).intersection(existing.contexts)
+    ):
+        return False
     if candidate.canonical_statement == existing.canonical_statement:
         return True
     lexical = _lexical_overlap(candidate.canonical_statement, existing.canonical_statement)
-    if lexical < min_overlap:
-        return False
-    if distance is None:
+    if lexical < min_overlap or distance is None:
         return False
     return distance <= threshold
 

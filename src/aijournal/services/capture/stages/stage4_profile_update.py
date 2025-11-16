@@ -1,3 +1,5 @@
+"""Stage 4: generate and optionally apply profile update batches."""
+
 from __future__ import annotations
 
 from time import perf_counter

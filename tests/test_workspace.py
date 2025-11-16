@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 import pytest
 
@@ -146,13 +146,13 @@ def test_capture_uses_workspace_option(
     captured: dict[str, Path | None] = {"root": None}
 
     class DummyResult:
-        errors: list[str] = []
-        warnings: list[str] = []
-        entries: list[object] = []
-        stages_completed: list[int] = []
-        min_stage: int = 0
-        max_stage: int = CAPTURE_MAX_STAGE
-        run_id: str = "capture-test"
+        errors: ClassVar[list[str]] = []
+        warnings: ClassVar[list[str]] = []
+        entries: ClassVar[list[object]] = []
+        stages_completed: ClassVar[list[int]] = []
+        min_stage: ClassVar[int] = 0
+        max_stage: ClassVar[int] = CAPTURE_MAX_STAGE
+        run_id: ClassVar[str] = "capture-test"
 
     def fake_run_capture(
         inputs: object,

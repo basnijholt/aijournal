@@ -1,3 +1,5 @@
+"""Stage 3: extract micro-facts and store consolidated records."""
+
 from __future__ import annotations
 
 from time import perf_counter

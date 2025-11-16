@@ -210,6 +210,8 @@ class MicrofactRecord:
                 self.evidence_entries = self.evidence_entries[-max_evidence_entries:]
         if fact_key not in self.source_fact_ids:
             self.source_fact_ids.append(fact_key)
+        if fact_id and fact_id not in self.source_fact_ids:
+            self.source_fact_ids.append(fact_id)
 
     def apply_to_fact(self, fact: MicroFact) -> None:
         fact.first_seen = self.first_seen

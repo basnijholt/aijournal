@@ -33,12 +33,12 @@ class ParseResult:
         self,
         data: dict[str, object],
         body: str,
-        format: FrontMatterFormat,
+        frontmatter_format: FrontMatterFormat,
         warnings: list[str] | None = None,
     ) -> None:
         self.data = data
         self.body = body
-        self.format = format
+        self.format = frontmatter_format
         self.warnings = warnings or []
 
     def add_warning(self, message: str) -> None:
@@ -176,7 +176,7 @@ def _extract_json_block(text: str) -> tuple[str, str]:
 def _parse_delimited_frontmatter(
     text: str,
     delimiter: str,
-    format: Literal["yaml", "toml"],
+    frontmatter_format: Literal["yaml", "toml"],
 ) -> ParseResult:
     """Parse YAML or TOML front-matter with delimiter."""
     parts = text.split(delimiter, 2)
@@ -184,15 +184,17 @@ def _parse_delimited_frontmatter(
         return ParseResult(
             {},
             text,
-            format,
-            [f"Incomplete {format.upper()} front-matter block (missing closing delimiter)"],
+            frontmatter_format,
+            [
+                f"Incomplete {frontmatter_format.upper()} front-matter block (missing closing delimiter)",
+            ],
         )
 
     frontmatter_raw = parts[1].strip()
     body = parts[2].lstrip("\n")
 
     if not frontmatter_raw:
-        return ParseResult({}, body, format, ["Empty front-matter block"])
+        return ParseResult({}, body, frontmatter_format, ["Empty front-matter block"])
 
     try:
         # Note: For TOML, we're using yaml.safe_load which accepts a subset
@@ -200,28 +202,29 @@ def _parse_delimited_frontmatter(
         data = yaml.safe_load(frontmatter_raw)
 
         if data is None:
-            return ParseResult({}, body, format, ["Front-matter parsed as null/empty"])
+            return ParseResult({}, body, frontmatter_format, ["Front-matter parsed as null/empty"])
 
         if not isinstance(data, dict):
             return ParseResult(
                 {},
                 body,  # Return body, not full text
-                format,
-                [f"{format.upper()} front-matter is not a dictionary"],
+                frontmatter_format,
+                [f"{frontmatter_format.upper()} front-matter is not a dictionary"],
             )
 
         # Validate and warn about unknown keys (optional, could be removed)
-        result = ParseResult(data, body, format)
+        result = ParseResult(data, body, frontmatter_format)
         _validate_frontmatter_keys(data, result)
-        return result
 
     except yaml.YAMLError as exc:
         return ParseResult(
             {},
             text,
-            format,
-            [f"Failed to parse {format.upper()} front-matter: {exc}"],
+            frontmatter_format,
+            [f"Failed to parse {frontmatter_format.upper()} front-matter: {exc}"],
         )
+    else:
+        return result
 
 
 def _validate_frontmatter_keys(data: dict[str, object], result: ParseResult) -> None:
@@ -268,66 +271,79 @@ def parse_date_tolerant(
 
     """
     warnings: list[str] = []
+    result_dt: datetime | None = None
+    format_used = "unknown"
+
+    def _set_result(dt_value: datetime, fmt_value: str, warning: str | None = None) -> None:
+        nonlocal result_dt, format_used
+        result_dt = dt_value
+        format_used = fmt_value
+        if warning:
+            warnings.append(warning)
 
     # Handle None or missing value
     if value is None:
         if fallback is not None:
-            return DateParseResult(fallback, "fallback", ["Value is None, using fallback"])
-        return DateParseResult(
-            datetime.now(UTC),
-            "now",
-            ["Value is None and no fallback provided, using current time"],
-        )
-
-    # Handle datetime objects
-    if isinstance(value, datetime):
+            _set_result(fallback, "fallback", "Value is None, using fallback")
+        else:
+            _set_result(
+                datetime.now(UTC),
+                "now",
+                "Value is None and no fallback provided, using current time",
+            )
+    elif isinstance(value, datetime):
         dt = value if value.tzinfo else value.replace(tzinfo=UTC)
-        return DateParseResult(dt, "datetime", warnings)
-
-    # Handle date-like objects (has year, month, day)
-    if hasattr(value, "year") and hasattr(value, "month") and hasattr(value, "day"):
+        _set_result(dt, "datetime")
+    elif hasattr(value, "year") and hasattr(value, "month") and hasattr(value, "day"):
         try:
             dt = datetime(value.year, value.month, value.day, tzinfo=UTC)  # type: ignore[attr-defined]
-            return DateParseResult(dt, "date-like", warnings)
+            _set_result(dt, "date-like")
         except (TypeError, ValueError) as exc:
             warnings.append(f"Failed to construct datetime from date-like object: {exc}")
+    else:
+        text = str(value).strip()
+        if not text:
+            if fallback is not None:
+                _set_result(fallback, "fallback", "Empty string, using fallback")
+            else:
+                _set_result(
+                    datetime.now(UTC),
+                    "now",
+                    "Empty string and no fallback, using current time",
+                )
+        else:
+            parsers = [
+                _parse_iso_date,
+                _parse_yyyy_mm_dd,
+                _parse_common_text_date,
+                _parse_slashed_date,
+            ]
+            for parser in parsers:
+                try:
+                    dt_candidate, fmt_value = parser(text)
+                except ValueError:
+                    continue
+                else:
+                    if dt_candidate.tzinfo is None:
+                        dt_candidate = dt_candidate.replace(tzinfo=UTC)
+                        warnings.append(f"No timezone in '{text}', assuming UTC")
+                    _set_result(dt_candidate, fmt_value)
+                    break
+            else:
+                if fallback is not None:
+                    warnings.append(f"Failed to parse date '{text}', using fallback")
+                    _set_result(fallback, "fallback")
+                else:
+                    warnings.append(
+                        f"Failed to parse date '{text}' and no fallback, using current time",
+                    )
+                    _set_result(datetime.now(UTC), "now")
 
-    # Convert to string for parsing
-    text = str(value).strip()
-    if not text:
-        if fallback is not None:
-            return DateParseResult(fallback, "fallback", ["Empty string, using fallback"])
-        return DateParseResult(
-            datetime.now(UTC),
-            "now",
-            ["Empty string and no fallback, using current time"],
-        )
+    if result_dt is None:
+        _set_result(datetime.now(UTC), "now")
 
-    # Try parsing strategies in order of likelihood
-    parsers = [
-        _parse_iso_date,
-        _parse_yyyy_mm_dd,
-        _parse_common_text_date,
-        _parse_slashed_date,
-    ]
-
-    for parser in parsers:
-        try:
-            dt, format_used = parser(text)
-            if dt.tzinfo is None:
-                dt = dt.replace(tzinfo=UTC)
-                warnings.append(f"No timezone in '{text}', assuming UTC")
-            return DateParseResult(dt, format_used, warnings)
-        except ValueError:
-            continue
-
-    # All parsers failed
-    if fallback is not None:
-        warnings.append(f"Failed to parse date '{text}', using fallback")
-        return DateParseResult(fallback, "fallback", warnings)
-
-    warnings.append(f"Failed to parse date '{text}' and no fallback, using current time")
-    return DateParseResult(datetime.now(UTC), "now", warnings)
+    assert result_dt is not None  # for mypy
+    return DateParseResult(result_dt, format_used, warnings)
 
 
 _MONTH_PART = r"(1[0-2]|0?[1-9])"
@@ -387,9 +403,10 @@ def _infer_date_from_path(path: Path) -> tuple[datetime | None, str | None]:
         ):
             try:
                 dt = datetime(int(year_part), int(month_part), int(day_part), tzinfo=UTC)
-                return dt, f"directory components '{year_part}/{month_part}/{day_part}'"
             except ValueError:
                 continue
+            else:
+                return dt, f"directory components '{year_part}/{month_part}/{day_part}'"
 
     return None, None
 
@@ -493,10 +510,11 @@ def _parse_common_text_date(text: str) -> tuple[datetime, str]:
     for pattern, fmt in formats:
         if re.match(pattern, text):
             try:
-                dt = datetime.strptime(text.replace(",", ""), fmt)
-                return dt.replace(tzinfo=UTC), "text"
+                dt = datetime.strptime(text.replace(",", ""), fmt).replace(tzinfo=UTC)
             except ValueError:
                 continue
+            else:
+                return dt, "text"
 
     msg = "Not a common text date format"
     raise ValueError(msg)

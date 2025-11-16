@@ -46,7 +46,7 @@ logger = logging.getLogger(__name__)
 
 def journal_path(root: Path, date_str: str, slug: str) -> Path:
     try:
-        date = datetime.strptime(date_str, "%Y-%m-%d")
+        date = datetime.strptime(date_str, "%Y-%m-%d").replace(tzinfo=UTC)
     except ValueError:
         parsed = parse_date_tolerant(date_str, fallback=datetime.now(tz=UTC))
         for warning in parsed.warnings:
@@ -191,14 +191,6 @@ def pending_batches(workspace: Path, config: AppConfig) -> set[Path]:
     if not directory.exists():
         return set()
     return {path for path in directory.glob("*.yaml") if path.is_file()}
-
-
-def noop_preview(
-    proposals: Sequence[ClaimProposal],
-    claims: Sequence[ClaimAtom],
-    timestamp: str,
-) -> None:
-    del proposals, claims, timestamp
 
 
 def apply_profile_update_batch(root: Path, config: AppConfig, batch_path: Path) -> bool:

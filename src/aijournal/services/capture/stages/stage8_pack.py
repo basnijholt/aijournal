@@ -1,3 +1,5 @@
+"""Stage 8: assemble shareable persona/context packs."""
+
 from __future__ import annotations
 
 from time import perf_counter

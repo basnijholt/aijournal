@@ -27,6 +27,7 @@ class EmbeddingBackend:
     _base_host: str = field(init=False)
 
     def __post_init__(self) -> None:
+        """Normalize and cache the base Ollama host for repeated calls."""
         self._base_host = resolve_ollama_host(self.host)
 
     def embed(self, texts: Sequence[str]) -> list[list[float]]:
@@ -52,7 +53,7 @@ class EmbeddingBackend:
                     vector = payload.get("embedding")
                     if not isinstance(vector, list):
                         msg = "Ollama embedding response missing vector payload"
-                        raise RuntimeError(msg)
+                        raise TypeError(msg)
                     if self.dimension is None:
                         self.dimension = len(vector)
                     vectors.append([float(value) for value in vector])
@@ -70,7 +71,7 @@ class EmbeddingBackend:
 
     def _fake_embed(self, text: str) -> list[float]:
         seed = int.from_bytes(sha256(text.encode("utf-8")).digest()[:8], "big")
-        rng = random.Random(seed)
+        rng = random.Random(seed)  # noqa: S311 - deterministic fake embeddings for tests
         dim = self.dimension or DEFAULT_EMBED_DIM
         self.dimension = dim
         return [rng.uniform(-1.0, 1.0) for _ in range(dim)]

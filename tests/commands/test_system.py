@@ -78,7 +78,7 @@ def test_run_status_summary(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
             ),
             data=index_meta,
         ),
-        format="json",
+        file_format="json",
     )
 
     pending_dir = tmp_path / "derived" / "pending" / "profile_updates"

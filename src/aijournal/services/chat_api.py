@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import re
 from typing import TYPE_CHECKING, Any
@@ -63,6 +64,7 @@ def _default_session_id() -> str:
 def build_chat_app(root: Path, config: AppConfig | None = None) -> FastAPI:
     """Return a FastAPI app bound to the chat orchestrator."""
     app = FastAPI(title="aijournal-chatd", version="0.3.0")
+    active_tasks: list[asyncio.Task[None]] = []
 
     service = ChatService(root, config)
 
@@ -208,7 +210,14 @@ def build_chat_app(root: Path, config: AppConfig | None = None) -> FastAPI:
                     break
                 yield chunk
 
-        asyncio.create_task(_execute_capture())
+        capture_task = asyncio.create_task(_execute_capture())
+        active_tasks.append(capture_task)
+
+        def _cleanup(task: asyncio.Task[None]) -> None:
+            with contextlib.suppress(ValueError):
+                active_tasks.remove(task)
+
+        capture_task.add_done_callback(_cleanup)
         return StreamingResponse(iterator(), media_type="application/x-ndjson")
 
     @app.get("/runs/{run_id}")
