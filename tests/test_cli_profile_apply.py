@@ -105,14 +105,14 @@ def _seed_suggestions(workspace: Path) -> Path:
         user_verified=claim_input.user_verified,
         review_after_days=claim_input.review_after_days,
         normalized_ids=[proposed_claim.id],
-        evidence=[SourceRef(entry_id="2025-02-03_pref_evening", spans=[])],
+        evidence=[SourceRef(entry_id="2025-02-03_pref_evening")],
         rationale="Detected new evening preference",
     )
     facet_change = FacetChange(
         path="values_motivations.schwartz_top5",
         operation="set",
         value=["Universalism", "Benevolence"],
-        evidence=[SourceRef(entry_id="profile.snapshot", spans=[])],
+        evidence=[SourceRef(entry_id="profile.snapshot")],
     )
     proposals = ProfileUpdateProposals(
         claims=[claim_proposal],

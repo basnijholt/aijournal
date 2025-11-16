@@ -10,7 +10,7 @@ from aijournal.domain.claims import (
 from aijournal.domain.claims import (
     ClaimAtomsFile as _ClaimAtomsFile,
 )
-from aijournal.domain.claims import ClaimSource, ClaimSourceSpan
+from aijournal.domain.claims import ClaimSource
 from aijournal.domain.claims import (
     Provenance as _Provenance,
 )
@@ -35,7 +35,6 @@ __all__ = [
     "ClaimAtomsFile",
     "ClaimMethod",
     "ClaimSource",
-    "ClaimSourceSpan",
     "ClaimStatus",
     "ClaimType",
     "Provenance",

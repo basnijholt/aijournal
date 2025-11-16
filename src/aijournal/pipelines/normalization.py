@@ -9,12 +9,11 @@ from typing import TYPE_CHECKING, Any
 from aijournal.domain.claims import (
     ClaimAtom,
     ClaimSource,
-    ClaimSourceSpan,
     Provenance,
     Scope,
 )
 from aijournal.domain.enums import ClaimMethod, ClaimStatus, ClaimType
-from aijournal.domain.evidence import redact_source_text
+from aijournal.domain.evidence import SourceRef
 from aijournal.utils import time as time_utils
 from aijournal.utils.coercion import coerce_float, coerce_int
 
@@ -103,9 +102,7 @@ def normalize_sources(raw: Any) -> list[ClaimSource]:
         return sources
     for source in raw:
         if isinstance(source, ClaimSource):
-            sanitized = ClaimSource.model_validate(
-                redact_source_text(source).model_dump(mode="python"),
-            )
+            sanitized = ClaimSource.model_validate(source.model_dump(mode="python"))
             sources.append(sanitized)
             continue
         if not isinstance(source, dict):
@@ -113,27 +110,8 @@ def normalize_sources(raw: Any) -> list[ClaimSource]:
         entry_id = source.get("entry_id")
         if not entry_id:
             continue
-        spans_raw = source.get("spans")
-        spans: list[ClaimSourceSpan] = []
-        if isinstance(spans_raw, list):
-            for span in spans_raw:
-                if isinstance(span, ClaimSourceSpan):
-                    spans.append(span.model_copy(deep=True))
-                    continue
-                if not isinstance(span, dict):
-                    continue
-                spans.append(
-                    ClaimSourceSpan(
-                        type=str(span.get("type") or "excerpt"),
-                        index=coerce_int(span.get("index")),
-                        start=coerce_int(span.get("start")),
-                        end=coerce_int(span.get("end")),
-                    ),
-                )
-        source_obj = ClaimSource(entry_id=str(entry_id), spans=spans)
-        sanitized = ClaimSource.model_validate(
-            redact_source_text(source_obj).model_dump(mode="python"),
-        )
+        source_obj = ClaimSource(entry_id=str(entry_id))
+        sanitized = ClaimSource.model_validate(source_obj.model_dump(mode="python"))
         sources.append(sanitized)
     return sources
 
@@ -150,10 +128,8 @@ def _default_claim_sources(raw: ClaimAtom | dict[str, Any]) -> list[ClaimSource]
     if not claim_id:
         return []
     claim_id_str = str(claim_id)
-    source = ClaimSource(entry_id=claim_id_str, spans=[])
-    sanitized = ClaimSource.model_validate(
-        redact_source_text(source).model_dump(mode="python"),
-    )
+    source = ClaimSource(entry_id=claim_id_str)
+    sanitized = ClaimSource.model_validate(source.model_dump(mode="python"))
     return [sanitized]
 
 
@@ -193,7 +169,9 @@ def normalize_provenance(
     if (not provenance.sources) and default_sources:
         provenance.sources = [
             ClaimSource.model_validate(
-                redact_source_text(source).model_dump(mode="python"),
+                SourceRef.model_validate(source.model_dump(mode="python")).model_dump(
+                    mode="python",
+                ),
             )
             for source in default_sources
         ]
@@ -209,7 +187,7 @@ def normalize_provenance(
         provenance.observation_count = max(1, len(provenance.sources) or 1)
     provenance.sources = [
         ClaimSource.model_validate(
-            redact_source_text(source).model_dump(mode="python"),
+            SourceRef.model_validate(source.model_dump(mode="python")).model_dump(mode="python"),
         )
         for source in provenance.sources
     ]

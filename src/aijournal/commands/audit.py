@@ -1,4 +1,4 @@
-"""Governance utilities for scanning provenance spans."""
+"""Governance utilities for auditing provenance data."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from aijournal.common.config_loader import load_config, use_fake_llm
 from aijournal.common.context import RunContext, create_run_context
 from aijournal.common.meta import Artifact, ArtifactKind
 from aijournal.domain.changes import ProfileUpdateProposals
-from aijournal.domain.evidence import SourceRef, redact_source_text
+from aijournal.domain.evidence import SourceRef
 from aijournal.domain.persona import PersonaCore
 from aijournal.io.artifacts import load_artifact, save_artifact
 from aijournal.io.yaml_io import write_yaml_model
@@ -79,7 +79,7 @@ def run_audit_provenance(
     config: AppConfig,
     fix: bool,
 ) -> list[AuditFileResult]:
-    """Scan claims and derived artifacts for provenance span text."""
+    """Scan claims and derived artifacts for provenance data issues."""
     results: list[AuditFileResult] = []
 
     claims_path = resolve_path(workspace, config, "profile/claims.yaml")
@@ -291,20 +291,6 @@ def _scan_value(
 ) -> int:
     count = 0
     if isinstance(value, SourceRef):
-        spans_with_text = tuple(
-            idx for idx, span in enumerate(value.spans) if span.text not in (None, "")
-        )
-        if spans_with_text:
-            issues.append(
-                IssueDetail(
-                    path=_format_path(path),
-                    entry_id=value.entry_id,
-                    span_indices=spans_with_text,
-                ),
-            )
-            count += len(spans_with_text)
-            if fix:
-                setter(redact_source_text(value))
         return count
 
     if isinstance(value, BaseModel):

@@ -47,12 +47,6 @@
       "default": null,
       "title": "Evidence Entry"
     },
-    "evidence_para": {
-      "default": 0,
-      "minimum": 0,
-      "title": "Evidence Para",
-      "type": "integer"
-    },
     "method": {
       "anyOf": [
         {

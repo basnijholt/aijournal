@@ -19,11 +19,10 @@ from aijournal.domain.changes import ClaimProposal, FacetChange, ProfileUpdatePr
 from aijournal.domain.claims import (
     ClaimAtom,
     ClaimSource,
-    ClaimSourceSpan,
     Provenance,
     Scope,
 )
-from aijournal.domain.evidence import SourceRef, redact_source_text
+from aijournal.domain.evidence import SourceRef
 from aijournal.io.artifacts import load_artifact, load_artifact_data
 from aijournal.io.yaml_io import load_yaml_model, write_yaml_model
 from aijournal.models.authoritative import ClaimsFile, SelfProfile
@@ -322,12 +321,24 @@ def run_profile_status_command(ctx: RunContext, options: ProfileStatusOptions) -
 def _sanitize_proposals(proposals: ProfileUpdateProposals) -> ProfileUpdateProposals:
     sanitized_claims = [
         proposal.model_copy(
-            update={"evidence": [redact_source_text(ref) for ref in proposal.evidence]},
+            update={
+                "evidence": [
+                    SourceRef.model_validate(ref.model_dump(mode="python"))
+                    for ref in proposal.evidence
+                ],
+            },
         )
         for proposal in proposals.claims
     ]
     sanitized_facets = [
-        change.model_copy(update={"evidence": [redact_source_text(ref) for ref in change.evidence]})
+        change.model_copy(
+            update={
+                "evidence": [
+                    SourceRef.model_validate(ref.model_dump(mode="python"))
+                    for ref in change.evidence
+                ],
+            },
+        )
         for change in proposals.facets
     ]
     return proposals.model_copy(update={"claims": sanitized_claims, "facets": sanitized_facets})
@@ -396,7 +407,7 @@ def _claim_proposal_to_atom(
         proposal.normalized_ids,
     )
     if not evidence_sources:
-        evidence_sources = [ClaimSource(entry_id=claim_id, spans=[])]
+        evidence_sources = [ClaimSource(entry_id=claim_id)]
 
     raw_claim = {
         "id": claim_id,
@@ -464,27 +475,18 @@ def _source_refs_to_claim_sources(
     seen: set[str] = set()
 
     for ref in evidence:
-        sanitized_ref = redact_source_text(ref)
+        sanitized_ref = SourceRef.model_validate(ref.model_dump(mode="python"))
         entry_id = (sanitized_ref.entry_id or "").strip()
         if not entry_id or entry_id in seen:
             continue
-        spans = [
-            ClaimSourceSpan(
-                type=span.type,
-                index=span.index,
-                start=span.start,
-                end=span.end,
-            )
-            for span in sanitized_ref.spans or []
-        ]
-        sources.append(ClaimSource(entry_id=entry_id, spans=spans))
+        sources.append(ClaimSource(entry_id=entry_id))
         seen.add(entry_id)
 
     for fallback in fallback_ids:
         entry_id = (fallback or "").strip()
         if not entry_id or entry_id in seen:
             continue
-        sources.append(ClaimSource(entry_id=entry_id, spans=[]))
+        sources.append(ClaimSource(entry_id=entry_id))
         seen.add(entry_id)
 
     return sources
@@ -499,10 +501,10 @@ def _build_claim_atom_from_entry(
     status: str,
 ) -> ClaimAtom:
     timestamp = time_utils.format_timestamp(time_utils.now())
-    default_sources = [ClaimSource(entry_id=entry.id or claim_id, spans=[])]
+    default_sources = [ClaimSource(entry_id=entry.id or claim_id)]
     sanitized_sources = [
         ClaimSource.model_validate(
-            redact_source_text(source).model_dump(mode="python"),
+            SourceRef.model_validate(source).model_dump(mode="python"),
         )
         for source in default_sources
     ]
@@ -643,7 +645,7 @@ def _sanitize_provenance_for_compare(provenance: Provenance) -> dict[str, Any]:
     sanitized.pop("observation_count", None)
     if "sources" in sanitized and isinstance(sanitized["sources"], list):
         sanitized["sources"] = [
-            redact_source_text(SourceRef.model_validate(source)).model_dump(mode="python")
+            SourceRef.model_validate(source).model_dump(mode="python")
             for source in sanitized["sources"]
         ]
     return sanitized

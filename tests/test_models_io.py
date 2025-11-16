@@ -17,14 +17,12 @@ from aijournal.domain.changes import (
 from aijournal.domain.claims import (
     ClaimAtom,
     ClaimSource,
-    ClaimSourceSpan,
     Scope,
 )
 from aijournal.domain.evidence import SourceRef
 from aijournal.domain.facts import (
     DailySummary,
     FactEvidence,
-    FactEvidenceSpan,
     MicroFact,
     MicroFactsFile,
 )
@@ -104,7 +102,6 @@ def test_claim_file_roundtrip(tmp_path: Path) -> None:
             "sources": [
                 ClaimSource(
                     entry_id="2025-10-25_x9t3",
-                    spans=[ClaimSourceSpan(type="para", index=0)],
                 ),
             ],
             "first_seen": "2024-11-02",
@@ -196,7 +193,7 @@ def test_persona_core_roundtrip(tmp_path: Path) -> None:
         review_after_days=120,
         provenance={
             "sources": [
-                ClaimSource(entry_id="entry-1", spans=[ClaimSourceSpan(type="para", index=0)]),
+                ClaimSource(entry_id="entry-1"),
             ],
             "first_seen": "2025-01-01",
             "last_updated": "2025-02-01T10:00:00Z",
@@ -252,7 +249,6 @@ def test_microfacts_file_roundtrip(tmp_path: Path) -> None:
                 confidence=0.72,
                 evidence=FactEvidence(
                     entry_id="2025-10-25_x9t3",
-                    spans=[FactEvidenceSpan(type="para", index=0)],
                 ),
                 first_seen="2025-10-25",
                 last_seen="2025-10-25",

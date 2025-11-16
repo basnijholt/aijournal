@@ -19,7 +19,6 @@ from aijournal.domain.changes import (
 from aijournal.domain.facts import (
     DailySummary,
     FactEvidence,
-    FactEvidenceSpan,
     MicroFact,
     MicroFactsFile,
 )
@@ -122,7 +121,6 @@ def test_run_capture_records_telemetry(tmp_path: Path, monkeypatch: pytest.Monke
                     confidence=0.5,
                     evidence=FactEvidence(
                         entry_id=f"{day}-entry",
-                        spans=[FactEvidenceSpan(type="para", index=0)],
                     ),
                     first_seen=day,
                     last_seen=day,

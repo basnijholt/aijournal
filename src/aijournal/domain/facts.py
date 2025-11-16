@@ -7,8 +7,8 @@ from typing import TYPE_CHECKING
 from pydantic import Field
 
 from aijournal.common.base import StrictModel
-from aijournal.domain.changes import ClaimProposal  # noqa: TC001
-from aijournal.domain.evidence import SourceRef, Span
+from aijournal.domain.changes import ClaimProposal
+from aijournal.domain.evidence import SourceRef
 
 if TYPE_CHECKING:  # pragma: no cover
     from aijournal.models.derived import ProfileUpdatePreview
@@ -23,7 +23,6 @@ class DailySummary(StrictModel):
     todo_candidates: list[str] = Field(default_factory=list)
 
 
-FactEvidenceSpan = Span
 FactEvidence = SourceRef
 
 

@@ -68,7 +68,7 @@ def _characterization_context(
         manifest_hash = manifest_entry.hash if manifest_entry else None
         if manifest_hash:
             manifest_hashes.add(str(manifest_hash))
-        default_sources.append(ClaimSource(entry_id=entry_id, spans=[]))
+        default_sources.append(ClaimSource(entry_id=entry_id))
 
     return normalized_ids, sorted(manifest_hashes), default_sources
 
