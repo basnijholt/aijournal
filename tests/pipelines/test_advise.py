@@ -29,16 +29,13 @@ def _claim(claim_id: str) -> ClaimAtom:
 
 
 def test_generate_advice_fake_mode() -> None:
-    def request_advice() -> AdviceCard:  # pragma: no cover - fake mode skips
-        raise AssertionError("LLM request should not run in fake mode")
-
     card = advise.generate_advice(
         "How should I focus?",
         profile={"values": {"top": ["Focus"]}},
         claims=[_claim("claim-1")],
         use_fake_llm=True,
         advice_identifier=lambda q: "adv-test",
-        request_advice=request_advice,
+        llm_advice=None,
         rankings=[],
         pending_prompts=["Follow up"],
     )
@@ -58,22 +55,15 @@ def test_generate_advice_llm_path() -> None:
         confidence=0.5,
     )
 
-    called: dict[str, bool] = {"invoked": False}
-
-    def request_advice() -> AdviceCard:
-        called["invoked"] = True
-        return response
-
     card = advise.generate_advice(
         "How should I focus?",
         profile={},
         claims=[],
         use_fake_llm=False,
-        advice_identifier=lambda q: "adv-test",  # pragma: no cover - live mode uses response id
-        request_advice=request_advice,
+        advice_identifier=lambda q: "adv-test",
+        llm_advice=response,
         rankings=[],
         pending_prompts=[],
     )
 
-    assert called["invoked"]
     assert card.id == "adv-1234"

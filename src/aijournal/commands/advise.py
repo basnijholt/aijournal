@@ -224,8 +224,9 @@ def _advice_payload(
         for target in rankings[:8]
     ]
 
-    def request_advice() -> AdviceCard:
-        return cast(
+    llm_advice: AdviceCard | None = None
+    if not use_fake_llm:
+        llm_advice = cast(
             AdviceCard,
             _invoke_structured_llm(
                 "prompts/advise.md",
@@ -252,7 +253,7 @@ def _advice_payload(
         claims,
         use_fake_llm=use_fake_llm,
         advice_identifier=_advice_identifier,
-        request_advice=request_advice,
+        llm_advice=llm_advice,
         rankings=rankings,
         pending_prompts=pending_prompts,
     )

@@ -9,9 +9,6 @@ from aijournal.domain.claims import ClaimAtom
 from aijournal.fakes import fake_advise
 from aijournal.models.derived import AdviceCard
 
-AdviceRequest = Callable[[], AdviceCard]
-AdviceIdentifier = Callable[[str], str]
-
 
 def generate_advice(
     question: str,
@@ -19,8 +16,8 @@ def generate_advice(
     claims: Sequence[ClaimAtom],
     *,
     use_fake_llm: bool,
-    advice_identifier: AdviceIdentifier,
-    request_advice: AdviceRequest,
+    advice_identifier: Callable[[str], str],
+    llm_advice: AdviceCard | None,
     rankings: Sequence[object],
     pending_prompts: Sequence[str],
 ) -> AdviceCard:
@@ -36,8 +33,10 @@ def generate_advice(
             pending_prompts=pending_prompts,
         )
 
-    response = request_advice()
-    advice = response.model_copy(deep=True)
+    if llm_advice is None:
+        msg = "llm_advice must be provided when fake mode is disabled"
+        raise ValueError(msg)
+    advice = llm_advice.model_copy(deep=True)
     if not advice.id:
         advice.id = advice_identifier(question)
     return advice
