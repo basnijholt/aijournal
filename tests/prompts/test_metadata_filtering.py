@@ -34,7 +34,7 @@ def test_is_metadata_only_fact_detects_common_patterns() -> None:
 
 def test_is_metadata_only_fact_allows_grounded_content() -> None:
     assert not is_metadata_only_fact(
-        _fact(statement="Completed 2h focus block on auth plan", fact_id="focus-block")
+        _fact(statement="Completed 2h focus block on auth plan", fact_id="focus-block"),
     )
 
 
@@ -43,7 +43,7 @@ def test_convert_prompt_microfacts_filters_metadata_only_entries() -> None:
         facts=[
             _fact(fact_id="entry-created-foo", statement="Entry created on 2025-11-14"),
             _fact(fact_id="focus-block", statement="Completed 2h focus block"),
-        ]
+        ],
     )
 
     result = convert_prompt_microfacts(prompt)

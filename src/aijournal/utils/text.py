@@ -24,7 +24,6 @@ INVISIBLE_PREFIX_CHARACTERS = {
 
 def strip_invisible_prefix(text: str) -> str:
     """Remove invisible control characters that precede visible content."""
-
     index = 0
     length = len(text)
     while index < length:

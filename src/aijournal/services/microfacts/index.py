@@ -4,29 +4,32 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from hashlib import sha256
 from math import log1p
 from pathlib import Path
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import chromadb
-from chromadb.api import ClientAPI, Collection
 from chromadb.config import Settings
 from pydantic import ValidationError
 
-from aijournal.common.app_config import AppConfig, MicrofactIndexConfig
 from aijournal.common.constants import DEFAULT_EMBEDDING_MODEL
 from aijournal.domain.facts import MicroFact, MicroFactsFile
 from aijournal.io.artifacts import load_artifact_data
 from aijournal.io.yaml_io import load_yaml_model
 from aijournal.services.embedding import EmbeddingBackend
 
+if TYPE_CHECKING:
+    from collections.abc import Iterable, Sequence
+
+    from chromadb.api import ClientAPI, Collection
+
+    from aijournal.common.app_config import AppConfig, MicrofactIndexConfig
+
 
 def canonicalize_statement(text: str) -> str:
     """Normalize statements for deterministic matching."""
-
     return " ".join(text.lower().strip().split())
 
 
@@ -103,7 +106,7 @@ class MicrofactRecord:
                 encoded[key] = json.dumps(value)
             else:
                 encoded[key] = value
-        return cast(dict[str, str | int | float | bool | None], encoded)
+        return cast("dict[str, str | int | float | bool | None]", encoded)
 
     @classmethod
     def from_microfact(
@@ -199,15 +202,12 @@ class MicrofactRecord:
         merged_confidence = (self.confidence * weight_existing + confidence) / total_weight
         self.confidence = max(0.0, min(1.0, merged_confidence))
         self.observation_count += 1
-        if date < self.first_seen:
-            self.first_seen = date
-        if date > self.last_seen:
-            self.last_seen = date
-        if evidence_entry:
-            if evidence_entry not in self.evidence_entries:
-                self.evidence_entries.append(evidence_entry)
-                if len(self.evidence_entries) > max(1, max_evidence_entries):
-                    self.evidence_entries = self.evidence_entries[-max_evidence_entries:]
+        self.first_seen = min(self.first_seen, date)
+        self.last_seen = max(self.last_seen, date)
+        if evidence_entry and evidence_entry not in self.evidence_entries:
+            self.evidence_entries.append(evidence_entry)
+            if len(self.evidence_entries) > max(1, max_evidence_entries):
+                self.evidence_entries = self.evidence_entries[-max_evidence_entries:]
         if fact_key not in self.source_fact_ids:
             self.source_fact_ids.append(fact_key)
 
@@ -301,7 +301,6 @@ class MicrofactIndex:
 
     def reset(self) -> None:
         """Drop the existing collection and start fresh."""
-
         try:
             self._client.reset()
         except Exception:  # pragma: no cover - fallback for transports without reset
@@ -310,7 +309,6 @@ class MicrofactIndex:
 
     def upsert(self, records: Sequence[MicrofactRecord]) -> None:
         """Insert or update the provided microfacts in the index."""
-
         filtered = [record for record in records if record.statement]
         if not filtered:
             return
@@ -323,9 +321,9 @@ class MicrofactIndex:
         metadatas = [record.metadata for record in filtered]
         self._collection.upsert(
             ids=ids,
-            embeddings=cast(Any, embeddings),
+            embeddings=cast("Any", embeddings),
             documents=documents,
-            metadatas=cast(Any, metadatas),
+            metadatas=cast("Any", metadatas),
         )
 
     def query_similar(
@@ -336,14 +334,13 @@ class MicrofactIndex:
         where: dict[str, Any] | None = None,
     ) -> list[MicrofactMatch]:
         """Return the closest matching microfacts for the supplied text."""
-
         normalized = statement.strip()
         if not normalized:
             return []
         k = top_k or self._microfacts_config.default_top_k
         query_embedding = self._embedder.embed_one(normalized)
         payload = self._collection.query(
-            query_embeddings=cast(Any, [query_embedding]),
+            query_embeddings=cast("Any", [query_embedding]),
             n_results=k,
             where=where,
             include=["metadatas", "documents", "distances"],
@@ -364,7 +361,7 @@ class MicrofactIndex:
                     statement=document,
                     distance=float(distance) if distance is not None else None,
                     metadata=metadata or {},
-                )
+                ),
             )
         return matches
 
@@ -389,7 +386,7 @@ class MicrofactIndex:
             metadata_mapping = metadatas[idx] if idx < len(metadatas) else {}
             metadata = dict(metadata_mapping or {})
             record = MicrofactRecord.from_match(
-                MicrofactMatch(uid=uid, statement=statement, distance=None, metadata=metadata)
+                MicrofactMatch(uid=uid, statement=statement, distance=None, metadata=metadata),
             )
             if record:
                 records.append(record)
@@ -402,7 +399,6 @@ class MicrofactIndex:
         chunk_size: int = 64,
     ) -> MicrofactRebuildResult:
         """Reset and repopulate the index from YAML artifacts."""
-
         location = microfacts_dir or self._daily_dir
         if not location.exists():
             self.reset()
@@ -457,7 +453,7 @@ class MicrofactIndex:
                     processed=processed,
                     new_records=new_records,
                     merged_records=merged_records,
-                )
+                ),
             )
 
         self.reset()

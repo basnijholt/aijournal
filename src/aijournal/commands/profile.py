@@ -3,16 +3,14 @@
 from __future__ import annotations
 
 import hashlib
-from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 import typer
 from pydantic import BaseModel, ValidationError
 
-from aijournal.common.app_config import AppConfig
 from aijournal.common.command_runner import run_command_pipeline
 from aijournal.common.config_loader import load_config, load_yaml, use_fake_llm
 from aijournal.common.context import RunContext, create_run_context
@@ -26,7 +24,6 @@ from aijournal.domain.claims import (
     Scope,
 )
 from aijournal.domain.evidence import SourceRef, redact_source_text
-from aijournal.domain.journal import NormalizedEntry
 from aijournal.io.artifacts import load_artifact, load_artifact_data
 from aijournal.io.yaml_io import load_yaml_model, write_yaml_model
 from aijournal.models.authoritative import ClaimsFile, SelfProfile
@@ -34,6 +31,12 @@ from aijournal.models.derived import ProfileUpdateBatch
 from aijournal.pipelines import normalization
 from aijournal.services.consolidator import ClaimConsolidator, ClaimMergeOutcome
 from aijournal.utils import time as time_utils
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable, Sequence
+
+    from aijournal.common.app_config import AppConfig
+    from aijournal.domain.journal import NormalizedEntry
 
 DEFAULT_PROFILE_RETRIES = 1
 
@@ -99,7 +102,6 @@ def run_profile_apply(
     workspace: Path | None = None,
 ) -> str:
     """Apply previously generated profile suggestions."""
-
     workspace = workspace or Path.cwd()
     config = load_config(workspace)
     ctx = create_run_context(
@@ -320,7 +322,7 @@ def run_profile_status_command(ctx: RunContext, options: ProfileStatusOptions) -
 def _sanitize_proposals(proposals: ProfileUpdateProposals) -> ProfileUpdateProposals:
     sanitized_claims = [
         proposal.model_copy(
-            update={"evidence": [redact_source_text(ref) for ref in proposal.evidence]}
+            update={"evidence": [redact_source_text(ref) for ref in proposal.evidence]},
         )
         for proposal in proposals.claims
     ]
@@ -350,7 +352,6 @@ def _proposal_claim_id(
     existing_ids: set[str] | None = None,
 ) -> str:
     """Derive a stable, unique ID per statement/normalized_id combination."""
-
     _ = existing_ids  # retained for backward compatibility; collisions are deterministic
     normalized_statement = " ".join(statement.split()).lower()
     digest = hashlib.sha256(normalized_statement.encode("utf-8")).hexdigest()[:8]
@@ -544,8 +545,8 @@ def load_profile_components(
     Args:
         root: Workspace directory root.
         config: Application configuration containing path settings.
-    """
 
+    """
     profile_dir = Path(config.paths.profile)
     if not profile_dir.is_absolute():
         profile_dir = root / profile_dir
@@ -665,7 +666,7 @@ def _structures_equal(lhs: Any, rhs: Any) -> bool:
     if isinstance(lhs, list) and isinstance(rhs, list):
         if len(lhs) != len(rhs):
             return False
-        return all(_structures_equal(a, b) for a, b in zip(lhs, rhs))
+        return all(_structures_equal(a, b) for a, b in zip(lhs, rhs, strict=False))
     return lhs == rhs
 
 

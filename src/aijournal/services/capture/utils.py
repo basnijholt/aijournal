@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import json
 import logging
-from collections.abc import Callable, Iterable, Mapping, Sequence
 from datetime import UTC, datetime
 from hashlib import sha256
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import yaml
 
@@ -17,9 +17,7 @@ from aijournal.commands.profile import (
     load_profile_components,
     profile_to_dict,
 )
-from aijournal.common.app_config import AppConfig
 from aijournal.common.constants import MARKDOWN_SUFFIXES
-from aijournal.domain.changes import ClaimProposal, FacetChange
 from aijournal.domain.claims import ClaimAtom, ClaimSource
 from aijournal.domain.evidence import redact_source_text
 from aijournal.domain.journal import NormalizedEntry
@@ -28,7 +26,6 @@ from aijournal.io.yaml_io import dump_yaml, write_yaml_model
 from aijournal.models.authoritative import ClaimsFile, JournalSection, ManifestEntry, SelfProfile
 from aijournal.models.derived import ProfileUpdateBatch
 from aijournal.pipelines import normalization
-from aijournal.services.capture.results import OperationResult
 from aijournal.services.capture.tolerant import (
     parse_date_tolerant,
     split_frontmatter_tolerant,
@@ -36,6 +33,13 @@ from aijournal.services.capture.tolerant import (
 from aijournal.utils import time as time_utils
 from aijournal.utils.paths import normalized_entry_path
 from aijournal.utils.text import strip_invisible_prefix
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Iterable, Mapping, Sequence
+
+    from aijournal.common.app_config import AppConfig
+    from aijournal.domain.changes import ClaimProposal, FacetChange
+    from aijournal.services.capture.results import OperationResult
 
 logger = logging.getLogger(__name__)
 
@@ -164,7 +168,8 @@ def discover_markdown_files(paths: Sequence[str]) -> list[Path]:
             if candidate.suffix.lower() in MARKDOWN_SUFFIXES:
                 collected.append(candidate)
             continue
-        raise FileNotFoundError(f"capture --from path not found: {raw}")
+        msg = f"capture --from path not found: {raw}"
+        raise FileNotFoundError(msg)
 
     unique: list[Path] = []
     seen: set[Path] = set()
@@ -192,7 +197,6 @@ def noop_preview(
     timestamp: str,
 ) -> None:
     del proposals, claims, timestamp
-    return None
 
 
 def apply_profile_update_batch(root: Path, config: AppConfig, batch_path: Path) -> bool:
@@ -278,7 +282,6 @@ def emit_operation_event(
     extra: Mapping[str, object] | None = None,
 ) -> None:
     """Emit a consistent telemetry payload for non-stage capture events."""
-
     payload: dict[str, object] = {"event": event, "status": status}
     if result.message:
         payload["message"] = result.message
@@ -335,7 +338,8 @@ def extract_json_frontmatter_block(text: str) -> tuple[str, str]:
             if char.isspace():
                 continue
             if char != "{":
-                raise ValueError("JSON frontmatter must start with '{'")
+                msg = "JSON frontmatter must start with '{'"
+                raise ValueError(msg)
             start_index = index
             depth = 1
             continue
@@ -364,7 +368,8 @@ def extract_json_frontmatter_block(text: str) -> tuple[str, str]:
                 block = text[start_index:end_index]
                 remainder = text[end_index:]
                 return block, remainder
-    raise ValueError("Unterminated JSON frontmatter block")
+    msg = "Unterminated JSON frontmatter block"
+    raise ValueError(msg)
 
 
 def _extract_json_frontmatter(text: str) -> tuple[dict[str, object], str]:
@@ -372,7 +377,8 @@ def _extract_json_frontmatter(text: str) -> tuple[dict[str, object], str]:
     try:
         data = json.loads(block) or {}
     except json.JSONDecodeError as exc:  # pragma: no cover - defensive
-        raise ValueError("Invalid JSON frontmatter") from exc
+        msg = "Invalid JSON frontmatter"
+        raise ValueError(msg) from exc
     if not isinstance(data, dict):
         data = {}
     return data, body.lstrip("\n")

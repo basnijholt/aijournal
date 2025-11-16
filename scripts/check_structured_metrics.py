@@ -6,9 +6,12 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING, Self
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
 
 
 @dataclass
@@ -17,7 +20,7 @@ class MetricsSummary:
     repair_attempts: int = 0
     coercions: int = 0
 
-    def __iadd__(self, other: MetricsSummary) -> MetricsSummary:  # pragma: no cover - convenience
+    def __iadd__(self, other: MetricsSummary) -> Self:  # pragma: no cover - convenience
         self.calls += other.calls
         self.repair_attempts += other.repair_attempts
         self.coercions += other.coercions
@@ -74,12 +77,10 @@ def main() -> int:
 
     entries = list(_load_metrics(args.path))
     if not entries:
-        print(f"No metrics found at {args.path}; skipping thresholds.")
         return 0
 
     summary = _summarise(entries)
     if summary.calls == 0:
-        print("No structured calls recorded; skipping thresholds.")
         return 0
 
     repair_rate = summary.repair_attempts / summary.calls
@@ -87,19 +88,9 @@ def main() -> int:
 
     ok = True
     if repair_rate > args.max_repair_rate:
-        print(f"Repair rate {repair_rate:.3f} exceeded threshold {args.max_repair_rate:.3f}")
         ok = False
     if avg_coercions > args.max_avg_coercions:
-        print(
-            f"Average coercions {avg_coercions:.3f} exceeded threshold {args.max_avg_coercions:.3f}"
-        )
         ok = False
-
-    print(
-        f"Metrics: calls={summary.calls} repairs={summary.repair_attempts} "
-        f"coercions={summary.coercions} repair_rate={repair_rate:.3f} "
-        f"avg_coercions={avg_coercions:.3f}"
-    )
 
     return 0 if ok else 1
 

@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import tempfile
-from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from aijournal.commands.init import run_init
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
 
 
 @dataclass(slots=True)
@@ -30,7 +33,6 @@ class FixtureWorkspace:
 
 def build_fixture_workspace(base_dir: Path | None = None) -> FixtureWorkspace:
     """Create a temporary workspace pre-populated with messy entries."""
-
     if base_dir is None:
         tmp_root = Path(tempfile.mkdtemp(prefix="aijournal-sim-"))
     else:
@@ -59,7 +61,6 @@ def build_fixture_workspace(base_dir: Path | None = None) -> FixtureWorkspace:
 
 def _fixture_definitions() -> Iterable[dict[str, str]]:
     """Yield deterministic entry definitions spanning multiple formats/dates."""
-
     return [
         {
             "label": "good_yaml",

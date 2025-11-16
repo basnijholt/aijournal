@@ -3,13 +3,17 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timezone
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 import yaml
-from typer.testing import CliRunner
 
 from aijournal.cli import app
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from typer.testing import CliRunner
 
 FROZEN_NOW = datetime(2025, 1, 2, 9, 30, 15, tzinfo=UTC)
 
@@ -50,7 +54,7 @@ def _collect_journal_files(workspace: Path) -> set[Path]:
     journal_root = workspace / "data" / "journal"
     if not journal_root.exists():
         return set()
-    return {path for path in journal_root.rglob("*.md")}
+    return set(journal_root.rglob("*.md"))
 
 
 def test_new_creates_journal_entry(

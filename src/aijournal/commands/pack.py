@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import typer
 from pydantic import BaseModel
@@ -12,7 +13,6 @@ from pydantic import BaseModel
 from aijournal.commands.index import _index_settings
 from aijournal.commands.ingest import _relative_source_path
 from aijournal.commands.persona import ensure_persona_ready_for_pack
-from aijournal.common.app_config import AppConfig
 from aijournal.common.command_runner import run_command_pipeline
 from aijournal.common.config_loader import load_config, use_fake_llm
 from aijournal.common.context import RunContext, create_run_context
@@ -24,6 +24,9 @@ from aijournal.pipelines import index as index_pipeline
 from aijournal.pipelines import pack as pack_pipeline
 from aijournal.utils import time as time_utils
 from aijournal.utils.paths import resolve_path
+
+if TYPE_CHECKING:
+    from aijournal.common.app_config import AppConfig
 
 
 class PackOptions(BaseModel):
@@ -156,7 +159,7 @@ def invoke_pipeline(ctx: RunContext, prepared: PackPrepared) -> PackResult:
                 path=rel,
                 tokens=tokens,
                 content=text,
-            )
+            ),
         )
 
     total_tokens = sum(entry.tokens for entry in entries_payload)

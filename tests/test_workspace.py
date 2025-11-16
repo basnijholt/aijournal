@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
-from typer.testing import CliRunner
 
 from aijournal.cli import (
     CLISettings,
@@ -14,6 +14,9 @@ from aijournal.cli import (
     app,
 )
 from aijournal.services.capture import CAPTURE_MAX_STAGE
+
+if TYPE_CHECKING:
+    from typer.testing import CliRunner
 
 
 def _set_cli_workspace(monkeypatch: pytest.MonkeyPatch, workspace: Path | None) -> None:
@@ -132,7 +135,9 @@ def test_status_command_respects_workspace_option(
 
 
 def test_capture_uses_workspace_option(
-    tmp_path: Path, cli_runner: CliRunner, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
+    cli_runner: CliRunner,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     workspace = tmp_path / "journal"
     result = cli_runner.invoke(app, ["--path", str(workspace), "init"])
@@ -150,7 +155,10 @@ def test_capture_uses_workspace_option(
         run_id: str = "capture-test"
 
     def fake_run_capture(
-        inputs: object, *, root: Path | None = None, **kwargs: object
+        inputs: object,
+        *,
+        root: Path | None = None,
+        **kwargs: object,
     ) -> DummyResult:
         captured["root"] = root
         return DummyResult()

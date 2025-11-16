@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from pydantic import Field, field_validator
 
@@ -11,6 +10,9 @@ from aijournal.common.base import StrictModel
 from aijournal.domain.claims import Scope
 from aijournal.domain.enums import ClaimMethod, ClaimStatus, ClaimType, FacetOperation
 from aijournal.domain.evidence import SourceRef, Span
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
 
 
 def _clean_text(value: str | None) -> str | None:
@@ -25,7 +27,8 @@ def _enforce_word_limit(value: str | None, limit: int) -> str | None:
         return None
     words = value.split()
     if len(words) > limit:
-        raise ValueError(f"reason must be ≤{limit} words (got {len(words)})")
+        msg = f"reason must be ≤{limit} words (got {len(words)})"
+        raise ValueError(msg)
     return value
 
 
@@ -53,7 +56,8 @@ class PromptClaimItem(StrictModel):
         if isinstance(value, str):
             value = value.strip()
         if not value:
-            raise ValueError("statement cannot be empty")
+            msg = "statement cannot be empty"
+            raise ValueError(msg)
         return value
 
     @field_validator("subject", "predicate", mode="before")
@@ -90,7 +94,8 @@ class PromptFacetItem(StrictModel):
     def _validate_path(cls, value: str) -> str:
         text = value.strip()
         if not text:
-            raise ValueError("path cannot be empty")
+            msg = "path cannot be empty"
+            raise ValueError(msg)
         return text
 
     @field_validator("reason")
@@ -104,7 +109,8 @@ class PromptFacetItem(StrictModel):
     def _validate_value(cls, value: Any | None, info: Any) -> Any | None:
         operation = info.data.get("operation")
         if operation in {FacetOperation.SET, FacetOperation.MERGE} and value is None:
-            raise ValueError("value required for set/merge operations")
+            msg = "value required for set/merge operations"
+            raise ValueError(msg)
         return value
 
 
@@ -186,7 +192,8 @@ class PromptMicroFact(StrictModel):
         if isinstance(value, str):
             value = value.strip()
         if not value:
-            raise ValueError("statement cannot be empty")
+            msg = "statement cannot be empty"
+            raise ValueError(msg)
         return value
 
 
@@ -233,7 +240,6 @@ def is_metadata_only_fact(item: PromptMicroFact) -> bool:
     or that omit an `evidence_entry`, which means the fact cannot be grounded in a
     specific paragraph.
     """
-
     identifier = item.id.lower()
     statement = item.statement.lower()
 
@@ -243,15 +249,11 @@ def is_metadata_only_fact(item: PromptMicroFact) -> bool:
     if any(hint in identifier for hint in _METADATA_ID_HINTS):
         return True
 
-    if any(hint in statement for hint in _METADATA_STATEMENT_HINTS):
-        return True
-
-    return False
+    return bool(any(hint in statement for hint in _METADATA_STATEMENT_HINTS))
 
 
 def convert_prompt_microfacts(prompt: PromptMicroFacts) -> Any:  # Returns MicroFactsFile
     """Convert lightweight prompt DTO to the authoritative micro-facts payload."""
-
     from aijournal.domain.facts import MicroFact, MicroFactsFile
 
     filtered_facts = [fact for fact in prompt.facts if not is_metadata_only_fact(fact)]
@@ -337,7 +339,7 @@ def convert_prompt_updates_to_proposals(
                 item,
                 normalized_ids=claim_ids,
                 manifest_hashes=claim_hashes,
-            )
+            ),
         )
 
     facets = [convert_prompt_facet_to_change(item) for item in prompt_updates.facets]

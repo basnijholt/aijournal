@@ -6,7 +6,6 @@ import json
 from typing import TYPE_CHECKING
 
 import yaml
-from typer.testing import CliRunner
 
 from aijournal.cli import app
 from aijournal.io.yaml_io import dump_yaml
@@ -14,6 +13,8 @@ from tests.helpers import make_claim_atom
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+    from typer.testing import CliRunner
 
 
 def _seed_claims(workspace: Path) -> None:

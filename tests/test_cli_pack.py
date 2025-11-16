@@ -7,7 +7,6 @@ from math import ceil
 from typing import TYPE_CHECKING
 
 import yaml
-from typer.testing import CliRunner
 
 from aijournal.cli import app
 from aijournal.common.meta import Artifact, ArtifactKind, ArtifactMeta
@@ -28,6 +27,8 @@ from tests.helpers import make_claim_atom
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+    from typer.testing import CliRunner
 
 DATE = "2025-02-03"
 ENTRY_ID = "2025-02-03-sync-notes"
@@ -151,7 +152,7 @@ def _seed_profile_update_batch(tmp_path: Path, day: str = DATE) -> Path:
             strength=0.68,
             status="tentative",
             last_updated=f"{day}T11:00:00Z",
-        )
+        ),
     )
     claim_input = ClaimAtomInput(
         type=claim_model.type,
@@ -195,7 +196,7 @@ def _seed_profile_update_batch(tmp_path: Path, day: str = DATE) -> Path:
                 id=ENTRY_ID,
                 normalized_path=f"data/normalized/{day}/{ENTRY_ID}.yaml",
                 source_hash="hash",
-            )
+            ),
         ],
         proposals=payload,
         preview=ProfileUpdatePreview(),
@@ -527,7 +528,7 @@ def test_pack_respects_token_estimator_config(
 
     normalized_entry = next(entry for entry in files if entry["path"] == normalized_path)
     normalized_file = (cli_workspace / "data" / "normalized" / DATE / f"{ENTRY_ID}.yaml").read_text(
-        encoding="utf-8"
+        encoding="utf-8",
     )
     expected_tokens = ceil(len(normalized_file) / 2.0)
     assert normalized_entry["tokens"] == expected_tokens

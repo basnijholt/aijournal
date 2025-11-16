@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from typer.testing import CliRunner
-
 from aijournal.cli import app
 from aijournal.utils.paths import AUTHORITATIVE_DIRS, DERIVED_DIRS
 
@@ -14,6 +12,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     import pytest
+    from typer.testing import CliRunner
 
 
 ALL_LAYOUT_DIRS = set(AUTHORITATIVE_DIRS) | set(DERIVED_DIRS)

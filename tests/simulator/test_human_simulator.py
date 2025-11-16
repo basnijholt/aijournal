@@ -3,21 +3,25 @@
 from __future__ import annotations
 
 import shutil
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
 from aijournal.simulator.orchestrator import HumanSimulator
 from aijournal.simulator.validators import StageValidatorRegistry, ValidatorContext
 
+if TYPE_CHECKING:
+    from pathlib import Path
 
-@pytest.fixture()
+
+@pytest.fixture
 def simulator_workspace(tmp_path: Path) -> Path:
     return tmp_path / "sim-workspace"
 
 
 def test_simulator_runs_end_to_end(
-    monkeypatch: pytest.MonkeyPatch, simulator_workspace: Path
+    monkeypatch: pytest.MonkeyPatch,
+    simulator_workspace: Path,
 ) -> None:
     monkeypatch.setenv("AIJOURNAL_FAKE_OLLAMA", "1")
     simulator = HumanSimulator(max_stage=7)
@@ -42,7 +46,7 @@ def test_simulator_runs_end_to_end(
                 seen_stage_ids.add(stage_id)
                 break
 
-    assert seen_stage_ids == set(range(0, 8)), "missing stage results for one or more stages"
+    assert seen_stage_ids == set(range(8)), "missing stage results for one or more stages"
     assert report.workspace.exists()
 
     changed_dates = {

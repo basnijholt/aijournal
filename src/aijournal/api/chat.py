@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic import Field
 
 from aijournal.common.base import StrictModel
-from aijournal.domain.index import RetrievedChunk
+
+if TYPE_CHECKING:
+    from aijournal.domain.index import RetrievedChunk
 
 
 class ChatCitation(StrictModel):

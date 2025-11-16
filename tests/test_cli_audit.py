@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
-import pytest
 import yaml
 from typer.testing import CliRunner
 
@@ -17,6 +16,11 @@ from aijournal.io.artifacts import load_artifact, save_artifact
 from aijournal.io.yaml_io import dump_yaml
 from aijournal.models.derived import ProfileUpdateBatch
 from tests.helpers import make_claim_atom
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    import pytest
 
 
 def _write_claims_with_text(path: Path) -> None:
@@ -68,7 +72,7 @@ def _write_profile_update_batch(path: Path) -> None:
                 spans=[
                     Span(type="quote", index=0, start=0, end=12, text="Another secret"),
                 ],
-            )
+            ),
         ],
         manifest_hashes=["hash-123"],
     )
@@ -88,12 +92,13 @@ def _write_profile_update_batch(path: Path) -> None:
 
 
 def test_audit_provenance_reports_and_fixes(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     workspace = tmp_path
     _write_claims_with_text(workspace / "profile" / "claims.yaml")
     _write_profile_update_batch(
-        workspace / "derived" / "pending" / "profile_updates" / "batch.yaml"
+        workspace / "derived" / "pending" / "profile_updates" / "batch.yaml",
     )
 
     runner = CliRunner()

@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from pydantic import Field
 
 from aijournal.common.base import StrictModel
-from aijournal.common.types import TimestampStr
+
+if TYPE_CHECKING:
+    from aijournal.common.types import TimestampStr
 
 
 class PackEntry(StrictModel):

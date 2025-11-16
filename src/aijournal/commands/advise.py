@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import typer
 from pydantic import BaseModel, ValidationError
@@ -23,17 +22,21 @@ from aijournal.commands.summarize import (
     _json_block,
     _load_normalized_entries,
 )
-from aijournal.common.app_config import AppConfig
 from aijournal.common.command_runner import run_command_pipeline
-from aijournal.common.context import RunContext
 from aijournal.common.meta import Artifact, ArtifactKind
-from aijournal.domain.claims import ClaimAtom
 from aijournal.io.artifacts import load_artifact, save_artifact
 from aijournal.models.derived import AdviceCard, ProfileUpdateBatch
 from aijournal.pipelines import advise as advise_pipeline
 from aijournal.services.ollama import invoke_structured_llm, resolve_model_name
 from aijournal.utils import time as time_utils
 from aijournal.utils.paths import resolve_path
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+    from aijournal.common.app_config import AppConfig
+    from aijournal.common.context import RunContext
+    from aijournal.domain.claims import ClaimAtom
 
 
 class AdviceOptions(BaseModel):
@@ -169,7 +172,9 @@ def run_advise(question: str, workspace: Path | None = None) -> Path:
 
 
 def _collect_pending_interview_prompts(
-    workspace: Path, config: AppConfig, limit: int = 5
+    workspace: Path,
+    config: AppConfig,
+    limit: int = 5,
 ) -> list[str]:
     directory = resolve_path(workspace, config, "derived/pending") / "profile_updates"
     if not directory.exists():
@@ -232,7 +237,7 @@ def _advice_payload(
                 "question": question,
                 "profile_json": _json_block(profile),
                 "claims_json": _json_block(
-                    {"claims": [claim.model_dump(mode="python") for claim in claims]}
+                    {"claims": [claim.model_dump(mode="python") for claim in claims]},
                 ),
                 "rankings_json": _json_block(rankings_payload),
                 "pending_prompts_json": _json_block(list(pending_prompts)),

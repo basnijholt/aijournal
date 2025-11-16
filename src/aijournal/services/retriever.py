@@ -147,7 +147,7 @@ class Retriever:
                     manifest_hash=chunk.manifest_hash,
                     chunk_type=chunk.chunk_type,
                     score=final_score,
-                )
+                ),
             )
             if len(scored) >= k:
                 break

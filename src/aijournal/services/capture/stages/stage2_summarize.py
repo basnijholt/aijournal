@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-from pathlib import Path
 from time import perf_counter
 from typing import TYPE_CHECKING
 
-from aijournal.common.app_config import AppConfig
-
 if TYPE_CHECKING:
-    from .. import CaptureInput, SummarizeStage2Outputs
+    from pathlib import Path
+
+    from aijournal.common.app_config import AppConfig
+    from aijournal.services.capture import CaptureInput, SummarizeStage2Outputs
 
 
 def run_summarize_stage_2(
@@ -16,12 +16,9 @@ def run_summarize_stage_2(
     root: Path,
     config: AppConfig,
 ) -> SummarizeStage2Outputs:
-    from .. import (
-        OperationResult,
-        SummarizeStage2Outputs,
-    )
-    from ..graceful import graceful_summarize
-    from ..utils import relative_path
+    from aijournal.services.capture import OperationResult, SummarizeStage2Outputs
+    from aijournal.services.capture.graceful import graceful_summarize
+    from aijournal.services.capture.utils import relative_path
 
     stage_start = perf_counter()
     summary_paths: list[str] = []

@@ -91,13 +91,12 @@ def build_pretty_sink() -> StructuredLogSink:
         error = payload.get("error")
         if error:
             message += f" error={error}"
-        print(message)
 
     return _sink
 
 
 def build_json_sink() -> StructuredLogSink:
     def _sink(payload: dict[str, Any]) -> None:
-        print(json.dumps(payload, ensure_ascii=False, default=_default_encoder))
+        pass
 
     return _sink

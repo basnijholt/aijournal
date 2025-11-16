@@ -243,35 +243,25 @@ def _persist_results(results: list[dict[str, Any]], repo_root: Path) -> Path:
 def _summarize(results: list[dict[str, Any]]) -> None:
     failures: list[dict[str, Any]] = []
     for entry in results:
-        status = "PASS" if entry["succeeded"] else "FAIL"
-        marker = ""
+        "PASS" if entry["succeeded"] else "FAIL"
         if not entry["met_expectation"]:
-            marker = " (unexpected result)"
             failures.append(entry)
         elif not entry["expect_success"]:
-            marker = " (expected failure)"
+            pass
 
-        print(f"[{status}] {entry['name']}{marker} — {entry['duration_seconds']:.2f}s")
         if entry.get("description"):
-            print(f"    {entry['description']}")
+            pass
 
         if entry.get("stdout"):
-            print("    stdout:")
-            for line in entry["stdout"].splitlines():
-                print(f"      {line}")
+            for _line in entry["stdout"].splitlines():
+                pass
 
         if entry.get("stderr"):
-            print("    stderr:")
-            for line in entry["stderr"].splitlines():
-                print(f"      {line}")
-
-        print()
+            for _line in entry["stderr"].splitlines():
+                pass
 
     if failures:
-        print(f"{len(failures)} command(s) diverged from expectation.")
         raise SystemExit(1)
-
-    print("All commands matched expectations.")
 
 
 def _reset_persona_core(repo_root: Path) -> bool:
@@ -330,33 +320,26 @@ def main() -> None:
     )
     args = parser.parse_args()
     repo_root = Path(__file__).resolve().parents[1]
-    if args.base_day:
-        base_day = args.base_day
-    else:
-        base_day = _detect_default_day(repo_root)
+    base_day = args.base_day or _detect_default_day(repo_root)
 
     base_env = os.environ.copy()
     real_mode = bool(args.ollama_host)
     if args.ollama_host:
         base_env["AIJOURNAL_OLLAMA_HOST"] = args.ollama_host
         base_env.pop("AIJOURNAL_FAKE_OLLAMA", None)
-        print(f"Using Ollama host {args.ollama_host} (live mode).")
     else:
         base_env.setdefault("AIJOURNAL_FAKE_OLLAMA", "1")
         base_env.pop("AIJOURNAL_OLLAMA_HOST", None)
-        print("Using fake Ollama mode.")
 
     if args.model:
         base_env["AIJOURNAL_MODEL"] = args.model
-        print(f"Overriding model to {args.model}.")
 
     if not args.skip_persona_reset and _reset_persona_core(repo_root):
-        print("Reset persona_core.yaml to simulate fresh build scenario.")
+        pass
 
     if not args.skip_index_reset and _reset_index(repo_root):
-        print("Removed derived/index/ to simulate missing retrieval artifacts.")
+        pass
 
-    print(f"Using base day {base_day} for LLM-backed commands.")
     specs = _build_specs(base_day, real_mode=real_mode)
     results = [_run_command(spec, repo_root, base_env) for spec in specs]
     _persist_results(results, repo_root)

@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 from types import SimpleNamespace
+from typing import TYPE_CHECKING
 
 import pytest
 from pydantic import BaseModel
@@ -10,7 +10,6 @@ from pydantic_ai import ModelSettings, UnexpectedModelBehavior
 from pydantic_ai.exceptions import UserError
 
 from aijournal.common.app_config import AppConfig
-from aijournal.common.meta import LLMResult
 from aijournal.services.ollama import (
     LLMResponseError,
     OllamaConfig,
@@ -20,6 +19,11 @@ from aijournal.services.ollama import (
     resolve_ollama_host,
     run_ollama_agent,
 )
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from aijournal.common.meta import LLMResult
 
 
 class _FakeResult(SimpleNamespace):
@@ -55,7 +59,8 @@ class _FakeAgent:
             if output_type is dict:
                 payload = json.loads(text)
                 if not isinstance(payload, dict):
-                    raise ValueError("expected dict payload")
+                    msg = "expected dict payload"
+                    raise ValueError(msg)
                 return _FakeResult(payload, self.calls)
         except Exception as exc:  # pragma: no cover - helper safety
             raise UnexpectedModelBehavior(str(exc)) from exc
@@ -98,7 +103,8 @@ def test_run_ollama_agent_returns_payload(monkeypatch: pytest.MonkeyPatch, tmp_p
 
 
 def test_run_ollama_agent_logs_on_invalid_payload(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     monkeypatch.chdir(tmp_path)
     agent = _FakeAgent(['["unexpected"]'])
@@ -119,7 +125,8 @@ def test_run_ollama_agent_logs_on_invalid_payload(
 
 
 def test_run_ollama_agent_translates_user_errors(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     monkeypatch.chdir(tmp_path)
 
@@ -127,10 +134,12 @@ def test_run_ollama_agent_translates_user_errors(
         name = "failing"
 
         def run_sync(self, prompt: str, **_: object) -> SimpleNamespace:
-            raise UserError("bad request")
+            msg = "bad request"
+            raise UserError(msg)
 
     monkeypatch.setattr(
-        "aijournal.services.ollama.build_ollama_agent", lambda *_, **__: FailingAgent()
+        "aijournal.services.ollama.build_ollama_agent",
+        lambda *_, **__: FailingAgent(),
     )
 
     with pytest.raises(LLMResponseError, match="Ollama provider error: bad request"):
@@ -142,7 +151,8 @@ def test_run_ollama_agent_translates_user_errors(
 
 
 def test_run_ollama_agent_translates_unexpected_behavior(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     monkeypatch.chdir(tmp_path)
 
@@ -150,10 +160,12 @@ def test_run_ollama_agent_translates_unexpected_behavior(
         name = "failing"
 
         def run_sync(self, prompt: str, **_: object) -> SimpleNamespace:
-            raise UnexpectedModelBehavior("bad")
+            msg = "bad"
+            raise UnexpectedModelBehavior(msg)
 
     monkeypatch.setattr(
-        "aijournal.services.ollama.build_ollama_agent", lambda *_, **__: FailingAgent()
+        "aijournal.services.ollama.build_ollama_agent",
+        lambda *_, **__: FailingAgent(),
     )
 
     with pytest.raises(LLMResponseError, match="Model returned invalid JSON: bad"):
@@ -165,7 +177,8 @@ def test_run_ollama_agent_translates_unexpected_behavior(
 
 
 def test_run_ollama_agent_rejects_empty_payload(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     monkeypatch.chdir(tmp_path)
     agent = _FakeAgent(["   "])
@@ -181,7 +194,8 @@ def test_run_ollama_agent_rejects_empty_payload(
 
 
 def test_run_ollama_agent_handles_extra_commentary(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     monkeypatch.chdir(tmp_path)
     text = '{"ok": true} trailing commentary that should be trimmed'
@@ -198,7 +212,8 @@ def test_run_ollama_agent_handles_extra_commentary(
 
 
 def test_run_ollama_agent_strips_markdown_fences(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     monkeypatch.chdir(tmp_path)
     agent = _FakeAgent(['```json\n{\n  "ok": true\n}\n``` extra text'])
@@ -214,7 +229,8 @@ def test_run_ollama_agent_strips_markdown_fences(
 
 
 def test_run_ollama_agent_coerces_scalar_lists(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     monkeypatch.chdir(tmp_path)
     agent = _FakeAgent(['{"names": "solo"}'])
@@ -365,7 +381,8 @@ def test_build_ollama_agent_injects_model_settings(monkeypatch: pytest.MonkeyPat
 
     monkeypatch.setattr("aijournal.services.ollama.Agent", DummyAgent)
     monkeypatch.setattr(
-        "aijournal.services.ollama.build_ollama_model", lambda name, host: (name, host)
+        "aijournal.services.ollama.build_ollama_model",
+        lambda name, host: (name, host),
     )
 
     config = OllamaConfig(

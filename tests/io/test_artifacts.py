@@ -1,12 +1,15 @@
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import yaml
 
 from aijournal.common.base import StrictModel
 from aijournal.common.meta import Artifact, ArtifactKind, ArtifactMeta
 from aijournal.io.artifacts import load_artifact, load_artifact_data, save_artifact
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 class _Payload(StrictModel):

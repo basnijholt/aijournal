@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Iterable, Sequence
 from datetime import UTC, datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from aijournal.domain.claims import (
     ClaimAtom,
@@ -18,9 +17,13 @@ from aijournal.domain.claims import (
 from aijournal.domain.enums import ClaimMethod, ClaimType
 from aijournal.domain.enums import ClaimStatus as ClaimStatusEnum
 from aijournal.domain.evidence import redact_source_text
-from aijournal.ingest_agent import IngestResult, IngestSection
 from aijournal.utils import time as time_utils
 from aijournal.utils.coercion import coerce_float, coerce_int
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable, Sequence
+
+    from aijournal.ingest_agent import IngestResult, IngestSection
 
 
 def normalize_status(value: str | None) -> ClaimStatus:
@@ -258,10 +261,7 @@ def normalize_claim_atom(
     )
 
     claim_id_raw = base.get("id")
-    if claim_id_raw:
-        claim_id = str(claim_id_raw).strip() or None
-    else:
-        claim_id = None
+    claim_id = str(claim_id_raw).strip() or None if claim_id_raw else None
     if not claim_id:
         subject_slug = time_utils.slugify_title(subject) or "subject"
         predicate_slug = time_utils.slugify_title(predicate) or "predicate"

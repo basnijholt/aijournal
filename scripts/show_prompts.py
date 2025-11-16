@@ -15,8 +15,11 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from collections.abc import Iterable
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
 
 
 def parse_args() -> argparse.Namespace:
@@ -41,16 +44,11 @@ def parse_args() -> argparse.Namespace:
 
 def iter_prompts(path: Path, allowed_types: set[str]) -> Iterable[tuple[int, str, str, str]]:
     """Yield (line_no, timestamp, payload_type, message) tuples."""
-
     with path.open("r", encoding="utf-8") as file:
         for line_no, line in enumerate(file, start=1):
             try:
                 record = json.loads(line)
-            except json.JSONDecodeError as exc:  # pragma: no cover - log noise only
-                print(
-                    f"Skipping line {line_no}: invalid JSON ({exc})",
-                    file=sys.stderr,
-                )
+            except json.JSONDecodeError:  # pragma: no cover - log noise only
                 continue
 
             payload = record.get("payload")
@@ -74,26 +72,18 @@ def main() -> None:
     allowed = {entry.strip() for entry in args.types.split(",") if entry.strip()}
 
     if not args.log_path.exists():
-        print(f"error: {args.log_path} does not exist", file=sys.stderr)
         sys.exit(1)
 
     divider = "" if args.no_divider else "-" * 80
 
     found = False
-    for line_no, timestamp, payload_type, message in iter_prompts(args.log_path, allowed):
+    for _line_no, _timestamp, _payload_type, _message in iter_prompts(args.log_path, allowed):
         found = True
-        header = f"{line_no:>7} | {timestamp} | {payload_type}"
-        print(header)
-        print(message.rstrip())
         if divider:
-            print(divider)
+            pass
 
     if not found:
-        selected = ", ".join(sorted(allowed)) or "<any>"
-        print(
-            f"No prompts found for payload types: {selected}",
-            file=sys.stderr,
-        )
+        ", ".join(sorted(allowed)) or "<any>"
 
 
 if __name__ == "__main__":

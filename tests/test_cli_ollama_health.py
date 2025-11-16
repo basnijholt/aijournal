@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import pytest
-from typer.testing import CliRunner
 
 from aijournal.cli import app
+
+if TYPE_CHECKING:
+    from typer.testing import CliRunner
 
 
 def _has_ollama_health_command() -> bool:

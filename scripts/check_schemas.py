@@ -8,7 +8,6 @@ import inspect
 import json
 import os
 import pkgutil
-import sys
 from pathlib import Path
 from typing import Any
 
@@ -27,8 +26,7 @@ def discover_modules() -> list[str]:
             continue
         try:
             importlib.import_module(name)
-        except Exception as exc:  # pragma: no cover - defensive branch
-            print(f"warning: failed to import {name}: {exc}", file=sys.stderr)
+        except Exception:  # pragma: no cover - defensive branch
             continue
         modules.append(name)
     return sorted(modules)
@@ -117,9 +115,8 @@ def main() -> int:
         if should_bless:
             if write_if_changed(target, content):
                 changed.append(target)
-        else:
-            if not target.exists() or target.read_text(encoding="utf-8") != content:
-                changed.append(target)
+        elif not target.exists() or target.read_text(encoding="utf-8") != content:
+            changed.append(target)
 
     missing = sorted(existing - seen)
     if should_bless:
@@ -127,15 +124,12 @@ def main() -> int:
             path.unlink(missing_ok=True)
 
     if changed or missing:
-        mode = "updated" if should_bless else "would change"
         for path in changed:
-            print(f"{mode}: {path}")
+            pass
         for path in missing:
-            verb = "removed" if should_bless else "would remove"
-            print(f"{verb}: {path}")
+            pass
 
     if not should_bless and (changed or missing):
-        print("schemas are out of date; run with --bless to update", file=sys.stderr)
         return 1
 
     return 0

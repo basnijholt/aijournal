@@ -71,7 +71,6 @@ def resolve_ollama_host(
     config_host: str | None = None,
 ) -> str:
     """Return the base Ollama host (without `/v1`) to contact."""
-
     if host:
         return host.rstrip("/")
 
@@ -125,7 +124,6 @@ def build_ollama_config_from_mapping(
     max_tokens: int | None = None,
 ) -> OllamaConfig:
     """Construct an OllamaConfig from a loose mapping of settings."""
-
     cfg = config or AppConfig()
     raw_config_model = cfg.model
     raw_config_host = cfg.host
@@ -161,7 +159,6 @@ def resolve_model_name(
     fake_label: str = "fake-ollama",
 ) -> str:
     """Return the effective model name, accounting for fake-LLM mode."""
-
     if use_fake_llm:
         return fake_label
     return build_ollama_config_from_mapping(config).model
@@ -177,7 +174,7 @@ def _model_settings_from_config(config: OllamaConfig) -> ModelSettings | None:
         kwargs["max_tokens"] = int(config.max_tokens)
     if config.timeout is not None:
         kwargs["timeout"] = float(config.timeout)
-    return ModelSettings(**cast(Any, kwargs)) if kwargs else None
+    return ModelSettings(**cast("Any", kwargs)) if kwargs else None
 
 
 def build_ollama_agent(
@@ -268,7 +265,7 @@ def _model_skeleton(model: type[BaseModel]) -> dict[str, Any]:
             continue
         if field.default_factory is not None:
             try:
-                factory = cast(Callable[[], Any], field.default_factory)
+                factory = cast("Callable[[], Any]", field.default_factory)
                 skeleton[name] = factory()
                 continue
             except TypeError:  # pragma: no cover - defensive guard
@@ -329,7 +326,7 @@ def _coerce_value_for_type(
                     "rule": "wrap_scalar_in_list",
                     "from": repr(value),
                     "to": repr(coerced_value),
-                }
+                },
             )
             value = coerced_value
         coerced_items: list[Any] = []
@@ -387,14 +384,14 @@ def _attempt_model_validation(
         validated = model.model_validate(payload)
         return validated, [], []
     except ValidationError as exc:
-        errors = cast(list[dict[str, Any]], exc.errors())
+        errors = cast("list[dict[str, Any]]", exc.errors())
         coerced_payload, coercions = _coerce_payload_for_model(payload, model)
         if coercions:
             try:
                 validated = model.model_validate(coerced_payload)
                 return validated, coercions, []
             except ValidationError as coercion_exc:
-                coerced_errors = cast(list[dict[str, Any]], coercion_exc.errors())
+                coerced_errors = cast("list[dict[str, Any]]", coercion_exc.errors())
                 return None, coercions, coerced_errors
         return None, [], errors
 
@@ -472,7 +469,6 @@ def run_ollama_agent(
     log_label: str | None = None,
 ) -> LLMResult[_PayloadT]:
     """Run a Pydantic AI agent and return the validated payload with metadata."""
-
     target_model: type[BaseModel] | None = None
     if isinstance(output_type, type) and issubclass(output_type, BaseModel):
         target_model = output_type
@@ -481,7 +477,10 @@ def run_ollama_agent(
         resolved_output = output_type or dict
 
     agent = build_ollama_agent(
-        config, system_prompt=system_prompt, output_type=resolved_output, retries=retries
+        config,
+        system_prompt=system_prompt,
+        output_type=resolved_output,
+        retries=retries,
     )
 
     skeleton_json: str | None = None
@@ -524,10 +523,10 @@ def run_ollama_agent(
         if isinstance(payload, BaseModel):
             raw_payload_dict = payload.model_dump(mode="python")
         elif isinstance(payload, dict):
-            raw_payload_dict = cast(dict[str, Any], payload)
+            raw_payload_dict = cast("dict[str, Any]", payload)
         else:
             try:
-                raw_payload_dict = cast(dict[str, Any], json.loads(str(payload)))
+                raw_payload_dict = cast("dict[str, Any]", json.loads(str(payload)))
             except json.JSONDecodeError as exc:  # pragma: no cover - defensive
                 msg = f"Model returned non-JSON payload: {payload!r}"
                 raise LLMResponseError(msg) from exc
@@ -563,7 +562,7 @@ def run_ollama_agent(
         prompt_kind=prompt_kind,
         prompt_set=prompt_set,
         created_at=created_at,
-        payload=cast(_PayloadT, payload),
+        payload=cast("_PayloadT", payload),
         attempts=attempts,
         coercions_applied=coercions_applied,
     )
@@ -601,7 +600,10 @@ def _load_prompt_template(prompt_path: str, *, prompt_set: str | None = None) ->
 
 
 def _render_prompt(
-    prompt_path: str, variables: dict[str, str], *, prompt_set: str | None = None
+    prompt_path: str,
+    variables: dict[str, str],
+    *,
+    prompt_set: str | None = None,
 ) -> str:
     template = Template(_load_prompt_template(prompt_path, prompt_set=prompt_set))
     return template.safe_substitute(**variables)
@@ -637,7 +639,7 @@ def invoke_structured_llm(
             prompt_set=prompt_set,
             log_label=agent_name,
         )
-        return cast(StructuredModelT, result.payload)
+        return cast("StructuredModelT", result.payload)
     except Exception as exc:  # pragma: no cover - runtime dependent
         msg = f"Structured output generation failed for {prompt_path}: {exc}"
         raise LLMResponseError(msg) from exc

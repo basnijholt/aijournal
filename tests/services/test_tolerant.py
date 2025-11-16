@@ -322,7 +322,8 @@ class TestInferCreatedAtFromContext:
             body="",
         )
         assert dt == datetime(2024, 3, 15, tzinfo=UTC)
-        assert reason and "filename" in reason
+        assert reason
+        assert "filename" in reason
 
     def test_infers_from_directory_components(self) -> None:
         dt, reason = infer_created_at_from_context(
@@ -330,7 +331,8 @@ class TestInferCreatedAtFromContext:
             body="",
         )
         assert dt == datetime(2023, 12, 25, tzinfo=UTC)
-        assert reason and any(keyword in reason for keyword in ("directory", "path"))
+        assert reason
+        assert any(keyword in reason for keyword in ("directory", "path"))
 
     def test_infers_from_body_label(self) -> None:
         body = """
@@ -339,13 +341,15 @@ Entry text.
 """
         dt, reason = infer_created_at_from_context(source_path=None, body=body)
         assert dt == datetime(2022, 1, 2, tzinfo=UTC)
-        assert reason and "body line" in reason
+        assert reason
+        assert "body line" in reason
 
     def test_infers_from_body_without_label(self) -> None:
         body = "Captured reflections from 2014/07/03 during the hike."
         dt, reason = infer_created_at_from_context(source_path=None, body=body)
         assert dt == datetime(2014, 7, 3, tzinfo=UTC)
-        assert reason and "body text" in reason
+        assert reason
+        assert "body text" in reason
 
     def test_infers_from_compact_filename(self) -> None:
         dt, reason = infer_created_at_from_context(
@@ -353,7 +357,8 @@ Entry text.
             body="",
         )
         assert dt == datetime(2019, 3, 9, tzinfo=UTC)
-        assert reason and "filename" in reason
+        assert reason
+        assert "filename" in reason
 
     def test_returns_none_when_no_matches(self) -> None:
         dt, reason = infer_created_at_from_context(source_path=None, body="No hints here")
@@ -457,7 +462,7 @@ class TestIntegrationScenarios:
             ('---\ncreated_at: "2025-1-5"\n---\nBody', "yyyy-mm-dd"),
         ]
 
-        for text, expected_format in texts:
+        for text, _expected_format in texts:
             fm_result = split_frontmatter_tolerant(text)
             created_at = fm_result.data.get("created_at")
             date_result = parse_date_tolerant(created_at)

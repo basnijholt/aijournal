@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 import shutil
-from pathlib import Path
+from typing import TYPE_CHECKING
 
-import pytest
 from typer.testing import CliRunner
 
 from aijournal.cli import app
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    import pytest
 
 
 def test_cli_ops_dev_human_simulator_runs_full_pipeline(

@@ -3,15 +3,19 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
-from typer.testing import CliRunner
 
 from aijournal.cli import app
 from aijournal.domain.persona import InterviewQuestion, InterviewSet
 from aijournal.io.yaml_io import dump_yaml
 from tests.helpers import write_daily_summary
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from typer.testing import CliRunner
 
 DATE = "2025-02-03"
 

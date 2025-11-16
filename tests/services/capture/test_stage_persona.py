@@ -1,10 +1,13 @@
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 from aijournal.common.app_config import AppConfig
 from aijournal.services.capture import CaptureInput
 from aijournal.services.capture.stages import stage7_persona
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def _make_inputs() -> CaptureInput:

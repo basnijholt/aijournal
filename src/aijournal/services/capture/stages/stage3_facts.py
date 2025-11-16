@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-from pathlib import Path
 from time import perf_counter
 from typing import TYPE_CHECKING
 
-from aijournal.common.app_config import AppConfig
-
 if TYPE_CHECKING:
-    from .. import CaptureInput, FactsStage3Outputs
+    from pathlib import Path
+
+    from aijournal.common.app_config import AppConfig
+    from aijournal.services.capture import CaptureInput, FactsStage3Outputs
 
 
 def run_facts_stage_3(
@@ -17,10 +17,9 @@ def run_facts_stage_3(
     config: AppConfig,
 ) -> FactsStage3Outputs:
     from aijournal.commands.profile import load_profile_components
-
-    from .. import FactsStage3Outputs, OperationResult
-    from ..graceful import graceful_facts
-    from ..utils import relative_path
+    from aijournal.services.capture import FactsStage3Outputs, OperationResult
+    from aijournal.services.capture.graceful import graceful_facts
+    from aijournal.services.capture.utils import relative_path
 
     stage_start = perf_counter()
     facts_paths: list[str] = []

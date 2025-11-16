@@ -4,19 +4,14 @@ from __future__ import annotations
 
 import json
 import os
-from collections.abc import Callable
 from pathlib import Path
-from typing import Any, NamedTuple
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 from pydantic import BaseModel, Field
 
-from aijournal.api.capture import CaptureInput
-from aijournal.common.app_config import AppConfig
 from aijournal.common.config_loader import load_config_with_overrides
 from aijournal.common.logging import StructuredLogger
-from aijournal.models.authoritative import ManifestEntry
 from aijournal.services.capture.results import OperationResult, StageResult
-from aijournal.services.capture.stages.stage0_persist import EntryResult
 from aijournal.services.capture.utils import normalize_markdown
 from aijournal.services.ollama import build_ollama_config_from_mapping
 from aijournal.utils import time as time_utils
@@ -34,6 +29,14 @@ from .utils import (
     emit_operation_event,
     relative_path,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from aijournal.api.capture import CaptureInput
+    from aijournal.common.app_config import AppConfig
+    from aijournal.models.authoritative import ManifestEntry
+    from aijournal.services.capture.stages.stage0_persist import EntryResult
 
 
 class CaptureStage(NamedTuple):
@@ -215,7 +218,6 @@ def _record_stage(
 
 def _generate_run_id() -> str:
     """Return a monotonic-ish identifier for a capture run."""
-
     return f"capture-{time_utils.now().strftime('%Y%m%d%H%M%S')}"
 
 
@@ -324,7 +326,6 @@ def run_capture(
     root: Path | None = None,
 ) -> CaptureResult:
     """Execute the capture workflow (persist, normalize, derive, telemetry)."""
-
     if inputs.dry_run:
         msg = "capture dry-run is not implemented yet"
         raise ValueError(msg)
@@ -354,7 +355,7 @@ def run_capture(
                 "env_host": env_host,
                 "env_base_url": env_base_url,
             },
-        }
+        },
     )
 
     if inputs.source not in {"stdin", "editor", "file", "dir"}:
@@ -392,7 +393,6 @@ def run_capture(
         duration: float,
     ) -> OperationResult:
         """Track stage result, duration, and telemetry in one place."""
-
         durations_ms[duration_key] = duration
         _record_stage(
             stage_results=stage_results,
@@ -415,7 +415,6 @@ def run_capture(
         message: str = "skipped by stage filter",
     ) -> OperationResult:
         """Create a standardized skip result and record it."""
-
         skip_result = OperationResult.noop(message, details={"status": "skipped"})
         return record_stage_outcome(
             stage_id,
@@ -500,21 +499,20 @@ def run_capture(
             result=summarize_result,
             duration=summarize_duration,
         )
+    elif not stage_enabled(2):
+        summarize_result = record_skipped_stage(2, "derive.summarize", "derive.summarize")
     else:
-        if not stage_enabled(2):
-            summarize_result = record_skipped_stage(2, "derive.summarize", "derive.summarize")
-        else:
-            summarize_result = OperationResult.noop(
-                "no dates required summarization",
-                details={"dates": []},
-            )
-            record_stage_outcome(
-                stage_id=2,
-                stage_name="derive.summarize",
-                duration_key="derive.summarize",
-                result=summarize_result,
-                duration=0.0,
-            )
+        summarize_result = OperationResult.noop(
+            "no dates required summarization",
+            details={"dates": []},
+        )
+        record_stage_outcome(
+            stage_id=2,
+            stage_name="derive.summarize",
+            duration_key="derive.summarize",
+            result=summarize_result,
+            duration=0.0,
+        )
 
     if changed_dates and stage_enabled(3):
         facts_outputs = run_facts_stage_3(
@@ -535,21 +533,20 @@ def run_capture(
             result=facts_result,
             duration=facts_duration,
         )
+    elif not stage_enabled(3):
+        facts_result = record_skipped_stage(3, "derive.extract_facts", "derive.extract_facts")
     else:
-        if not stage_enabled(3):
-            facts_result = record_skipped_stage(3, "derive.extract_facts", "derive.extract_facts")
-        else:
-            facts_result = OperationResult.noop(
-                "no dates required micro-facts",
-                details={"dates": []},
-            )
-            record_stage_outcome(
-                stage_id=3,
-                stage_name="derive.extract_facts",
-                duration_key="derive.extract_facts",
-                result=facts_result,
-                duration=0.0,
-            )
+        facts_result = OperationResult.noop(
+            "no dates required micro-facts",
+            details={"dates": []},
+        )
+        record_stage_outcome(
+            stage_id=3,
+            stage_name="derive.extract_facts",
+            duration_key="derive.extract_facts",
+            result=facts_result,
+            duration=0.0,
+        )
 
     if changed_dates and stage_enabled(4):
         update_outputs = run_profile_update_stage(
@@ -568,7 +565,7 @@ def run_capture(
             artifacts_changed["profile_updates"] = artifacts_changed.get("profile_updates", 0) + 1
         if review_result and review_result.changed:
             artifacts_changed["profile"] = artifacts_changed.get("profile", 0) + len(
-                applied_batches
+                applied_batches,
             )
         record_stage_outcome(
             stage_id=4,
@@ -585,25 +582,24 @@ def run_capture(
                 result=review_result,
                 duration=update_duration,
             )
+    elif not stage_enabled(4):
+        update_result = record_skipped_stage(
+            4,
+            "derive.profile_update",
+            "derive.profile_update",
+        )
     else:
-        if not stage_enabled(4):
-            update_result = record_skipped_stage(
-                4,
-                "derive.profile_update",
-                "derive.profile_update",
-            )
-        else:
-            update_result = OperationResult.noop(
-                "no dates required profile updates",
-                details={"dates": []},
-            )
-            record_stage_outcome(
-                stage_id=4,
-                stage_name="derive.profile_update",
-                duration_key="derive.profile_update",
-                result=update_result,
-                duration=0.0,
-            )
+        update_result = OperationResult.noop(
+            "no dates required profile updates",
+            details={"dates": []},
+        )
+        record_stage_outcome(
+            stage_id=4,
+            stage_name="derive.profile_update",
+            duration_key="derive.profile_update",
+            result=update_result,
+            duration=0.0,
+        )
 
     if inputs.apply_profile != "auto" and "profile" not in artifacts_changed:
         artifacts_changed.setdefault("profile", 0)
@@ -702,7 +698,7 @@ def run_capture(
         {
             "status_before": status_before,
             "status_after": status_after,
-        }
+        },
     )
     emit_operation_event(
         log_event,
@@ -746,7 +742,7 @@ def run_capture(
             "max_stage": requested_max_stage,
             "stages_completed": sorted(stages_completed),
             "stages_skipped": sorted(stages_skipped),
-        }
+        },
     )
 
     result = CaptureResult(
@@ -774,7 +770,6 @@ def run_capture(
 
 def normalize_entries(entries: list[EntryResult], root: Path, config: AppConfig) -> dict[str, Any]:
     """Normalize Markdown entries that changed during capture."""
-
     normalized = 0
     changed_paths: list[str] = []
     for entry in entries:

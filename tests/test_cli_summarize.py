@@ -7,7 +7,6 @@ from typing import TYPE_CHECKING
 
 import pytest
 import yaml
-from typer.testing import CliRunner
 
 import aijournal.services.ollama
 from aijournal.cli import app
@@ -23,7 +22,7 @@ from aijournal.models.authoritative import JournalSection
 from aijournal.services.ollama import LLMResponseError, OllamaConfig
 
 if TYPE_CHECKING:
-    from pathlib import Path
+    from typer.testing import CliRunner
 
 DATE = "2025-02-03"
 ENTRY_ID = "2025-02-03-sync-notes"
@@ -161,7 +160,7 @@ def test_summarize_structured_success(monkeypatch: pytest.MonkeyPatch) -> None:
         [entry],
         DATE,
         AppConfig(),
-        workspace=Path("."),
+        workspace=Path(),
     )
 
     assert summary.day == DATE
@@ -182,7 +181,8 @@ def test_summarize_structured_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
     )
 
     def fake_invoke(*_args, **_kwargs) -> DailySummary:
-        raise LLMResponseError("bad schema")
+        msg = "bad schema"
+        raise LLMResponseError(msg)
 
     monkeypatch.setattr(config_loader, "use_fake_llm", lambda: False)
     monkeypatch.setattr(summarize_commands, "invoke_structured_llm", fake_invoke)
@@ -192,7 +192,7 @@ def test_summarize_structured_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
             [entry],
             DATE,
             AppConfig(),
-            workspace=Path("."),
+            workspace=Path(),
         )
 
 

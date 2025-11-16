@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 import typer
-from typer.testing import CliRunner
 
 from aijournal.cli import (
     _normalize_persona_variants,
@@ -16,6 +15,11 @@ from aijournal.cli import (
 from aijournal.io.yaml_io import dump_yaml
 from aijournal.services.persona_export import PersonaVariant
 from tests.helpers import make_claim_atom
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from typer.testing import CliRunner
 
 
 def _seed_profile(workspace: Path) -> None:
@@ -96,7 +100,8 @@ def test_persona_export_defaults_to_stdout(cli_workspace: Path, cli_runner: CliR
 
 
 def test_persona_export_writes_file_and_respects_overwrite(
-    cli_workspace: Path, cli_runner: CliRunner
+    cli_workspace: Path,
+    cli_runner: CliRunner,
 ) -> None:
     _ensure_persona_core(cli_workspace, cli_runner)
     output_path = cli_workspace / "derived" / "persona.md"
@@ -142,7 +147,8 @@ def test_persona_export_writes_file_and_respects_overwrite(
 
 
 def test_persona_export_validates_token_override(
-    cli_workspace: Path, cli_runner: CliRunner
+    cli_workspace: Path,
+    cli_runner: CliRunner,
 ) -> None:
     _ensure_persona_core(cli_workspace, cli_runner)
 
@@ -166,7 +172,8 @@ def test_persona_export_errors_when_persona_missing(tmp_path: Path, cli_runner: 
 
 
 def test_persona_export_multiple_variants_stdout(
-    cli_workspace: Path, cli_runner: CliRunner
+    cli_workspace: Path,
+    cli_runner: CliRunner,
 ) -> None:
     _ensure_persona_core(cli_workspace, cli_runner)
 
@@ -183,7 +190,8 @@ def test_persona_export_multiple_variants_stdout(
 
 
 def test_persona_export_output_dir_writes_all_variants(
-    cli_workspace: Path, cli_runner: CliRunner
+    cli_workspace: Path,
+    cli_runner: CliRunner,
 ) -> None:
     _ensure_persona_core(cli_workspace, cli_runner)
     destination = cli_workspace / "derived" / "cards"
@@ -211,7 +219,8 @@ def test_persona_export_output_dir_writes_all_variants(
 
 
 def test_persona_export_disallows_token_override_with_multiple_variants(
-    cli_workspace: Path, cli_runner: CliRunner
+    cli_workspace: Path,
+    cli_runner: CliRunner,
 ) -> None:
     _ensure_persona_core(cli_workspace, cli_runner)
 
@@ -235,7 +244,8 @@ def test_persona_export_disallows_token_override_with_multiple_variants(
 
 
 def test_persona_export_disallows_output_with_multiple_variants(
-    cli_workspace: Path, cli_runner: CliRunner
+    cli_workspace: Path,
+    cli_runner: CliRunner,
 ) -> None:
     _ensure_persona_core(cli_workspace, cli_runner)
     destination = cli_workspace / "derived" / "persona-multi.md"

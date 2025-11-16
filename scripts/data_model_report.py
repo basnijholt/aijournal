@@ -19,12 +19,14 @@ import inspect
 import pkgutil
 import sys
 from collections import defaultdict
-from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
 
 
 @dataclass(slots=True)
@@ -49,7 +51,6 @@ class ClassSummary:
     @property
     def signature(self) -> tuple[tuple[str, str], ...]:
         """Similarity signature used for grouping (field name + type)."""
-
         return tuple((field.name, field.type_repr) for field in self.fields)
 
 
@@ -108,12 +109,6 @@ def main() -> None:
     pydantic_classes = [c for c in classes if c.kind == "pydantic"]
     dataclass_classes = [c for c in classes if c.kind == "dataclass"]
 
-    print("# Data Structure Inventory\n")
-    print(
-        f"Discovered {len(pydantic_classes)} Pydantic models and "
-        f"{len(dataclass_classes)} dataclasses across {len(module_names)} modules.\n",
-    )
-
     _print_group_report("Pydantic Models", pydantic_classes)
     _print_group_report("Dataclasses", dataclass_classes)
 
@@ -123,19 +118,13 @@ def _print_group_report(title: str, summaries: Iterable[ClassSummary]) -> None:
     for summary in summaries:
         grouped[summary.signature].append(summary)
 
-    print(f"## {title}\n")
-    print(
-        f"{len(summaries)} total · {len(grouped)} unique field signatures\n",
-    )
-    for index, (signature, items) in enumerate(
-        sorted(grouped.items(), key=lambda item: (-len(item[1]), item[0])), start=1
+    for _index, (signature, items) in enumerate(
+        sorted(grouped.items(), key=lambda item: (-len(item[1]), item[0])),
+        start=1,
     ):
-        fields_display = ", ".join(f"{name}: {type_repr}" for name, type_repr in signature)
-        print(f"### Group {index} ({len(items)} classes)\n")
-        print(f"Fields: {fields_display or '<no fields>'}\n")
+        ", ".join(f"{name}: {type_repr}" for name, type_repr in signature)
         for summary in sorted(items, key=lambda c: c.qualified_name):
-            print(f"- {summary.qualified_name} ({summary.file_path})")
-        print()
+            pass
 
 
 def _iter_pydantic_fields(cls: type[BaseModel]) -> Iterable[FieldSummary]:

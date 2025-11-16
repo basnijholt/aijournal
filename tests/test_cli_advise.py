@@ -5,7 +5,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import pytest
-from typer.testing import CliRunner
 
 from aijournal.cli import app
 from aijournal.common.meta import Artifact, ArtifactKind, ArtifactMeta
@@ -21,6 +20,8 @@ from tests.helpers import make_claim_atom
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+    from typer.testing import CliRunner
 
 DATE = "2025-02-03"
 
@@ -109,7 +110,7 @@ def test_advise_generates_advice(
     _seed_profile(cli_workspace)
     _seed_pending_prompt(cli_workspace)
 
-    kind, card, meta, advice_file, _count = _invoke(cli_workspace, cli_runner)
+    kind, card, meta, _advice_file, _count = _invoke(cli_workspace, cli_runner)
 
     assert kind is ArtifactKind.ADVICE_CARD
 
@@ -135,10 +136,10 @@ def test_advise_is_idempotent(
     _seed_profile(cli_workspace)
     _seed_pending_prompt(cli_workspace)
 
-    kind1, data1, meta1, advice_file, count1 = _invoke(cli_workspace, cli_runner)
+    kind1, data1, _meta1, advice_file, count1 = _invoke(cli_workspace, cli_runner)
     before = advice_file.stat().st_mtime
 
-    kind2, data2, meta2, advice_file_again, count2 = _invoke(cli_workspace, cli_runner)
+    kind2, data2, _meta2, advice_file_again, count2 = _invoke(cli_workspace, cli_runner)
     assert kind1 is ArtifactKind.ADVICE_CARD
     assert kind2 is ArtifactKind.ADVICE_CARD
     assert advice_file_again == advice_file

@@ -7,8 +7,7 @@ import shutil
 from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from pathlib import Path
-from typing import Literal, cast
+from typing import TYPE_CHECKING, Literal, cast
 
 from aijournal.api.capture import CaptureInput, CaptureRequest
 from aijournal.common.constants import DEFAULT_LLM_RETRIES
@@ -22,6 +21,9 @@ from .validators import (
     ValidatorContext,
     render_failures_compact,
 )
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 @dataclass(slots=True)
@@ -67,7 +69,7 @@ class HumanSimulator:
         if max_stage > 8:
             msg = "max_stage must be <= 8"
             raise ValueError(msg)
-        normalized_pack = cast(Literal["L1", "L3", "L4"], pack_level)
+        normalized_pack = cast("Literal['L1', 'L3', 'L4']", pack_level)
         self.max_stage = max_stage
         self.clock = clock or datetime(2025, 1, 5, 9, 0, tzinfo=UTC)
         self.validators = validators or StageValidatorRegistry()
@@ -85,7 +87,7 @@ class HumanSimulator:
         ctx = ValidatorContext(workspace=fixtures.root, capture=capture_result)
         validation = self.validators.run(
             ctx,
-            stages=[stage for stage in range(0, self.max_stage + 1)],
+            stages=list(range(self.max_stage + 1)),
         )
         report = SimulationReport(
             workspace=fixtures.root,

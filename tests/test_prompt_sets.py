@@ -3,14 +3,17 @@
 from __future__ import annotations
 
 import os
-from pathlib import Path
+from typing import TYPE_CHECKING
 from unittest import mock
-
-import pytest
 
 from aijournal.common.app_config import AppConfig, PromptsConfig
 from aijournal.common.config_loader import resolve_prompt_set
 from aijournal.utils.paths import resolve_prompt_path
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    import pytest
 
 
 class TestResolvePromptSet:
@@ -66,7 +69,9 @@ class TestResolvePromptPath:
         assert result == absolute
 
     def test_experiment_override_in_cwd(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """Should find experiment override in cwd when it exists."""
         monkeypatch.chdir(tmp_path)
@@ -88,7 +93,9 @@ class TestResolvePromptPath:
         assert result.read_text() == "Experiment variant A"
 
     def test_falls_back_to_default_when_no_experiment(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """Should fall back to default prompt when experiment override doesn't exist."""
         monkeypatch.chdir(tmp_path)
@@ -104,7 +111,9 @@ class TestResolvePromptPath:
         assert result.read_text() == "Default prompt"
 
     def test_no_prompt_set_uses_default(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """Should use default prompt when prompt_set is None."""
         monkeypatch.chdir(tmp_path)
@@ -118,7 +127,9 @@ class TestResolvePromptPath:
         assert result == default_file
 
     def test_extracts_filename_correctly(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """Should extract prompt kind correctly from path."""
         monkeypatch.chdir(tmp_path)

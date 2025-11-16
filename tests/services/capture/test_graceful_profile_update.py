@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING, Never
 
 import typer
 
 from aijournal.common.app_config import AppConfig
 from aijournal.services.capture.graceful import graceful_profile_update
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def test_graceful_profile_update_success(tmp_path: Path, monkeypatch) -> None:
@@ -41,7 +44,7 @@ def test_graceful_profile_update_success(tmp_path: Path, monkeypatch) -> None:
 
 
 def test_graceful_profile_update_failure(tmp_path: Path, monkeypatch) -> None:
-    def failing_run(*_args, **_kwargs):
+    def failing_run(*_args, **_kwargs) -> Never:
         raise typer.Exit(1)
 
     monkeypatch.setattr("aijournal.commands.profile_update.run_profile_update", failing_run)

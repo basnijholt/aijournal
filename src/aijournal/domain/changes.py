@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from pydantic import Field, field_validator
 
 from aijournal.common.base import StrictModel
-from aijournal.domain.claims import Scope
 from aijournal.domain.enums import ClaimMethod, ClaimStatus, ClaimType, FacetOperation
-from aijournal.domain.evidence import SourceRef
+
+if TYPE_CHECKING:
+    from aijournal.domain.claims import Scope
+    from aijournal.domain.evidence import SourceRef
 
 
 class ClaimAtomInput(StrictModel):
@@ -31,7 +33,8 @@ class ClaimAtomInput(StrictModel):
     @classmethod
     def _check_strength(cls, value: float) -> float:
         if not 0.0 <= value <= 1.0:
-            raise ValueError("strength must be in [0,1]")
+            msg = "strength must be in [0,1]"
+            raise ValueError(msg)
         return value
 
 
@@ -60,7 +63,8 @@ class ClaimProposal(StrictModel):
     @classmethod
     def _check_strength(cls, value: float) -> float:
         if not 0.0 <= value <= 1.0:
-            raise ValueError("strength must be in [0,1]")
+            msg = "strength must be in [0,1]"
+            raise ValueError(msg)
         return value
 
 
@@ -82,7 +86,8 @@ class FacetChange(StrictModel):
     def _validate_value(cls, value: Any | None, info: Any) -> Any | None:
         operation = info.data.get("operation")
         if operation in {FacetOperation.SET, FacetOperation.MERGE} and value is None:
-            raise ValueError("value required for set/merge operations")
+            msg = "value required for set/merge operations"
+            raise ValueError(msg)
         return value
 
 

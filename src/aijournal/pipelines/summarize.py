@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from typing import TYPE_CHECKING
 
 from aijournal.domain.facts import DailySummary
-from aijournal.domain.journal import NormalizedEntry
 from aijournal.fakes import fake_summarize
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+    from aijournal.domain.journal import NormalizedEntry
 
 
 def _todo_from_entries(entries: Sequence[NormalizedEntry]) -> list[str]:

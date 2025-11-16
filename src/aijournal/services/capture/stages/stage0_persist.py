@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Callable, Iterable, Sequence
 from pathlib import Path
 from time import perf_counter
 from typing import TYPE_CHECKING, Any
@@ -10,7 +9,6 @@ from pydantic import BaseModel, Field
 
 from aijournal.api.capture import CaptureInput
 from aijournal.commands.ingest import _fake_structured_entry
-from aijournal.common.app_config import AppConfig
 from aijournal.common.config_loader import load_config, use_fake_llm
 from aijournal.domain.journal import NormalizedEntry
 from aijournal.ingest_agent import IngestResult, build_ingest_agent, ingest_with_agent
@@ -44,9 +42,10 @@ from aijournal.utils import time as time_utils
 from aijournal.utils.paths import normalized_entry_path
 
 if TYPE_CHECKING:
-    from aijournal.models.authoritative import ManifestEntry
+    from collections.abc import Callable, Iterable, Sequence
 
-    from .. import CaptureInput, PersistStage0Outputs
+    from aijournal.common.app_config import AppConfig
+    from aijournal.services.capture import CaptureInput, PersistStage0Outputs
 
 
 SUMMARY_CHAR_LIMIT = 400
@@ -55,7 +54,6 @@ SUMMARY_ELLIPSIS = "..."
 
 def _first_paragraph(text: str) -> str:
     """Return the first non-empty paragraph from the Markdown body."""
-
     normalized = text.strip()
     if not normalized:
         return ""
@@ -68,7 +66,6 @@ def _first_paragraph(text: str) -> str:
 
 def _truncate_to_word_boundary(text: str, max_chars: int) -> tuple[str, bool]:
     """Trim text to <= max_chars, preferring word boundaries."""
-
     if len(text) <= max_chars:
         return text, False
     cutoff = text.rfind(" ", 0, max_chars)
@@ -84,7 +81,6 @@ def _derive_summary_text(
     max_chars: int = SUMMARY_CHAR_LIMIT,
 ) -> str | None:
     """Return a deterministic summary for entries lacking one."""
-
     if existing_summary and existing_summary.strip():
         return str(existing_summary)
 
@@ -105,7 +101,6 @@ def _ingest_frontmatter(
     digest: str,
 ) -> tuple[dict[str, Any], str, NormalizedEntry, list[str]]:
     """Infer front matter and normalized entry using the ingest agent."""
-
     config = load_config(root)
     fallback_sections = scan_headings(raw_text)
     warnings: list[str] = []
@@ -205,15 +200,18 @@ class EntryResult(BaseModel):
     date: str = Field(..., description="Date bucket for the entry (YYYY-MM-DD).")
     slug: str = Field(..., description="Slug assigned to the entry.")
     deduped: bool = Field(
-        False, description="True when the input was skipped due to identical hash."
+        False,
+        description="True when the input was skipped due to identical hash.",
     )
     changed: bool = Field(False, description="True when content or metadata changed on disk.")
     warnings: list[str] = Field(default_factory=list, description="Non-fatal issues encountered.")
     source_hash: str | None = Field(
-        None, description="Hash of the Markdown content used for dedupe/normalization."
+        None,
+        description="Hash of the Markdown content used for dedupe/normalization.",
     )
     source_type: str | None = Field(
-        None, description="Source type recorded for the entry (journal/notes/blog)."
+        None,
+        description="Source type recorded for the entry (journal/notes/blog).",
     )
 
 
@@ -229,7 +227,8 @@ def _persist_file_entry(
 ) -> EntryResult:
     if source_path is None:
         if not inputs.paths:
-            raise ValueError("capture --from requires at least one path")
+            msg = "capture --from requires at least one path"
+            raise ValueError(msg)
         source_path = Path(inputs.paths[0]).expanduser().resolve()
     else:
         source_path = source_path.expanduser().resolve()
@@ -369,9 +368,9 @@ def _persist_file_entry(
             normalized_seed.summary = summary_text
         normalized_seed.content = body.strip() if body.strip() else None
         normalized_payload = normalized_seed.model_dump(mode="python")
-        normalized_changed = write_yaml_if_changed(normalized_path, normalized_payload)
+        write_yaml_if_changed(normalized_path, normalized_payload)
     else:
-        normalized_path, normalized_changed = normalize_markdown(
+        normalized_path, _normalized_changed = normalize_markdown(
             markdown_path,
             root=root,
             config=config,
@@ -478,7 +477,7 @@ def _persist_text_entry(
 
     write_markdown_entry(markdown_path, frontmatter, body_text)
 
-    normalized_path, normalized_changed = normalize_markdown(
+    normalized_path, _normalized_changed = normalize_markdown(
         markdown_path,
         root=root,
         config=config,
@@ -522,17 +521,9 @@ def run_persist_stage_0(
     manifest_entries: list[ManifestEntry],
     log_event: Callable[[dict[str, object]], None],
 ) -> PersistStage0Outputs:
-    from .. import (
-        OperationResult,
-        PersistStage0Outputs,
-    )
-    from ..utils import (
-        discover_markdown_files,
-        ensure_manifest,
-    )
-    from ..utils import (
-        manifest_index as _manifest_index,
-    )
+    from aijournal.services.capture import OperationResult, PersistStage0Outputs
+    from aijournal.services.capture.utils import discover_markdown_files, ensure_manifest
+    from aijournal.services.capture.utils import manifest_index as _manifest_index
 
     entry_results: list[EntryResult] = []
     stage_entry_warnings: list[str] = []

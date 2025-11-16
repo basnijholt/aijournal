@@ -3,11 +3,10 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 import yaml
-from typer.testing import CliRunner
 
 from aijournal.api.chat import ChatResponse
 from aijournal.cli import app
@@ -19,6 +18,11 @@ from aijournal.io.artifacts import load_artifact
 from aijournal.io.yaml_io import dump_yaml
 from aijournal.services.chat import ChatService, ChatTelemetry, ChatTurn
 from tests.helpers import make_claim_atom, write_manifest, write_normalized_entry
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from typer.testing import CliRunner
 
 
 @pytest.fixture(autouse=True)

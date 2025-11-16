@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 
@@ -16,6 +16,9 @@ from aijournal.models.authoritative import ManifestEntry
 from aijournal.pipelines import index as index_pipeline
 from aijournal.services.embedding import EmbeddingBackend
 from aijournal.utils import time as time_utils
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 class FakeChunkIndex:
@@ -84,7 +87,7 @@ def test_index_entries_upserts_records(tmp_path: Path) -> None:
             entry=entry,
             source_hash="hash-1",
             manifest=None,
-        )
+        ),
     ]
 
     embedder = EmbeddingBackend(model="fake", fake_mode=True)
@@ -163,7 +166,8 @@ def test_write_chunk_manifests(tmp_path: Path) -> None:
     artifact = load_artifact(artifact_path, ChunkBatch)
     assert artifact.kind is ArtifactKind.INDEX_CHUNKS
     assert artifact.meta.model == embedder.model
-    assert artifact.meta.notes and artifact.meta.notes["vector_dimension"] == str(embedder.dim)
+    assert artifact.meta.notes
+    assert artifact.meta.notes["vector_dimension"] == str(embedder.dim)
     assert artifact.data.day == "2024-01-02"
     assert len(artifact.data.chunks) == 1
     chunk = artifact.data.chunks[0]
@@ -217,7 +221,7 @@ def test_microfact_chunk_records_build() -> None:
                 confidence=0.9,
                 evidence=SourceRef(entry_id="entry-1"),
             ),
-        ]
+        ],
     )
     records = index_pipeline._microfact_chunk_records(
         day,
@@ -264,7 +268,7 @@ def test_index_entries_builds_summary_and_microfact_chunks(tmp_path: Path) -> No
                 confidence=0.65,
                 evidence=SourceRef(entry_id="entry-1"),
             ),
-        ]
+        ],
     )
     save_artifact(
         microfacts_path,
@@ -291,7 +295,7 @@ def test_index_entries_builds_summary_and_microfact_chunks(tmp_path: Path) -> No
             entry=entry,
             source_hash="hash-1",
             manifest=None,
-        )
+        ),
     ]
     embedder = EmbeddingBackend(model="fake", fake_mode=True)
     chunk_index = FakeChunkIndex()

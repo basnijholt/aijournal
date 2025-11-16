@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import typer
 from pydantic import BaseModel
@@ -27,6 +27,9 @@ from aijournal.services.feedback import (
 )
 from aijournal.services.retriever import RetrievalFilters
 from aijournal.utils import time as time_utils
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
 
 class ChatOptions(BaseModel):

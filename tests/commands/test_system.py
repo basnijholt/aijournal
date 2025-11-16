@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
-import pytest
+from typing import TYPE_CHECKING
 
 from aijournal.commands import system
 from aijournal.common.meta import Artifact, ArtifactKind, ArtifactMeta
 from aijournal.domain.index import IndexMeta
 from aijournal.io.artifacts import save_artifact
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    import pytest
 
 
 def test_run_system_doctor_happy_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -26,7 +29,9 @@ def test_run_system_doctor_happy_path(tmp_path: Path, monkeypatch: pytest.Monkey
     )
     monkeypatch.setattr(system, "_check_writable_paths", lambda root: (True, {}))
     monkeypatch.setattr(
-        system, "_check_pending_updates", lambda workspace, config: {"count": 0, "samples": []}
+        system,
+        "_check_pending_updates",
+        lambda workspace, config: {"count": 0, "samples": []},
     )
     monkeypatch.setattr(
         system,

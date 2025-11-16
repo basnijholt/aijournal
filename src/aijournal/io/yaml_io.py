@@ -28,7 +28,6 @@ _EnumSafeDumper.add_multi_representer(Enum, _enum_representer)
 
 def _str_representer(dumper: _EnumSafeDumper, value: str) -> yaml.Node:
     """Render unicode directly and pretty-print multiline scalars."""
-
     style = "|" if "\n" in value else None
     return dumper.represent_scalar("tag:yaml.org,2002:str", value, style=style)
 
@@ -53,7 +52,6 @@ def load_yaml_model(path: Path, cls: type[T], *, default: T | None = None) -> T:
 
 def dump_yaml(data: Any, *, sort_keys: bool = False) -> str:
     """Serialize arbitrary data to YAML using the enum-safe dumper."""
-
     return yaml.dump(
         data,
         Dumper=_EnumSafeDumper,

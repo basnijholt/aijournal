@@ -1,14 +1,15 @@
 from __future__ import annotations
 
-from collections.abc import Sequence
-from pathlib import Path
 from time import perf_counter
 from typing import TYPE_CHECKING, Literal
 
 import typer
 
 if TYPE_CHECKING:
-    from .. import IndexStage6Outputs
+    from collections.abc import Sequence
+    from pathlib import Path
+
+    from aijournal.services.capture import IndexStage6Outputs
 
 
 def run_index_stage_6(
@@ -17,9 +18,8 @@ def run_index_stage_6(
     rebuild_mode: Literal["auto", "always", "skip"] = "auto",
 ) -> IndexStage6Outputs:
     from aijournal.commands.index import run_index_rebuild, run_index_tail
-
-    from .. import IndexStage6Outputs, OperationResult
-    from ..utils import relative_path
+    from aijournal.services.capture import IndexStage6Outputs, OperationResult
+    from aijournal.services.capture.utils import relative_path
 
     stage_start = perf_counter()
     index_message = ""
@@ -30,11 +30,7 @@ def run_index_stage_6(
     changed_dates_list = list(changed_dates)
     try:
         chroma_dir = root / "derived" / "index" / "chroma"
-        if force_rebuild:
-            index_message = run_index_rebuild(since=None, limit=None)
-            rebuilt = True
-            index_updated = True
-        elif not chroma_dir.exists():
+        if force_rebuild or not chroma_dir.exists():
             index_message = run_index_rebuild(since=None, limit=None)
             rebuilt = True
             index_updated = True

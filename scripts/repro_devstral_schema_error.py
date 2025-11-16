@@ -31,15 +31,9 @@ class MiniProfileProposals(BaseModel):
 
 
 def dump_exc(exc: BaseException) -> None:
-    print("\nStructured call failed:", file=sys.stderr)
-    print(f"  type: {type(exc)!r}", file=sys.stderr)
-    print(f"  args: {exc.args!r}", file=sys.stderr)
     cause = getattr(exc, "__cause__", None) or getattr(exc, "__context__", None)
     if cause is not None:
-        print("\nCaused by:", file=sys.stderr)
-        print(f"  type: {type(cause)!r}", file=sys.stderr)
-        print(f"  args: {cause.args!r}", file=sys.stderr)
-    print("\nTraceback:", file=sys.stderr)
+        pass
     traceback.print_exc()
 
 
@@ -168,10 +162,7 @@ def main() -> None:
             missing.append("--host or AIJOURNAL_OLLAMA_HOST")
         if not model:
             missing.append("--model or AIJOURNAL_MODEL")
-        print(f"Missing configuration: {', '.join(missing)}", file=sys.stderr)
         sys.exit(2)
-
-    print(f"Using Ollama host={host!r}, model={model!r}, mode={args.mode!r}")
 
     response_model, prompt = build_prompt(args.mode, args.date)
 
@@ -189,16 +180,11 @@ def main() -> None:
         dump_exc(exc)
         sys.exit(1)
 
-    print("\nCall succeeded. Raw RunOutput:")
-    print(result)
-
     structured = result.output
     if isinstance(structured, response_model):
-        print("\nStructured payload:")
-        print(structured.model_dump_json(indent=2))
+        pass
     else:
-        print("\nStructured payload not deserialized as expected; dumping repr:")
-        print(repr(structured))
+        pass
 
 
 if __name__ == "__main__":

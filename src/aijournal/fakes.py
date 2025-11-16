@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Sequence
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from aijournal.domain.changes import (
     ClaimAtomInput,
@@ -11,16 +10,20 @@ from aijournal.domain.changes import (
     FacetChange,
     ProfileUpdateProposals,
 )
-from aijournal.domain.claims import ClaimAtom
 from aijournal.domain.enums import FacetOperation
 from aijournal.domain.evidence import SourceRef
 from aijournal.domain.facts import DailySummary, FactEvidence, MicroFact
-from aijournal.domain.journal import NormalizedEntry
 from aijournal.models.derived import (
     AdviceCard,
     AdviceRecommendation,
     AdviceReference,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Iterable, Sequence
+
+    from aijournal.domain.claims import ClaimAtom
+    from aijournal.domain.journal import NormalizedEntry
 
 
 def fake_summarize(
@@ -201,7 +204,7 @@ def fake_profile_proposals(
                 normalized_ids=[claim_id],
                 evidence=evidence,
                 rationale="Captured new observation",
-            )
+            ),
         )
 
     if profile:
@@ -212,7 +215,7 @@ def fake_profile_proposals(
                 value=profile.get("values_motivations", {}).get("schwartz_top5", []),
                 evidence=[SourceRef(entry_id="profile.snapshot", spans=[])],
                 rationale="Retain existing Schwartz ranking in fake mode",
-            )
+            ),
         )
 
     return ProfileUpdateProposals(claims=claim_proposals, facets=facet_changes)

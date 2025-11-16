@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from aijournal.domain.claims import ClaimAtom
 from aijournal.fakes import fake_advise
-from aijournal.models.derived import AdviceCard
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Sequence
+
+    from aijournal.domain.claims import ClaimAtom
+    from aijournal.models.derived import AdviceCard
 
 
 def generate_advice(
@@ -22,7 +25,6 @@ def generate_advice(
     pending_prompts: Sequence[str],
 ) -> AdviceCard:
     """Produce an `AdviceCard` for the given question."""
-
     if use_fake_llm:
         return fake_advise(
             question,

@@ -3,10 +3,8 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
-from pathlib import Path
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
 import yaml
 
@@ -18,7 +16,12 @@ from aijournal.io.artifacts import load_artifact_data
 from aijournal.io.yaml_io import load_yaml_model
 from aijournal.models.authoritative import ManifestEntry
 from aijournal.models.derived import ProfileUpdateBatch
-from aijournal.services.capture import CaptureResult
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable, Sequence
+    from pathlib import Path
+
+    from aijournal.services.capture import CaptureResult
 
 STAGE_NAMES = {
     0: "persist",
@@ -643,7 +646,7 @@ class Stage7Validator:
                 )
 
         if not pack_stage.result.changed and pack_stage.result.message.startswith(
-            "persona unchanged"
+            "persona unchanged",
         ):
             # No pack expected; treat as informational only
             return failures
@@ -685,7 +688,6 @@ class StageValidatorRegistry:
 
 def render_failures_compact(failures: Sequence[ValidationFailure]) -> str:
     """Return a table-style summary suitable for CLI output."""
-
     lines = ["stage | invariant | date | file | message"]
     for failure in failures:
         lines.append(

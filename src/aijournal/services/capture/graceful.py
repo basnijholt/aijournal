@@ -7,13 +7,14 @@ ensuring the capture orchestrator always receives a result object.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
-from pathlib import Path
 from typing import TYPE_CHECKING, TypeVar
 
 import typer
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+    from pathlib import Path
+
     from aijournal.common.app_config import AppConfig
     from aijournal.domain.claims import ClaimAtom
 
@@ -33,6 +34,7 @@ def graceful_summarize(
     Returns:
         Tuple of (summary_path, error_message). If successful, error_message is None.
         If failed, summary_path is None and error_message contains the reason.
+
     """
     from aijournal.commands.summarize import run_summarize
 
@@ -70,6 +72,7 @@ def graceful_facts(
     Returns:
         Tuple of (facts_path, error_message). If successful, error_message is None.
         If failed, facts_path is None and error_message contains the reason.
+
     """
     from aijournal.commands.facts import run_facts
 
@@ -103,7 +106,6 @@ def graceful_profile_update(
     config: AppConfig | None = None,
 ) -> tuple[Path | None, str | None]:
     """Gracefully run the unified profile update pipeline."""
-
     from aijournal.commands.profile_update import run_profile_update
 
     try:

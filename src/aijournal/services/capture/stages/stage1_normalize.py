@@ -1,15 +1,15 @@
 from __future__ import annotations
 
-from pathlib import Path
 from time import perf_counter
 from typing import TYPE_CHECKING
 
-from aijournal.common.app_config import AppConfig
-
-from .stage0_persist import EntryResult
-
 if TYPE_CHECKING:
-    from .. import NormalizeStageOutputs
+    from pathlib import Path
+
+    from aijournal.common.app_config import AppConfig
+    from aijournal.services.capture import NormalizeStageOutputs
+
+    from .stage0_persist import EntryResult
 
 
 def run_normalize_stage_1(
@@ -17,7 +17,7 @@ def run_normalize_stage_1(
     root: Path,
     config: AppConfig,
 ) -> NormalizeStageOutputs:
-    from .. import NormalizeStageOutputs, OperationResult, normalize_entries
+    from aijournal.services.capture import NormalizeStageOutputs, OperationResult, normalize_entries
 
     normalize_start = perf_counter()
     artifact_counts = normalize_entries(entry_results, root, config) if entry_results else {}
@@ -38,6 +38,6 @@ def run_normalize_stage_1(
             details=normalize_details,
         )
     changed_dates = sorted(
-        {entry.date for entry in entry_results if entry.changed and not entry.deduped}
+        {entry.date for entry in entry_results if entry.changed and not entry.deduped},
     )
     return NormalizeStageOutputs(artifact_counts, op_result, duration_ms, changed_dates)

@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from typing import TYPE_CHECKING
 
 import typer
 
-from aijournal.domain.changes import ClaimProposal
 from aijournal.domain.claims import ClaimAtom, ClaimSource, Scope
 from aijournal.domain.events import (
     ClaimConflictPayload,
@@ -22,6 +21,11 @@ from aijournal.services.consolidator import (
     ClaimMergeOutcome,
     ClaimSignature,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+    from aijournal.domain.changes import ClaimProposal
 
 
 def claim_proposal_to_atom(proposal: ClaimProposal, *, timestamp: str) -> ClaimAtom:
@@ -100,7 +104,7 @@ def scope_tuple_from_payload(
     signature: ClaimSignaturePayload | None,
 ) -> tuple[str | None, tuple[str, ...], tuple[str, ...]]:
     if signature is None:
-        return (None, tuple(), tuple())
+        return (None, (), ())
     return (
         signature.domain,
         tuple(signature.context),
@@ -144,7 +148,7 @@ def build_claim_preview(
             prompts.append(
                 f"Clarify claim {outcome.claim_id} [{scope_label}]: "
                 f"existing='{outcome.conflict.existing_value}' vs "
-                f"incoming='{outcome.conflict.incoming_value}'."
+                f"incoming='{outcome.conflict.incoming_value}'.",
             )
         events.append(
             ClaimPreviewEvent(
@@ -159,7 +163,7 @@ def build_claim_preview(
                 related_claim_id=outcome.related_claim_id,
                 related_action=outcome.related_action,
                 related_signature=related_signature_payload,
-            )
+            ),
         )
 
     if not events and not prompts:

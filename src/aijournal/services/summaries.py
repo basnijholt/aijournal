@@ -2,21 +2,24 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
 from datetime import date as _date
 from datetime import timedelta
 from pathlib import Path
-from typing import Literal, overload
+from typing import TYPE_CHECKING, Literal, overload
 
-from aijournal.common.app_config import AppConfig
 from aijournal.domain.facts import DailySummary
 from aijournal.io.artifacts import load_artifact_data
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
+
+    from aijournal.common.app_config import AppConfig
 
 
 class SummaryNotFoundError(FileNotFoundError):
     """Raised when a required day-level summary artifact is missing."""
 
-    def __init__(self, date: str, path: Path):
+    def __init__(self, date: str, path: Path) -> None:
         self.date = date
         self.path = path
         self._remediation = f"uv run aijournal ops pipeline summarize --date {date}"
@@ -34,7 +37,6 @@ class SummaryNotFoundError(FileNotFoundError):
 
 def summary_artifact_path(workspace: Path, config: AppConfig, day: str) -> Path:
     """Return the absolute path to `derived/summaries/<day>.yaml`."""
-
     derived = Path(config.paths.derived)
     if not derived.is_absolute():
         derived = workspace / derived
@@ -76,8 +78,8 @@ def load_daily_summary(
         day: Target date in ``YYYY-MM-DD`` format.
         required: When ``True`` (default) raise :class:`SummaryNotFoundError`
             if the summary is missing. When ``False`` return ``None`` instead.
-    """
 
+    """
     path = summary_artifact_path(workspace, config, day)
     if not path.exists():
         if required:
@@ -100,13 +102,9 @@ def load_summary_window(
     whether that warrants a warning. The anchor day is loaded only when
     ``include_anchor`` is True.
     """
-
     anchor = _date.fromisoformat(anchor_day)
     offsets: Iterable[int]
-    if include_anchor:
-        offsets = range(lookback_days, -1, -1)
-    else:
-        offsets = range(lookback_days, 0, -1)
+    offsets = range(lookback_days, -1, -1) if include_anchor else range(lookback_days, 0, -1)
 
     results: list[tuple[str, DailySummary]] = []
     for offset in offsets:

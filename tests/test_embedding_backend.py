@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Self
 
 import httpx
 import pytest
@@ -12,7 +12,7 @@ class _DummyResponse:
     def __init__(self, payload: dict[str, Any]) -> None:
         self._payload = payload
 
-    def raise_for_status(self) -> None:  # noqa: D401 - simple passthrough
+    def raise_for_status(self) -> None:
         """No-op for tests."""
 
     def json(self) -> dict[str, Any]:
@@ -21,7 +21,8 @@ class _DummyResponse:
 
 def test_fake_mode_returns_deterministic_vectors(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
-        "aijournal.services.embedding.resolve_ollama_host", lambda host: host or "http://ollama"
+        "aijournal.services.embedding.resolve_ollama_host",
+        lambda host: host or "http://ollama",
     )
     backend = EmbeddingBackend(model="fake", fake_mode=True, dimension=4)
 
@@ -42,7 +43,7 @@ def test_embed_makes_http_requests(monkeypatch: pytest.MonkeyPatch) -> None:
             self.timeout = timeout
             self._requests = calls
 
-        def __enter__(self) -> DummyClient:
+        def __enter__(self) -> Self:
             return self
 
         def __exit__(self, *_: object) -> None:
@@ -53,7 +54,8 @@ def test_embed_makes_http_requests(monkeypatch: pytest.MonkeyPatch) -> None:
             return _DummyResponse({"embedding": [1, 2, 3]})
 
     monkeypatch.setattr(
-        "aijournal.services.embedding.resolve_ollama_host", lambda host: host or "http://ollama"
+        "aijournal.services.embedding.resolve_ollama_host",
+        lambda host: host or "http://ollama",
     )
     monkeypatch.setattr("httpx.Client", DummyClient)
 
@@ -73,17 +75,19 @@ def test_embed_translates_http_errors(monkeypatch: pytest.MonkeyPatch) -> None:
         def __init__(self, *, timeout: float | None = None) -> None:
             self.timeout = timeout
 
-        def __enter__(self) -> ErrorClient:
+        def __enter__(self) -> Self:
             return self
 
         def __exit__(self, *_: object) -> None:
             return None
 
         def post(self, *_: object, **__: object) -> httpx.Response:
-            raise httpx.HTTPError("boom")
+            msg = "boom"
+            raise httpx.HTTPError(msg)
 
     monkeypatch.setattr(
-        "aijournal.services.embedding.resolve_ollama_host", lambda host: host or "http://ollama"
+        "aijournal.services.embedding.resolve_ollama_host",
+        lambda host: host or "http://ollama",
     )
     monkeypatch.setattr("httpx.Client", ErrorClient)
 
@@ -95,7 +99,8 @@ def test_embed_translates_http_errors(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_embed_one_returns_zero_vector_for_empty_input(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
-        "aijournal.services.embedding.resolve_ollama_host", lambda host: host or "http://ollama"
+        "aijournal.services.embedding.resolve_ollama_host",
+        lambda host: host or "http://ollama",
     )
     backend = EmbeddingBackend(model="fake", fake_mode=True)
     backend.dimension = 5

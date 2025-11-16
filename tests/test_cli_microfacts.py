@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import yaml
-from typer.testing import CliRunner
 
 from aijournal.cli import app
 from tests.test_cli_facts import DATE, _write_normalized, _write_summary
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from typer.testing import CliRunner
 
 
 def _load_yaml(path: Path) -> dict[str, object]:

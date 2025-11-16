@@ -3,18 +3,15 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import typer
 from pydantic import BaseModel
 
-from aijournal.common.app_config import AppConfig
 from aijournal.common.command_runner import run_command_pipeline
 from aijournal.common.config_loader import load_config, use_fake_llm
-from aijournal.common.context import RunContext
 from aijournal.common.meta import Artifact, ArtifactKind, ArtifactMeta
 from aijournal.domain.facts import DailySummary
 from aijournal.domain.journal import NormalizedEntry
@@ -28,6 +25,12 @@ from aijournal.services.ollama import (
     resolve_model_name,
 )
 from aijournal.utils import time as time_utils
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+    from aijournal.common.app_config import AppConfig
+    from aijournal.common.context import RunContext
 
 
 class DailySummaryOptions(BaseModel):
@@ -118,10 +121,7 @@ def _build_meta(
     prompt_set: str | None = None,
 ) -> ArtifactMeta:
     resolved_model: str
-    if model:
-        resolved_model = model
-    else:
-        resolved_model = resolve_model_name(config, use_fake_llm=use_fake_llm)
+    resolved_model = model or resolve_model_name(config, use_fake_llm=use_fake_llm)
     created_at = time_utils.format_timestamp(time_utils.now())
     return ArtifactMeta(
         created_at=created_at,

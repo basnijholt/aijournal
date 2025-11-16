@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Iterable
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
@@ -20,6 +19,9 @@ from aijournal.domain.prompts import (
 )
 from aijournal.models.derived import AdviceCard
 
+if TYPE_CHECKING:
+    from collections.abc import Iterable
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 EXAMPLES_DIR = REPO_ROOT / "prompts" / "examples"
 
@@ -32,7 +34,7 @@ def _load_example(name: str) -> dict[str, Any]:
 
 
 @pytest.mark.parametrize(
-    "filename,response_model,target_model,domain_keys,converter,converter_kwargs",
+    ("filename", "response_model", "target_model", "domain_keys", "converter", "converter_kwargs"),
     [
         ("summarize.json", DailySummary, DailySummary, None, None, {}),
         (
@@ -66,7 +68,6 @@ def test_prompt_examples_validate_against_models(
     converter_kwargs,
 ) -> None:
     """Each example must validate against response and domain schemas."""
-
     payload = _load_example(filename)
 
     # Response model (LLM output contract).

@@ -2,16 +2,20 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
 from pathlib import Path
 from textwrap import dedent
+from typing import TYPE_CHECKING
 
-from aijournal.common.app_config import AppConfig, PathsConfig
 from aijournal.common.constants import (
     DEFAULT_EMBEDDING_MODEL,
     DEFAULT_MODEL_NAME,
     DEFAULT_OLLAMA_HOST,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable, Mapping
+
+    from aijournal.common.app_config import AppConfig, PathsConfig
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
@@ -26,6 +30,7 @@ def resolve_path(workspace: Path, config: AppConfig, rel_path: str) -> Path:
 
     Returns:
         Absolute path resolved from workspace and config
+
     """
     # Split into base and remaining path
     parts = rel_path.split("/", 1)
@@ -161,7 +166,6 @@ def ensure_directories(base: Path, rel_paths: Iterable[str]) -> tuple[int, int]:
 
 def ensure_gitkeep_files(base: Path, rel_paths: Iterable[str]) -> tuple[int, int]:
     """Ensure each directory contains a .gitkeep marker, returning created vs total."""
-
     created = 0
     total = 0
     seen: set[str] = set()
@@ -219,6 +223,7 @@ def normalized_entry_path(
 
     Returns:
         Path to the normalized entry YAML file.
+
     """
     data_dir = Path(paths.data)
     if not data_dir.is_absolute():
@@ -244,6 +249,7 @@ def resolve_prompt_path(prompt_path: str, *, prompt_set: str | None = None) -> P
         >>> resolve_prompt_path("prompts/summarize_day.md", prompt_set="variant-a")
         # Returns prompts/experiments/variant-a/summarize_day.md if it exists
         # Otherwise falls back to prompts/summarize_day.md
+
     """
     candidate = Path(prompt_path)
     if candidate.is_absolute():

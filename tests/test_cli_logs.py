@@ -5,12 +5,12 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING
 
-from typer.testing import CliRunner
-
 from aijournal.cli import app
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+    from typer.testing import CliRunner
 
 
 def _write_trace(workspace: Path, entries: list[dict[str, object]]) -> Path:
@@ -81,7 +81,7 @@ def test_logs_tail_raw_mode(
             "run_id": "advise-1",
             "command": "advise",
             "event": "command_start",
-        }
+        },
     ]
     log_path = _write_trace(cli_workspace, entries)
 

@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from pathlib import Path
-from typing import Any, TypeVar
+from typing import TYPE_CHECKING, Any, TypeVar
 
 from pydantic import BaseModel
 from pydantic_core import PydanticSerializationError
 
-from aijournal.common.context import RunContext
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from aijournal.common.context import RunContext
 
 OptionsT = TypeVar("OptionsT", bound=BaseModel)
 PreparedT = TypeVar("PreparedT")
