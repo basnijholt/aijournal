@@ -4,6 +4,17 @@ The system already knows the exact schema for `facts` and `claim_proposals` from
 
 ## Output schema refresher
 
+Always return a single structured response with exactly two keys:
+
+```
+{
+  "facts": [...],
+  "claim_proposals": [...]
+}
+```
+
+Leave either list empty when you have nothing grounded to add.
+
 Each fact must include the following keys:
 - `id` – short slug like `focus-morning-block`.
 - `statement` – natural-language sentence ≤160 characters.
@@ -20,8 +31,27 @@ Example fact:
 }
 ```
 
+- Each claim proposal must include:
+  - `type` – one of `preference`, `value`, `goal`, `boundary`, `trait`, `habit`, `aversion`, `skill`.
+  - `statement` – readable sentence ≤160 characters.
+  - `reason` – ≤25-word justification that cites evidence.
+  - `evidence_entry` – normalized entry id backing the claim.
+  - Optional: `subject`, `predicate`, `value`, `strength`, `status`, `method`, scope metadata.
+
+- Example claim proposal:
+  ```
+  {
+    "type": "preference",
+    "statement": "Prefers spending on experiences over gadgets.",
+    "reason": "Says trips create happiness while TVs do not.",
+    "evidence_entry": "2011-02-13-geluk-onderzocht",
+    "strength": 0.7,
+    "status": "accepted"
+  }
+  ```
+
 - Use the `facts` list for specific, evidence-backed observations about the user’s life or behaviour.
-- Use the `claim_proposals` list for optional higher-level persona insights (values, traits, habits, goals, etc.).
+- Use the `claim_proposals` list for optional higher-level persona insights (values, traits, habits, goals, etc.). When you include a claim, you **must** pick a `type` from the allowed set; if you cannot justify one of the valid types, omit the entire claim instead of dropping the `type` field.
 - When there are no valid facts or claims, leave both lists empty.
 
 ---
@@ -101,6 +131,20 @@ Use the `claim_proposals` list **sparingly** for higher-level persona insights. 
 - Allowed `type` values are:
 
   `preference`, `value`, `goal`, `boundary`, `trait`, `habit`, `aversion`, `skill`.
+
+  Example claim proposal:
+
+  ```
+  {
+    "id": "pref-experiential-spending",
+    "type": "preference",
+    "statement": "Prefers spending on experiences over gadgets.",
+    "reason": "States memories from trips matter more than buying a TV.",
+    "evidence_entry": "2011-02-13-geluk-onderzocht",
+    "strength": 0.7,
+    "status": "accepted"
+  }
+  ```
 - Only propose a claim when at least one of the following is true:
   * Multiple facts or entries suggest a **pattern** (repeated behaviour, enduring preference or value).
   * The user explicitly states a long-term value/goal/trait ("I really care about…", "I want to keep doing…").
