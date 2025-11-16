@@ -13,7 +13,7 @@ import os
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal, cast
+from typing import TYPE_CHECKING, Any, Final, Literal, cast
 
 import click
 import httpx
@@ -191,6 +191,118 @@ app = typer.Typer(
 )
 
 
+# Shared Typer singletons used across commands (keep factory calls out of
+# function signatures so Typer reuses the same option objects everywhere).
+WORKSPACE_PATH_OPTION: Final = typer.Option(
+    None,
+    "--path",
+    "-p",
+    file_okay=False,
+    dir_okay=True,
+    resolve_path=False,
+    help="Workspace directory to operate inside (defaults to the current working directory).",
+)
+TRACE_LOG_PATH_OPTION: Final = typer.Option(
+    None,
+    "--path",
+    help="Override trace log path (defaults to derived/logs/run_trace.jsonl).",
+)
+CAPTURE_FROM_OPTION: Final = typer.Option(
+    None,
+    "--from",
+    help="File or directory to import (repeatable).",
+    exists=True,
+    dir_okay=True,
+    file_okay=True,
+    readable=True,
+    resolve_path=True,
+    rich_help_panel="INPUT",
+)
+CAPTURE_TAGS_OPTION: Final = typer.Option(
+    [],
+    "--tag",
+    "-t",
+    help="Tag to merge into front matter (repeatable).",
+    rich_help_panel="METADATA",
+    show_default=False,
+)
+CAPTURE_PROJECTS_OPTION: Final = typer.Option(
+    [],
+    "--project",
+    help="Project to merge into front matter (repeatable).",
+    rich_help_panel="METADATA",
+    show_default=False,
+)
+INIT_PATH_OPTION: Final = typer.Option(
+    None,
+    "--path",
+    "-p",
+    help="Directory to initialize (defaults to current working directory).",
+)
+NEW_TAGS_OPTION: Final = typer.Option(
+    None,
+    "--tags",
+    "-t",
+    help="Tag to attach to the entry (repeatable).",
+)
+DEV_HUMAN_SIM_OUTPUT_OPTION: Final = typer.Option(
+    None,
+    "--output",
+    help="Optional workspace path to populate (defaults to a temp directory).",
+)
+INGEST_SOURCES_ARGUMENT: Final = typer.Argument(
+    ...,
+    exists=True,
+    dir_okay=True,
+    file_okay=True,
+    readable=True,
+    resolve_path=True,
+    help="Markdown files or directories to ingest.",
+)
+NORMALIZE_ENTRY_ARGUMENT: Final = typer.Argument(
+    ...,
+    exists=True,
+    readable=True,
+    help="Path to journal Markdown entry.",
+)
+PROFILE_APPLY_FILE_OPTION: Final = typer.Option(
+    None,
+    "--file",
+    help="Path to suggestions YAML.",
+)
+REVIEW_FILE_OPTION: Final = typer.Option(
+    None,
+    "--file",
+    help="Specific pending batch to review (defaults to latest).",
+    rich_help_panel="INPUT",
+)
+PERSONA_VARIANTS_OPTION: Final = typer.Option(
+    ["short"],
+    "--variant",
+    "-v",
+    help="Preset sizes to render (tiny, short, full, or all). Repeat for multiples.",
+    show_default=False,
+)
+PERSONA_OUTPUT_OPTION: Final = typer.Option(
+    None,
+    "--output",
+    "-o",
+    help="Destination file; defaults to stdout when omitted.",
+)
+PERSONA_OUTPUT_DIR_OPTION: Final = typer.Option(
+    None,
+    "--output-dir",
+    help="Write persona exports into this directory (one file per variant).",
+)
+PACK_OUTPUT_OPTION: Final = typer.Option(
+    None,
+    "--output",
+    "-o",
+    help="Destination file (defaults to stdout).",
+    rich_help_panel="OUTPUT",
+)
+
+
 @app.command("version", help="Print the current aijournal version and source root.")
 def show_version() -> None:
     """Display package version and repository source path."""
@@ -271,15 +383,7 @@ def _main_callback(
             "and config prompts.active_set)."
         ),
     ),
-    workspace: Path | None = typer.Option(
-        None,
-        "--path",
-        "-p",
-        file_okay=False,
-        dir_okay=True,
-        resolve_path=False,
-        help="Workspace directory to operate inside (defaults to the current working directory).",
-    ),
+    workspace: Path | None = WORKSPACE_PATH_OPTION,
 ) -> None:
     if prompt_set:
         os.environ["AIJOURNAL_PROMPT_SET"] = prompt_set
@@ -432,11 +536,7 @@ def logs_tail(
         "--raw",
         help="Emit raw JSON lines instead of formatted output.",
     ),
-    path: Path | None = typer.Option(
-        None,
-        "--path",
-        help="Override trace log path (defaults to derived/logs/run_trace.jsonl).",
-    ),
+    path: Path | None = TRACE_LOG_PATH_OPTION,
 ) -> None:
     """Show the most recent structured trace events."""
     workspace = _get_workspace()
@@ -487,17 +587,7 @@ def ops_microfacts_rebuild_command() -> None:
 
 @app.command(help="Capture Markdown into the journal workspace and refresh derived artifacts.")
 def capture(
-    from_paths: list[Path] | None = typer.Option(
-        None,
-        "--from",
-        help="File or directory to import (repeatable).",
-        exists=True,
-        dir_okay=True,
-        file_okay=True,
-        readable=True,
-        resolve_path=True,
-        rich_help_panel="INPUT",
-    ),
+    from_paths: list[Path] | None = CAPTURE_FROM_OPTION,
     text: str | None = typer.Option(
         None,
         "--text",
@@ -529,21 +619,8 @@ def capture(
         help="Override title when capturing raw text.",
         rich_help_panel="METADATA",
     ),
-    tags: list[str] = typer.Option(
-        [],
-        "--tag",
-        "-t",
-        help="Tag to merge into front matter (repeatable).",
-        rich_help_panel="METADATA",
-        show_default=False,
-    ),
-    projects: list[str] = typer.Option(
-        [],
-        "--project",
-        help="Project to merge into front matter (repeatable).",
-        rich_help_panel="METADATA",
-        show_default=False,
-    ),
+    tags: list[str] = CAPTURE_TAGS_OPTION,
+    projects: list[str] = CAPTURE_PROJECTS_OPTION,
     mood: str | None = typer.Option(
         None,
         "--mood",
@@ -817,12 +894,7 @@ def _latest_pending_batch(workspace: Path, config: AppConfig) -> Path | None:
 
 @app.command()
 def init(
-    path: Path | None = typer.Option(
-        None,
-        "--path",
-        "-p",
-        help="Directory to initialize (defaults to current working directory).",
-    ),
+    path: Path | None = INIT_PATH_OPTION,
 ) -> None:
     """Initialize the local aijournal layout."""
     workspace_override = _resolve_workspace_option(path)
@@ -837,12 +909,7 @@ def new(
         None,
         help="Title for the journal entry; omit when using --fake.",
     ),
-    tags: list[str] | None = typer.Option(
-        None,
-        "--tags",
-        "-t",
-        help="Tag to attach to the entry (repeatable).",
-    ),
+    tags: list[str] | None = NEW_TAGS_OPTION,
     fake: int = typer.Option(
         0,
         "--fake",
@@ -862,11 +929,7 @@ def new(
 
 @ops_dev_app.command("human-sim", hidden=True)
 def dev_human_sim(
-    output: Path | None = typer.Option(
-        None,
-        "--output",
-        help="Optional workspace path to populate (defaults to a temp directory).",
-    ),
+    output: Path | None = DEV_HUMAN_SIM_OUTPUT_OPTION,
     keep_workspace: bool = typer.Option(
         False,
         "--keep-workspace/--cleanup-workspace",
@@ -907,15 +970,7 @@ def dev_human_sim(
 
 @ops_pipeline_app.command("ingest", hidden=True)
 def ingest(
-    sources: list[Path] = typer.Argument(
-        ...,
-        exists=True,
-        dir_okay=True,
-        file_okay=True,
-        readable=True,
-        resolve_path=True,
-        help="Markdown files or directories to ingest.",
-    ),
+    sources: list[Path] = INGEST_SOURCES_ARGUMENT,
     source_type: str = typer.Option(
         "external",
         "--source-type",
@@ -948,12 +1003,7 @@ def ingest(
 
 @ops_pipeline_app.command("normalize")
 def normalize(
-    entry: Path = typer.Argument(
-        ...,
-        exists=True,
-        readable=True,
-        help="Path to journal Markdown entry.",
-    ),
+    entry: Path = NORMALIZE_ENTRY_ARGUMENT,
 ) -> None:
     """Normalize a Markdown journal entry into structured YAML."""
     entry = entry.resolve()
@@ -1149,7 +1199,7 @@ def profile_update_cli(
 @profile_app.command("apply")
 def profile_apply(
     date: str = typer.Option(..., "--date", "-d", help="Date (YYYY-MM-DD) to apply."),
-    file: Path | None = typer.Option(None, "--file", help="Path to suggestions YAML."),
+    file: Path | None = PROFILE_APPLY_FILE_OPTION,
     yes: bool = typer.Option(False, "--yes", help="Apply without prompting."),
 ) -> None:
     """Apply profile suggestions to authoritative files (offline)."""
@@ -1163,12 +1213,7 @@ def profile_apply(
 
 @ops_pipeline_app.command("review", hidden=True)
 def review_updates(
-    file: Path | None = typer.Option(
-        None,
-        "--file",
-        help="Specific pending batch to review (defaults to latest).",
-        rich_help_panel="INPUT",
-    ),
+    file: Path | None = REVIEW_FILE_OPTION,
     apply: bool = typer.Option(
         False,
         "--apply",
@@ -1369,29 +1414,14 @@ def persona_status() -> None:
 
 @persona_app.command("export")
 def persona_export(
-    variants: list[str] = typer.Option(
-        ["short"],
-        "--variant",
-        "-v",
-        help="Preset sizes to render (tiny, short, full, or all). Repeat for multiples.",
-        show_default=False,
-    ),
+    variants: list[str] = PERSONA_VARIANTS_OPTION,
     tokens: int | None = typer.Option(
         None,
         "--tokens",
         help="Approximate token budget override (takes precedence over --variant).",
     ),
-    output: Path | None = typer.Option(
-        None,
-        "--output",
-        "-o",
-        help="Destination file; defaults to stdout when omitted.",
-    ),
-    output_dir: Path | None = typer.Option(
-        None,
-        "--output-dir",
-        help="Write persona exports into this directory (one file per variant).",
-    ),
+    output: Path | None = PERSONA_OUTPUT_OPTION,
+    output_dir: Path | None = PERSONA_OUTPUT_DIR_OPTION,
     overwrite: bool = typer.Option(
         False,
         "--overwrite",
@@ -1907,13 +1937,7 @@ def pack(
         help="Date (YYYY-MM-DD); auto-detected for L2 when omitted.",
         rich_help_panel="PACK CONFIG",
     ),
-    output: Path | None = typer.Option(
-        None,
-        "--output",
-        "-o",
-        help="Destination file (defaults to stdout).",
-        rich_help_panel="OUTPUT",
-    ),
+    output: Path | None = PACK_OUTPUT_OPTION,
     max_tokens: int | None = typer.Option(
         None,
         "--max-tokens",
