@@ -69,5 +69,4 @@ class LLMResult(StrictModel, Generic[T]):
     created_at: TimestampStr
     payload: T
     attempts: int = 1
-    repair_attempts: int = 0
     coercions_applied: list[dict[str, str]] = Field(default_factory=list)

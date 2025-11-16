@@ -128,14 +128,12 @@ def prepare_inputs(ctx: RunContext, options: FactsOptions) -> FactsPrepared:
     manifest_entries = _load_manifest(_manifest_path(ctx.workspace, ctx.config))
     manifest_index = _manifest_by_id(manifest_entries)
     try:
-        summary = cast(
-            DailySummary,
-            load_daily_summary(ctx.workspace, ctx.config, options.date),
-        )
+        summary = load_daily_summary(ctx.workspace, ctx.config, options.date)
     except SummaryNotFoundError as exc:
         typer.secho(str(exc), fg=typer.colors.RED, err=True)
         ctx.emit(event="command_failed", reason="missing_summary", date=options.date)
         raise typer.Exit(1) from exc
+    assert summary is not None
     if options.claim_models is not None:
         claim_models = [claim.model_copy(deep=True) for claim in options.claim_models]
     else:

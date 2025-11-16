@@ -22,6 +22,15 @@ from aijournal.services.ollama import (
 )
 
 
+class _FakeResult(SimpleNamespace):
+    def __init__(self, output: object, requests: int) -> None:
+        super().__init__(output=output)
+        self._requests = requests
+
+    def usage(self) -> SimpleNamespace:  # pragma: no cover - tiny helper
+        return SimpleNamespace(requests=self._requests)
+
+
 class _FakeAgent:
     def __init__(self, texts: list[str], raise_error: Exception | None = None) -> None:
         self._texts = texts
@@ -41,16 +50,17 @@ class _FakeAgent:
         try:
             if isinstance(output_type, type) and issubclass(output_type, BaseModel):
                 payload = json.loads(text)
-                return SimpleNamespace(output=output_type.model_validate(payload))
+                validated = output_type.model_validate(payload)
+                return _FakeResult(validated, self.calls)
             if output_type is dict:
                 payload = json.loads(text)
                 if not isinstance(payload, dict):
                     raise ValueError("expected dict payload")
-                return SimpleNamespace(output=payload)
+                return _FakeResult(payload, self.calls)
         except Exception as exc:  # pragma: no cover - helper safety
             raise UnexpectedModelBehavior(str(exc)) from exc
 
-        return SimpleNamespace(output=text)
+        return _FakeResult(text, self.calls)
 
 
 class _ListModel(BaseModel):
@@ -74,7 +84,6 @@ def test_run_ollama_agent_returns_payload(monkeypatch: pytest.MonkeyPatch, tmp_p
     assert result.prompt_path == "prompts/example.md"
     assert result.prompt_hash == "hash"
     assert result.attempts == 1
-    assert result.repair_attempts == 0
     assert result.coercions_applied == []
     assert agent.prompt == "prompt text"
 
@@ -85,7 +94,6 @@ def test_run_ollama_agent_returns_payload(monkeypatch: pytest.MonkeyPatch, tmp_p
         if line.strip()
     ]
     assert metrics[-1]["attempts"] == 1
-    assert metrics[-1]["repair_attempts"] == 0
     assert metrics[-1]["coercion_count"] == 0
 
 

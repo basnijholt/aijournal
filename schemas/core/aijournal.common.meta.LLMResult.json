@@ -66,11 +66,6 @@
       ],
       "default": null,
       "title": "Prompt Set"
-    },
-    "repair_attempts": {
-      "default": 0,
-      "title": "Repair Attempts",
-      "type": "integer"
     }
   },
   "required": [

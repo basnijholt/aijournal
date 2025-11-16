@@ -533,8 +533,7 @@ def run_ollama_agent(
 
     attempts = 1
     usage = result.usage()
-    attempts = usage.requests or 1
-    repair_attempts = max(0, attempts - 1)
+    attempts = usage.requests
 
     result_payload = LLMResult[_PayloadT](
         model=config.model,
@@ -545,7 +544,6 @@ def run_ollama_agent(
         created_at=created_at,
         payload=cast(_PayloadT, payload),
         attempts=attempts,
-        repair_attempts=repair_attempts,
         coercions_applied=coercions_applied,
     )
 
@@ -556,7 +554,6 @@ def run_ollama_agent(
         "model": result_payload.model,
         "label": log_label or getattr(agent, "name", None),
         "attempts": result_payload.attempts,
-        "repair_attempts": result_payload.repair_attempts,
         "coercion_count": len(result_payload.coercions_applied),
         "created_at": result_payload.created_at,
     }
