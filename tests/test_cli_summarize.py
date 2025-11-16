@@ -215,6 +215,7 @@ def test_invoke_structured_llm_uses_shared_builder(monkeypatch: pytest.MonkeyPat
         prompt_set: str | None = None,
         log_label: str | None = None,
         retries: int,
+        model_context: dict[str, object] | None = None,
     ) -> LLMResult[DailySummary]:
         assert config.model == "builder-model"
         assert "summarize" in system_prompt.lower()
@@ -222,6 +223,7 @@ def test_invoke_structured_llm_uses_shared_builder(monkeypatch: pytest.MonkeyPat
         assert prompt_kind == "summarize_day"
         assert prompt_set is None
         assert retries == DEFAULT_LLM_RETRIES
+        assert model_context is None
         payload = output_type(
             day=DATE,
             bullets=["bullet"],

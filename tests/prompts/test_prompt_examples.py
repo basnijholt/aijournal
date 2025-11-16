@@ -43,7 +43,7 @@ def _load_example(name: str) -> dict[str, Any]:
             MicroFactsFile,
             None,
             convert_prompt_microfacts,
-            {},
+            {"entry_dates": {"2025-10-25-focus-log": "2025-10-25"}},
         ),
         (
             "profile_update.json",

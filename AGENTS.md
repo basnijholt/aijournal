@@ -112,7 +112,7 @@ Read these first to avoid surprises mid-run.
 Structured commands expect the model to mine existing fields (`summary`, `sections`, `tags`). Provide adequate content or the model returns empty payloads.
 
 ### Facts (`prompts/extract_facts.md`)
-- LLM must emit full JSON objects (`id`, `statement`, `confidence`, `evidence`, `first_seen`, `last_seen`).
+- LLM must emit full JSON objects (`id`, `statement`, `confidence`, `evidence`).
 - Updated instruction instructs the model to synthesize statements from summaries/sections when paragraphs are missing.
 - Validate outputs with:
   ```bash

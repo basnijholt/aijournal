@@ -380,15 +380,17 @@ def _coerce_payload_for_model(
 def _attempt_model_validation(
     payload: dict[str, Any],
     model: type[BaseModel],
+    *,
+    context: Mapping[str, Any] | None = None,
 ) -> tuple[BaseModel | None, list[dict[str, str]], list[dict[str, Any]]]:
     try:
-        validated = model.model_validate(payload)
+        validated = model.model_validate(payload, context=context)
     except ValidationError as exc:
         errors = cast(list[dict[str, Any]], exc.errors())
         coerced_payload, coercions = _coerce_payload_for_model(payload, model)
         if coercions:
             try:
-                validated = model.model_validate(coerced_payload)
+                validated = model.model_validate(coerced_payload, context=context)
             except ValidationError as coercion_exc:
                 coerced_errors = cast(list[dict[str, Any]], coercion_exc.errors())
                 return None, coercions, coerced_errors
@@ -468,6 +470,7 @@ def run_ollama_agent(
     prompt_kind: str | None = None,
     prompt_set: str | None = None,
     log_label: str | None = None,
+    model_context: Mapping[str, Any] | None = None,
 ) -> LLMResult[_PayloadT]:
     """Run a Pydantic AI agent and return the validated payload with metadata."""
     target_model: type[BaseModel] | None = None
@@ -532,7 +535,11 @@ def run_ollama_agent(
                 msg = f"Model returned non-JSON payload: {payload!r}"
                 raise LLMResponseError(msg) from exc
 
-        validated, coercions, errors = _attempt_model_validation(raw_payload_dict, target_model)
+        validated, coercions, errors = _attempt_model_validation(
+            raw_payload_dict,
+            target_model,
+            context=model_context,
+        )
         if validated is None:
             error_display = _to_json(errors) if errors else "validation failed"
             raw_display = _to_json(raw_payload_dict)
@@ -621,6 +628,7 @@ def invoke_structured_llm(
     agent_name: str,
     config: AppConfig,
     prompt_set: str | None = None,
+    model_context: Mapping[str, Any] | None = None,
 ) -> StructuredModelT:
     prompt = _render_prompt(prompt_path, variables, prompt_set=prompt_set)
     prompt_hash = _hash_prompt(prompt_path, prompt_set=prompt_set)
@@ -639,6 +647,7 @@ def invoke_structured_llm(
             prompt_kind=prompt_kind,
             prompt_set=prompt_set,
             log_label=agent_name,
+            model_context=model_context,
         )
         return cast(StructuredModelT, result.payload)
     except Exception as exc:  # pragma: no cover - runtime dependent

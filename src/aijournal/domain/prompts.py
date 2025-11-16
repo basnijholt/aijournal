@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from pydantic import Field, field_validator
+from pydantic import Field, ValidationInfo, field_validator, model_validator
 
 from aijournal.common.base import StrictModel
 from aijournal.domain.claims import Scope
@@ -179,8 +179,6 @@ class PromptMicroFact(StrictModel):
     statement: str = Field(..., max_length=500)
     confidence: float | None = Field(default=None, ge=0.0, le=1.0)
     evidence_entry: str | None = None
-    first_seen: str | None = None
-    last_seen: str | None = None
 
     @field_validator("statement", mode="before")
     @classmethod
@@ -198,6 +196,20 @@ class PromptMicroFacts(StrictModel):
 
     facts: list[PromptMicroFact] = Field(default_factory=list)
     claim_proposals: list[PromptClaimItem] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _validate_evidence_entries(self, info: ValidationInfo) -> PromptMicroFacts:
+        context = info.context or {}
+        allowed_ids = set(context.get("entry_ids", []) or [])
+        for fact in self.facts:
+            entry_id = (fact.evidence_entry or "").strip()
+            if not entry_id:
+                msg = "micro-fact missing evidence_entry"
+                raise ValueError(msg)
+            if allowed_ids and entry_id not in allowed_ids:
+                msg = f"micro-fact references unknown entry_id '{entry_id}'"
+                raise ValueError(msg)
+        return self
 
 
 def _source_from_prompt_fact(item: PromptMicroFact) -> SourceRef:
@@ -245,23 +257,33 @@ def is_metadata_only_fact(item: PromptMicroFact) -> bool:
     return bool(any(hint in statement for hint in _METADATA_STATEMENT_HINTS))
 
 
-def convert_prompt_microfacts(prompt: PromptMicroFacts) -> Any:  # Returns MicroFactsFile
+def convert_prompt_microfacts(
+    prompt: PromptMicroFacts,
+    *,
+    entry_dates: Mapping[str, str],
+) -> Any:  # Returns MicroFactsFile
     """Convert lightweight prompt DTO to the authoritative micro-facts payload."""
     from aijournal.domain.facts import MicroFact, MicroFactsFile
 
     filtered_facts = [fact for fact in prompt.facts if not is_metadata_only_fact(fact)]
 
-    facts = [
-        MicroFact(
-            id=item.id,
-            statement=item.statement,
-            confidence=float(item.confidence) if item.confidence is not None else 0.6,
-            evidence=_source_from_prompt_fact(item),
-            first_seen=item.first_seen,
-            last_seen=item.last_seen,
+    facts = []
+    for item in filtered_facts:
+        entry_id = (item.evidence_entry or "").strip()
+        entry_date = entry_dates.get(entry_id)
+        first_seen = entry_date
+        last_seen = entry_date
+
+        facts.append(
+            MicroFact(
+                id=item.id,
+                statement=item.statement,
+                confidence=float(item.confidence) if item.confidence is not None else 0.6,
+                evidence=_source_from_prompt_fact(item),
+                first_seen=first_seen,
+                last_seen=last_seen,
+            ),
         )
-        for item in filtered_facts
-    ]
 
     claim_proposals = [
         convert_prompt_claim_to_proposal(

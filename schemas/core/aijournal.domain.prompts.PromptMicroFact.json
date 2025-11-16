@@ -27,33 +27,9 @@
       "default": null,
       "title": "Evidence Entry"
     },
-    "first_seen": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null,
-      "title": "First Seen"
-    },
     "id": {
       "title": "Id",
       "type": "string"
-    },
-    "last_seen": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null,
-      "title": "Last Seen"
     },
     "statement": {
       "maxLength": 500,

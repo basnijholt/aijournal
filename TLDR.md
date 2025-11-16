@@ -124,9 +124,7 @@ missing, rerun Stage 2 (`aijournal ops pipeline summarize --date YYYY-MM-DD`).
       "statement": "User blocked 8-10am for deep work",
       "confidence": 0.8,
       "evidence_entry": "2025-11-14-focus-session",
-      "evidence_para": 0,
-      "first_seen": "2025-11-14",
-      "last_seen": "2025-11-14"
+      "evidence_para": 0
     }
   ],
   "claim_proposals": [

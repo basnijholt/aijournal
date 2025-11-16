@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import pytest
+from pydantic import ValidationError
+
 from aijournal.domain.prompts import (
     PromptMicroFact,
     PromptMicroFacts,
@@ -19,8 +22,6 @@ def _fact(
         statement=statement,
         confidence=0.9,
         evidence_entry=evidence_entry,
-        first_seen="2025-11-14",
-        last_seen="2025-11-14",
     )
 
 
@@ -45,7 +46,29 @@ def test_convert_prompt_microfacts_filters_metadata_only_entries() -> None:
         ],
     )
 
-    result = convert_prompt_microfacts(prompt)
+    result = convert_prompt_microfacts(prompt, entry_dates={"entry-1": "2025-11-14"})
 
     statements = [fact.statement for fact in result.facts]
     assert statements == ["Completed 2h focus block"]
+
+
+def test_prompt_microfacts_validator_rejects_unknown_entry_ids() -> None:
+    payload = {
+        "facts": [
+            {
+                "id": "focus-block",
+                "statement": "Completed 2h focus block",
+                "confidence": 0.8,
+                "evidence_entry": "entry-1",
+            },
+        ],
+        "claim_proposals": [],
+    }
+
+    # Valid when context lists entry-1.
+    instance = PromptMicroFacts.model_validate(payload, context={"entry_ids": ["entry-1"]})
+    assert instance.facts[0].evidence_entry == "entry-1"
+
+    # Invalid when entry ID missing from context.
+    with pytest.raises(ValidationError):
+        PromptMicroFacts.model_validate(payload, context={"entry_ids": ["other-entry"]})

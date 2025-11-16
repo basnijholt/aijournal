@@ -169,6 +169,11 @@ def invoke_pipeline(ctx: RunContext, prepared: FactsPrepared) -> FactsResult:
 
     llm_microfacts: MicroFactsFile | None = None
     if not ctx.use_fake_llm:
+        entry_ids = [entry.id for entry in prepared.entries]
+        if len(entry_ids) != len(prepared.entries):
+            missing = [idx for idx, entry in enumerate(prepared.entries) if not entry.id]
+            msg = f"Normalized entries missing ids at indexes {missing}"
+            raise ValueError(msg)
         llm_response = invoke_structured_llm(
             "prompts/extract_facts.md",
             {
@@ -182,8 +187,16 @@ def invoke_pipeline(ctx: RunContext, prepared: FactsPrepared) -> FactsResult:
             agent_name="aijournal-facts",
             config=ctx.config,
             prompt_set=ctx.prompt_set,
+            model_context={"entry_ids": entry_ids},
         )
-        llm_microfacts = convert_prompt_microfacts(llm_response)
+
+        entry_dates = {
+            entry.id: time_utils.created_date(entry.created_at) for entry in prepared.entries
+        }
+        llm_microfacts = convert_prompt_microfacts(
+            llm_response,
+            entry_dates=entry_dates,
+        )
 
     facts_data = facts_pipeline.generate_microfacts(
         prepared.entries,

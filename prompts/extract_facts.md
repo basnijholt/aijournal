@@ -9,8 +9,6 @@ Each fact must include the following keys:
 - `statement` – natural-language sentence ≤160 characters.
 - `confidence` – float in `[0,1]` (default `0.6` when unsure).
 - `evidence_entry` – normalized entry id backing the fact.
-- `first_seen` – `YYYY-MM-DD` (usually the entry date; we default it if omitted).
-- `last_seen` – `YYYY-MM-DD` (same as `first_seen` unless the entry cites a later span).
 
 Example fact:
 ```
@@ -19,8 +17,6 @@ Example fact:
   "statement": "Morning focus blocks improve deep-work output.",
   "confidence": 0.82,
   "evidence_entry": "2025-10-25-focus-log",
-  "first_seen": "2025-10-25",
-  "last_seen": "2025-10-25"
 }
 ```
 
@@ -94,8 +90,7 @@ Use the `facts` list for **specific, non-trivial observations** grounded in the 
   * Default to about `0.6` when evidence is clear and well-supported by the entry.
   * Use lower confidence (`0.3–0.5`) for weaker or less direct evidence.
   * If you believe confidence would be very low, skip the fact instead of adding it.
-- When the same fact appears multiple times on this date, you may still use the day’s date for both `first_seen` and `last_seen`.
-- When the fact is mentioned only once, reuse the entry’s `created_at` date for both `first_seen` and `last_seen`.
+- When the same fact appears multiple times on this date, keep statements atomic and cite the most relevant paragraph.
 
 ---
 
