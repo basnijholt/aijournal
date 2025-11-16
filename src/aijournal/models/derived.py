@@ -10,7 +10,6 @@ from aijournal.domain.advice import AdviceReference as _AdviceReference
 from aijournal.domain.changes import ProfileUpdateProposals
 from aijournal.domain.claims import ClaimAtom
 from aijournal.domain.events import ClaimPreviewEvent  # noqa: TC001
-from aijournal.domain.facts import MicroFactsFile
 from aijournal.domain.persona import InterviewQuestion, InterviewSet, PersonaCore
 
 from .base import AijournalModel
@@ -54,6 +53,3 @@ class ProfileUpdateBatch(AijournalModel):
     inputs: list[ProfileUpdateInput] = Field(default_factory=list)
     proposals: ProfileUpdateProposals = Field(default_factory=ProfileUpdateProposals)
     preview: ProfileUpdatePreview | None = None
-
-
-MicroFactsFile.model_rebuild(_types_namespace={"ProfileUpdatePreview": ProfileUpdatePreview})

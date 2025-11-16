@@ -118,21 +118,6 @@
           ],
           "default": null,
           "title": "Prompt Set"
-        },
-        "sources": {
-          "anyOf": [
-            {
-              "additionalProperties": {
-                "type": "string"
-              },
-              "type": "object"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Sources"
         }
       },
       "required": [

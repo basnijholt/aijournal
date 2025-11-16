@@ -216,7 +216,6 @@ def test_persona_core_roundtrip(tmp_path: Path) -> None:
             model=None,
             char_per_token=4.2,
             notes=notes or None,
-            sources={"profile": "profile/self_profile.yaml"},
         ),
         data=persona,
     )

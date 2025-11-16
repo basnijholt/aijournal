@@ -23,7 +23,6 @@ class ArtifactMeta(StrictModel):
     prompt_kind: str | None = None
     prompt_set: str | None = None
     char_per_token: float | None = None
-    sources: dict[str, str] | None = None
     notes: dict[str, str] | None = None
 
 

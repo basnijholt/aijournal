@@ -2,16 +2,11 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 from pydantic import Field
 
 from aijournal.common.base import StrictModel
 from aijournal.domain.changes import ClaimProposal  # noqa: TC001
 from aijournal.domain.evidence import SourceRef
-
-if TYPE_CHECKING:  # pragma: no cover
-    from aijournal.models.derived import ProfileUpdatePreview
 
 
 class DailySummary(StrictModel):
@@ -38,7 +33,6 @@ class MicroFact(StrictModel):
 class MicroFactsFile(StrictModel):
     facts: list[MicroFact] = Field(default_factory=list)
     claim_proposals: list[ClaimProposal] = Field(default_factory=list)
-    preview: ProfileUpdatePreview | None = None
 
 
 class ConsolidatedMicroFact(StrictModel):

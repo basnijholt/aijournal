@@ -97,12 +97,6 @@ def test_facts_generates_microfacts(
     assert proposal.get("normalized_ids") == [ENTRY_ID]
     evidence = proposal.get("evidence") or []
     assert any(item.get("entry_id") == ENTRY_ID for item in evidence)
-    preview = data.get("preview") or {}
-    events = preview.get("claim_events") or []
-    assert events, "Expected preview events for micro-facts consolidation"
-    event = events[0]
-    assert event.get("action") == "upsert"
-    assert f"fact-{ENTRY_ID}" in (event.get("claim_id") or "")
     assert "Preview (claim consolidation)" in result.stdout
     assert str(facts_path) in result.stdout
 

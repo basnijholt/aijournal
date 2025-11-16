@@ -1,172 +1,5 @@
 {
   "$defs": {
-    "ClaimConflictPayload": {
-      "description": "Structured conflict emitted during consolidation previews.",
-      "properties": {
-        "claim_id": {
-          "title": "Claim Id",
-          "type": "string"
-        },
-        "existing_statement": {
-          "title": "Existing Statement",
-          "type": "string"
-        },
-        "incoming_sources": {
-          "items": {
-            "$ref": "#/$defs/SourceRef"
-          },
-          "title": "Incoming Sources",
-          "type": "array"
-        },
-        "incoming_statement": {
-          "title": "Incoming Statement",
-          "type": "string"
-        },
-        "signature": {
-          "$ref": "#/$defs/ClaimSignaturePayload"
-        },
-        "statement": {
-          "title": "Statement",
-          "type": "string"
-        }
-      },
-      "required": [
-        "claim_id",
-        "signature",
-        "statement",
-        "existing_statement",
-        "incoming_statement"
-      ],
-      "title": "ClaimConflictPayload",
-      "type": "object"
-    },
-    "ClaimEventAction": {
-      "enum": [
-        "upsert",
-        "update",
-        "delete",
-        "conflict",
-        "strength_delta"
-      ],
-      "title": "ClaimEventAction",
-      "type": "string"
-    },
-    "ClaimPreviewEvent": {
-      "description": "Outcome of attempting to merge a claim proposal into existing atoms.",
-      "properties": {
-        "action": {
-          "$ref": "#/$defs/ClaimEventAction"
-        },
-        "claim_id": {
-          "title": "Claim Id",
-          "type": "string"
-        },
-        "conflict": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/ClaimConflictPayload"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "delta_strength": {
-          "anyOf": [
-            {
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Delta Strength"
-        },
-        "kind": {
-          "default": "preview",
-          "title": "Kind",
-          "type": "string"
-        },
-        "related_action": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Related Action"
-        },
-        "related_claim_id": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Related Claim Id"
-        },
-        "related_signature": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/ClaimSignaturePayload"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "signature": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/ClaimSignaturePayload"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "statement": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Statement"
-        },
-        "strength": {
-          "anyOf": [
-            {
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Strength"
-        }
-      },
-      "required": [
-        "action",
-        "claim_id"
-      ],
-      "title": "ClaimPreviewEvent",
-      "type": "object"
-    },
     "ClaimProposal": {
       "description": "Structured claim update prepared for downstream review.",
       "properties": {
@@ -246,49 +79,6 @@
       "title": "ClaimProposal",
       "type": "object"
     },
-    "ClaimSignaturePayload": {
-      "description": "Serialized signature describing the target slot for a claim.",
-      "properties": {
-        "claim_type": {
-          "title": "Claim Type",
-          "type": "string"
-        },
-        "context": {
-          "items": {
-            "type": "string"
-          },
-          "title": "Context",
-          "type": "array"
-        },
-        "domain": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Domain"
-        },
-        "predicate": {
-          "title": "Predicate",
-          "type": "string"
-        },
-        "subject": {
-          "title": "Subject",
-          "type": "string"
-        }
-      },
-      "required": [
-        "claim_type",
-        "subject",
-        "predicate"
-      ],
-      "title": "ClaimSignaturePayload",
-      "type": "object"
-    },
     "ClaimStatus": {
       "enum": [
         "accepted",
@@ -363,27 +153,6 @@
       "title": "MicroFact",
       "type": "object"
     },
-    "ProfileUpdatePreview": {
-      "description": "Preview metadata bundled with a profile update batch.",
-      "properties": {
-        "claim_events": {
-          "items": {
-            "$ref": "#/$defs/ClaimPreviewEvent"
-          },
-          "title": "Claim Events",
-          "type": "array"
-        },
-        "interview_prompts": {
-          "items": {
-            "type": "string"
-          },
-          "title": "Interview Prompts",
-          "type": "array"
-        }
-      },
-      "title": "ProfileUpdatePreview",
-      "type": "object"
-    },
     "Scope": {
       "description": "Contextual qualifiers for a claim atom.",
       "properties": {
@@ -439,17 +208,6 @@
       },
       "title": "Facts",
       "type": "array"
-    },
-    "preview": {
-      "anyOf": [
-        {
-          "$ref": "#/$defs/ProfileUpdatePreview"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null
     }
   },
   "title": "MicroFactsFile",

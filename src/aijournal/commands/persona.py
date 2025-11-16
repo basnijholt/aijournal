@@ -147,13 +147,6 @@ def invoke_pipeline(ctx: RunContext, prepared: PersonaPrepared) -> PersonaResult
     selection = persona_result.selection
     ranked_claims = persona_result.ranked_claims
 
-    sources: dict[str, str] = {}
-    profile_path = resolve_path(ctx.workspace, ctx.config, "profile/self_profile.yaml")
-    claims_path = resolve_path(ctx.workspace, ctx.config, "profile/claims.yaml")
-    if profile_path.exists():
-        sources["profile"] = _relative_to_root(profile_path, ctx.workspace)
-    if claims_path.exists():
-        sources["claims"] = _relative_to_root(claims_path, ctx.workspace)
     source_mtimes = _persona_source_mtimes(ctx.workspace, ctx.workspace, ctx.config)
 
     persona_path = resolve_path(ctx.workspace, ctx.config, "derived/persona") / "persona_core.yaml"
@@ -176,7 +169,6 @@ def invoke_pipeline(ctx: RunContext, prepared: PersonaPrepared) -> PersonaResult
         max_claims=prepared.max_claims,
         min_claims=prepared.min_claims,
         budget_exceeded=selection.budget_exceeded,
-        sources=sources,
         source_mtimes=source_mtimes,
     )
     artifact = Artifact[PersonaCore](
@@ -251,7 +243,6 @@ def _persona_artifact_meta(
     max_claims: int,
     min_claims: int,
     budget_exceeded: bool,
-    sources: dict[str, str],
     source_mtimes: dict[str, float],
 ) -> ArtifactMeta:
     trimmed_payload = (
@@ -277,7 +268,6 @@ def _persona_artifact_meta(
     }
     # Drop empty placeholders to keep notes compact.
     notes = {key: value for key, value in notes.items() if value not in {"", "{}", "[]"}}
-    source_map = {**sources} if sources else {}
     return ArtifactMeta(
         created_at=generated_at or time_utils.format_timestamp(time_utils.now()),
         model=None,
@@ -285,7 +275,6 @@ def _persona_artifact_meta(
         prompt_hash=None,
         char_per_token=char_per_token,
         notes=notes or None,
-        sources=source_map or None,
     )
 
 

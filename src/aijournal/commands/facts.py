@@ -217,7 +217,6 @@ def invoke_pipeline(ctx: RunContext, prepared: FactsPrepared) -> FactsResult:
         if prepared.generate_preview
         else None
     )
-    facts_data.preview = preview
     ctx.emit(
         event="pipeline_complete",
         facts=len(facts_data.facts),
