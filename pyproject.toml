@@ -69,7 +69,11 @@ ignore = [
     "B905",    # `zip()` without an explicit `strict=` parameter
     "PLC0415", # `import` should be at the top-level of a file
     "FBT001",  # Boolean-typed positional argument in function definition
-    "TC006",  # Add quotes to type expression in `typing.cast()`
+    "TC006",   # Add quotes to type expression in `typing.cast()`
+    "D101",    # Missing docstring in public class
+    "D102",    # Missing docstring in public method
+    "D103",    # Missing docstring in public function
+    "RUF001",  # String contains ambiguous `–` (EN DASH).
 ]
 
 [tool.ruff.lint.per-file-ignores]
