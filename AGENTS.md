@@ -79,7 +79,7 @@ Read these first to avoid surprises mid-run.
 1. Create a temp directory and scaffold the layout:
    ```bash
    export RUN_ROOT=/tmp/aijournal_live_run_$(date +%Y%m%d%H%M)
-   uv run aijournal init --path "$RUN_ROOT"
+   uv run aijournal --path "$RUN_ROOT" init
    cd "$RUN_ROOT"
    ```
 

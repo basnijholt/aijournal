@@ -160,7 +160,7 @@ def test_persona_export_validates_token_override(
 
 def test_persona_export_errors_when_persona_missing(tmp_path: Path, cli_runner: CliRunner) -> None:
     tmp_path.mkdir(parents=True, exist_ok=True)
-    cli_runner.invoke(app, ["init", "--path", str(tmp_path)])
+    cli_runner.invoke(app, ["--path", str(tmp_path), "init"])
     result = cli_runner.invoke(
         app,
         ["--path", str(tmp_path), "ops", "persona", "export"],

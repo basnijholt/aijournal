@@ -19,7 +19,7 @@ This guide explains how the main commands fit together, the order in which to ru
 
 1. **Initialize a workspace**  
    ```bash
-   uv run aijournal init --path /path/to/my_journal
+   uv run aijournal --path /path/to/my_journal init
    ```  
    This creates the directory layout (`data/`, `profile/`, `derived/`, etc.).
 

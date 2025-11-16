@@ -104,7 +104,7 @@ Most commands below are safe to re-run: they detect unchanged inputs and either 
 ### Initialize the workspace
 
 ```sh
-aijournal init --path ~/journal
+aijournal --path ~/journal init
 ```
 
 Creates the full layout (config/profile/data/derived/prompts). Subsequent runs just print counts of existing directories/files, keeping automation idempotent.

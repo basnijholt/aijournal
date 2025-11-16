@@ -52,7 +52,6 @@ select = ["ALL"]
 ignore = [
     "T20",     # flake8-print
     "S101",    # Use of assert detected
-    "PD901",   # df is a bad variable name. Be kinder to your future self.
     "ANN401",  # Dynamically typed expressions (typing.Any) are disallowed in {name}
     "D402",    # First line should not be the function's signature
     "PLW0603", # Using the global statement to update `X` is discouraged

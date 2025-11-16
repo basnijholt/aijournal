@@ -93,7 +93,7 @@ def test_init_respects_path_argument(
 ) -> None:
     """`--path` should bootstrap a custom directory instead of cwd."""
     target = tmp_path / "custom"
-    result = cli_runner.invoke(app, ["init", "--path", str(target)])
+    result = cli_runner.invoke(app, ["--path", str(target), "init"])
 
     assert result.exit_code == 0, result.output
     _assert_paths_exist(target, ALL_LAYOUT_DIRS)

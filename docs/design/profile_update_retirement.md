@@ -465,7 +465,7 @@ CaptureStage(5, "index_refresh", "Refresh the retrieval index...", "..."),  # Re
    ```bash
    # Run complete live workflow
    export RUN_ROOT=/tmp/aijournal_retirement_validation
-   uv run aijournal init --path "$RUN_ROOT"
+   uv run aijournal --path "$RUN_ROOT" init
    cd "$RUN_ROOT"
 
    # Capture entries and verify pipeline

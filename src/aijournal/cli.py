@@ -162,7 +162,7 @@ def _get_workspace() -> Path:
     if not workspace.exists():
         msg = (
             f"Workspace directory does not exist: {workspace}\n"
-            f"Run 'aijournal init --path {workspace}' to create it"
+            f"Run 'aijournal --path {workspace} init' to create it"
         )
         raise RuntimeError(msg)
 
@@ -176,7 +176,7 @@ def _get_workspace() -> Path:
     if not config_path.exists():
         msg = (
             f"Not an aijournal workspace: {workspace}\n"
-            f"Missing config.yaml - run 'aijournal init --path {workspace}' first"
+            f"Missing config.yaml - run 'aijournal --path {workspace} init' first"
         )
         raise RuntimeError(msg)
 
@@ -232,12 +232,6 @@ CAPTURE_PROJECTS_OPTION: Final = typer.Option(
     help="Project to merge into front matter (repeatable).",
     rich_help_panel="METADATA",
     show_default=False,
-)
-INIT_PATH_OPTION: Final = typer.Option(
-    None,
-    "--path",
-    "-p",
-    help="Directory to initialize (defaults to current working directory).",
 )
 NEW_TAGS_OPTION: Final = typer.Option(
     None,
@@ -893,13 +887,10 @@ def _latest_pending_batch(workspace: Path, config: AppConfig) -> Path | None:
 
 
 @app.command()
-def init(
-    path: Path | None = INIT_PATH_OPTION,
-) -> None:
+def init() -> None:
     """Initialize the local aijournal layout."""
-    workspace_override = _resolve_workspace_option(path)
-    effective_workspace = workspace_override or _cli_settings().workspace
-    summary = run_init(effective_workspace)
+    settings = _cli_settings()
+    summary = run_init(settings.workspace)
     typer.echo(summary)
 
 
