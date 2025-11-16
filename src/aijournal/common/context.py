@@ -5,7 +5,7 @@ from __future__ import annotations
 import secrets
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ContextManager
 
 from aijournal.common.app_config import AppConfig
 from aijournal.common.config_loader import resolve_prompt_set
@@ -50,7 +50,7 @@ class RunContext:
     def emit(self, **event: Any) -> None:
         self.logger.emit(**event)
 
-    def span(self, step: str, **fields: Any):
+    def span(self, step: str, **fields: Any) -> ContextManager[None]:
         return self.logger.span(step, **fields)
 
 

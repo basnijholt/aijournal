@@ -26,6 +26,7 @@ if TYPE_CHECKING:
 
     from aijournal.common.app_config import AppConfig
     from aijournal.models.authoritative import ManifestEntry
+    from aijournal.services.chunk_index import ChunkIndex
     from aijournal.services.embedding import EmbeddingBackend
 
 CHUNK_TARGET_CHARS = 900
@@ -373,7 +374,7 @@ def build_chunk_records(
 
 def index_entries(
     tasks: Sequence[IndexTask],
-    chunk_index,
+    chunk_index: ChunkIndex,
     embedder: EmbeddingBackend,
     char_per_token: float,
     *,

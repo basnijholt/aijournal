@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import shutil
+from collections.abc import Iterator
 from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -125,7 +126,7 @@ class HumanSimulator:
 
 
 @contextmanager
-def _frozen_time(moment: datetime):
+def _frozen_time(moment: datetime) -> Iterator[None]:
     original = time_utils.now
     time_utils.now = lambda: moment
     try:
@@ -135,7 +136,7 @@ def _frozen_time(moment: datetime):
 
 
 @contextmanager
-def _patched_env(**updates: str):
+def _patched_env(**updates: str) -> Iterator[None]:
     original: dict[str, str | None] = {key: os.environ.get(key) for key in updates}
     os.environ.update({key: value for key, value in updates.items() if value is not None})
     try:

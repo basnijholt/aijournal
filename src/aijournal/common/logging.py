@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import time
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -52,7 +52,7 @@ class StructuredLogger:
             sink(payload)
 
     @contextmanager
-    def span(self, step: str, **fields: Any):
+    def span(self, step: str, **fields: Any) -> Iterator[None]:
         start = time.perf_counter()
         self.emit(event="start", step=step, **fields)
         try:

@@ -22,6 +22,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from aijournal.services.capture import CaptureResult
+    from aijournal.services.capture.results import StageResult
 
 STAGE_NAMES = {
     0: "persist",
@@ -737,7 +738,7 @@ def _normalized_ids(root: Path) -> set[str]:
     return ids
 
 
-def _stage_result_by_name(ctx: ValidatorContext, stage_name: str):
+def _stage_result_by_name(ctx: ValidatorContext, stage_name: str) -> StageResult | None:
     for stage_result in ctx.capture.stage_results:
         if stage_result.stage == stage_name:
             return stage_result
