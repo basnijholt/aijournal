@@ -250,7 +250,7 @@ def run_profile_update_command(
                     ),
                     "manifest_json": manifest_payload,
                     "retrieved_chunks_json": retrieved_chunks_json,
-                    "consolidation_triggered": prepared.consolidation_triggered,
+                    "consolidation_triggered": str(prepared.consolidation_triggered).lower(),
                 },
                 response_model=PromptProfileUpdates,
                 agent_name="aijournal-profile-update",

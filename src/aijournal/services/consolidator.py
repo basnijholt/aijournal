@@ -426,4 +426,4 @@ class ClaimConsolidator:
 
 
 def _source_key(source: ClaimSource) -> str:
-    return source.entry_id
+    return source.entry_id or source.chunk_id or ""
