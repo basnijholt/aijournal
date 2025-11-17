@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path
 from string import Template
-from typing import Any, TypeVar, cast, get_args, get_origin
+from typing import TYPE_CHECKING, Any, TypeVar, cast, get_args, get_origin
 
 from pydantic import BaseModel, ValidationError
 from pydantic.fields import PydanticUndefined
@@ -25,6 +25,9 @@ from aijournal.common.constants import DEFAULT_MODEL_NAME, DEFAULT_OLLAMA_HOST
 from aijournal.common.meta import LLMResult
 from aijournal.utils import time as time_utils
 from aijournal.utils.paths import resolve_prompt_path
+
+if TYPE_CHECKING:
+    from aijournal.common.context import RunContext
 
 _JSON_SYSTEM_PROMPT = (
     "You are part of the aijournal CLI. "
@@ -629,8 +632,11 @@ def invoke_structured_llm(
     config: AppConfig,
     prompt_set: str | None = None,
     model_context: Mapping[str, Any] | None = None,
+    ctx: RunContext | None = None,
 ) -> StructuredModelT:
     prompt = _render_prompt(prompt_path, variables, prompt_set=prompt_set)
+    if ctx is not None:
+        ctx.emit(prompt_path=prompt_path, agent_name=agent_name, prompt=prompt)
     prompt_hash = _hash_prompt(prompt_path, prompt_set=prompt_set)
     prompt_kind = Path(prompt_path).stem
     try:

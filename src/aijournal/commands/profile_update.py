@@ -256,6 +256,7 @@ def run_profile_update_command(
                 agent_name="aijournal-profile-update",
                 config=prepared.config,
                 prompt_set=ctx.prompt_set,
+                ctx=ctx,
             )
             return convert_prompt_updates_to_proposals(
                 llm_response,
