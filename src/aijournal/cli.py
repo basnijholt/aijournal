@@ -898,13 +898,15 @@ def capture(
 @app.command()
 def status() -> None:
     """Display persona, index, and retrieval freshness."""
-    run_system_status_cli()
+    workspace = _get_workspace()
+    run_system_status_cli(workspace)
 
 
 @ops_system_app.command("doctor")
 def system_doctor() -> None:
     """Run system diagnostics and emit machine-readable results."""
-    run_system_doctor_cli()
+    workspace = _get_workspace()
+    run_system_doctor_cli(workspace)
 
 
 HIGH_IMPACT_PROBES = [
@@ -2057,6 +2059,7 @@ def index_search(
     date_to: str | None = DATE_TO_OPTION,
 ) -> None:
     """Search the retrieval index and stream formatted results."""
+    workspace = _get_workspace()
     run_index_search(
         query,
         top=top,
@@ -2064,6 +2067,7 @@ def index_search(
         source=source,
         date_from=date_from,
         date_to=date_to,
+        workspace=workspace,
     )
 
 
@@ -2125,7 +2129,8 @@ def serve_chat(
 ) -> None:
     """Start the FastAPI chat daemon (chatd)."""
     _emit_deprecation("aijournal serve chat", "the REST capture API (POST /capture)")
-    run_chatd(host, port)
+    workspace = _get_workspace()
+    run_chatd(host, port, workspace=workspace)
 
 
 @ops_feedback_app.command("apply")
