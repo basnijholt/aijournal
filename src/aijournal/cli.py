@@ -173,11 +173,11 @@ def _validate_workspace(workspace: Path) -> None:
 
 
 def _get_workspace() -> Path:
-    """Return the CLI workspace path, defaulting to the current directory.
+    """Return the CLI workspace path from settings.
 
     The global `--path/-p` option stored in :class:`CLISettings` selects the workspace.
-    When absent we fall back to ``Path.cwd()`` and validate that the directory exists
-    and contains ``config.yaml``.
+    When the user doesn't provide `-p`, it defaults to ``Path.cwd()`` in the CLI callback.
+    This function validates that the directory exists and contains ``config.yaml``.
 
     Raises:
         RuntimeError: If the workspace directory doesn't exist, is not a directory,
@@ -185,9 +185,8 @@ def _get_workspace() -> Path:
 
     """
     settings = _cli_settings()
-    workspace = settings.workspace or Path.cwd()
-    _validate_workspace(workspace)
-    return workspace
+    _validate_workspace(settings.workspace)
+    return settings.workspace
 
 
 app = typer.Typer(
@@ -423,10 +422,10 @@ app.add_typer(serve_app, name="serve")
 
 @dataclass
 class CLISettings:
+    workspace: Path
     trace: bool = False
     verbose_json: bool = False
     prompt_set: str | None = None
-    workspace: Path | None = None
 
 
 def _resolve_workspace_option(value: Path | None) -> Path | None:
@@ -461,13 +460,13 @@ def _main_callback(
     if prompt_set:
         os.environ["AIJOURNAL_PROMPT_SET"] = prompt_set
 
-    resolved_workspace = _resolve_workspace_option(workspace)
+    resolved_workspace = _resolve_workspace_option(workspace) or Path.cwd()
 
     ctx.obj = CLISettings(
+        workspace=resolved_workspace,
         trace=trace,
         verbose_json=verbose_json,
         prompt_set=prompt_set,
-        workspace=resolved_workspace,
     )
 
 
@@ -509,14 +508,13 @@ def _run_context(
     """
     # Get settings for workspace/trace/verbose_json/prompt_set
     settings = _cli_settings()
-    actual_workspace = settings.workspace or Path.cwd()
-    _validate_workspace(actual_workspace)
+    _validate_workspace(settings.workspace)
 
-    config_model = config or load_config(actual_workspace)
+    config_model = config or load_config(settings.workspace)
     prompt_set = resolve_prompt_set(cli_override=settings.prompt_set, config=config_model)
     return create_run_context(
         command=command,
-        workspace=actual_workspace,
+        workspace=settings.workspace,
         config=config_model,
         use_fake_llm=use_fake_llm(),
         trace=settings.trace,
