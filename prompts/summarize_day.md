@@ -10,6 +10,8 @@ The system enforces a fixed schema (`day`, `bullets`, `highlights`, `todo_candid
 - Provide up to **3 todo_candidates**, but only when each candidate is a specific, verb-led action grounded in a sentence from the entry.
 - Each list item must be a fragment of **≤18 words**, avoid filler (“Today I…”), and stay tied to paragraphs or structured fields (summary, sections, tags, mood).
 - If the content is sparse, prefer returning the empty fallback rather than inventing weak observations or TODOs.
+- Include all significant experiences, even if they are non-traditional or sensitive, to maintain authenticity and honesty.
+- **Do not sanitize explicit content; use exact phrases from the entry where relevant and within word constraints.**
 
 ---
 ## Reasoning Workflow
