@@ -1945,7 +1945,8 @@ def index_rebuild(
     limit: int | None = INDEX_LIMIT_OPTION,
 ) -> None:
     """Rebuild the Chroma-backed retrieval index from normalized YAML."""
-    message = run_index_rebuild(since, limit=limit)
+    workspace = _get_workspace()
+    message = run_index_rebuild(since, limit=limit, workspace=workspace)
     typer.echo(message)
 
 
@@ -1960,7 +1961,8 @@ def index_update(
     limit: int | None = INDEX_LIMIT_OPTION,
 ) -> None:
     """Incrementally ingest new normalized entries into the retrieval index."""
-    message = run_index_tail(since, days=days, limit=limit)
+    workspace = _get_workspace()
+    message = run_index_tail(since, days=days, limit=limit, workspace=workspace)
     typer.echo(message)
 
 
