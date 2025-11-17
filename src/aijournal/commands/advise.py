@@ -106,6 +106,7 @@ def invoke_pipeline(ctx: RunContext, prepared: AdvicePrepared) -> AdviceResult:
         pending_prompts=prepared.pending_prompts,
         use_fake_llm=ctx.use_fake_llm,
         prompt_set=ctx.prompt_set,
+        ctx=ctx,
     )
     model_name = resolve_model_name(ctx.config, use_fake_llm=ctx.use_fake_llm)
     day = time_utils.created_date(time_utils.format_timestamp(time_utils.now()))
@@ -214,6 +215,7 @@ def _advice_payload(
     rankings: Sequence[InterviewTarget],
     pending_prompts: Sequence[str],
     use_fake_llm: bool,
+    ctx: RunContext,
     prompt_set: str | None = None,
 ) -> AdviceCard:
     rankings_payload = [
@@ -246,6 +248,7 @@ def _advice_payload(
             agent_name="aijournal-advise",
             config=config,
             prompt_set=prompt_set,
+            ctx=ctx,
         )
 
     return advise_pipeline.generate_advice(

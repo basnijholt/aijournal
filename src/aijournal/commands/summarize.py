@@ -165,6 +165,7 @@ def invoke_pipeline(ctx: RunContext, prepared: DailySummaryPrepared) -> DailySum
         workspace=prepared.workspace,
         use_fake_llm_override=ctx.use_fake_llm,
         prompt_set=ctx.prompt_set,
+        ctx=ctx,
     )
     model_name = resolve_model_name(ctx.config, use_fake_llm=ctx.use_fake_llm)
     ctx.emit(
@@ -200,6 +201,7 @@ def _summarize_day_payload(
     config: AppConfig,
     *,
     workspace: Path,
+    ctx: RunContext,
     use_fake_llm_override: bool | None = None,
     prompt_set: str | None = None,
 ) -> DailySummary:
@@ -216,6 +218,7 @@ def _summarize_day_payload(
             agent_name="aijournal-summarize",
             config=config,
             prompt_set=prompt_set,
+            ctx=ctx,
         )
 
     return summarize_pipeline.generate_summary(

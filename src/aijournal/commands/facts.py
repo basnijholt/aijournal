@@ -188,6 +188,7 @@ def invoke_pipeline(ctx: RunContext, prepared: FactsPrepared) -> FactsResult:
             config=ctx.config,
             prompt_set=ctx.prompt_set,
             model_context={"entry_ids": entry_ids},
+            ctx=ctx,
         )
 
         entry_dates = {

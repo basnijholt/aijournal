@@ -1829,6 +1829,7 @@ def interview(
             }
             for target in rankings[: max(max_questions * 2, 6)]
         ]
+        ctx = _run_context("interview", workspace=workspace, config=config)
         try:
             summary_payload = summary.model_dump(mode="python")
             summary_window_payload = [
@@ -1852,6 +1853,7 @@ def interview(
                 agent_name="aijournal-interview",
                 config=config,
                 prompt_set=_active_prompt_set(config),
+                ctx=ctx,
             )
         except LLMResponseError as exc:
             typer.secho(
