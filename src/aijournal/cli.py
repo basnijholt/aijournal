@@ -483,14 +483,12 @@ def _active_prompt_set(config: AppConfig | None = None) -> str | None:
 def _run_context(
     command: str,
     *,
-    workspace: Path | None = None,
     config: AppConfig | None = None,
 ) -> RunContext:
     """Create a run context for command execution.
 
     Args:
         command: Command name
-        workspace: Workspace directory (defaults to _get_workspace())
         config: Optional `AppConfig` override (defaults to workspace config)
 
     Returns:
@@ -498,7 +496,7 @@ def _run_context(
 
     """
     # Get workspace first (includes validation)
-    actual_workspace = workspace or _get_workspace()
+    actual_workspace = _get_workspace()
 
     # Get settings for trace/verbose_json/prompt_set
     settings = _cli_settings()
@@ -1112,7 +1110,7 @@ def summarize(
         llm_retries=retries,
         llm_timeout=timeout,
     )
-    ctx = _run_context("summarize", workspace=workspace, config=config)
+    ctx = _run_context("summarize", config=config)
     summary_path = run_summarize_command(
         ctx,
         DailySummaryOptions(
@@ -1139,7 +1137,7 @@ def facts(
         llm_timeout=timeout,
     )
     _, claim_models = load_profile_components(workspace, config=config)
-    ctx = _run_context("facts", workspace=workspace, config=config)
+    ctx = _run_context("facts", config=config)
     output = run_facts_command(
         ctx,
         FactsOptions(
@@ -1912,7 +1910,7 @@ def interview(
             }
             for target in rankings[: max(max_questions * 2, 6)]
         ]
-        ctx = _run_context("interview", workspace=workspace, config=config)
+        ctx = _run_context("interview", config=config)
         try:
             summary_payload = summary.model_dump(mode="python")
             summary_window_payload = [
