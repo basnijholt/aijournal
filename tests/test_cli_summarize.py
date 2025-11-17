@@ -161,6 +161,7 @@ def test_summarize_structured_success(monkeypatch: pytest.MonkeyPatch) -> None:
         DATE,
         AppConfig(),
         workspace=Path(),
+        ctx=ctx,
     )
 
     assert summary.day == DATE
@@ -193,6 +194,7 @@ def test_summarize_structured_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
             DATE,
             AppConfig(),
             workspace=Path(),
+            ctx=ctx,
         )
 
 

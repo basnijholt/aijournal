@@ -632,7 +632,7 @@ def invoke_structured_llm(
     config: AppConfig,
     prompt_set: str | None = None,
     model_context: Mapping[str, Any] | None = None,
-    ctx: RunContext | None = None,
+    ctx: RunContext,
 ) -> StructuredModelT:
     prompt = _render_prompt(prompt_path, variables, prompt_set=prompt_set)
     if ctx is not None:
@@ -655,6 +655,7 @@ def invoke_structured_llm(
             log_label=agent_name,
             model_context=model_context,
         )
+        ctx.emit(prompt_path=prompt_path, agent_name=agent_name, response=result.payload)
         return cast(StructuredModelT, result.payload)
     except Exception as exc:  # pragma: no cover - runtime dependent
         msg = f"Structured output generation failed for {prompt_path}: {exc}"
