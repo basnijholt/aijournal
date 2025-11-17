@@ -145,10 +145,10 @@ def run_profile_update_command(
         claims = [claim.model_copy(deep=True) for claim in claim_models]
         consolidated_facts_json = _load_consolidated_facts_json(ctx.workspace, ctx.config)
 
-        # NEW: Retrieve historical chunks via RAG
+        # Retrieve historical chunks via RAG
         retrieved_chunks = _retrieve_historical_chunks(ctx.workspace, ctx.config)
 
-        # NEW: Check consolidation threshold
+        # Check consolidation threshold
         new_claims_count = _count_new_claims_since_last_consolidation(ctx.workspace)
         consolidation_triggered = new_claims_count >= 10
 

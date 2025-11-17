@@ -2,17 +2,21 @@
 
 from __future__ import annotations
 
-import yaml
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
+import yaml
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from aijournal.common.app_config import AppConfig
 
 
-def test_retrieve_historical_chunks_returns_deduped_results(tmp_path: Path, mock_config: AppConfig) -> None:
+def test_retrieve_historical_chunks_returns_deduped_results(
+    tmp_path: Path,
+    mock_config: AppConfig,
+) -> None:
     """Test that _retrieve_historical_chunks returns deduplicated chunks."""
     from aijournal.commands.profile_update import _retrieve_historical_chunks
 
@@ -85,7 +89,11 @@ def test_count_new_claims_since_last_consolidation_no_metadata(tmp_path: Path) -
         "claims": [
             {"id": "claim-1", "status": "accepted", "statement": "Test 1"},
             {"id": "claim-2", "status": "tentative", "statement": "Test 2"},
-            {"id": "claim-3", "status": "rejected", "statement": "Test 3"},  # Rejected shouldn't count
+            {
+                "id": "claim-3",
+                "status": "rejected",
+                "statement": "Test 3",
+            },  # Rejected shouldn't count
         ],
     }
     (profile_dir / "claims.yaml").write_text(yaml.dump(claims_data), encoding="utf-8")
@@ -182,7 +190,12 @@ def test_consolidation_threshold_logic(tmp_path: Path, mock_config: AppConfig) -
     assert count < 10, "Should not trigger consolidation with 7 claims"
 
     # Add 3 more claims to reach threshold
-    claims_data["claims"].extend([{"id": f"claim-{i}", "status": "tentative", "statement": f"Test {i}"} for i in range(7, 10)])
+    claims_data["claims"].extend(
+        [
+            {"id": f"claim-{i}", "status": "tentative", "statement": f"Test {i}"}
+            for i in range(7, 10)
+        ],
+    )
     (profile_dir / "claims.yaml").write_text(yaml.dump(claims_data), encoding="utf-8")
 
     count = _count_new_claims_since_last_consolidation(tmp_path)
