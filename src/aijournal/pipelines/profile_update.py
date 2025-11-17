@@ -101,6 +101,7 @@ def generate_profile_update(
     merged_prompts = facts_pipeline.merge_unique([], prompts)
     proposals = ProfileUpdateProposals(
         claims=claims_payload,
+        facets=llm_proposals.facets,
         interview_prompts=merged_prompts,
     )
     return proposals, merged_prompts
