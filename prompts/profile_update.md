@@ -194,3 +194,7 @@ $claims_json
 <RETRIEVED_CHUNKS_JSON>
 $retrieved_chunks_json
 </RETRIEVED_CHUNKS_JSON>
+
+<CONSOLIDATION_STATUS>
+consolidation_triggered: $consolidation_triggered
+</CONSOLIDATION_STATUS>
