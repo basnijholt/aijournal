@@ -207,7 +207,6 @@ def run_profile_apply_command(
         ctx.emit(
             event="prepare_summary",
             claims=len(claims),
-            facet_changes=len(proposals.facets),
         )
         return ProfileApplyPrepared(
             root=ctx.workspace,
@@ -242,10 +241,6 @@ def run_profile_apply_command(
 
         for claim_proposal in prepared.proposals.claims:
             if _apply_claim_proposal(prepared.claims, claim_proposal, prepared.timestamp, events):
-                changed = True
-
-        for facet_change in prepared.proposals.facets:
-            if _apply_facet_change(prepared.profile, facet_change, prepared.timestamp):
                 changed = True
 
         if not changed:
@@ -331,18 +326,7 @@ def _sanitize_proposals(proposals: ProfileUpdateProposals) -> ProfileUpdatePropo
         )
         for proposal in proposals.claims
     ]
-    sanitized_facets = [
-        change.model_copy(
-            update={
-                "evidence": [
-                    SourceRef.model_validate(ref.model_dump(mode="python"))
-                    for ref in change.evidence
-                ],
-            },
-        )
-        for change in proposals.facets
-    ]
-    return proposals.model_copy(update={"claims": sanitized_claims, "facets": sanitized_facets})
+    return proposals.model_copy(update={"claims": sanitized_claims})
 
 
 def _apply_claim_proposal(

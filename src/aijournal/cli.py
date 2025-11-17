@@ -57,7 +57,6 @@ from aijournal.commands.profile import (
     InterviewTarget,
     _compute_rankings,
     apply_claim_upsert,
-    apply_profile_update,
     load_profile_components,
     profile_to_dict,
     run_profile_apply,
@@ -82,7 +81,7 @@ from aijournal.common.config_loader import (
 )
 from aijournal.common.constants import DEFAULT_LLM_RETRIES, DEFAULT_TIMEOUT_SECONDS
 from aijournal.common.context import RunContext, create_run_context
-from aijournal.domain.changes import ClaimProposal, FacetChange
+from aijournal.domain.changes import ClaimProposal
 from aijournal.domain.events import (
     FeedbackBatch,
 )
@@ -1213,13 +1212,10 @@ def review_updates(
     claim_proposals: list[ClaimProposal] = [
         proposal.model_copy(deep=True) for proposal in batch.proposals.claims
     ]
-    facet_proposals: list[FacetChange] = [
-        proposal.model_copy(deep=True) for proposal in batch.proposals.facets
-    ]
 
     batch_id = batch.batch_id or batch_path.stem
     typer.echo(
-        f"Batch {batch_id}: {len(claim_proposals)} claim(s), {len(facet_proposals)} facet(s)",
+        f"Batch {batch_id}: {len(claim_proposals)} claim(s)",
     )
 
     for claim_proposal in claim_proposals:
@@ -1229,10 +1225,6 @@ def review_updates(
             else claim_proposal.statement[:48]
         )
         typer.echo(f"- claim {label}: {claim_proposal.statement}")
-
-    for facet_proposal in facet_proposals:
-        if facet_proposal.path:
-            typer.echo(f"- facet {facet_proposal.path}: {facet_proposal.value}")
 
     if not apply:
         if batch.preview and batch.preview.claim_events:
@@ -1253,12 +1245,6 @@ def review_updates(
     for claim_proposal in claim_proposals:
         incoming_atom = claim_proposal_to_atom(claim_proposal, timestamp=timestamp)
         if apply_claim_upsert(claims_data, incoming_atom, timestamp, events=merge_events):
-            applied += 1
-
-    for facet_proposal in facet_proposals:
-        if not facet_proposal.path:
-            continue
-        if apply_profile_update(profile, facet_proposal.path, facet_proposal.value, timestamp):
             applied += 1
 
     if not applied:

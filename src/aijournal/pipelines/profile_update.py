@@ -68,8 +68,6 @@ def normalize_facet_proposals(
 
 def generate_profile_update(
     entries: Sequence[NormalizedEntry],
-    profile: dict[str, Any],
-    claims: Sequence[ClaimAtom],
     *,
     use_fake_llm: bool,
     llm_proposals: ProfileUpdateProposals | None,
@@ -80,8 +78,6 @@ def generate_profile_update(
     if use_fake_llm:
         fake = fake_profile_proposals(
             entries,
-            profile,
-            claims,
             build_claim=_default_fake_claim_builder,
         )
         prompts = list(fake.interview_prompts)
@@ -92,7 +88,6 @@ def generate_profile_update(
         raise ValueError(msg)
 
     raw_claims = [proposal.model_dump(mode="python") for proposal in llm_proposals.claims]
-    raw_facets = [proposal.model_dump(mode="python") for proposal in llm_proposals.facets]
     prompts = [prompt for prompt in llm_proposals.interview_prompts if prompt]
 
     normalized_ids, manifest_hashes, default_sources = context
@@ -103,11 +98,9 @@ def generate_profile_update(
         default_sources=default_sources,
         timestamp=claim_timestamp,
     )
-    facets_payload = normalize_facet_proposals(raw_facets)
     merged_prompts = facts_pipeline.merge_unique([], prompts)
     proposals = ProfileUpdateProposals(
         claims=claims_payload,
-        facets=facets_payload,
         interview_prompts=merged_prompts,
     )
     return proposals, merged_prompts

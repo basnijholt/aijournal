@@ -215,7 +215,7 @@ def run_profile_update_command(
                         "queries": RETRIEVAL_QUERIES,
                         "total_chunks_returned": len(prepared.retrieved_chunks),
                         "new_claims_since_last": _count_new_claims_since_last_consolidation(
-                            prepared.workspace
+                            prepared.workspace,
                         ),
                     },
                     "chunks": [
@@ -229,7 +229,7 @@ def run_profile_update_command(
                         }
                         for chunk in prepared.retrieved_chunks
                     ],
-                }
+                },
             )
 
             llm_response = invoke_structured_llm(

@@ -312,110 +312,6 @@
       "title": "ClaimType",
       "type": "string"
     },
-    "FacetChange": {
-      "description": "Facet modification proposed by characterization pipelines.",
-      "properties": {
-        "confidence": {
-          "anyOf": [
-            {
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Confidence"
-        },
-        "evidence": {
-          "items": {
-            "$ref": "#/$defs/SourceRef"
-          },
-          "title": "Evidence",
-          "type": "array"
-        },
-        "method": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Method"
-        },
-        "operation": {
-          "$ref": "#/$defs/FacetOperation"
-        },
-        "path": {
-          "title": "Path",
-          "type": "string"
-        },
-        "rationale": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Rationale"
-        },
-        "review_after_days": {
-          "anyOf": [
-            {
-              "type": "integer"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Review After Days"
-        },
-        "user_verified": {
-          "anyOf": [
-            {
-              "type": "boolean"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "User Verified"
-        },
-        "value": {
-          "anyOf": [
-            {},
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Value"
-        }
-      },
-      "required": [
-        "path",
-        "operation"
-      ],
-      "title": "FacetChange",
-      "type": "object"
-    },
-    "FacetOperation": {
-      "enum": [
-        "set",
-        "remove",
-        "merge"
-      ],
-      "title": "FacetOperation",
-      "type": "string"
-    },
     "ProfileUpdateInput": {
       "description": "Normalized entry metadata captured in a characterization batch.",
       "properties": {
@@ -488,20 +384,13 @@
       "type": "object"
     },
     "ProfileUpdateProposals": {
-      "description": "Aggregate container for proposed claim and facet updates.",
+      "description": "Aggregate container for proposed claim updates.",
       "properties": {
         "claims": {
           "items": {
             "$ref": "#/$defs/ClaimProposal"
           },
           "title": "Claims",
-          "type": "array"
-        },
-        "facets": {
-          "items": {
-            "$ref": "#/$defs/FacetChange"
-          },
-          "title": "Facets",
           "type": "array"
         },
         "interview_prompts": {
