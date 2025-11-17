@@ -26,6 +26,13 @@
     "PromptClaimItem": {
       "description": "Lightweight claim item that LLM emits (no system metadata).",
       "properties": {
+        "evidence_chunk_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Evidence Chunk Ids",
+          "type": "array"
+        },
         "evidence_entry": {
           "anyOf": [
             {

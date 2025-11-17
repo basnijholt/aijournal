@@ -312,6 +312,110 @@
       "title": "ClaimType",
       "type": "string"
     },
+    "FacetChange": {
+      "description": "Facet modification proposed by characterization pipelines.",
+      "properties": {
+        "confidence": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Confidence"
+        },
+        "evidence": {
+          "items": {
+            "$ref": "#/$defs/SourceRef"
+          },
+          "title": "Evidence",
+          "type": "array"
+        },
+        "method": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Method"
+        },
+        "operation": {
+          "$ref": "#/$defs/FacetOperation"
+        },
+        "path": {
+          "title": "Path",
+          "type": "string"
+        },
+        "rationale": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rationale"
+        },
+        "review_after_days": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Review After Days"
+        },
+        "user_verified": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "User Verified"
+        },
+        "value": {
+          "anyOf": [
+            {},
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Value"
+        }
+      },
+      "required": [
+        "path",
+        "operation"
+      ],
+      "title": "FacetChange",
+      "type": "object"
+    },
+    "FacetOperation": {
+      "enum": [
+        "set",
+        "remove",
+        "merge"
+      ],
+      "title": "FacetOperation",
+      "type": "string"
+    },
     "ProfileUpdateInput": {
       "description": "Normalized entry metadata captured in a characterization batch.",
       "properties": {
@@ -384,13 +488,20 @@
       "type": "object"
     },
     "ProfileUpdateProposals": {
-      "description": "Aggregate container for proposed claim updates.",
+      "description": "Aggregate container for proposed claim and facet updates.",
       "properties": {
         "claims": {
           "items": {
             "$ref": "#/$defs/ClaimProposal"
           },
           "title": "Claims",
+          "type": "array"
+        },
+        "facets": {
+          "items": {
+            "$ref": "#/$defs/FacetChange"
+          },
+          "title": "Facets",
           "type": "array"
         },
         "interview_prompts": {
@@ -431,16 +542,69 @@
       "type": "object"
     },
     "SourceRef": {
-      "description": "Reference to a normalized entry that supports a claim or fact.",
+      "description": "Reference to a normalized entry or retrieved chunk that supports a claim or fact.",
       "properties": {
+        "chunk_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Chunk Id"
+        },
         "entry_id": {
-          "title": "Entry Id",
-          "type": "string"
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Entry Id"
+        },
+        "manifest_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Manifest Hash"
+        },
+        "paragraph_index": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Paragraph Index"
+        },
+        "score": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Score"
         }
       },
-      "required": [
-        "entry_id"
-      ],
       "title": "SourceRef",
       "type": "object"
     }
