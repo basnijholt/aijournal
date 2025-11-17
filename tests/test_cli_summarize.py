@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import TYPE_CHECKING
+from unittest.mock import MagicMock
 
 import pytest
 import yaml
@@ -156,12 +157,13 @@ def test_summarize_structured_success(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(config_loader, "use_fake_llm", lambda: False)
     monkeypatch.setattr(summarize_commands, "invoke_structured_llm", fake_invoke)
 
+    mock_ctx = MagicMock()
     summary = summarize_commands._summarize_day_payload(
         [entry],
         DATE,
         AppConfig(),
         workspace=Path(),
-        ctx=ctx,
+        ctx=mock_ctx,
     )
 
     assert summary.day == DATE
@@ -188,13 +190,14 @@ def test_summarize_structured_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(config_loader, "use_fake_llm", lambda: False)
     monkeypatch.setattr(summarize_commands, "invoke_structured_llm", fake_invoke)
 
+    mock_ctx = MagicMock()
     with pytest.raises(LLMResponseError):
         summarize_commands._summarize_day_payload(
             [entry],
             DATE,
             AppConfig(),
             workspace=Path(),
-            ctx=ctx,
+            ctx=mock_ctx,
         )
 
 
@@ -246,12 +249,14 @@ def test_invoke_structured_llm_uses_shared_builder(monkeypatch: pytest.MonkeyPat
     )
     monkeypatch.setattr("aijournal.services.ollama.run_ollama_agent", fake_runner)
 
+    mock_ctx = MagicMock()
     response = aijournal.services.ollama.invoke_structured_llm(
         "prompts/summarize_day.md",
         {"date": DATE, "entries_json": "[]"},
         response_model=DailySummary,
         agent_name="unit-test",
         config=AppConfig(temperature=0.3),
+        ctx=mock_ctx,
     )
 
     assert isinstance(response, DailySummary)

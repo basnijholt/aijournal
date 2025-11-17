@@ -635,8 +635,7 @@ def invoke_structured_llm(
     ctx: RunContext,
 ) -> StructuredModelT:
     prompt = _render_prompt(prompt_path, variables, prompt_set=prompt_set)
-    if ctx is not None:
-        ctx.emit(prompt_path=prompt_path, agent_name=agent_name, prompt=prompt)
+    ctx.emit(prompt_path=prompt_path, agent_name=agent_name, prompt=prompt)
     prompt_hash = _hash_prompt(prompt_path, prompt_set=prompt_set)
     prompt_kind = Path(prompt_path).stem
     try:
