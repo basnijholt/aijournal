@@ -462,23 +462,13 @@ def _main_callback(
 def _cli_settings() -> CLISettings:
     """Get or create CLISettings from click context.
 
-    Walks up the context chain to find existing settings created by the
-    main callback. If not found, creates default settings as a fallback.
+    Uses Click's ensure_object() to walk the context chain and find
+    existing settings, or create default settings if not found.
     """
-    root_context = click.get_current_context(silent=True)
-    current = root_context
-
-    # Walk up the parent chain looking for existing CLISettings
-    while current is not None:
-        if isinstance(getattr(current, "obj", None), CLISettings):
-            return current.obj
-        current = current.parent
-
-    # Not found - create default and attach to root context
-    settings = CLISettings()
-    if root_context is not None:
-        root_context.obj = settings
-    return settings
+    ctx = click.get_current_context(silent=True)
+    if ctx is None:
+        return CLISettings()
+    return ctx.ensure_object(CLISettings)
 
 
 def _active_prompt_set(config: AppConfig | None = None) -> str | None:
