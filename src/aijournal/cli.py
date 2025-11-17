@@ -81,7 +81,7 @@ from aijournal.common.config_loader import (
 )
 from aijournal.common.constants import DEFAULT_LLM_RETRIES, DEFAULT_TIMEOUT_SECONDS
 from aijournal.common.context import RunContext, create_run_context
-from aijournal.domain.changes import ClaimProposal
+from aijournal.domain.changes import ClaimProposal, FacetChange
 from aijournal.domain.events import (
     FeedbackBatch,
 )
@@ -1186,6 +1186,72 @@ def profile_apply(
     typer.echo(message)
 
 
+def _apply_facet_changes(profile_dict: dict[str, Any], facets: list[FacetChange]) -> int:
+    """Apply facet changes to profile dictionary. Returns count of applied facets."""
+    from aijournal.domain.enums import FacetOperation
+
+    applied = 0
+
+    for facet in facets:
+        parts = facet.path.split(".")
+        if not parts:
+            continue
+
+        # First part is the top-level field (e.g., "planning", "habits")
+        top_level = parts[0]
+        if top_level not in profile_dict:
+            continue
+
+        # Navigate to the target location, creating dicts as needed
+        current = profile_dict[top_level]
+        for part in parts[1:-1]:
+            if not isinstance(current, dict):
+                break
+            if part not in current:
+                current[part] = {}
+            current = current[part]
+
+        # Determine the target key and parent container
+        if len(parts) == 1:
+            # Top-level replacement (unusual but supported)
+            target_key = top_level
+            parent = profile_dict
+        else:
+            target_key = parts[-1]
+            parent = current
+
+        if not isinstance(parent, dict):
+            continue
+
+        # Apply the facet operation
+        if facet.operation == FacetOperation.SET:
+            parent[target_key] = facet.value
+            applied += 1
+        elif facet.operation == FacetOperation.REMOVE:
+            if target_key in parent:
+                del parent[target_key]
+                applied += 1
+        elif facet.operation == FacetOperation.MERGE:
+            # Merge dicts or extend lists
+            if target_key in parent:
+                if isinstance(parent[target_key], dict) and isinstance(facet.value, dict):
+                    parent[target_key].update(facet.value)
+                    applied += 1
+                elif isinstance(parent[target_key], list) and isinstance(facet.value, list):
+                    parent[target_key].extend(facet.value)
+                    applied += 1
+                else:
+                    # Type mismatch, just replace
+                    parent[target_key] = facet.value
+                    applied += 1
+            else:
+                # Key doesn't exist, treat as SET
+                parent[target_key] = facet.value
+                applied += 1
+
+    return applied
+
+
 @ops_pipeline_app.command("review", hidden=True)
 def review_updates(
     file: Path | None = REVIEW_FILE_OPTION,
@@ -1212,10 +1278,13 @@ def review_updates(
     claim_proposals: list[ClaimProposal] = [
         proposal.model_copy(deep=True) for proposal in batch.proposals.claims
     ]
+    facet_changes: list[FacetChange] = [
+        facet.model_copy(deep=True) for facet in batch.proposals.facets
+    ]
 
     batch_id = batch.batch_id or batch_path.stem
     typer.echo(
-        f"Batch {batch_id}: {len(claim_proposals)} claim(s)",
+        f"Batch {batch_id}: {len(claim_proposals)} claim(s), {len(facet_changes)} facet(s)",
     )
 
     for claim_proposal in claim_proposals:
@@ -1225,6 +1294,9 @@ def review_updates(
             else claim_proposal.statement[:48]
         )
         typer.echo(f"- claim {label}: {claim_proposal.statement}")
+
+    for facet in facet_changes:
+        typer.echo(f"- facet {facet.path}: {facet.operation} = {facet.value}")
 
     if not apply:
         if batch.preview and batch.preview.claim_events:
@@ -1239,15 +1311,19 @@ def review_updates(
     profile = profile_to_dict(profile_model)
     claims_data = [claim.model_copy(deep=True) for claim in claim_models]
     timestamp = time_utils.format_timestamp(time_utils.now())
-    applied = 0
+    applied_claims = 0
+    applied_facets = 0
     merge_events: list[ClaimMergeOutcome] = []
 
     for claim_proposal in claim_proposals:
         incoming_atom = claim_proposal_to_atom(claim_proposal, timestamp=timestamp)
         if apply_claim_upsert(claims_data, incoming_atom, timestamp, events=merge_events):
-            applied += 1
+            applied_claims += 1
 
-    if not applied:
+    # Apply facets to profile dict
+    applied_facets = _apply_facet_changes(profile, facet_changes)
+
+    if not applied_claims and not applied_facets:
         typer.echo("No changes applied")
         return
 
@@ -1259,7 +1335,7 @@ def review_updates(
     write_yaml_model(profile_dir / "self_profile.yaml", updated_profile)
     write_yaml_model(profile_dir / "claims.yaml", ClaimsFile(claims=updated_claims))
     emit_claim_merge_events(merge_events, "Applied claim consolidations:")
-    typer.echo(f"Applied {applied} updates from {batch_path}")
+    typer.echo(f"Applied {applied_claims} claim(s) and {applied_facets} facet(s) from {batch_path}")
 
 
 @app.command()
