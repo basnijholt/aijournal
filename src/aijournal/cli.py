@@ -497,8 +497,12 @@ def _run_context(
         Configured RunContext
 
     """
-    settings = _cli_settings()
+    # Get workspace first (includes validation)
     actual_workspace = workspace or _get_workspace()
+
+    # Get settings for trace/verbose_json/prompt_set
+    settings = _cli_settings()
+
     config_model = config or load_config(actual_workspace)
     prompt_set = resolve_prompt_set(cli_override=settings.prompt_set, config=config_model)
     return create_run_context(
