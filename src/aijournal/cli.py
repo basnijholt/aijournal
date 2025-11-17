@@ -464,10 +464,13 @@ def _cli_settings() -> CLISettings:
 
     Uses Click's ensure_object() to walk the context chain and find
     existing settings, or create default settings if not found.
+
+    Raises:
+        AssertionError: If called outside of a Click command context (programmer error)
+
     """
     ctx = click.get_current_context(silent=True)
-    if ctx is None:
-        return CLISettings()
+    assert ctx is not None, "_cli_settings() called outside Click command context"
     return ctx.ensure_object(CLISettings)
 
 
