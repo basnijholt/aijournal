@@ -138,21 +138,17 @@ if TYPE_CHECKING:
 INTERVIEW_SUMMARY_LOOKBACK_DAYS = 6
 
 
-def _get_workspace() -> Path:
-    """Return the CLI workspace path, defaulting to the current directory.
+def _validate_workspace(workspace: Path) -> None:
+    """Validate that a workspace directory exists and contains config.yaml.
 
-    The global `--path/-p` option stored in :class:`CLISettings` selects the workspace.
-    When absent we fall back to ``Path.cwd()`` and still validate that the directory exists
-    and contains ``config.yaml``.
+    Args:
+        workspace: The workspace directory path to validate
 
     Raises:
         RuntimeError: If the workspace directory doesn't exist, is not a directory,
                      or doesn't contain config.yaml
 
     """
-    settings = _cli_settings()
-    workspace = settings.workspace or Path.cwd()
-
     # Check workspace directory exists
     if not workspace.exists():
         msg = (
@@ -175,6 +171,22 @@ def _get_workspace() -> Path:
         )
         raise RuntimeError(msg)
 
+
+def _get_workspace() -> Path:
+    """Return the CLI workspace path, defaulting to the current directory.
+
+    The global `--path/-p` option stored in :class:`CLISettings` selects the workspace.
+    When absent we fall back to ``Path.cwd()`` and validate that the directory exists
+    and contains ``config.yaml``.
+
+    Raises:
+        RuntimeError: If the workspace directory doesn't exist, is not a directory,
+                     or doesn't contain config.yaml
+
+    """
+    settings = _cli_settings()
+    workspace = settings.workspace or Path.cwd()
+    _validate_workspace(workspace)
     return workspace
 
 
@@ -495,11 +507,10 @@ def _run_context(
         Configured RunContext
 
     """
-    # Get workspace first (includes validation)
-    actual_workspace = _get_workspace()
-
-    # Get settings for trace/verbose_json/prompt_set
+    # Get settings for workspace/trace/verbose_json/prompt_set
     settings = _cli_settings()
+    actual_workspace = settings.workspace or Path.cwd()
+    _validate_workspace(actual_workspace)
 
     config_model = config or load_config(actual_workspace)
     prompt_set = resolve_prompt_set(cli_override=settings.prompt_set, config=config_model)
