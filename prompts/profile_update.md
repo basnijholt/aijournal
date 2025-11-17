@@ -34,7 +34,7 @@ Overall shape:
 3. Inspect each normalized entry in `ENTRIES_JSON` (sections, tags, mood) and cite actual sentences when proposing updates.
 4. Use `MICROFACTS_JSON` to reinforce or challenge hypotheses—do not simply restate metadata.
 5. Check `CONSOLIDATED_FACTS_JSON` for recurring patterns observed across multiple days, and use high-observation-count facts to strengthen existing claims when today's entries confirm the pattern.
-6. **NEW**: Search `RETRIEVED_CHUNKS_JSON` for supporting or contradicting evidence from history:
+6. Search `RETRIEVED_CHUNKS_JSON` for supporting or contradicting evidence from history:
    - If 2+ chunks support an observation: increase strength by +0.1 to +0.2
    - If chunks contradict: note in rationale, consider `status=tentative`
    - Cite BOTH `evidence_entry` (today's entry) AND `evidence_chunk_ids` (historical chunks)
@@ -42,7 +42,7 @@ Overall shape:
 8. Emit interview prompts instead of guessing when the evidence is ambiguous.
 9. Follow the schema precisely; violations are rejected downstream.
 
-### Strength Calibration (Updated for Retrieval)
+### Strength Calibration
 
 - **0.30–0.40**: Single ambiguous mention or inference.
 - **0.50–0.60**: One or two clear mentions **or** a single self-report.
@@ -50,7 +50,7 @@ Overall shape:
 - **0.85–0.95**: Five or more consistent entries **or** immutable commitments corroborated across sources **or** 5+ retrieved chunks confirm long-term pattern.
 - **0.95–1.00**: Immutable facts only (birthdate, formal certifications).
 - Default to **0.55** when unsure and note ambiguity in the reason.
-- **Boost strength by +0.1 to +0.2** when retrieved chunks provide historical confirmation.
+- Boost strength by +0.1 to +0.2 when retrieved chunks provide historical confirmation.
 
 ### Output Schema (strict)
 
