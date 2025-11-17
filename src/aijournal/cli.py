@@ -460,16 +460,24 @@ def _main_callback(
 
 
 def _cli_settings() -> CLISettings:
-    context = click.get_current_context(silent=True)
-    while context is not None:
-        obj = getattr(context, "obj", None)
-        if isinstance(obj, CLISettings):
-            return obj
-        context = context.parent
+    """Get or create CLISettings from click context.
+
+    Walks up the context chain to find existing settings created by the
+    main callback. If not found, creates default settings as a fallback.
+    """
+    root_context = click.get_current_context(silent=True)
+    current = root_context
+
+    # Walk up the parent chain looking for existing CLISettings
+    while current is not None:
+        if isinstance(getattr(current, "obj", None), CLISettings):
+            return current.obj
+        current = current.parent
+
+    # Not found - create default and attach to root context
     settings = CLISettings()
-    context = click.get_current_context(silent=True)
-    if context is not None:
-        context.obj = settings
+    if root_context is not None:
+        root_context.obj = settings
     return settings
 
 
