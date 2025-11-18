@@ -12,8 +12,8 @@ from typing import TYPE_CHECKING
 import yaml
 
 from aijournal.commands.profile import (
+    _apply_facet_change,
     apply_claim_upsert,
-    apply_profile_update,
     load_profile_components,
     profile_to_dict,
 )
@@ -198,8 +198,8 @@ def apply_profile_update_batch(root: Path, config: AppConfig, batch_path: Path) 
     claim_proposals: list[ClaimProposal] = [
         proposal.model_copy(deep=True) for proposal in batch.proposals.claims
     ]
-    facet_proposals: list[FacetChange] = [
-        proposal.model_copy(deep=True) for proposal in batch.proposals.facets
+    facet_changes: list[FacetChange] = [
+        change.model_copy(deep=True) for change in batch.proposals.facets
     ]
 
     profile_model, claim_models = load_profile_components(root, config=config)
@@ -213,10 +213,8 @@ def apply_profile_update_batch(root: Path, config: AppConfig, batch_path: Path) 
         if apply_claim_upsert(claims_data, incoming_atom, timestamp):
             applied = True
 
-    for facet_proposal in facet_proposals:
-        if not facet_proposal.path:
-            continue
-        if apply_profile_update(profile, facet_proposal.path, facet_proposal.value, timestamp):
+    for facet_change in facet_changes:
+        if _apply_facet_change(profile, facet_change, timestamp):
             applied = True
 
     if not applied:

@@ -86,10 +86,11 @@ def run_chatd_command(ctx: RunContext, options: ChatdOptions) -> None:
     )
 
 
-def run_chatd(host: str, port: int) -> None:
+def run_chatd(host: str, port: int, *, workspace: Path | None = None) -> None:
+    workspace = workspace or Path.cwd()
     ctx = create_run_context(
         command="chatd",
-        workspace=Path.cwd(),
+        workspace=workspace,
         config={},
         use_fake_llm=use_fake_llm(),
         trace=False,

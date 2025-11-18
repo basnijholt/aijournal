@@ -21,7 +21,7 @@ if TYPE_CHECKING:
 
 def _set_cli_workspace(monkeypatch: pytest.MonkeyPatch, workspace: Path | None) -> None:
     def fake_settings() -> CLISettings:
-        return CLISettings(workspace=workspace)
+        return CLISettings(workspace=workspace or Path.cwd())
 
     monkeypatch.setattr("aijournal.cli._cli_settings", fake_settings)
 
@@ -163,7 +163,7 @@ def test_capture_uses_workspace_option(
         captured["root"] = root
         return DummyResult()
 
-    monkeypatch.setattr("aijournal.cli.run_capture", fake_run_capture)
+    monkeypatch.setattr("aijournal.commands.capture.run_capture", fake_run_capture)
 
     capture = cli_runner.invoke(
         app,

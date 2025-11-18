@@ -129,6 +129,32 @@ aijournal/
 - Freshness and impact control interview prompts and claim ordering in persona packs, advising the system where to probe next.
 - Provenance spans never persist raw text—`aijournal/domain/evidence.py` strips `span.text` before saving claims or feedback, and the audit tooling redacts any lingering text when running migrations.
 
+### 3.6 RAG-Enhanced Profile Updates
+
+Profile updates use retrieval-augmented generation (RAG) to strengthen claims and consolidate patterns into facets:
+
+- **Pre-Retrieval:** Before invoking the LLM, `aijournal ops profile update` runs 4 hardcoded queries against the vector index (`derived/index/`) to retrieve up to 40 relevant historical chunks about current projects, habits, values, and traits. Chunks are deduplicated by `chunk_id` and sorted by relevance score.
+
+- **Two-Track Output:** The profile update agent produces both **claims** (fine-grained observations from today's entries) and **facets** (consolidated profile fields from recurring patterns). Claims cite both today's entry (`evidence_entry`) and historical chunks (`evidence_chunk_ids`) to support strengthening existing claims when patterns recur.
+
+- **Threshold-Triggered Consolidation:** Facet consolidation runs only when 10+ new claims have accumulated since the last consolidation (tracked in `derived/profile_update_meta.yaml`). When triggered, the agent answers 6 specific questions by searching retrieved chunks:
+  1. **Current focus** (`planning.current_focus`, threshold: 2+ chunks)
+  2. **Blockers** (`planning.blockers`, threshold: 2+ chunks)
+  3. **Deep work timing** (`habits.deep_work_timing`, threshold: 3+ chunks)
+  4. **Routines** (`habits.routines`, threshold: 3+ chunks)
+  5. **Values/themes** (`values_motivations.recurring_themes`, threshold: 5+ chunks)
+  6. **Personality traits** (`traits.*`, threshold: 5+ chunks)
+
+- **Strength Calibration with Retrieval:**
+  - Base claim strength: 0.30–0.60 for single mentions
+  - With 2-3 supporting chunks: boost by +0.1 to +0.2 (target: 0.70–0.80)
+  - With 5+ supporting chunks: target 0.85–0.95 for long-term patterns
+  - Contradicting chunks trigger `status: tentative` and generate interview prompts
+
+- **Evidence Thresholds:** Facet proposals require minimum chunk counts (2 for planning, 3 for habits, 5 for values/traits) to ensure grounded, evidence-based consolidation. This prevents speculative facets and keeps the profile anchored in observed behavior.
+
+This approach balances daily claim extraction (always runs) with periodic consolidation (triggered by accumulation), reducing LLM costs while maintaining profile accuracy.
+
 ## 4. Data Flow Pipelines
 
 Refer to `docs/workflow.md` for the operational command order. This section explains how each pipeline works under the hood.

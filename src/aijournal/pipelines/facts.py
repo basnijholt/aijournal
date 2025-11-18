@@ -388,10 +388,13 @@ def _merge_sources(
 
     for source in list(existing) + list(extras):
         candidate = SourceRef.model_validate(source.model_dump(mode="python"))
-        entry_id = candidate.entry_id
-        if entry_id in seen:
+        # Use entry_id or chunk_id as deduplication key
+        key = candidate.entry_id or candidate.chunk_id or ""
+        if not key:
             continue
-        seen.add(entry_id)
+        if key in seen:
+            continue
+        seen.add(key)
         merged.append(ClaimSource.model_validate(candidate.model_dump(mode="python")))
     return merged
 

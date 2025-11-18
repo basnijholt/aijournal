@@ -91,9 +91,21 @@ That’s the entire daily workflow—no manual normalization or staged pipeline 
 individual stages manually via the `ops` namespace when debugging or scripting:
 
 - `uv run aijournal ops index rebuild` — rebuild the Chroma retrieval index from scratch and refresh `derived/index/meta.json`.
-- `uv run aijournal ops index search "deep work" --top 3` — smoke-test the index.  
-- `uv run aijournal ops persona build` — regenerate `derived/persona/persona_core.yaml`.  
+- `uv run aijournal ops index search "deep work" --top 3` — smoke-test the index.
+- `uv run aijournal ops persona build` — regenerate `derived/persona/persona_core.yaml`.
 - `uv run aijournal export pack --level L4 --history-days 1` — assemble a context bundle (top-level everyday command).
+
+### RAG-Enhanced Profile Updates
+
+Profile updates (`aijournal ops profile update --date YYYY-MM-DD`) now use retrieval-augmented generation (RAG) to strengthen claims and consolidate patterns:
+
+- **Pre-Retrieval:** Before calling the LLM, the system queries the vector index (`derived/index/`) with 4 hardcoded queries about current projects, habits, values, and traits. Up to 40 deduplicated chunks are retrieved and passed to the LLM as historical context.
+
+- **Threshold-Triggered Consolidation:** Facet consolidation runs only when 10+ new claims have accumulated since the last consolidation. The system tracks this in `derived/profile_update_meta.yaml`. When the threshold is reached, the LLM answers 6 specific questions using retrieved chunks to propose facets like `planning.current_focus`, `habits.deep_work_timing`, and `values_motivations.recurring_themes`.
+
+- **Evidence Requirements:** Each facet category has minimum chunk thresholds (2 for planning, 3 for habits, 5 for values/traits) to ensure grounded consolidation. Claims can now cite both today's entry (`evidence_entry`) and historical chunks (`evidence_chunk_ids`) for stronger provenance.
+
+This approach balances daily claim extraction (always runs) with periodic consolidation (triggered by accumulation), reducing costs while keeping the profile accurate and evidence-based.
 
 ---
 

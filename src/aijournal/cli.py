@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import json
 import os
-import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final, Literal, cast
@@ -22,12 +21,12 @@ from pydantic import ValidationError
 from typer.models import CommandInfo
 
 import aijournal._version as version_module
-from aijournal.api.capture import CaptureInput, CaptureRequest
 from aijournal.commands.advise import (
     AdviceOptions,
     _collect_pending_interview_prompts,
     run_advise_command,
 )
+from aijournal.commands.capture import run_capture_command
 from aijournal.commands.chat import run_chat
 from aijournal.commands.chatd import run_chatd
 from aijournal.commands.facts import (
@@ -57,7 +56,6 @@ from aijournal.commands.profile import (
     InterviewTarget,
     _compute_rankings,
     apply_claim_upsert,
-    apply_profile_update,
     load_profile_components,
     profile_to_dict,
     run_profile_apply,
@@ -93,7 +91,7 @@ from aijournal.models.authoritative import ClaimsFile, SelfProfile
 from aijournal.models.derived import ProfileUpdateBatch, ProfileUpdatePreview
 from aijournal.pipelines import normalization
 from aijournal.services import ollama
-from aijournal.services.capture import CAPTURE_MAX_STAGE, CAPTURE_STAGES, run_capture
+from aijournal.services.capture import CAPTURE_MAX_STAGE, CAPTURE_STAGES
 from aijournal.services.consolidator import (
     ClaimConsolidator,
     ClaimMergeOutcome,
@@ -139,21 +137,17 @@ if TYPE_CHECKING:
 INTERVIEW_SUMMARY_LOOKBACK_DAYS = 6
 
 
-def _get_workspace() -> Path:
-    """Return the CLI workspace path, defaulting to the current directory.
+def _validate_workspace(workspace: Path) -> None:
+    """Validate that a workspace directory exists and contains config.yaml.
 
-    The global `--path/-p` option stored in :class:`CLISettings` selects the workspace.
-    When absent we fall back to ``Path.cwd()`` and still validate that the directory exists
-    and contains ``config.yaml``.
+    Args:
+        workspace: The workspace directory path to validate
 
     Raises:
         RuntimeError: If the workspace directory doesn't exist, is not a directory,
                      or doesn't contain config.yaml
 
     """
-    settings = _cli_settings()
-    workspace = settings.workspace or Path.cwd()
-
     # Check workspace directory exists
     if not workspace.exists():
         msg = (
@@ -176,7 +170,22 @@ def _get_workspace() -> Path:
         )
         raise RuntimeError(msg)
 
-    return workspace
+
+def _get_workspace() -> Path:
+    """Return the CLI workspace path from settings.
+
+    The global `--path/-p` option stored in :class:`CLISettings` selects the workspace.
+    When the user doesn't provide `-p`, it defaults to ``Path.cwd()`` in the CLI callback.
+    This function validates that the directory exists and contains ``config.yaml``.
+
+    Raises:
+        RuntimeError: If the workspace directory doesn't exist, is not a directory,
+                     or doesn't contain config.yaml
+
+    """
+    settings = _cli_settings()
+    _validate_workspace(settings.workspace)
+    return settings.workspace
 
 
 app = typer.Typer(
@@ -412,10 +421,10 @@ app.add_typer(serve_app, name="serve")
 
 @dataclass
 class CLISettings:
+    workspace: Path
     trace: bool = False
     verbose_json: bool = False
     prompt_set: str | None = None
-    workspace: Path | None = None
 
 
 def _resolve_workspace_option(value: Path | None) -> Path | None:
@@ -450,28 +459,29 @@ def _main_callback(
     if prompt_set:
         os.environ["AIJOURNAL_PROMPT_SET"] = prompt_set
 
-    resolved_workspace = _resolve_workspace_option(workspace)
+    resolved_workspace = _resolve_workspace_option(workspace) or Path.cwd()
 
     ctx.obj = CLISettings(
+        workspace=resolved_workspace,
         trace=trace,
         verbose_json=verbose_json,
         prompt_set=prompt_set,
-        workspace=resolved_workspace,
     )
 
 
 def _cli_settings() -> CLISettings:
-    context = click.get_current_context(silent=True)
-    while context is not None:
-        obj = getattr(context, "obj", None)
-        if isinstance(obj, CLISettings):
-            return obj
-        context = context.parent
-    settings = CLISettings()
-    context = click.get_current_context(silent=True)
-    if context is not None:
-        context.obj = settings
-    return settings
+    """Get or create CLISettings from click context.
+
+    Uses Click's ensure_object() to walk the context chain and find
+    existing settings, or create default settings if not found.
+
+    Raises:
+        AssertionError: If called outside of a Click command context (programmer error)
+
+    """
+    ctx = click.get_current_context(silent=True)
+    assert ctx is not None, "_cli_settings() called outside Click command context"
+    return ctx.ensure_object(CLISettings)
 
 
 def _active_prompt_set(config: AppConfig | None = None) -> str | None:
@@ -483,27 +493,27 @@ def _active_prompt_set(config: AppConfig | None = None) -> str | None:
 def _run_context(
     command: str,
     *,
-    workspace: Path | None = None,
     config: AppConfig | None = None,
 ) -> RunContext:
     """Create a run context for command execution.
 
     Args:
         command: Command name
-        workspace: Workspace directory (defaults to _get_workspace())
         config: Optional `AppConfig` override (defaults to workspace config)
 
     Returns:
         Configured RunContext
 
     """
+    # Get settings for workspace/trace/verbose_json/prompt_set
     settings = _cli_settings()
-    actual_workspace = workspace or _get_workspace()
-    config_model = config or load_config(actual_workspace)
+    _validate_workspace(settings.workspace)
+
+    config_model = config or load_config(settings.workspace)
     prompt_set = resolve_prompt_set(cli_override=settings.prompt_set, config=config_model)
     return create_run_context(
         command=command,
-        workspace=actual_workspace,
+        workspace=settings.workspace,
         config=config_model,
         use_fake_llm=use_fake_llm(),
         trace=settings.trace,
@@ -737,175 +747,41 @@ def capture(
     ),
 ) -> None:
     """Persist new material and refresh downstream artifacts in one pass."""
-    stdin_text: str | None = None
-    if not from_paths and text is None and not sys.stdin.isatty():
-        stdin_buffer = sys.stdin.read()
-        if stdin_buffer and stdin_buffer.strip():
-            stdin_text = stdin_buffer
-
-    effective_text = text if text is not None else stdin_text
-
-    if bool(from_paths) and effective_text:
-        typer.secho("Provide either --from or --text, not both.", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=2)
-    if not from_paths and not effective_text:
-        typer.secho(
-            "Use --from to import files/directories or --text for raw Markdown.",
-            fg=typer.colors.RED,
-            err=True,
-        )
-        raise typer.Exit(code=2)
-
-    source_type_value = source_type.lower()
-    if source_type_value not in {"journal", "notes", "blog"}:
-        typer.secho(
-            "--source-type must be one of: journal, notes, blog.",
-            fg=typer.colors.RED,
-            err=True,
-        )
-        raise typer.Exit(code=2)
-
-    apply_profile_value = apply_profile.lower()
-    if apply_profile_value not in {"auto", "review"}:
-        typer.secho("--apply-profile must be auto or review.", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=2)
-
-    rebuild_value = rebuild.lower()
-    if rebuild_value not in {"auto", "always", "skip"}:
-        typer.secho("--rebuild must be auto, always, or skip.", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=2)
-
-    pack_value: str | None = None
-    if pack:
-        pack_upper = pack.upper()
-        if pack_upper not in {"L1", "L3", "L4"}:
-            typer.secho("--pack must be one of: L1, L3, L4.", fg=typer.colors.RED, err=True)
-            raise typer.Exit(code=2)
-        pack_value = pack_upper
-
-    if not (0 <= min_stage <= CAPTURE_MAX_STAGE and 0 <= max_stage <= CAPTURE_MAX_STAGE):
-        typer.secho(
-            f"--min-stage/--max-stage must be between 0 and {CAPTURE_MAX_STAGE}.",
-            fg=typer.colors.RED,
-            err=True,
-        )
-        raise typer.Exit(code=2)
-    if min_stage > max_stage:
-        typer.secho(
-            "--min-stage cannot be greater than --max-stage.",
-            fg=typer.colors.RED,
-            err=True,
-        )
-        raise typer.Exit(code=2)
-
-    if from_paths:
-        resolved_paths = [str(path.resolve()) for path in from_paths]
-        contains_dir = any(path.is_dir() for path in from_paths)
-        source_mode: Literal["stdin", "editor", "file", "dir"] = "dir" if contains_dir else "file"
-    else:
-        resolved_paths = []
-        source_mode = "stdin"
-
-    workspace = _get_workspace()
-    capture_request = CaptureRequest(
-        source=source_mode,
-        text=effective_text,
-        paths=resolved_paths,
-        source_type=source_type_value,  # type: ignore[arg-type]
+    ctx = _run_context("capture")
+    run_capture_command(
+        ctx,
+        from_paths=from_paths,
+        text=text,
+        snapshot=snapshot,
+        source_type=source_type,
         date=date,
         title=title,
-        slug=None,
         tags=tags,
         projects=projects,
         mood=mood,
-        apply_profile=apply_profile_value,  # type: ignore[arg-type]
-        rebuild=rebuild_value,  # type: ignore[arg-type]
-        pack=pack_value,  # type: ignore[arg-type]
+        apply_profile=apply_profile,
+        rebuild=rebuild,
+        pack=pack,
+        min_stage=min_stage,
+        max_stage=max_stage,
         retries=retries,
         progress=progress,
         dry_run=dry_run,
-        snapshot=snapshot,
-    )
-
-    capture_input = CaptureInput.from_request(
-        capture_request,
-        min_stage=min_stage,
-        max_stage=max_stage,
-    )
-
-    result = run_capture(capture_input, root=workspace)
-
-    if result.errors:
-        for error in result.errors:
-            typer.secho(error, fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=1)
-
-    for warning in result.warnings:
-        typer.secho(warning, fg=typer.colors.YELLOW, err=False)
-
-    created = [entry for entry in result.entries if entry.changed and not entry.deduped]
-    deduped = [entry for entry in result.entries if entry.deduped]
-
-    if created:
-        typer.secho("Captured entries:", fg=typer.colors.GREEN)
-        for entry in created:
-            typer.echo(f"  - {entry.date} / {entry.slug}")
-    if deduped:
-        typer.secho("Skipped duplicates:", fg=typer.colors.BLUE)
-        for entry in deduped:
-            typer.echo(f"  - {entry.date} / {entry.slug}")
-
-    completed_set = set(result.stages_completed)
-    if completed_set:
-        typer.secho("Stages completed:", fg=typer.colors.GREEN)
-        for idx in sorted(completed_set):
-            stage = CAPTURE_STAGE_LOOKUP.get(idx)
-            if stage:
-                typer.echo(f"  [{idx}] {stage.name}")
-
-    requested_range = range(result.min_stage, result.max_stage + 1)
-    pending = [idx for idx in requested_range if idx not in completed_set]
-    if pending:
-        typer.secho("Requested stages pending manual follow-up:", fg=typer.colors.YELLOW)
-        for idx in pending:
-            stage = CAPTURE_STAGE_LOOKUP.get(idx)
-            if not stage:
-                continue
-            manual = stage.manual.replace("\n", "\n    ")
-            typer.echo(f"  [{idx}] {stage.name} – {stage.description}\n    {manual}")
-
-    if result.max_stage < CAPTURE_MAX_STAGE:
-        typer.secho("Additional stages not requested in this run:", fg=typer.colors.BLUE)
-        for idx in range(result.max_stage + 1, CAPTURE_MAX_STAGE + 1):
-            stage = CAPTURE_STAGE_LOOKUP.get(idx)
-            if not stage:
-                continue
-            manual = stage.manual.replace("\n", "\n    ")
-            typer.echo(f"  [{idx}] {stage.name} – {stage.description}\n    {manual}")
-
-    typer.echo(
-        json.dumps(
-            {
-                "run_id": result.run_id,
-                "entries": len(result.entries),
-                "created": len(created),
-                "deduped": len(deduped),
-            },
-            indent=2,
-        ),
     )
 
 
 @app.command()
 def status() -> None:
     """Display persona, index, and retrieval freshness."""
-    run_system_status_cli()
+    workspace = _get_workspace()
+    run_system_status_cli(workspace)
 
 
 @ops_system_app.command("doctor")
 def system_doctor() -> None:
     """Run system diagnostics and emit machine-readable results."""
-    run_system_doctor_cli()
+    workspace = _get_workspace()
+    run_system_doctor_cli(workspace)
 
 
 HIGH_IMPACT_PROBES = [
@@ -1106,7 +982,7 @@ def summarize(
         llm_retries=retries,
         llm_timeout=timeout,
     )
-    ctx = _run_context("summarize", workspace=workspace, config=config)
+    ctx = _run_context("summarize", config=config)
     summary_path = run_summarize_command(
         ctx,
         DailySummaryOptions(
@@ -1133,7 +1009,7 @@ def facts(
         llm_timeout=timeout,
     )
     _, claim_models = load_profile_components(workspace, config=config)
-    ctx = _run_context("facts", workspace=workspace, config=config)
+    ctx = _run_context("facts", config=config)
     output = run_facts_command(
         ctx,
         FactsOptions(
@@ -1187,6 +1063,72 @@ def profile_apply(
     typer.echo(message)
 
 
+def _apply_facet_changes(profile_dict: dict[str, Any], facets: list[FacetChange]) -> int:
+    """Apply facet changes to profile dictionary. Returns count of applied facets."""
+    from aijournal.domain.enums import FacetOperation
+
+    applied = 0
+
+    for facet in facets:
+        parts = facet.path.split(".")
+        if not parts:
+            continue
+
+        # First part is the top-level field (e.g., "planning", "habits")
+        top_level = parts[0]
+        if top_level not in profile_dict:
+            continue
+
+        # Navigate to the target location, creating dicts as needed
+        current = profile_dict[top_level]
+        for part in parts[1:-1]:
+            if not isinstance(current, dict):
+                break
+            if part not in current:
+                current[part] = {}
+            current = current[part]
+
+        # Determine the target key and parent container
+        if len(parts) == 1:
+            # Top-level replacement (unusual but supported)
+            target_key = top_level
+            parent = profile_dict
+        else:
+            target_key = parts[-1]
+            parent = current
+
+        if not isinstance(parent, dict):
+            continue
+
+        # Apply the facet operation
+        if facet.operation == FacetOperation.SET:
+            parent[target_key] = facet.value
+            applied += 1
+        elif facet.operation == FacetOperation.REMOVE:
+            if target_key in parent:
+                del parent[target_key]
+                applied += 1
+        elif facet.operation == FacetOperation.MERGE:
+            # Merge dicts or extend lists
+            if target_key in parent:
+                if isinstance(parent[target_key], dict) and isinstance(facet.value, dict):
+                    parent[target_key].update(facet.value)
+                    applied += 1
+                elif isinstance(parent[target_key], list) and isinstance(facet.value, list):
+                    parent[target_key].extend(facet.value)
+                    applied += 1
+                else:
+                    # Type mismatch, just replace
+                    parent[target_key] = facet.value
+                    applied += 1
+            else:
+                # Key doesn't exist, treat as SET
+                parent[target_key] = facet.value
+                applied += 1
+
+    return applied
+
+
 @ops_pipeline_app.command("review", hidden=True)
 def review_updates(
     file: Path | None = REVIEW_FILE_OPTION,
@@ -1213,13 +1155,13 @@ def review_updates(
     claim_proposals: list[ClaimProposal] = [
         proposal.model_copy(deep=True) for proposal in batch.proposals.claims
     ]
-    facet_proposals: list[FacetChange] = [
-        proposal.model_copy(deep=True) for proposal in batch.proposals.facets
+    facet_changes: list[FacetChange] = [
+        facet.model_copy(deep=True) for facet in batch.proposals.facets
     ]
 
     batch_id = batch.batch_id or batch_path.stem
     typer.echo(
-        f"Batch {batch_id}: {len(claim_proposals)} claim(s), {len(facet_proposals)} facet(s)",
+        f"Batch {batch_id}: {len(claim_proposals)} claim(s), {len(facet_changes)} facet(s)",
     )
 
     for claim_proposal in claim_proposals:
@@ -1230,9 +1172,8 @@ def review_updates(
         )
         typer.echo(f"- claim {label}: {claim_proposal.statement}")
 
-    for facet_proposal in facet_proposals:
-        if facet_proposal.path:
-            typer.echo(f"- facet {facet_proposal.path}: {facet_proposal.value}")
+    for facet in facet_changes:
+        typer.echo(f"- facet {facet.path}: {facet.operation} = {facet.value}")
 
     if not apply:
         if batch.preview and batch.preview.claim_events:
@@ -1247,21 +1188,19 @@ def review_updates(
     profile = profile_to_dict(profile_model)
     claims_data = [claim.model_copy(deep=True) for claim in claim_models]
     timestamp = time_utils.format_timestamp(time_utils.now())
-    applied = 0
+    applied_claims = 0
+    applied_facets = 0
     merge_events: list[ClaimMergeOutcome] = []
 
     for claim_proposal in claim_proposals:
         incoming_atom = claim_proposal_to_atom(claim_proposal, timestamp=timestamp)
         if apply_claim_upsert(claims_data, incoming_atom, timestamp, events=merge_events):
-            applied += 1
+            applied_claims += 1
 
-    for facet_proposal in facet_proposals:
-        if not facet_proposal.path:
-            continue
-        if apply_profile_update(profile, facet_proposal.path, facet_proposal.value, timestamp):
-            applied += 1
+    # Apply facets to profile dict
+    applied_facets = _apply_facet_changes(profile, facet_changes)
 
-    if not applied:
+    if not applied_claims and not applied_facets:
         typer.echo("No changes applied")
         return
 
@@ -1273,7 +1212,7 @@ def review_updates(
     write_yaml_model(profile_dir / "self_profile.yaml", updated_profile)
     write_yaml_model(profile_dir / "claims.yaml", ClaimsFile(claims=updated_claims))
     emit_claim_merge_events(merge_events, "Applied claim consolidations:")
-    typer.echo(f"Applied {applied} updates from {batch_path}")
+    typer.echo(f"Applied {applied_claims} claim(s) and {applied_facets} facet(s) from {batch_path}")
 
 
 @app.command()
@@ -1843,6 +1782,7 @@ def interview(
             }
             for target in rankings[: max(max_questions * 2, 6)]
         ]
+        ctx = _run_context("interview", config=config)
         try:
             summary_payload = summary.model_dump(mode="python")
             summary_window_payload = [
@@ -1866,6 +1806,7 @@ def interview(
                 agent_name="aijournal-interview",
                 config=config,
                 prompt_set=_active_prompt_set(config),
+                ctx=ctx,
             )
         except LLMResponseError as exc:
             typer.secho(
@@ -1957,7 +1898,8 @@ def index_rebuild(
     limit: int | None = INDEX_LIMIT_OPTION,
 ) -> None:
     """Rebuild the Chroma-backed retrieval index from normalized YAML."""
-    message = run_index_rebuild(since, limit=limit)
+    workspace = _get_workspace()
+    message = run_index_rebuild(since, limit=limit, workspace=workspace)
     typer.echo(message)
 
 
@@ -1972,7 +1914,8 @@ def index_update(
     limit: int | None = INDEX_LIMIT_OPTION,
 ) -> None:
     """Incrementally ingest new normalized entries into the retrieval index."""
-    message = run_index_tail(since, days=days, limit=limit)
+    workspace = _get_workspace()
+    message = run_index_tail(since, days=days, limit=limit, workspace=workspace)
     typer.echo(message)
 
 
@@ -1991,6 +1934,7 @@ def index_search(
     date_to: str | None = DATE_TO_OPTION,
 ) -> None:
     """Search the retrieval index and stream formatted results."""
+    workspace = _get_workspace()
     run_index_search(
         query,
         top=top,
@@ -1998,6 +1942,7 @@ def index_search(
         source=source,
         date_from=date_from,
         date_to=date_to,
+        workspace=workspace,
     )
 
 
@@ -2059,7 +2004,8 @@ def serve_chat(
 ) -> None:
     """Start the FastAPI chat daemon (chatd)."""
     _emit_deprecation("aijournal serve chat", "the REST capture API (POST /capture)")
-    run_chatd(host, port)
+    workspace = _get_workspace()
+    run_chatd(host, port, workspace=workspace)
 
 
 @ops_feedback_app.command("apply")

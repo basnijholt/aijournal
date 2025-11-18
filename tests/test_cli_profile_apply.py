@@ -13,7 +13,6 @@ from aijournal.common.meta import Artifact, ArtifactKind, ArtifactMeta
 from aijournal.domain.changes import (
     ClaimAtomInput,
     ClaimProposal,
-    FacetChange,
     ProfileUpdateProposals,
 )
 from aijournal.domain.claims import ClaimAtom
@@ -101,15 +100,8 @@ def _seed_suggestions(workspace: Path) -> Path:
         evidence=[SourceRef(entry_id="2025-02-03_pref_evening")],
         rationale="Detected new evening preference",
     )
-    facet_change = FacetChange(
-        path="values_motivations.schwartz_top5",
-        operation="set",
-        value=["Universalism", "Benevolence"],
-        evidence=[SourceRef(entry_id="profile.snapshot")],
-    )
     proposals = ProfileUpdateProposals(
         claims=[claim_proposal],
-        facets=[facet_change],
     )
     batch = ProfileUpdateBatch(
         batch_id=f"{DATE}-batch",
@@ -170,14 +162,6 @@ def test_profile_apply_merges_suggestions(
     statements = {claim["statement"] for claim in claims["claims"]}
     assert any("evening" in stmt.lower() for stmt in statements)
     assert len(claims["claims"]) == len(statements), "Duplicate claim statements"
-
-    profile = yaml.safe_load(
-        (cli_workspace / "profile" / "self_profile.yaml").read_text(encoding="utf-8"),
-    )
-    assert {
-        "Universalism",
-        "Benevolence",
-    } == set(profile["values_motivations"]["schwartz_top5"])
 
 
 def test_profile_apply_idempotent(

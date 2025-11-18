@@ -281,8 +281,7 @@ def run_system_doctor_cli(workspace: Path | None = None) -> None:
     )
 
 
-def run_system_status_cli(workspace: Path | None = None) -> None:
-    workspace = workspace or Path.cwd()
+def run_system_status_cli(workspace: Path) -> None:
     config = load_config(workspace)
     ctx = create_run_context(
         command="ops.system.status",

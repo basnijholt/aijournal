@@ -7,10 +7,8 @@ from typing import TYPE_CHECKING, Any
 from aijournal.domain.changes import (
     ClaimAtomInput,
     ClaimProposal,
-    FacetChange,
     ProfileUpdateProposals,
 )
-from aijournal.domain.enums import FacetOperation
 from aijournal.domain.evidence import SourceRef
 from aijournal.domain.facts import DailySummary, FactEvidence, MicroFact
 from aijournal.models.derived import (
@@ -156,26 +154,10 @@ def fake_advise(
 
 def fake_profile_proposals(
     entries: Sequence[NormalizedEntry],
-    profile: dict[str, Any],
-    claims: Sequence[ClaimAtom],
     *,
     build_claim: Callable[..., ClaimAtom],
 ) -> ProfileUpdateProposals:
     claim_proposals: list[ClaimProposal] = []
-    facet_changes: list[FacetChange] = []
-
-    if claims:
-        seed_claim = claims[0]
-        facet_changes.append(
-            FacetChange(
-                path="values.focus.primary_statement",
-                operation=FacetOperation.SET,
-                value=seed_claim.statement,
-                method="inferred",
-                confidence=seed_claim.strength,
-                rationale="Seeded from existing claim to keep fake persona coherent.",
-            ),
-        )
 
     for entry in entries[:1]:
         statement = entry.title or "New observation"
@@ -214,15 +196,4 @@ def fake_profile_proposals(
             ),
         )
 
-    if profile:
-        facet_changes.append(
-            FacetChange(
-                path="values_motivations.schwartz_top5",
-                operation=FacetOperation.SET,
-                value=profile.get("values_motivations", {}).get("schwartz_top5", []),
-                evidence=[SourceRef(entry_id="profile.snapshot")],
-                rationale="Retain existing Schwartz ranking in fake mode",
-            ),
-        )
-
-    return ProfileUpdateProposals(claims=claim_proposals, facets=facet_changes)
+    return ProfileUpdateProposals(claims=claim_proposals)
