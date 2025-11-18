@@ -163,7 +163,7 @@ def test_capture_uses_workspace_option(
         captured["root"] = root
         return DummyResult()
 
-    monkeypatch.setattr("aijournal.cli.run_capture", fake_run_capture)
+    monkeypatch.setattr("aijournal.commands.capture.run_capture", fake_run_capture)
 
     capture = cli_runner.invoke(
         app,
